@@ -1,0 +1,368 @@
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import postgres from "postgres";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createDb, pluginMigrations, plugins } from "@paperclipai/db";
+import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
+import type { ManagedDatabaseConfig } from "@paperclipai/shared/managed-database";
+import { signManagedDatabasePayload } from "@paperclipai/shared/managed-database-server";
+import { derivePluginDatabaseNamespace, pluginDatabaseService } from "../services/plugin-database.js";
+import { and, eq } from "drizzle-orm";
+import {
+  acquireLease,
+  appSql,
+  buildCommand,
+  buildSupervisor,
+  createTestStack,
+  establishedConfig,
+  getManagedDatabaseTestSupport,
+  sendCommand,
+  type TestStack,
+} from "./helpers/managed-database.js";
+import type { ManagedDatabaseSupervisor } from "../managed-database/supervisor.js";
+import { managedDatabaseLayout } from "../managed-database/layout.js";
+
+const support = await getManagedDatabaseTestSupport();
+const describeEngine = support.supported ? describe : describe.skip;
+if (!support.supported) console.warn(`Skipping managed database engine tests: ${support.reason}`);
+
+const TIMEOUT = 180_000;
+
+async function expectSqlError(sql: ReturnType<typeof postgres>, statement: string, pattern: RegExp) {
+  await expect(sql.unsafe(statement)).rejects.toThrow(pattern);
+}
+
+describeEngine("managed embedded database: lifecycle and refusals", () => {
+  if (!support.supported) return;
+  let stack: TestStack;
+  let supervisor: ManagedDatabaseSupervisor;
+  let systemIdentifier: string;
+
+  beforeAll(async () => {
+    stack = await createTestStack();
+    supervisor = await buildSupervisor(stack, support);
+    await supervisor.start();
+    systemIdentifier = supervisor.readiness().systemIdentifier!;
+  }, TIMEOUT);
+
+  afterAll(async () => {
+    await supervisor?.stop();
+    stack?.cleanup();
+  });
+
+  it("initializes explicitly, binds the marker to the stack, and reports readiness", () => {
+    const readiness = supervisor.readiness();
+    expect(readiness).toMatchObject({
+      stackId: stack.config.stackId,
+      status: "maintenance",
+      engineMajor: 18,
+      schema: { state: "current" },
+      hold: null,
+    });
+    expect(systemIdentifier).toMatch(/^\d+$/);
+    const layout = managedDatabaseLayout(stack.config);
+    const marker = JSON.parse(readFileSync(layout.markerFile, "utf8"));
+    expect(marker).toMatchObject({ status: "ready", stackId: stack.config.stackId, volumeId: stack.config.volume.id, systemIdentifier });
+    expect(JSON.parse(readFileSync(layout.volumeIdentityFile, "utf8"))).toMatchObject({ stackId: stack.config.stackId });
+    expect(statSync(layout.dataDir).mode & 0o777).toBe(0o700);
+    expect(statSync(layout.secretsDir).mode & 0o777).toBe(0o700);
+    expect(statSync(layout.root).mode & 0o777).toBe(0o711);
+    expect(JSON.parse(readFileSync(layout.readinessFile, "utf8")).systemIdentifier).toBe(systemIdentifier);
+  });
+
+  it("persists data across a restart on the established config", async () => {
+    const companyId = randomUUID();
+    const app = appSql(supervisor);
+    await app`insert into companies (id, name, issue_prefix) values (${companyId}, 'Persisted Co', 'PER')`;
+    await app.end();
+    await supervisor.stop();
+
+    stack.config = establishedConfig(stack.config, systemIdentifier);
+    supervisor = await buildSupervisor(stack, support);
+    await supervisor.start();
+    expect(supervisor.readiness()).toMatchObject({ systemIdentifier, configGeneration: 2, schema: { state: "current" } });
+    const again = appSql(supervisor);
+    const rows = await again`select name from companies where id = ${companyId}`;
+    await again.end();
+    expect(rows).toEqual([{ name: "Persisted Co" }]);
+  }, TIMEOUT);
+
+  it("refuses another stack's config on this volume before touching the cluster", async () => {
+    await supervisor.stop();
+    const layout = managedDatabaseLayout(stack.config);
+    const markerBefore = readFileSync(layout.markerFile, "utf8");
+    const intruder = await buildSupervisor({ ...stack, config: { ...stack.config, stackId: "stk_intruder" } }, support);
+    await expect(intruder.start()).rejects.toThrow(/volume_mismatch/);
+    const wrongCluster = await buildSupervisor({
+      ...stack,
+      config: { ...stack.config, cluster: { state: "existing", initializationId: stack.config.cluster.initializationId, systemIdentifier: "1" } },
+    }, support);
+    await expect(wrongCluster.start()).rejects.toThrow(/system_identifier_mismatch/);
+    expect(readFileSync(layout.markerFile, "utf8")).toBe(markerBefore);
+    expect(existsSync(path.join(layout.dataDir, "postmaster.pid"))).toBe(false);
+  }, TIMEOUT);
+
+  it("refuses an engine mismatch before PostgreSQL starts", async () => {
+    const layout = managedDatabaseLayout(stack.config);
+    const wrongImage = await buildSupervisor(stack, { ...support, engine: { ...support.engine, major: 17, version: "17.6" } });
+    await expect(wrongImage.start()).rejects.toThrow(/engine_mismatch/);
+    writeFileSync(path.join(layout.dataDir, "PG_VERSION"), "17\n");
+    try {
+      const tampered = await buildSupervisor(stack, support);
+      await expect(tampered.start()).rejects.toThrow(/engine_mismatch/);
+      expect(existsSync(path.join(layout.dataDir, "postmaster.pid"))).toBe(false);
+    } finally {
+      writeFileSync(path.join(layout.dataDir, "PG_VERSION"), "18\n");
+    }
+  }, TIMEOUT);
+
+  it("refuses to create an empty database when an established stack lost its data or volume", async () => {
+    const layout = managedDatabaseLayout(stack.config);
+    const unmounted = await buildSupervisor(stack, support, { deviceOf: () => 1 });
+    await expect(unmounted.start()).rejects.toThrow(/volume_not_mounted/);
+
+    // A fresh, empty volume attached in place of the real one.
+    const blank = mkdtempSync(path.join(os.tmpdir(), "paperclip-mdb-blank-"));
+    try {
+      const swapped: ManagedDatabaseConfig = { ...stack.config, volume: { ...stack.config.volume, mountPath: blank }, root: path.join(blank, ".managed-database") };
+      const onBlank = await buildSupervisor({ ...stack, config: swapped }, support);
+      await expect(onBlank.start()).rejects.toThrow(/cluster_missing/);
+      expect(existsSync(path.join(blank, ".managed-database", "data"))).toBe(false);
+    } finally {
+      rmSync(blank, { recursive: true, force: true });
+    }
+
+    const pgVersion = readFileSync(path.join(layout.dataDir, "PG_VERSION"), "utf8");
+    rmSync(path.join(layout.dataDir, "PG_VERSION"));
+    try {
+      const lost = await buildSupervisor(stack, support);
+      await expect(lost.start()).rejects.toThrow(/cluster_missing/);
+    } finally {
+      writeFileSync(path.join(layout.dataDir, "PG_VERSION"), pgVersion);
+    }
+
+    supervisor = await buildSupervisor(stack, support);
+    await supervisor.start();
+    expect(supervisor.readiness().systemIdentifier).toBe(systemIdentifier);
+  }, TIMEOUT);
+});
+
+describeEngine("managed embedded database: runtime privilege isolation", () => {
+  if (!support.supported) return;
+  let stack: TestStack;
+  let supervisor: ManagedDatabaseSupervisor;
+  let app: ReturnType<typeof postgres>;
+  let plugin: ReturnType<typeof postgres>;
+  const packageRoots: string[] = [];
+
+  beforeAll(async () => {
+    stack = await createTestStack();
+    supervisor = await buildSupervisor(stack, support);
+    await supervisor.start();
+    app = appSql(supervisor, "app");
+    plugin = appSql(supervisor, "plugin");
+  }, TIMEOUT);
+
+  afterAll(async () => {
+    await app?.end();
+    await plugin?.end();
+    await supervisor?.stop();
+    stack?.cleanup();
+    for (const root of packageRoots) rmSync(root, { recursive: true, force: true });
+  });
+
+  it("gives the app role DML only", async () => {
+    const id = randomUUID();
+    await app`insert into companies (id, name, issue_prefix) values (${id}, 'DML Co', 'DML')`;
+    await app`update companies set name = 'DML Co 2' where id = ${id}`;
+    expect(await app`select name from companies where id = ${id}`).toEqual([{ name: "DML Co 2" }]);
+    await app`delete from companies where id = ${id}`;
+
+    await expectSqlError(app, "create table public.evil (id int)", /permission denied/);
+    await expectSqlError(app, "create schema evil", /permission denied/);
+    await expectSqlError(app, "alter table companies add column evil int", /must be owner/);
+    await expectSqlError(app, "drop table companies", /must be owner/);
+    await expectSqlError(app, "truncate companies", /permission denied/);
+    await expectSqlError(app, "create temp table t (id int)", /permission denied/);
+    await expectSqlError(app, "create function public.f() returns int language sql as 'select 1'", /permission denied/);
+    await expectSqlError(app, "insert into drizzle.__drizzle_migrations (hash, created_at) values ('x', 1)", /permission denied/);
+    await expectSqlError(app, "select pg_read_file('PG_VERSION')", /permission denied/);
+    await expectSqlError(app, "copy companies to '/tmp/paperclip-mdb-exfil.csv'", /permission denied|must be superuser|pg_write_server_files/);
+    await expectSqlError(app, "set role paperclip_owner", /permission denied/);
+    await expectSqlError(app, "alter role paperclip_app superuser", /permission denied/);
+    expect((await app`select count(*)::int as n from drizzle.__drizzle_migrations`)[0]!.n).toBeGreaterThan(300);
+  });
+
+  it("rejects the app credential outside the tenant database and privileged roles over TCP", async () => {
+    const env = supervisor.appEnvironment();
+    const url = new URL(env.DATABASE_URL!);
+    const other = postgres({ host: "127.0.0.1", port: Number(url.port), user: "paperclip_app", password: decodeURIComponent(url.password), database: "postgres", max: 1, connect_timeout: 5 });
+    await expect(other`select 1`).rejects.toThrow(/pg_hba|rejects connection|no pg_hba/);
+    await other.end();
+    const owner = postgres({ host: "127.0.0.1", port: Number(url.port), user: "paperclip_owner", password: "guess", database: "paperclip", max: 1, connect_timeout: 5 });
+    await expect(owner`select 1`).rejects.toThrow(/pg_hba|rejects connection|no pg_hba/);
+    await owner.end();
+    const superuser = postgres({ host: "127.0.0.1", port: Number(url.port), user: "paperclip_supervisor", password: "guess", database: "postgres", max: 1, connect_timeout: 5 });
+    await expect(superuser`select 1`).rejects.toThrow(/pg_hba|rejects connection|no pg_hba/);
+    await superuser.end();
+  });
+
+  it("keeps supervisor-only material out of the app environment", () => {
+    const env = { ...supervisor.appEnvironment() };
+    expect(env.PAPERCLIP_MANAGED_DATABASE).toBeUndefined();
+    expect(env.PAPERCLIP_MANAGED_DATABASE_CONTROL_KEY).toBeUndefined();
+    expect(env.DATABASE_MIGRATION_URL).toBeUndefined();
+    expect(env.PAPERCLIP_MIGRATION_AUTO_APPLY).toBe("false");
+    const secrets = readFileSync(managedDatabaseLayout(stack.config).secretsFile, "utf8");
+    const { ownerPassword, supervisorPassword } = JSON.parse(secrets);
+    expect(JSON.stringify(env)).not.toContain(ownerPassword);
+    expect(JSON.stringify(env)).not.toContain(supervisorPassword);
+  });
+
+  it("lets the plugin role create only plugin_* namespaces", async () => {
+    await plugin.unsafe("create schema plugin_isolation_check");
+    await plugin.unsafe("create table plugin_isolation_check.rows (id int primary key)");
+    await app.unsafe("insert into plugin_isolation_check.rows values (1)");
+    expect(await app.unsafe("select id from plugin_isolation_check.rows")).toEqual([{ id: 1 }]);
+    await expectSqlError(plugin, "create schema evil_plugin", /may only create plugin_\* schemas/);
+    await expectSqlError(plugin, "create table public.evil (id int)", /permission denied/);
+    await expectSqlError(plugin, "alter table companies add column evil int", /must be owner/);
+    await expectSqlError(plugin, "drop event trigger paperclip_plugin_ddl_guard", /must be owner|permission denied/);
+  });
+
+  it("applies real plugin migrations through the production plugin database service", async () => {
+    const manifest: PaperclipPluginManifestV1 = {
+      id: "paperclipai.plugin-llm-wiki",
+      apiVersion: 1,
+      version: "0.1.0",
+      displayName: "LLM Wiki",
+      description: "Local-file LLM Wiki plugin.",
+      author: "Paperclip",
+      categories: ["automation", "ui"],
+      capabilities: ["database.namespace.migrate", "database.namespace.read", "database.namespace.write"],
+      entrypoints: { worker: "./dist/worker.js" },
+      database: { namespaceSlug: "llm_wiki", migrationsDir: "migrations", coreReadTables: ["companies", "issues", "projects", "agents"] },
+    };
+    const repoRoot = path.basename(process.cwd()) === "server" ? path.resolve(process.cwd(), "..") : process.cwd();
+    const packageRoot = path.join(repoRoot, "packages", "plugins", "plugin-llm-wiki");
+    const env = supervisor.appEnvironment();
+    const runtimeDb = createDb(env.DATABASE_URL!);
+    const migrationDb = createDb(env.PAPERCLIP_PLUGIN_MIGRATION_DATABASE_URL!);
+    try {
+      const pluginId = randomUUID();
+      await runtimeDb.insert(plugins).values({
+        id: pluginId, pluginKey: manifest.id, packageName: manifest.id, version: manifest.version,
+        apiVersion: manifest.apiVersion, categories: manifest.categories, manifestJson: manifest, status: "installed", installOrder: 1,
+      });
+      await pluginDatabaseService(migrationDb).applyMigrations(pluginId, manifest, packageRoot);
+      const applied = await runtimeDb.select().from(pluginMigrations)
+        .where(and(eq(pluginMigrations.pluginId, pluginId), eq(pluginMigrations.status, "applied")));
+      expect(applied.length).toBeGreaterThan(0);
+
+      // The runtime (app) role reads and writes the plugin's tables.
+      const namespace = derivePluginDatabaseNamespace(manifest.id, manifest.database?.namespaceSlug);
+      const tables = await app<{ table_name: string }[]>`select table_name from information_schema.tables where table_schema = ${namespace}`;
+      expect(tables.length).toBeGreaterThan(0);
+      await app.unsafe(`select count(*) from "${namespace}"."${tables[0]!.table_name}"`);
+      // ...but cannot change its schema.
+      await expectSqlError(app, `alter table "${namespace}"."${tables[0]!.table_name}" add column evil int`, /must be owner/);
+    } finally {
+      await runtimeDb.$client.end();
+      await migrationDb.$client.end();
+    }
+  }, TIMEOUT);
+});
+
+describeEngine("managed embedded database: authenticated, lease-fenced commands", () => {
+  if (!support.supported) return;
+  let stack: TestStack;
+  let supervisor: ManagedDatabaseSupervisor;
+  let clock = Date.now();
+
+  beforeAll(async () => {
+    stack = await createTestStack();
+    supervisor = await buildSupervisor(stack, support, { now: () => clock });
+    await supervisor.start();
+  }, TIMEOUT);
+
+  afterAll(async () => {
+    await supervisor?.stop();
+    stack?.cleanup();
+  });
+
+  const issued = () => ({ issuedAt: new Date(clock).toISOString() });
+
+  it("rejects unsigned, foreign, stale, and skewed commands", async () => {
+    const body = buildCommand(stack, { kind: "status" }, issued());
+    expect((await supervisor.handleCommand(body, undefined)).status).toBe(401);
+    expect((await supervisor.handleCommand(body, signManagedDatabasePayload(Buffer.alloc(32, 7), "command", body))).status).toBe(401);
+    const wrongStack = await sendCommand(supervisor, stack, { kind: "status" }, { ...issued(), stackId: "stk_other" });
+    expect(wrongStack).toMatchObject({ status: 403, receipt: { outcome: "rejected", code: "wrong_stack" } });
+    const stale = await sendCommand(supervisor, stack, { kind: "status" }, { ...issued(), configGeneration: 99 });
+    expect(stale.receipt.code).toBe("stale_generation");
+    const skewed = await sendCommand(supervisor, stack, { kind: "status" }, { issuedAt: new Date(clock - 10 * 60_000).toISOString() });
+    expect(skewed.receipt.code).toBe("clock_skew");
+    const shell = await sendCommand(supervisor, stack, { kind: "shell" as never, args: { cmd: "id" } }, issued());
+    expect(shell.status).toBe(400);
+  });
+
+  it("returns a signed readiness identity", async () => {
+    const { status, receipt } = await sendCommand(supervisor, stack, { kind: "status" }, issued());
+    expect(status).toBe(200);
+    expect(receipt.signature).toMatch(/^v1=/);
+    expect(receipt.details).toMatchObject({ readiness: { stackId: stack.config.stackId, schema: { state: "current" } } });
+  });
+
+  it("requires maintenance mode for restore and migrate", async () => {
+    const servingStack = { ...stack, config: { ...stack.config, mode: "serving" as const } };
+    // Same volume and key, serving config; the gate runs before any lease or engine work.
+    const serving = await buildSupervisor(servingStack, support, { now: () => clock });
+    const restore = await sendCommand(serving, servingStack, { kind: "snapshot.restore", args: { snapshotId: "snap_x" }, lease: { id: "lease_x", epoch: 1 } }, issued());
+    expect(restore.receipt.code).toBe("mode_forbidden");
+    const body = buildCommand(servingStack, { kind: "schema.migrate", args: { snapshotId: "snap_x", release: supervisor.readiness().release }, lease: { id: "lease_x", epoch: 1 } }, issued());
+    const migrate = await serving.handleCommand(body, signManagedDatabasePayload(stack.controlKey, "command", body));
+    expect((migrate.body as { code: string }).code).toBe("mode_forbidden");
+  });
+
+  it("excludes a stale executor after its lease expires and another is granted", async () => {
+    const first = await acquireLease(supervisor, stack, 30);
+    const conflict = await sendCommand(supervisor, stack, { kind: "lease.acquire", args: { holder: "b", ttlSeconds: 30 } }, issued());
+    expect(conflict.receipt.code).toBe("lease_conflict");
+
+    clock += 31_000; // executor A stalls past its lease
+    const second = await acquireLease(supervisor, stack, 600);
+    expect(second.epoch).toBe(first.epoch + 1);
+
+    const staleWrite = await sendCommand(supervisor, stack, { kind: "snapshot.restore", args: { snapshotId: "snap_any" }, lease: first }, issued());
+    expect(staleWrite.receipt).toMatchObject({ outcome: "rejected", code: "lease_stale" });
+    const staleMigrate = await sendCommand(supervisor, stack, { kind: "schema.migrate", args: { snapshotId: "snap_any", release: supervisor.readiness().release }, lease: first }, issued());
+    expect(staleMigrate.receipt.code).toBe("lease_stale");
+    const staleRenew = await sendCommand(supervisor, stack, { kind: "lease.renew", args: { ttlSeconds: 60 }, lease: first }, issued());
+    expect(staleRenew.receipt.code).toBe("lease_stale");
+
+    // The epoch survives a supervisor restart.
+    await supervisor.stop();
+    stack.config = establishedConfig(stack.config, supervisor.readiness().systemIdentifier!);
+    supervisor = await buildSupervisor(stack, support, { now: () => clock });
+    await supervisor.start();
+    const afterRestart = await sendCommand(supervisor, stack, { kind: "snapshot.delete", args: { snapshotId: "snap_any" }, lease: first }, issued());
+    expect(afterRestart.receipt.code).toBe("lease_stale");
+    const released = await sendCommand(supervisor, stack, { kind: "lease.release", lease: second }, issued());
+    expect(released.status).toBe(200);
+  }, TIMEOUT);
+
+  it("replays a commandId with its stored receipt and rejects reuse for another request", async () => {
+    const lease = await acquireLease(supervisor, stack, 600);
+    const body = buildCommand(stack, { kind: "lease.renew", args: { ttlSeconds: 120 }, lease }, issued());
+    const signature = signManagedDatabasePayload(stack.controlKey, "command", body);
+    const first = await supervisor.handleCommand(body, signature);
+    const replay = await supervisor.handleCommand(body, signature);
+    expect(replay.body).toEqual(first.body);
+    const reused = { ...body, args: { ttlSeconds: 300 } };
+    const conflict = await supervisor.handleCommand(reused, signManagedDatabasePayload(stack.controlKey, "command", reused));
+    expect((conflict.body as { code: string }).code).toBe("command_id_conflict");
+    await sendCommand(supervisor, stack, { kind: "lease.release", lease }, issued());
+  });
+});
