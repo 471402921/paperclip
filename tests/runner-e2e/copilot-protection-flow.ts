@@ -84,7 +84,8 @@ export async function settleCopilotDeniedRun(input: {
   const stopDispatchMonotonicNs = process.hrtime.bigint().toString();
   const stopped = await input.api.post<Row>(`/api/heartbeat-runs/${input.request.runId}/cancel`);
   const stopAcknowledgement = readCopilotStopAcknowledgement(stopped,
-    { companyId: preStop.companyId, issueId: dispatchState.issue.id, runId: input.request.runId, callerUserId: "local-board" }, cancellationRequestId, stopDispatchMonotonicNs);
+    { companyId: preStop.companyId, issueId: dispatchState.issue.id, runId: input.request.runId, callerUserId: "local-board" }, cancellationRequestId, stopDispatchMonotonicNs, undefined,
+    preStop.terminal?.eventType === "turn.completed" ? "provider-completed-before-stop" : "active-provider");
   await input.retainStopAcknowledgement?.(stopAcknowledgement);
   stopSent = true;
   await poll("correlated provider settlement and retired run", state => {

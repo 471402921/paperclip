@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { readCopilotStopAcknowledgement } from "./copilot-stop-acknowledgement.js";
 import { applyMainlineStopMetadata, stopAcknowledgementForTest } from "./copilot-stop-test-fixtures.js";
 import { readCopilotToolEvidence } from "./copilot-evidence.js";
 import { observeCopilotPreStop, copilotDenialSampleCursor, readCopilotDenialSettlement } from "./copilot-protection-evidence.js";
@@ -49,6 +50,23 @@ function stopPost(f: ReturnType<typeof fixture>, callback = () => {}) {
 }
 
 describe("Copilot denial provider settlement and separate audited run Stop", () => {
+  it("retains an undispatched acknowledgement only for independently observed pre-Stop completion", () => {
+    const f = fixture();
+    f.run.resultJson.nativeCancellation.dispatched = false;
+    f.stopAcknowledgement = readCopilotStopAcknowledgement(f.run,
+      { companyId: "company", issueId: "issue", runId: "run", callerUserId: "local-board" },
+      f.preStop.cancellationRequestId, f.stopDispatchMonotonicNs, undefined, "provider-completed-before-stop");
+    expect(readCopilotDenialSettlement(f)).toMatchObject({ branch: "provider_completed_observed_before_stop", providerCancellationTerminalObserved: false });
+    f.preStop.terminal = null;
+    expect(() => readCopilotDenialSettlement(f)).toThrow(/settlement/);
+  });
+  it.each(["turn.cancelled", "turn.interrupted"])("does not use an undispatched acknowledgement to qualify %s", type => {
+    const f = fixture(type); f.run.resultJson.nativeCancellation.dispatched = false;
+    f.stopAcknowledgement = readCopilotStopAcknowledgement(f.run,
+      { companyId: "company", issueId: "issue", runId: "run", callerUserId: "local-board" },
+      f.preStop.cancellationRequestId, f.stopDispatchMonotonicNs, undefined, "provider-completed-before-stop");
+    expect(() => readCopilotDenialSettlement(f)).toThrow(/settlement/);
+  });
   it("accepts a synthetic pre-Stop API observation without claiming provider cancellation", () => {
     const f = fixture();
     expect(readCopilotDenialSettlement(f)).toMatchObject({ branch: "provider_completed_observed_before_stop", providerCancellationTerminalObserved: false,
@@ -168,6 +186,7 @@ describe("Copilot denial provider settlement and separate audited run Stop", () 
     vi.useFakeTimers(); let mono = 100n; vi.spyOn(process.hrtime, "bigint").mockImplementation(() => ++mono);
     try {
       const f = fixture(); let completionVisible = false;
+      f.run.resultJson.nativeCancellation.dispatched = false;
       const receipts: Array<ReturnType<typeof observeCopilotPreStop>> = [];
       const post = stopPost(f, () => { expect(receipts).toHaveLength(2); expect(receipts[1]!.terminal?.eventType).toBe("turn.completed"); });
       const result = settleCopilotDeniedRun({ api: { post } as any, request: f.request, deadlineAt: Date.now() + 5000,

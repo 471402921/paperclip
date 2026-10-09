@@ -17,6 +17,15 @@ describe("current-mainline Copilot Stop API acknowledgement", () => {
     expect(() => assertCopilotStopAcknowledgement(proof, f.run, f.scope, fixtureCorrelationId, "100")).not.toThrow();
     expect(retainedMainlineStop.outcome).toContain("calibration only");
   });
+  it("keeps active cancellation strict when an already-completed provider was not dispatched", () => {
+    const f = fixture(); f.run.resultJson.nativeCancellation.dispatched = false;
+    expect(f.read).toThrow(/acknowledgement/);
+    const proof = readCopilotStopAcknowledgement(f.run, f.scope, fixtureCorrelationId, "100", "101", "provider-completed-before-stop");
+    expect(() => assertCopilotStopAcknowledgement(proof, f.run, f.scope, fixtureCorrelationId, "100", "provider-completed-before-stop")).not.toThrow();
+    expect(() => assertCopilotStopAcknowledgement(proof, f.run, f.scope, fixtureCorrelationId, "100")).toThrow(/acknowledgement/);
+    f.run.resultJson.nativeCancellation.dispatched = null;
+    expect(() => readCopilotStopAcknowledgement(f.run, f.scope, fixtureCorrelationId, "100", "101", "provider-completed-before-stop")).toThrow(/acknowledgement/);
+  });
   it.each([
     ["foreign run", (r: any) => { r.id = "foreign"; }],
     ["foreign company", (r: any) => { r.companyId = "foreign"; }],

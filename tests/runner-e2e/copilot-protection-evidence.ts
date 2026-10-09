@@ -358,10 +358,12 @@ export function readCopilotDenialSettlement(input: {
   if (events.length > 20_000 || run.id !== request.runId || issue.id !== run.nativeIssueId
     || !settlementId(issue.companyId) || run.companyId !== issue.companyId || issue.status !== "in_progress" || run.status !== "cancelled"
     || stop.schema !== "paperclip.native-cancellation.v1" || stop.runId !== run.id || stop.companyId !== issue.companyId || stop.issueId !== issue.id
-    || stop.scope !== "run" || stop.dispatched !== true || stop.dispatchState !== "acknowledged" || stop.reasonCode !== "cancellation_run_only"
+    || stop.scope !== "run" || typeof stop.dispatched !== "boolean"
+    || (!stop.dispatched && input.preStop?.terminal?.eventType !== "turn.completed") || stop.dispatchState !== "acknowledged" || stop.reasonCode !== "cancellation_run_only"
     || !Array.isArray(stop.effects) || stop.effects.length !== 1 || stop.effects[0] !== "release_run_resources") throw invalid();
   try { assertCopilotStopAcknowledgement(input.stopAcknowledgement, run,
-    { companyId: issue.companyId, issueId: issue.id, runId: request.runId, callerUserId: "local-board" }, input.preStop.cancellationRequestId, input.stopDispatchMonotonicNs); }
+    { companyId: issue.companyId, issueId: issue.id, runId: request.runId, callerUserId: "local-board" }, input.preStop.cancellationRequestId, input.stopDispatchMonotonicNs,
+    input.preStop.terminal?.eventType === "turn.completed" ? "provider-completed-before-stop" : "active-provider"); }
   catch { throw invalid(); }
   const { rows, get, stream, origin, delivery, failure, resolution, tool, toolRows, failed } = readCopilotDeniedEdit({ events, request, companyId: issue.companyId });
   const observed = readDeniedTerminal({ rows, get, stream, origin, delivery, failure, resolution, tool, toolRows, failed });
