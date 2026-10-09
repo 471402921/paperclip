@@ -13,6 +13,21 @@ log "starting"
 PUID=${USER_UID:-1000}
 PGID=${USER_GID:-1000}
 
+# Managed embedded database stacks (Paperclip Cloud): the supervisor must start
+# as root so PostgreSQL and the tenant app run as different OS users. Any
+# problem with the contract fails closed here; the supervisor validates the rest.
+managed_db_root=""
+if [ -n "${PAPERCLIP_MANAGED_DATABASE+x}" ]; then
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "docker-entrypoint.sh: PAPERCLIP_MANAGED_DATABASE requires starting as root" >&2
+        exit 1
+    fi
+    managed_db_root="$(printf '%s' "$PAPERCLIP_MANAGED_DATABASE" | jq -er '.root')" || {
+        echo "docker-entrypoint.sh: PAPERCLIP_MANAGED_DATABASE is not valid JSON with a root" >&2
+        exit 1
+    }
+fi
+
 # Without root we can neither remap the node user (usermod/groupmod/chown)
 # nor switch users (gosu needs CAP_SETUID/CAP_SETGID), so exec directly.
 # This covers Kubernetes restricted PodSecurity (runAsNonRoot + runAsUser)
@@ -60,6 +75,18 @@ fi
 # marker records the verified node UID/GID, so later boots skip the full
 # walk. Delete the marker to force a full probe on the next boot.
 home_dir="${PAPERCLIP_HOME:-/paperclip}"
+if [ -n "$managed_db_root" ]; then
+    # The supervisor's directory stays owned by root and the database user;
+    # handing it to node would give the app the database files and secrets.
+    # The tiered probe below repairs with an unpruned chown -R, so managed
+    # stacks keep this pruned full walk and never record the marker.
+    if [ -d "$home_dir" ]; then
+        find "$home_dir" -path "$managed_db_root" -prune \
+            -o \( ! -user node -o ! -group node \) -exec chown -h node:node {} +
+    fi
+    log "starting managed database supervisor"
+    exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/managed-database/main.js run -- "$@"
+fi
 ownership_marker="$home_dir/.paperclip-ownership-verified"
 ownership_shallow_depth=3
 

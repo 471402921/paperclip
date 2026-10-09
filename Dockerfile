@@ -328,3 +328,25 @@ COPY --chown=node:node --from=cloud-plugins /app/packages/plugins/sandbox-provid
 # both a CommonJS `require.resolve` and an ECMAScript `import` — an entry
 # on `NODE_PATH` would satisfy only the first and silently fail the second.
 COPY --chown=node:node --from=cloud-server-deps /app/.cloud-server-deps/node_modules /app/server/node_modules
+
+# Managed embedded PostgreSQL (PAPERCLIP_MANAGED_DATABASE). The supervisor runs
+# the bundled engine as `paperclip-db`, separate from the `node` app user, and
+# takes database-only snapshots with pg_dump/pg_restore of the SAME major as
+# the engine. Debian ships only 17, so the client comes from PGDG, pinned to
+# the engine major; the capability file below refuses a mismatched pair.
+ARG MANAGED_DATABASE_ENGINE_MAJOR=18
+RUN set -eu; \
+  install -d /usr/share/postgresql-common/pgdg; \
+  curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc; \
+  . /etc/os-release; \
+  echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" > /etc/apt/sources.list.d/pgdg.list; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends "postgresql-client-${MANAGED_DATABASE_ENGINE_MAJOR}"; \
+  rm -rf /var/lib/apt/lists/*; \
+  useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin paperclip-db
+# Release capability metadata for the Cloud harness: contract versions, the
+# bundled engine version, snapshot formats, and the migration-set digest. An
+# image without this file (or without the stack's engine major) is not an
+# eligible target for an embedded stack.
+RUN node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/managed-database/main.js capability > /app/managed-database-capability.json \
+  && node -e 'const c=require("/app/managed-database-capability.json"); const m=Number(process.argv[1]); if(!c.engineMajors.includes(m)||!c.snapshotFormats.length){console.error("managed database capability check failed",c);process.exit(1)}' "${MANAGED_DATABASE_ENGINE_MAJOR}"
