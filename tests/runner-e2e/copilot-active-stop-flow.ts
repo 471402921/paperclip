@@ -17,6 +17,22 @@ import type { MatrixExecution } from "./types.js";
 type Row = Record<string, any>;
 type Check = { id: string; passed: boolean; detail: string };
 export interface ActiveStopState { run: Row; issue: Row; events: readonly unknown[] }
+/** Observe the same public state without serializing independent reads while
+ * the provider is held at a permission boundary. Every result is still awaited. */
+export async function readCopilotActiveStopState(api: Pick<RunnerApi, "get">, issue: Row) {
+  const [observedIssue, list] = await Promise.all([
+    issue.id ? api.get<Row>(`/api/issues/${issue.id}`) : Promise.resolve(issue),
+    api.get<Row[]>(`/api/companies/${issue.companyId}/heartbeat-runs?limit=100`),
+  ]);
+  if (list.length > 1) throw new Error("Native active Stop dispatched an extra run");
+  const [runs, events] = await Promise.all([
+    Promise.all(list.map(run => api.get<Row>(`/api/heartbeat-runs/${run.id}`))),
+    list[0] ? collectRunEvents<Row>((afterSeq, limit) => api.get(
+      `/api/heartbeat-runs/${list[0]!.id}/events?afterSeq=${afterSeq}&limit=${limit}`,
+    )) : Promise.resolve([] as Row[]),
+  ]);
+  return { run: runs[0] ?? {}, issue: observedIssue, runs, events };
+}
 /** Remote runs use the attested sandbox root, never a controller transport PID. */
 export function localActiveStopProcessAuthority(run: Row | undefined, remote: boolean) {
   if (remote || !run?.processPid) return undefined;
@@ -101,11 +117,8 @@ export async function runNativeActiveStopFlow(input: {
     if (processes.identityChanged) { processError = true; processErrorReasons.add("observed-process-birth-changed"); }
   };
   const load = async (): Promise<ActiveStopState> => {
-    if (issue.id) issue = await api.get<Row>(`/api/issues/${issue.id}`);
-    const list = await api.get<Row[]>(`/api/companies/${fixtures.company.id}/heartbeat-runs?limit=100`);
-    runs = await Promise.all(list.map(r => api.get<Row>(`/api/heartbeat-runs/${r.id}`)));
-    if (runs.length > 1) throw new Error("Native active Stop dispatched an extra run");
-    events = runs[0] ? await collectRunEvents<Row>((afterSeq, limit) => api.get(`/api/heartbeat-runs/${runs[0]!.id}/events?afterSeq=${afterSeq}&limit=${limit}`)) : [];
+    const state = await readCopilotActiveStopState(api, { ...issue, companyId: fixtures.company.id });
+    issue = state.issue; runs = state.runs; events = state.events;
     observeProcesses(); input.observe(issue, runs); return { run: runs[0] ?? {}, issue, events };
   };
   const sample = async (phase: string) => {

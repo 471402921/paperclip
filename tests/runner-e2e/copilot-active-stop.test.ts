@@ -3,7 +3,7 @@ import { applyMainlineStopMetadata, stopAcknowledgementForTest } from "./copilot
 import type { CopilotStopAcknowledgement } from "./copilot-stop-acknowledgement.js";
 import { describe, expect, it, vi } from "vitest";
 import { assertActiveStopRetirement, readActiveStopRemoteRetirement, type ActiveStopRemoteObservation, readActiveStopCaller, observeActiveStopPending, readActiveStopSettlement, type ActiveStopProvider, type ActiveStopScope } from "./copilot-active-stop-evidence.js";
-import { stopAtPendingPermission, localActiveStopProcessAuthority } from "./copilot-active-stop-flow.js";
+import { stopAtPendingPermission, localActiveStopProcessAuthority, readCopilotActiveStopState } from "./copilot-active-stop-flow.js";
 import { runnerMatrix, runnerSuites, suiteDefinitionHash } from "./catalog.js";
 import { selectRunnerExecutions, parseRunnerSelectors } from "./selectors.js";
 import { createCopilotToolEvidence } from "../../packages/paperclip-runner/src/drivers/acpx/copilot-tool-evidence.js";
@@ -322,6 +322,43 @@ describe("definitely active native permission Stop", () => {
   it("rejects a Stop dispatch not causally after the pending observation", () => {
     const { f, pending } = settled();
     expect(() => readActiveStopSettlement({ ...f.state(), pending, dispatchMonotonicNs: pending.observedMonotonicNs })).toThrow(/pre-dispatch/);
+  });
+});
+
+describe("active Stop public-state observation", () => {
+  it("reads independent state concurrently without returning before the run evidence arrives", async () => {
+    const f = fixture();
+    let releaseIssue!: (value: Row) => void, releaseRun!: (value: Row) => void;
+    const issueReply = new Promise<Row>(resolve => { releaseIssue = resolve; });
+    const runReply = new Promise<Row>(resolve => { releaseRun = resolve; });
+    const requested: string[] = [];
+    const get = vi.fn(async (path: string) => {
+      requested.push(path);
+      if (path === "/api/issues/issue") return issueReply;
+      if (path === "/api/companies/company/heartbeat-runs?limit=100") return [f.run];
+      if (path === "/api/heartbeat-runs/run") return runReply;
+      if (path.startsWith("/api/heartbeat-runs/run/events?")) return f.events;
+      throw new Error(`Unexpected public read: ${path}`);
+    });
+    let returned = false;
+    const result = readCopilotActiveStopState({ get: get as any }, f.issue)
+      .then(state => { returned = true; return state; });
+    expect(requested).toEqual(["/api/issues/issue", "/api/companies/company/heartbeat-runs?limit=100"]);
+    releaseIssue(f.issue);
+    await vi.waitFor(() => expect(requested).toContain("/api/heartbeat-runs/run/events?afterSeq=0&limit=1000"));
+    expect(returned).toBe(false);
+    releaseRun(f.run);
+    const state = await result;
+    expect(state.runs).toEqual([f.run]);
+    expect(observeActiveStopPending({ ...state, scope: f.scope, caller, cancellationRequestId }).requestId).toBe("request");
+  });
+  it("refuses an extra run before fetching or grading its evidence", async () => {
+    const f = fixture();
+    const get = vi.fn(async (path: string) => path.startsWith("/api/issues/")
+      ? f.issue : [f.run, { ...f.run, id: "extra-run" }]);
+    await expect(readCopilotActiveStopState({ get: get as any }, f.issue))
+      .rejects.toThrow("Native active Stop dispatched an extra run");
+    expect(get).toHaveBeenCalledTimes(2);
   });
 });
 
