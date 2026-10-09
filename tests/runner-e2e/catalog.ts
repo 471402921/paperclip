@@ -1104,6 +1104,23 @@ export const extendedHarnessFileTask: RunnerTaskFixture = {
   ],
 };
 
+// Keep the create/edit journey and its independent byte/artifact oracles. The
+// explicit read-only check avoids shell operand and newline-escaping ambiguity
+// in the Copilot qualification prompt; it does not repair the provider's file.
+function copilotFilePrompt(nonce: string): string {
+  if (!/^[A-Za-z0-9-]{1,100}$/u.test(nonce)) throw new Error("Invalid Copilot file fixture nonce");
+  const filename = `extended-${nonce}.txt`;
+  const expectedHex = Buffer.from(`verified-${nonce}\n`).toString("hex");
+  const marker = `COPILOT-VALIDATED-${nonce}`;
+  const command = `node -e 'const b=require("node:fs").readFileSync(${JSON.stringify(filename)});if(!b.equals(Buffer.from("${expectedHex}","hex")))process.exit(1);console.log(${JSON.stringify(marker)})'`;
+  return [
+    extendedHarnessFileTask.buildPrompt(nonce),
+    "Use the exact read-only validation command below after editing. It must exit with code 0 and print the validation marker before registration or completion. A failed check requires correcting the file; do not claim success from a failed command or change the check.",
+    "Exact read-only validation command:",
+    command,
+  ].join("\n");
+}
+
 export const runnerSuites: readonly RunnerSuiteFixture[] = [
   {
     id: "pi-controls", label: "Pi active controls", manualOnly: true,
@@ -1670,7 +1687,9 @@ export function buildRunnerMatrix(
               profile,
               environment,
               task: suite.id === "extended-harnesses" && profile.qualificationCandidate === "pi" && task.id === "file-edit-validate"
-                ? { ...task, buildPrompt: piFilePrompt } : task,
+                ? { ...task, buildPrompt: piFilePrompt }
+                : suite.id === "extended-harnesses" && profile.qualificationCandidate === "copilot" && task.id === "file-edit-validate"
+                  ? { ...task, buildPrompt: copilotFilePrompt } : task,
               groups: [
                 ...new Set([
                   ...suite.groups,

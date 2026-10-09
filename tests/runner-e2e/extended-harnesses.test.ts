@@ -4,6 +4,10 @@ import { runnerMatrix, runnerSuites, extendedHarnessProfiles, extendedHarnessFil
 import { buildRunnerE2EProcessEnvironment, buildPaperclipServerEnvironment } from "./harness-env.js";
 import { parseRunnerSelectors, selectRunnerExecutions } from "./selectors.js";
 import { findSecretLeak, redactText } from "./redaction.js";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 
 const selected = runnerMatrix.filter(cell => cell.suite.id === "extended-harnesses");
 describe("extended ACP harness qualification", () => {
@@ -113,6 +117,35 @@ describe("extended ACP harness qualification", () => {
     const cell = selected.find(cell => cell.task.id === "file-edit-validate")!;
     expect(extendedHarnessFileTask.buildMatchers("nonce", cell)).toContainEqual({ kind: "file_exact", path: "extended-nonce.txt", expected: "verified-nonce\n" });
     expect(extendedHarnessFileTask.buildMatchers("nonce", cell)).toContainEqual({ kind: "artifact_exact", name: "extended-nonce.txt", expected: "verified-nonce\n", mimeType: "text/plain" });
+  });
+  it("supplies a portable read-only byte check only to the Copilot file case", () => {
+    for (const cell of selected.filter(cell => cell.task.id === "file-edit-validate")) {
+      const prompt = cell.task.buildPrompt("nonce");
+      expect(prompt.includes("Exact read-only validation command:")).toBe(cell.profile.qualificationCandidate === "copilot");
+      if (cell.profile.qualificationCandidate === "copilot") {
+        expect(cell.task.buildMatchers("nonce", cell)).toEqual(extendedHarnessFileTask.buildMatchers("nonce", cell));
+        expect(cell.task.attemptTimeoutMs).toEqual(extendedHarnessFileTask.attemptTimeoutMs);
+        expect(prompt).toContain("Create extended-nonce.txt");
+        expect(prompt).toContain("Edit that file");
+        expect(prompt).toContain("Wait for paperclip_finish to succeed");
+      }
+    }
+  });
+  it("runs the supplied Copilot check successfully only for the exact edited bytes", () => {
+    const cell = selected.find(cell => cell.profile.qualificationCandidate === "copilot" && cell.task.id === "file-edit-validate")!;
+    const command = cell.task.buildPrompt("nonce").match(/Exact read-only validation command:\n([^\n]+)/u)?.[1];
+    expect(command).toBeDefined();
+    const workspace = mkdtempSync(join(tmpdir(), "copilot-file-validation-"));
+    try {
+      for (const bytes of ["verified-nonce\n", "ready-nonce\n", "verified-nonce", "verified-nonce\n\n", "verified-nonce\\n", ""]) {
+        writeFileSync(join(workspace, "extended-nonce.txt"), bytes);
+        const result = spawnSync("/bin/sh", ["-c", command!], { cwd: workspace, encoding: "utf8", timeout: 10_000 });
+        expect(result.status === 0).toBe(bytes === "verified-nonce\n");
+        expect(result.stdout.includes("COPILOT-VALIDATED-nonce")).toBe(bytes === "verified-nonce\n");
+      }
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
   });
   it("redacts and detects GitHub credential shapes even without the bound value", () => {
     const token = `github_pat_${"x".repeat(40)}`;
