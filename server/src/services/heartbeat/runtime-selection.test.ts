@@ -228,10 +228,11 @@ describe.skipIf(!support.supported)("heartbeat runtime selection boundary", () =
       persisted: input.run, enabled: true, runtimeConfig: {}, adapterConfig,
       agent: input.agent, issue, target: null, workspaceId: null,
     });
+    const attribution = { connectionId: randomUUID(), grantId: randomUUID(), provider, method, mode: "responsible_user" as const, responsibleUserId: "task-owner" };
     input.config.managedAiRuntime = {
       sessionIdentity: "fixture-grant:task-owner:epoch-1",
-      config: {},
-      attribution: { connectionId: randomUUID(), grantId: randomUUID(), provider, method, mode: "responsible_user", responsibleUserId: "task-owner" },
+      config: { env: {}, managedAiConnection: { ...attribution, identity: "fixture-grant:task-owner:generation-1", sessionIdentity: "fixture-grant:task-owner:epoch-1" } },
+      attribution,
       accountName: "Saved account",
       accountOwnerUserId: "task-owner",
       identity: "fixture-grant:task-owner:generation-1",
