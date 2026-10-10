@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { paperclipQuestionSetPayloadSchema } from "./issue-thread-interactions.js";
+import { paperclipQuestionSetPayloadSchema } from "./validators/issue.js";
 
 export const MUSE_PROTOCOL_VERSION = 1 as const;
 export const MUSE_ASSET_VERSION = 1 as const;
@@ -48,12 +48,13 @@ export const museCommandSchema = z.discriminatedUnion("command", [
   z.object({ ...operation, command: z.literal("finish"), result: z.record(z.string(), z.unknown()) }).strict(),
   z.object({ ...operation, command: z.literal("renew"), expiresAtUnixMs: z.number().int().positive() }).strict(),
   z.object({ ...operation, command: z.literal("request_user_input"), nativeRequestId: boundedId, questionSet: paperclipQuestionSetPayloadSchema }).strict(),
-  z.object({ ...operation, command: z.literal("consume_input"), nativeRequestId: boundedId, inputDigest: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+  z.object({ ...operation, command: z.literal("consume_input"), nativeRequestId: boundedId, inputDigest: z.string().regex(/^[a-f0-9]{64}$/), continuationReceiptId: id, continuationPersisted: z.literal(true) }).strict(),
 ]);
 export const museQuerySchema = z.discriminatedUnion("query", [
   z.object({ ...envelope, query: z.literal("identify") }).strict(),
   z.object({ ...envelope, query: z.literal("mailbox"), after: z.number().int().nonnegative().default(0) }).strict(),
   z.object({ ...envelope, query: z.literal("assignment.read"), assignmentId: id }).strict(),
+  z.object({ ...envelope, query: z.literal("input.pending"), assignmentId: id, nativeRequestId: boundedId }).strict(),
   z.object({ ...envelope, query: z.literal("operation.receipt"), assignmentId: id, requestId: id }).strict(),
   z.object({ ...envelope, query: z.literal("task.list"), after: id.optional() }).strict(),
   z.object({ ...envelope, query: z.literal("task.search"), text: z.string().trim().min(1).max(500), after: id.optional() }).strict(),
@@ -65,8 +66,10 @@ export const musePairSchema = z.object({ ...envelope, ticket: z.string().min(20)
 export const museRefreshSchema = z.object({ ...envelope, refreshToken: z.string().min(20).max(200) }).strict();
 export const museStopBoundarySchema = z.object({ bindingId: id, generation: z.number().int().positive(), assignmentId: id, runId: id,
   turnId: boundedId, assignmentRevision: z.number().int().positive(), stopNonce: id, operationBoundary: z.string().max(200).nullable() }).strict();
-export const museCleanupSchema = z.object({ ...envelope, command: z.literal("worker.quiescent"), requestId: id,
-  boundary: museStopBoundarySchema }).strict();
+export const museCleanupSchema = z.discriminatedUnion("command", [
+  z.object({ ...envelope, command: z.literal("control.inspect") }).strict(),
+  z.object({ ...envelope, command: z.literal("worker.quiescent"), requestId: id, boundary: museStopBoundarySchema }).strict(),
+]);
 export const museDetectorCleanupSchema = z.object({ ...envelope, requestId: id, bindingId: id,
   generation: z.number().int().positive(), detectorRemoved: z.literal(true) }).strict();
 export type MuseCommand = z.infer<typeof museCommandSchema>;
