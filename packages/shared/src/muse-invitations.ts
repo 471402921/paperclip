@@ -9,6 +9,7 @@ export interface MuseBinding {
   pairingExpiresAt: string | null; challengeExpiresAt: string | null;
   lastReceiverContactAt: string | null; lastWorkerActivityAt: string | null; lastVerifiedReplyAt: string | null;
   contactPersistenceLagMs: number; clientVersion: string | null;
+  qualification: { id: string; expiresAt: string } | null;
   liveAssignments: number; uncertainOperations: number; pendingInputs: number;
   cleanup: { pending: boolean; detectorRemoved: boolean; workerQuiescenceReported: boolean; expiresAt: string | null };
   stop: { status: "none" | "cannot_confirm" | "worker_reported" | "operator_attested"; nativeEffectsUnknown: boolean; boundary: MuseStopBoundary | null };
