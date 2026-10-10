@@ -12,7 +12,7 @@ import { conflict, forbidden, notFound } from "../../errors.js";
 import { museIdentity, museCredentialHash, assertMuseCurrentAuthority } from "../../services/muse-identity.js";
 import { instanceSettingsService } from "../../services/instance-settings.js";
 import { updateAgentConfigurationInTransaction } from "../../services/agent-configuration-transaction.js";
-import { canConfigureAgentConnection } from "../agent-lifecycle/index.js";
+import { canConfigureAgentConnection, scheduleAgentLifecycle } from "../agent-lifecycle/index.js";
 import { authorizationService, issueReadSqlCondition, type AuthorizationActor } from "../../services/authorization.js";
 import { logActivity } from "../../services/activity-log.js";
 import { issueService } from "../../services/issues.js";
@@ -253,6 +253,7 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
         if(!b.receiverContactAt)throw conflict("No persisted receiver contact yet.");
         const [ready]=await db.update(bindings).set({status:"ready",verifiedReplyAt:new Date(),challengeHash:null,challengeExpiresAt:null,revision:b.revision+1,updatedAt:new Date()}).where(and(eq(bindings.id,b.id),eq(bindings.generation,b.generation),eq(bindings.challengeHash,museCredentialHash(c.nonce)),gt(bindings.challengeExpiresAt,new Date()),isNull(bindings.revokedAt))).returning();
         if(!ready)throw conflict("Challenge expired or does not match.");
+        void scheduleAgentLifecycle(db,b.agentId);
         return {status:"ready",bindingId:b.id,generation:b.generation};
       }
       if(c.command==="task.create"||c.command==="task.comment")return idleMutation(s,c);

@@ -2,6 +2,9 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { agents, authUsers, companies, companyMemberships, createDb, externalAgentHolds, heartbeatRuns, issueAccessGrants, issues, museAgentBindings as bindings, museCredentials, museInputDeliveries, museMailboxItems as mailbox, museRunnerAssignments as assignments, museRunnerOperations as operations, nativeRunFinalizations } from "@paperclipai/db";
+import { startAgentLifecycle } from "../services/agent-lifecycle.js";
+import { agentHarnessVerificationService } from "../services/agent-harness-verification.js";
+import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import type { MuseCredentials } from "@paperclipai/shared";
 import { startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { museIdentity, museCredentialHash } from "../services/muse-identity.js";
@@ -194,6 +197,21 @@ describe("personal Muse control plane",()=>{
       await expect(f.broker.authorizingUserIdForBinding(f.ref)).rejects.toThrow("deadline");
       expect((await db.select().from(bindings).where(eq(bindings.id,f.binding.id)))[0].revokedAt).toBeNull();
     }finally{await f.detach();}
+  });
+
+  it("promotes a verifying Muse hire through the ordinary lifecycle after authenticated background confirmation",async()=>{
+    const f=await fixture(false);
+    await db.update(agents).set({status:"paused",lifecycleState:"verifying",lifecycleOperation:{id:randomUUID(),hostComplete:false,completedPluginIds:[],attempts:0,responsibleUserId:f.operatorId},lifecycleRequiredPluginIds:[]}).where(eq(agents.id,f.agent.id));
+    const harness=agentHarnessVerificationService(db,{} as PluginWorkerManager),onReady=vi.fn();
+    const lifecycle=startAgentLifecycle(db,{requiredPluginIds:async()=>[],runPlugin:async()=>"complete",runHost:snapshot=>harness.verify(snapshot),onReady},()=>true);
+    try {
+      await lifecycle.sweep();expect((await db.select().from(agents).where(eq(agents.id,f.agent.id)))[0].lifecycleState).toBe("verifying");
+      await museReceiver(db).signal(await f.identity.authenticate(f.credentials.signalToken,"signal"));await museReceiver(db).flush();
+      const items=await f.broker.inspect(f.subject,{version:1,query:"mailbox",after:0}) as {items:Array<{references:{nonce:string}}>};
+      await f.broker.act(f.subject,{version:1,command:"challenge.confirm",nonce:items.items[0].references.nonce,requestId:randomUUID()});
+      await expect.poll(async()=> (await db.select().from(agents).where(eq(agents.id,f.agent.id)))[0].lifecycleState,{timeout:8000,interval:100}).toBe("ready");
+      expect((await db.select().from(agents).where(eq(agents.id,f.agent.id)))[0].status).toBe("idle");expect(onReady).toHaveBeenCalledOnce();
+    }finally{await lifecycle.stop();}
   });
 
 });

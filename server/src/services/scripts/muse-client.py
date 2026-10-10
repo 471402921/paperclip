@@ -156,6 +156,19 @@ class Client:
         result = http(self.config["origin"] + "/api/muse/v1/commands", journal["command"], self.access())
         journal["receipt"] = result; journal["state"] = "received"; save(path, journal)
         return result
+    def detector_cleanup(self, removed):
+        # Invoke only after an explicit runtime removal request/confirmation.
+        key = "detector-cleanup:" + ("removed" if removed else "requested")
+        path = self.directory / "control" / (key + ".json")
+        if path.exists(): journal = json.loads(path.read_text())
+        else:
+            body = {"version": 1, "requestId": str(uuid.uuid4()), "bindingId": self.binding, "generation": self.config["generation"], "detectorRemoved" if removed else "detectorRemovalRequested": True}
+            journal = {"request": body}; save(path, journal)
+        if journal["request"]["bindingId"] != self.binding or journal["request"]["generation"] != self.config["generation"]: raise RuntimeError("Cleanup identity changed")
+        if "receipt" not in journal:
+            journal["receipt"] = http(self.config["origin"] + "/api/muse/v1/detector-cleanup", journal["request"], self.config["detectorCleanupToken"])
+            save(path, journal)
+        return journal["receipt"]
     def answer(self, assignment, request):
         value = self.query({"query": "input.pending", "assignmentId": assignment, "nativeRequestId": request})
         if value.get("status") == "pending": return value
@@ -187,7 +200,10 @@ def main():
     command = sub.add_parser("command"); command.add_argument("--key", required=True)
     for name in ("answer", "consume-input"):
         child = sub.add_parser(name); child.add_argument("assignment"); child.add_argument("request")
-    cleanup = sub.add_parser("cleanup"); cleanup.add_argument("--inspect", action="store_true")
+    cleanup = sub.add_parser("cleanup"); cleanup_mode = cleanup.add_mutually_exclusive_group()
+    cleanup_mode.add_argument("--inspect", action="store_true")
+    cleanup_mode.add_argument("--detector-removed", action="store_true", help="Report only an independently runtime-confirmed exact hook removal")
+    cleanup_mode.add_argument("--detector-removal-requested", action="store_true", help="Report a runtime removal request; this never confirms removal")
     client = Client(parser.parse_args().binding)
     try:
         args = parser.parse_args()
@@ -206,6 +222,8 @@ def main():
         elif args.mode == "command": result = client.command(args.key, json.load(sys.stdin))
         elif args.mode == "answer": result = client.answer(args.assignment, args.request)
         elif args.mode == "consume-input": result = client.consume(args.assignment, args.request)
+        elif args.mode == "cleanup" and (args.detector_removed or args.detector_removal_requested):
+            result = client.detector_cleanup(args.detector_removed)
         elif args.mode == "cleanup":
             body = {"version": 1, "command": "control.inspect"} if args.inspect else {"version": 1, **json.load(sys.stdin)}
             result = http(client.config["origin"] + "/api/muse/v1/cleanup", body, client.config["cleanupToken"])
