@@ -7,6 +7,7 @@ export const MUSE_PUBLIC_ROUTES = [
   { method: "GET", path: "/api/muse/v1/assets/1/manifest.json" },
   { method: "GET", path: "/api/muse/v1/assets/1/client.py" },
   { method: "GET", path: "/api/muse/v1/assets/1/detector.sh" },
+  { method: "GET", path: "/api/muse/v1/assets/1/instructions.md" },
   { method: "POST", path: "/api/muse/v1/pair" },
   { method: "POST", path: "/api/muse/v1/refresh" },
   { method: "GET", path: "/api/muse/v1/signal" },
@@ -70,8 +71,10 @@ export const museCleanupSchema = z.discriminatedUnion("command", [
   z.object({ ...envelope, command: z.literal("control.inspect") }).strict(),
   z.object({ ...envelope, command: z.literal("worker.quiescent"), requestId: id, boundary: museStopBoundarySchema }).strict(),
 ]);
-export const museDetectorCleanupSchema = z.object({ ...envelope, requestId: id, bindingId: id,
-  generation: z.number().int().positive(), detectorRemoved: z.literal(true) }).strict();
+export const museDetectorCleanupSchema = z.union([
+  z.object({ ...envelope, requestId: id, bindingId: id, generation: z.number().int().positive(), detectorRemoved: z.literal(true) }).strict(),
+  z.object({ ...envelope, requestId: id, bindingId: id, generation: z.number().int().positive(), detectorRemovalRequested: z.literal(true) }).strict(),
+]);
 export type MuseCommand = z.infer<typeof museCommandSchema>;
 export type MuseQuery = z.infer<typeof museQuerySchema>;
 export type MuseStopBoundary = z.infer<typeof museStopBoundarySchema>;
