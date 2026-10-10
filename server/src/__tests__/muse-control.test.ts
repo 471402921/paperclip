@@ -187,4 +187,13 @@ describe("personal Muse control plane",()=>{
     }finally{await f.detach();}
   });
 
+  it("denies already-dispatched native authority immediately at the qualification deadline",async()=>{
+    const f=await active();try {
+      await db.update(bindings).set({qualificationId:randomUUID(),qualificationExpiresAt:new Date(Date.now()-1)}).where(eq(bindings.id,f.binding.id));
+      await expect(f.broker.assertRunAuthority({binding:{companyId:f.company.id,agentId:f.agent.id,runId:f.runId},provider:{binding:f.ref}})).rejects.toThrow("deadline");
+      await expect(f.broker.authorizingUserIdForBinding(f.ref)).rejects.toThrow("deadline");
+      expect((await db.select().from(bindings).where(eq(bindings.id,f.binding.id)))[0].revokedAt).toBeNull();
+    }finally{await f.detach();}
+  });
+
 });
