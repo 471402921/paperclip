@@ -14,9 +14,11 @@ const subject = await museIdentity.authenticate(request);
 return externalAgents.act(subject, decodeMuseCommand(request.body));
 
 // The existing queue still owns issue -> wake -> run locking and claim policy.
-await withExternalAdmissionGuard(tx, companyId, agentId, async () => {
-  await assertNoExternalOverlap(tx, companyId, agentId);
-  return claimUsingExistingQueueTransaction(tx);
+await withExistingQueueClaimLocks(tx, async () => {
+  return withExternalAdmissionGuard(tx, companyId, agentId, async () => {
+    await assertNoExternalOverlap(tx, companyId, agentId);
+    return commitExistingQueueClaim(tx);
+  });
 });
 
 // The native question bridge retains its actual session signature.
@@ -50,7 +52,7 @@ Preserve Dot V6, `dot-provider-state.json`, `paperclip.runner.dot-provider-state
 
 Muse has an explicit V7 native execution input, `muse_external` driver, `muse-v1` bridge, and advertised `muse_external_v1` artifact capability. Validate capability before managed launch. Recovery requires the exact target-owned checkpoint/process/session; missing checkpoint after dispatch requires reconciliation. Never start a new target to repeat uncertain work. Usage and cost remain unavailable/null.
 
-Extend external operations with request_user_input and consume_input. request_user_input persists a real pending runtime request and emits `runtime_request.created` with `paperclip.runtime_request.v2`, which the existing bridge projects. The saved answer travels through the existing `request.resolve` command where possible. Command identity `question_<interactionId>` remains distinct from the original request ID. Rust checkpoints an exact input reference/digest and emits input_available; broker persists delivery before ACK. The client persists the canonical answer into the same run's continuation before consume_input. Pending/unconsumed input blocks finish. Fetch, transport ACK and prepared response do not prove ingestion. No different-turn injection.
+Extend external operations with request_user_input and consume_input. request_user_input persists a real pending runtime request and emits `runtime_request.created` with `paperclip.runtime_request.v2`, which the existing bridge projects. The saved answer travels through the existing `request.resolve` command. The existing local bridge, runtime resolution helper and session input carry an optional stable command ID; Muse uses it for its durable PRP lane while other providers retain their behavior. Command identity `question_<interactionId>` remains distinct from the original request ID. Rust checkpoints an exact input reference/digest and emits input_available; broker persists delivery before ACK. The client persists the canonical answer into the same run's continuation before consume_input. Pending/unconsumed input blocks finish. Fetch, transport ACK and prepared response do not prove ingestion. No different-turn injection.
 
 The active first-party profile excludes connector and workspace command grants and includes native task/document/collaboration/completion operations and the question path. Muse may use its own approved tools. Replay rechecks current authority before returning data or dispatching effects.
 
@@ -66,7 +68,7 @@ Retain distinct offered, authenticated claim, native acceptance, progress, accep
 
 ### Transaction and lock constraints
 
-Do not relocate the scheduler. Add a narrow database transaction admission/hold guard to existing claim branches, including no-issue and review claims. The existing process-local agent-start mutex is insufficient across replicas. Preserve queue issue -> wake -> run ordering and existing checkout/review predicates. Avoid acquiring binding then issue, since follow-up can already hold issue then binding. The company/agent guard serializes claim against connection generation/stop/hold transitions; mailbox-only operations need not acquire it. Do not call network services under transaction locks. Prove competing claim, follow-up/edit/cancel interleavings and crash after claim before offer before finalizing the exact lock implementation.
+Do not relocate the scheduler. Add a narrow database transaction admission/hold guard to existing claim branches, including no-issue and review claims. The existing process-local agent-start mutex is insufficient across replicas. Preserve queue issue -> wake -> run ordering and existing checkout/review predicates. Avoid acquiring binding then issue, since follow-up can already hold issue then binding. The company/agent guard follows existing issue/wake/run locks in queue claims and serializes the claim against connection generation/stop/hold transitions. Existing-issue idle mutations pre-lock that issue (or parent) before guard/binding; generation/stop and native receipt transitions never subsequently mutate an issue in the same transaction. Mailbox-only operations need not acquire the admission guard. Do not call network services under transaction locks. Prove competing claim, follow-up/edit/cancel interleavings and crash after claim before offer before finalizing the exact lock implementation.
 
 Mailbox readers and writers serialize on the same binding row before allocating/returning a cursor, preventing a later commit from hiding an earlier sequence. Reuse existing Dot journal and mailbox rows; new Muse rows and additive sidecars carry new facts without copying existing assignments.
 

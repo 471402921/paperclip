@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { qualificationReport } from "./muse-qualification-report.mjs";
+import { qualificationReport, qualificationCadence } from "./muse-qualification-report.mjs";
 const HOUR = 3_600_000, start = Date.UTC(2099, 0, 1), expiry = start + 24 * HOUR;
 const iso = ms => new Date(ms).toISOString();
 function evidence() {
@@ -52,4 +52,19 @@ test("public projection does not copy credentials, private text or identity fiel
   e.provenance.privateConversation = "private-conversation";
   const output = JSON.stringify(qualificationReport(e, expiry + 2000));
   for (const secret of ["private-secret", "private-task", "private-conversation"]) assert.equal(output.includes(secret), false);
+});
+
+test("cadence merges replica timestamps and exposes missing persisted contacts", () => {
+  const input = { startedAt: iso(start), expiresAt: iso(start + 20000), cadenceEvidenceComplete: true,
+    contacts: [
+      { contacts: 3, timestamps: [iso(start), iso(start + 10000), iso(start + 20000)], incomplete: false },
+      { contacts: 2, timestamps: [iso(start + 5000), iso(start + 15000)], incomplete: false },
+    ] };
+  assert.deepEqual(qualificationCadence(input), { from: iso(start), to: iso(start + 20000), observedIntervals: 4,
+    withinSevenSeconds: 4, missingIntervals: 0, maxUnobservedGapMs: 0, complete: true });
+  input.contacts[1].contacts = 3;
+  assert.equal(qualificationCadence(input).complete, false);
+  assert.equal(qualificationCadence(input).missingIntervals, 1);
+  input.contacts[1].contacts = 2; input.cadenceEvidenceComplete = false;
+  assert.equal(qualificationCadence(input).complete, false);
 });
