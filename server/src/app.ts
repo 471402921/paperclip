@@ -17,6 +17,7 @@ import { createPublicMcpOAuth, publicMcpConfig } from "./services/public-mcp/oau
 import { createDotRunnerMcpTools } from "./services/dot-runner-broker.js";
 import { agentProfileAvatarRoutes } from "./routes/agent-profile-avatar.js";
 import { museTransportRoutes, museBoardRoutes } from "./routes/muse.js";
+import { museQualificationRoutes } from "./routes/muse-qualification.js";
 import { museReceiver } from "./services/muse-receiver.js";
 import { dotRunnerRoutes } from "./routes/dot-runner.js";
 import { createPublicMcpTransfers } from "./services/public-mcp/file-transfers.js";
@@ -1054,6 +1055,7 @@ export async function createApp(
   }
 
   api.use(museBoardRoutes(db, opts.authPublicBaseUrl));
+  api.use(museQualificationRoutes(db));
   app.use("/api", api);
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "API route not found" });
