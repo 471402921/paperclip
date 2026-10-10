@@ -8,6 +8,7 @@ import { isAgentDirectoryCopy } from "../agent-directory-working-copies.js";
 import { isConversation } from "../agent-conversations.js";
 import { renewLegacyControllerLease } from "../legacy-controller-lease.js";
 import type { prepareManagedAiRuntime } from "../ai-connection-runtime.js";
+import { supportsManagedNativeWarmSession } from "../native-runtime/native-warm-capability.js";
 import {
   getNativeReviewAssignment,
   readNativeReviewAssignmentContext,
@@ -498,11 +499,11 @@ export async function selectHeartbeatRuntime(db: Db, input: HeartbeatRuntimeSele
       executionTarget.transport === "sandbox"
         ? (executionTarget.runnerLifecyclePolicy ?? null)
         : null;
-    // Native Codex owns a durable, session-scoped home. It flushes refreshed
-    // auth into each invocation's private home before that home is removed.
-    // Other managed harnesses still require per-turn credential cleanup.
+    // Codex refreshes its durable auth home; Copilot owns a fenced home
+    // and an explicitly bound token. Both retire on credential generation
+    // changes. Other managed harnesses require per-turn cleanup.
     const supportsManagedWarmSession = agent.adapterType === "paperclip_runner" &&
-      nativeRuntimeResolution.profile.backend === "codex_app_server";
+      supportsManagedNativeWarmSession({ ...nativeRuntimeResolution.profile, acpxAgent: parseObject(agent.adapterConfig).acpxAgent }, managedAiRuntime?.attribution);
     const effectiveLifecyclePolicy = persistedNativeExecutionInput?.session.lifecyclePolicy ??
       (nativeRuntimeResolution.profile.backend === "openai_dot_mcp" || managedAiRuntime && !supportsManagedWarmSession
         ? { mode: "per_turn" as const, idleTimeoutMs: null }
