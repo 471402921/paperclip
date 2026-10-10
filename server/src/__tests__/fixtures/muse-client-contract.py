@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 import urllib.error
 
+sys.dont_write_bytecode = True
 spec = importlib.util.spec_from_file_location("muse_client", sys.argv.pop(1))
 client_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(client_module)
