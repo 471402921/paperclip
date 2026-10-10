@@ -3080,8 +3080,8 @@ export function heartbeatService(
               persistedRunnerProfile.nativeExecutionInput,
             )
           : null;
-      const isDotRun = persistedNativeExecutionInput?.provider.kind === "openai_dot"
-        || (!persistedNativeExecutionInput && agent.adapterType === "paperclip_runner" && parseObject(agent.adapterConfig).provider === "openai_dot");
+      const isDotRun = persistedNativeExecutionInput?.provider.kind === "openai_dot" || persistedNativeExecutionInput?.provider.kind === "muse"
+        || (!persistedNativeExecutionInput && agent.adapterType === "paperclip_runner" && ["openai_dot", "muse"].includes(String(parseObject(agent.adapterConfig).provider)));
       const persistedNativeExecutionWorkspaceId =
         persistedNativeExecutionInput?.binding.executionWorkspaceId ?? null;
       const requestedExecutionWorkspaceId =
@@ -3243,7 +3243,7 @@ export function heartbeatService(
       if (
         nativeChatWorkspaceScope &&
         persistedNativeExecutionInput &&
-        persistedNativeExecutionInput.schema !== "paperclip.native-execution-input.v6" &&
+        persistedNativeExecutionInput.schema !== "paperclip.native-execution-input.v6" && persistedNativeExecutionInput.schema !== "paperclip.native-execution-input.v7" &&
         !nativeChatWorkspaceMatches({
           scope: nativeChatWorkspaceScope,
           expectedCwd: nativeChatExpectedCwd,
@@ -3720,7 +3720,7 @@ export function heartbeatService(
           if (isDotRun) {
             // This is private controller storage, never a provider filesystem.
             // v6 projects workspace.access=none and cwd=null to Dot.
-            const cwd = path.resolve(resolvePaperclipInstanceRoot(), "runtime", "paperclip-runner", "dot-controllers", agent.companyId, run.id);
+            const cwd = path.resolve(resolvePaperclipInstanceRoot(), "runtime", "paperclip-runner", parseObject(agent.adapterConfig).provider === "muse" ? "muse-controllers" : "dot-controllers", agent.companyId, run.id);
             await fs.mkdir(cwd, { recursive: true, mode: 0o700 });
             return { cwd, source: "agent_home" as const, projectId: null, workspaceId: null, repoUrl: null, repoRef: null,
               workspaceHints: [], warnings: [], baseCwdFallback: false, materializationFailures: [], additionalWorkspaces: [], referencedProjectFailures: [] };
@@ -5419,6 +5419,7 @@ export function heartbeatService(
           persisted: run,
           enabled:
             resolvedInstanceSettings.experimental.enableNativeRunner === true,
+          museEnabled: resolvedInstanceSettings.experimental.enableMuse === true,
           dotEnabled: resolvedInstanceSettings.experimental.enableOpenAiDot === true
             && resolvedInstanceSettings.experimental.enablePublicMcp === true,
           runtimeConfig: agent.runtimeConfig,
@@ -5434,7 +5435,7 @@ export function heartbeatService(
         });
         const hasInstructionFilesystem = nativeRuntimeResolution.kind !== "native"
           ? adapter.supportsInstructionsBundle === true
-          : !["claude_managed_agents_api", "aws_agentcore_harness_api", "openai_dot_mcp"].includes(nativeRuntimeResolution.profile.backend);
+          : !["claude_managed_agents_api", "aws_agentcore_harness_api", "openai_dot_mcp", "muse_external"].includes(nativeRuntimeResolution.profile.backend);
         if (hasInstructionFilesystem) {
           try {
             // Missing contract fields on a restored session mean the deployed
