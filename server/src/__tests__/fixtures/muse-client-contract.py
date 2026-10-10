@@ -95,6 +95,51 @@ class ClientContract(unittest.TestCase):
                 self.client.command("accept:1", command)
             self.assertEqual(transport.call_count, 1)
 
+    def test_private_cleanup_keeps_identity_after_lost_ack_and_separates_confirmation(self):
+        calls = []
+
+        def transport(url, body=None, token=None):
+            calls.append((url, copy.deepcopy(body), token))
+            if len(calls) == 1:
+                raise RuntimeError("Synthetic cleanup acknowledgement lost")
+            return {"cleanupStatus": "confirmed" if body.get("detectorRemoved") else "requested"}
+
+        with patch.object(client_module, "http", transport):
+            with self.assertRaisesRegex(RuntimeError, "acknowledgement lost"):
+                self.client.detector_cleanup(False)
+            self.reopen()
+            self.assertEqual(self.client.detector_cleanup(False)["cleanupStatus"], "requested")
+            self.assertEqual(calls[0], calls[1])
+            self.assertEqual(calls[1][2], credentials()["detectorCleanupToken"])
+            self.assertTrue(calls[1][1]["detectorRemovalRequested"])
+            self.assertNotIn("detectorRemoved", calls[1][1])
+            self.client.detector_cleanup(False)
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(self.client.detector_cleanup(True)["cleanupStatus"], "confirmed")
+            self.assertNotEqual(calls[1][1]["requestId"], calls[2][1]["requestId"])
+            self.assertTrue(calls[2][1]["detectorRemoved"])
+            self.assertNotIn("detectorRemovalRequested", calls[2][1])
+
+    def test_cleanup_after_reconnect_has_new_authority_and_identity(self):
+        calls = []
+
+        def transport(url, body=None, token=None):
+            calls.append((copy.deepcopy(body), token))
+            return {"cleanupStatus": "requested"}
+
+        with patch.object(client_module, "http", transport):
+            self.client.detector_cleanup(False)
+            renewed = {**credentials("renewed"), "generation": 2}
+            self.client.store_credentials(renewed, ORIGIN)
+            self.reopen()
+            self.client.detector_cleanup(False)
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(calls[1][0]["generation"], 2)
+            self.assertEqual(calls[1][1], renewed["detectorCleanupToken"])
+            self.assertNotEqual(calls[0][0]["requestId"], calls[1][0]["requestId"])
+            self.client.detector_cleanup(False)
+            self.assertEqual(len(calls), 2)
+
     def test_canonical_answer_is_persisted_before_ingestion_receipt(self):
         response = {"assignmentId": ASSIGNMENT, "bindingId": BINDING, "generation": 1, "requestId": "question-one", "turnId": "turn-one", "inputDigest": "sha256:" + "a" * 64,
                     "response": {"answers": [{"questionId": "format", "answer": "Markdown"}]}, "consumed": False}
