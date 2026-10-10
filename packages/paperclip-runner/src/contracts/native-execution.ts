@@ -394,7 +394,7 @@ function parseMuseNativeExecutionInput(input: Record<string, unknown>): NativeEx
 export function parseNativeExecutionInput(value: unknown): NativeExecutionInput {
   const input = record(value, "input");
   if (input.schema === NATIVE_EXECUTION_INPUT_SCHEMA_V7) return parseMuseNativeExecutionInput(input);
-  if (input.schema === NATIVE_EXECUTION_INPUT_SCHEMA_V6) return parseDotNativeExecutionInput(input);
+  if (input.schema === NATIVE_EXECUTION_INPUT_SCHEMA_V6 || input.schema === NATIVE_EXECUTION_INPUT_SCHEMA_V7) return parseDotNativeExecutionInput(input);
   const isV5 = input.schema === NATIVE_EXECUTION_INPUT_SCHEMA;
   const isV4 = isV5 || input.schema === NATIVE_EXECUTION_INPUT_SCHEMA_V4;
   const isV3 = isV4 || input.schema === NATIVE_EXECUTION_INPUT_SCHEMA_V3;
@@ -924,7 +924,7 @@ export function buildNativeModelEnvelope(input: NativeExecutionInput, options?: 
       interactionResponses: structuredClone(input.interactionResponses),
     };
   }
-  if (input.schema === NATIVE_EXECUTION_INPUT_SCHEMA || input.schema === NATIVE_EXECUTION_INPUT_SCHEMA_V6) {
+  if (input.schema === NATIVE_EXECUTION_INPUT_SCHEMA || input.schema === NATIVE_EXECUTION_INPUT_SCHEMA_V6 || input.schema === NATIVE_EXECUTION_INPUT_SCHEMA_V7) {
     const sourceBinding = input.completionSources;
     const references = sourceBinding?.contractRevision === input.completionContract.contract.revision
       && sourceBinding.promptSha256 === createHash("sha256").update(input.task.prompt).digest("hex")
@@ -943,7 +943,7 @@ export function buildNativeModelEnvelope(input: NativeExecutionInput, options?: 
       },
       executionMode: input.executionMode,
       planningContext: structuredClone(input.planningContext),
-      workspace: input.schema === NATIVE_EXECUTION_INPUT_SCHEMA_V6 || input.provider.kind === "claude_managed" || input.provider.kind === "aws_agentcore" ? null : { cwd: input.workspace.cwd },
+      workspace: input.schema === NATIVE_EXECUTION_INPUT_SCHEMA_V6 || input.schema === NATIVE_EXECUTION_INPUT_SCHEMA_V7 || input.provider.kind === "claude_managed" || input.provider.kind === "aws_agentcore" ? null : { cwd: input.workspace.cwd },
       completionContract: {
         ...structuredClone(input.completionContract.contract),
         criteria: input.completionContract.contract.criteria.map((criterion) => {
