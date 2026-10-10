@@ -59,7 +59,7 @@ const evidence: Json = {
   assertions: [], steps: [], operations: [], cleanup: {},
 };
 let stage = "preflight", credentials: Json | undefined, detectorTimer: NodeJS.Timeout | undefined;
-let detectorRequests = 0, detectorError = false, issueId: string | undefined;
+let detectorRequests = 0, detectorError = false, issueId: string | undefined, createdBindingId: string | undefined;
 let detectorFlight: Promise<void> | undefined, cleanupDeadline: number | undefined;
 const runIds: string[] = [], operationEvidence: Json[] = [];
 function step(name: string, details: Json = {}) {
@@ -162,6 +162,7 @@ try {
   const previous = initial.binding ? object(initial.binding) : undefined;
   const pairing = object(await board(bindingPath, "POST", previous && previous.status !== "revoked"
     ? { replaceBindingId: previous.id, expectedRevision: previous.revision } : {}));
+  createdBindingId = string(pairing.bindingId);
   credentials = object(await http("/api/muse/v1/pair", "POST", { version: 1, ticket: pairing.ticket, clientVersion: "1" }));
   assert.equal(credentials.companyId, companyId); assert.equal(credentials.agentId, agentId);
   evidence.signalMode = typeof credentials.signalToken === "string" ? "authenticated_synthetic" : "public_binding_header";
@@ -256,8 +257,11 @@ try {
       const run = object(await board(`/api/heartbeat-runs/${runId}`));
       if (["queued", "running"].includes(String(run.status))) await board(`/api/heartbeat-runs/${runId}/cancel`, "POST", { cancellationRequestId: randomUUID() });
     }
-    const connection = object(await board(bindingPath)), binding = connection.binding ? object(connection.binding) : undefined;
-    if (binding && binding.status !== "revoked") await board(`${bindingPath}/revoke`, "POST", { bindingId: binding.id, generation: binding.generation, expectedRevision: binding.revision });
+    if (createdBindingId) {
+      const connection = object(await board(bindingPath)), binding = connection.binding ? object(connection.binding) : undefined;
+      assert.equal(binding?.id, createdBindingId, "Never revoke an unrelated connection during cleanup");
+      if (binding && binding.status !== "revoked") await board(`${bindingPath}/revoke`, "POST", { bindingId: binding.id, generation: binding.generation, expectedRevision: binding.revision });
+    } else cleanup.noAuthorityCreated = true;
     if (credentials) await http("/api/muse/v1/detector-cleanup", "POST", { version: 1, requestId: randomUUID(), bindingId: credentials.bindingId, generation: credentials.generation, detectorRemoved: true }, string(credentials.detectorCleanupToken));
     cleanup.normalAuthorityRevoked = true; cleanup.syntheticDetectorStopped = true;
   } catch { cleanup.completed = false; cleanup.requiresOperatorReview = true; }
