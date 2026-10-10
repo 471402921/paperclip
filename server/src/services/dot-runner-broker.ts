@@ -1,3 +1,4 @@
+import { submitExternalOperation } from "../modules/external-agents/native-operations.js";
 import { updateAgentConfigurationInTransaction } from "./agent-configuration-transaction.js";
 import type { heartbeatService } from "./heartbeat.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -262,7 +263,8 @@ function createBroker(db: Db) {
       const digest = externalOperationDigest(action, input);
       const command: ExternalProviderOperation = { requestId, bindingId: binding.id, bindingGeneration: binding.generation,
         runId: a.runId, normalizedSessionId: a.normalizedSessionId, turnId: a.turnId, assignmentRevision: a.revision, action, input, digest };
-      const row = await db.transaction(async tx => {
+      return submitExternalOperation({ command, assignmentId, replayableStates: ["reserved", "admitted"],
+        reserve: () => db.transaction(async tx => {
         const [current] = await tx.select().from(assignments).where(eq(assignments.id, a.id)).for("update");
         if (!current || current.status === "fenced" || current.status === "settled" || current.expiresAt <= new Date() || current.controllerGeneration !== a.controllerGeneration) throw fail("Assignment changed before operation admission.");
         const [old] = await tx.select().from(operations).where(and(eq(operations.assignmentId, a.id), eq(operations.requestId, requestId)));
@@ -271,19 +273,10 @@ function createBroker(db: Db) {
         if (count && count.count >= 4000) throw fail("Assignment operation limit reached.");
         const [reserved] = await tx.insert(operations).values({ companyId: a.companyId, assignmentId: a.id, requestId, digest, command: { ...command } }).returning();
         return reserved!;
+      }), forward, inspect: async id => (await db.select().from(operations).where(eq(operations.id,id)))[0],
+        authorizeReceipt: async () => { await authorizeAssignment(principal,assignmentId,true); },
+        afterReceipt: receipt => consumeDotHistoryReceipt(db,receipt),
       });
-      if (["reserved", "admitted"].includes(row.status)) void forward(row).catch(() => {});
-      const deadline = Date.now() + 1500;
-      while (Date.now() < deadline) {
-        const [receipt] = await db.select().from(operations).where(eq(operations.id, row.id));
-        if (receipt?.outcome) {
-          await authorizeAssignment(principal, assignmentId, true);
-          await consumeDotHistoryReceipt(db, receipt);
-          return receipt.outcome;
-        }
-        await new Promise(r => setTimeout(r, 50));
-      }
-      return { status: "pending", assignmentId, requestId, message: "Use paperclip_dot_operation_status or retry with the same requestId. Do not create a new request ID." };
     },
     async tasks(principal: McpPrincipal, after: string | null = null) {
       const b = await principalBinding(principal);

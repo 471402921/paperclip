@@ -15,7 +15,7 @@ export const museAgentBindings = pgTable("muse_agent_bindings", {
   challengeHash: text("challenge_hash"), challengeExpiresAt: time("challenge_expires_at"), verifiedReplyAt: time("verified_reply_at"),
   receiverContactAt: time("receiver_contact_at"), workerActivityAt: time("worker_activity_at"), clientVersion: text("client_version"),
   workerCursor: integer("worker_cursor").notNull().default(0),
-  qualificationId: uuid("qualification_id"), qualificationExpiresAt: time("qualification_expires_at"),
+  qualificationId: uuid("qualification_id"), qualificationStartedAt: time("qualification_started_at"), qualificationExpiresAt: time("qualification_expires_at"), deadlineEnforcedAt: time("deadline_enforced_at"), cadenceEvidenceIncompleteAt: time("cadence_evidence_incomplete_at"),
   cleanupExpiresAt: time("cleanup_expires_at"), detectorRemovedAt: time("detector_removed_at"), revokedAt: time("revoked_at"),
   createdAt: time("created_at").notNull().defaultNow(), updatedAt: time("updated_at").notNull().defaultNow(),
 }, t => [uniqueIndex("muse_bindings_active_agent_uq").on(t.companyId, t.agentId).where(sql`${t.revokedAt} IS NULL`), uniqueIndex("muse_bindings_ticket_uq").on(t.ticketHash)]);
@@ -87,6 +87,7 @@ export const museReceiverContactBuckets = pgTable("muse_receiver_contact_buckets
   id: uuid("id").primaryKey().defaultRandom(), companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
   bindingId: uuid("binding_id").notNull().references(() => museAgentBindings.id, { onDelete: "cascade" }), bindingGeneration: integer("binding_generation").notNull(),
   replicaId: uuid("replica_id").notNull(), bucketAt: time("bucket_at").notNull(), firstAt: time("first_at").notNull(), lastAt: time("last_at").notNull(),
+  timestamps: jsonb("timestamps").$type<string[]>().notNull().default([]), incomplete: boolean("incomplete").notNull().default(false),
   contacts: integer("contacts").notNull(), gapsAtMostSevenSeconds: integer("gaps_at_most_seven_seconds").notNull(), maxGapMs: integer("max_gap_ms").notNull(),
   createdAt: time("created_at").notNull().defaultNow(),
 }, t => [uniqueIndex("muse_contact_bucket_uq").on(t.bindingId,t.bindingGeneration,t.replicaId,t.bucketAt)]);
