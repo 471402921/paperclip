@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { agents, approvals, authUsers, companies, companyMemberships, createDb, heartbeatRuns, instanceUserRoles, issueAccessGrants, issues, projectAccessMembers, projects } from "@paperclipai/db";
+import { agents, approvals, authUsers, companies, companyMemberships, createDb, externalAgentHolds, heartbeatRuns, instanceUserRoles, issueAccessGrants, issues, projectAccessMembers, projects } from "@paperclipai/db";
 import { startEmbeddedPostgresTestDatabase } from "../../__tests__/helpers/embedded-postgres.js";
 import { approvalReadSqlCondition, authorizationService, canActorReadIssuePrivacy, issueReadSqlCondition, projectReadSqlCondition, type AuthorizationActor } from "../authorization.js";
+import { claimQueuedNativeReviewRun } from "./native-review-dispatch.js";
 import { PaperclipRunnerToolAuthority } from "./paperclip-runner-tool-authority.js";
 
 describe("Muse native visibility intersection", () => {
@@ -63,6 +64,18 @@ describe("Muse native visibility intersection", () => {
     expect(JSON.stringify(result)).not.toContain(hidden.id);
     await db.update(companyMemberships).set({ status: "inactive" }).where(and(eq(companyMemberships.companyId, f.companyId), eq(companyMemberships.principalId, f.authorizer)));
     await expect(authority.execute({ tool: "search_tasks", callId: "search-again", arguments: {} })).rejects.toThrow("no longer available");
+  });
+
+  it("applies external admission before a native reviewer changes the issue execution owner", async () => {
+    const f = await fixture(), runId = randomUUID();
+    const [run] = await db.insert(heartbeatRuns).values({ id: runId, companyId: f.companyId, agentId: f.agentId, status: "queued", runtimeMode: "native",
+      invocationSource: "assignment", contextSnapshot: { issueId: f.issue.id, nativeReviewInteractionId: randomUUID(), nativeReviewDecisionId: randomUUID() } }).returning();
+    await db.insert(externalAgentHolds).values({ companyId: f.companyId, agentId: f.agentId, provider: "muse", assignmentId: randomUUID(), bindingId: randomUUID(),
+      bindingGeneration: 1, runId: randomUUID(), workerUnknown: false, nativeEffectsUnknown: true });
+    await expect(claimQueuedNativeReviewRun(db, { run, claimedAt: new Date(), agentNameKey: "muse", claimValues: { status: "running" } }))
+      .rejects.toMatchObject({ status: 409, details: { code: "external_agent_overlap" } });
+    expect(await db.select({ status: heartbeatRuns.status }).from(heartbeatRuns).where(eq(heartbeatRuns.id, runId))).toEqual([{ status: "queued" }]);
+    expect(await db.select({ owner: issues.executionRunId }).from(issues).where(eq(issues.id, f.issue.id))).toEqual([{ owner: null }]);
   });
 
   it("advertises only first-party tools for Muse and rejects missing authorizer authority", async () => {

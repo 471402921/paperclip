@@ -1,4 +1,4 @@
-import { withExternalAdmissionGuard, assertNoExternalOverlap } from "../../modules/external-agents/admission.js";
+import { withExternalAdmissionGuard, assertNoExternalOverlap } from "../../modules/external-agents/index.js";
 import { agentWakeupRequests, heartbeatRuns, issues, type Db } from "@paperclipai/db";
 import { and, eq } from "drizzle-orm";
 import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
