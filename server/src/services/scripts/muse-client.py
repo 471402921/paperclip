@@ -158,12 +158,22 @@ class Client:
         return result
     def detector_cleanup(self, removed):
         # Invoke only after an explicit runtime removal request/confirmation.
-        key = "detector-cleanup:" + ("removed" if removed else "requested")
-        path = self.directory / "control" / (key + ".json")
+        generation = self.config["generation"]
+        if type(generation) is not int or generation < 1: raise RuntimeError("Invalid cleanup generation")
+        kind = "detector-cleanup:" + ("removed" if removed else "requested")
+        path = self.directory / "control" / (kind + ":g" + str(generation) + ".json")
+        legacy = self.directory / "control" / (kind + ".json")
         if path.exists(): journal = json.loads(path.read_text())
         else:
-            body = {"version": 1, "requestId": str(uuid.uuid4()), "bindingId": self.binding, "generation": self.config["generation"], "detectorRemoved" if removed else "detectorRemovalRequested": True}
-            journal = {"request": body}; save(path, journal)
+            old = json.loads(legacy.read_text()) if legacy.exists() else None
+            # Preserve a prepared older-client identity only for this exact
+            # generation. A reconnect never adopts another generation's facts.
+            if old and old.get("request", {}).get("bindingId") == self.binding and old["request"].get("generation") == generation:
+                journal = old
+            else:
+                body = {"version": 1, "requestId": str(uuid.uuid4()), "bindingId": self.binding, "generation": generation, "detectorRemoved" if removed else "detectorRemovalRequested": True}
+                journal = {"request": body}
+            save(path, journal)
         if journal["request"]["bindingId"] != self.binding or journal["request"]["generation"] != self.config["generation"]: raise RuntimeError("Cleanup identity changed")
         if "receipt" not in journal:
             journal["receipt"] = http(self.config["origin"] + "/api/muse/v1/detector-cleanup", journal["request"], self.config["detectorCleanupToken"])
