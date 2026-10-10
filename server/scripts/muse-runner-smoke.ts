@@ -70,7 +70,7 @@ async function http(path: string, method = "GET", body?: Json, token?: string, b
   const requestDeadline = cleanupDeadline ?? deadline;
   assert.ok(Date.now() < requestDeadline, "Smoke deadline exceeded");
   const response = await fetch(new URL(path, base), {
-    method, headers: { ...(board ? { Cookie: cookie } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    method, headers: { ...(board ? { Cookie: cookie, Origin: base.origin } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(body ? { "Content-Type": "application/json" } : {}), ...headers },
     ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(Math.max(1, Math.min(15000, requestDeadline - Date.now()))), redirect: "error",
   });
