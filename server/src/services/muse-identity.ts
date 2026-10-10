@@ -4,7 +4,7 @@ import { agents, companies, companyMemberships, authUsers, museAgentBindings as 
 import { MUSE_ACCESS_TTL_MS, MUSE_REFRESH_INACTIVITY_MS, type AgentConnectionSubject, type MuseCredentials } from "@paperclipai/shared";
 import { instanceSettingsService } from "./instance-settings.js";
 import { unauthorized, forbidden } from "../errors.js";
-import { withExternalAdmissionGuard, type ExternalAdmissionTransaction } from "../modules/external-agents/admission.js";
+import { withExternalAdmissionGuard, type ExternalAdmissionTransaction } from "../modules/external-agents/index.js";
 import { canConfigureAgentConnection } from "../modules/agent-lifecycle/index.js";
 export const museCredentialHash = (value: string) => createHash("sha256").update(value).digest("hex");
 const token = () => randomBytes(32).toString("base64url");
@@ -16,8 +16,9 @@ export async function assertMuseCurrentAuthority(db: MuseIdentityDatabase, b: ty
   const [user] = await db.select({id:authUsers.id}).from(authUsers).where(eq(authUsers.id,b.operatorId));
   const [member] = await db.select().from(companyMemberships).where(and(eq(companyMemberships.companyId,b.companyId),eq(companyMemberships.principalType,"user"),eq(companyMemberships.principalId,b.operatorId),eq(companyMemberships.status,"active")));
   const [agentMember] = await db.select({id:companyMemberships.id}).from(companyMemberships).where(and(eq(companyMemberships.companyId,b.companyId),eq(companyMemberships.principalType,"agent"),eq(companyMemberships.principalId,b.agentId),eq(companyMemberships.status,"active")));
+  if (b.qualificationExpiresAt && b.qualificationExpiresAt<=new Date())throw forbidden("Muse qualification deadline elapsed; native effects are fenced.");
   if (!user || !agentMember || !member || member.membershipRole==="viewer" || !agent || company?.status!=="active"
-    || agent.adapterType!=="paperclip_runner" || agent.adapterConfig.provider!=="muse"
+    || agent.adapterType!=="paperclip_runner" || agent.adapterConfig.provider!=="muse" || agent.adapterConfig.museBindingId!==b.id
     || ["terminated","pending_approval"].includes(agent.status)
     || (!allowPaused && (allowSetup ? !canConfigureAgentConnection(agent) : agent.status==="paused"))
     || (!allowSetup && b.status!=="ready")) throw forbidden("Muse connection authority is unavailable.");

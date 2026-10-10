@@ -18,7 +18,7 @@ import { createDotRunnerMcpTools } from "./services/dot-runner-broker.js";
 import { agentProfileAvatarRoutes } from "./routes/agent-profile-avatar.js";
 import { museTransportRoutes, museBoardRoutes } from "./routes/muse.js";
 import { museQualificationRoutes } from "./routes/muse-qualification.js";
-import { museReceiver } from "./services/muse-receiver.js";
+import { startMuseMaintenance } from "./services/muse-maintenance.js";
 import { dotRunnerRoutes } from "./routes/dot-runner.js";
 import { createPublicMcpTransfers } from "./services/public-mcp/file-transfers.js";
 import { createMcpApiDispatch, createPublicMcpExecutor } from "./services/public-mcp/capabilities.js";
@@ -608,7 +608,7 @@ export async function createApp(
   app.use(cloudWarmStandbyMiddleware(isWarmStandby, health, staticUi));
   app.use("/api/customer-success/v1", customerSuccessRoutes(db, opts.storageService));
   app.use(museTransportRoutes(db, opts.authPublicBaseUrl));
-  museReceiver(db).start();
+  const stopMuseMaintenance = startMuseMaintenance(db);
   app.use(publicMcpIngress);
   // Connection-intent tools carry their own short-lived, run-bound bearer and
   // must be reachable by remote adapters that intentionally do not receive an
@@ -1423,6 +1423,7 @@ export async function createApp(
       viteHmrServer?.close();
       hostServiceCleanup.disposeAll();
       hostServiceCleanup.teardown();
+      await stopMuseMaintenance();
       await emailChannels.shutdown();
       await chatChannels.shutdown();
       // End the avatar worker pool, if a request ever started one, so no

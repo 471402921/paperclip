@@ -1,5 +1,6 @@
+import { withExternalAdmissionGuard } from "../modules/external-agents/index.js";
 import { and, eq, gt, gte, inArray, isNull, sql } from "drizzle-orm";
-import { museAgentBindings, museMailboxItems, museRunnerAssignments, museRunnerOperations, agentWakeupRequests, heartbeatRuns, issueComments, type Db } from "@paperclipai/db";
+import { museAgentBindings, museMailboxItems, museRunnerAssignments, museRunnerOperations, agentWakeupRequests, heartbeatRuns, issueComments, issues, type Db } from "@paperclipai/db";
 import { queuedCommentIdsFromWakePayload, withQueuedCommentIdsInWakePayload } from "./issue-queued-comment-queue.js";
 
 /** Call inside the issue admission transaction, while its execution lock is held.
@@ -56,6 +57,16 @@ export async function consumeMuseHistoryReceipt(db: Db, operation: typeof museRu
     const [source] = await tx.select().from(museRunnerAssignments).where(and(
       eq(museRunnerAssignments.id, operation.assignmentId), eq(museRunnerAssignments.companyId, operation.companyId)));
     if (!source) return;
+    const [run] = await tx.select({issueId:heartbeatRuns.nativeIssueId}).from(heartbeatRuns).where(eq(heartbeatRuns.id,source.runId));
+    if (!run?.issueId) return;
+    // Match queue ownership order before touching any binding or deferred wake.
+    await tx.select({id:issues.id}).from(issues).where(and(eq(issues.id,run.issueId),eq(issues.companyId,source.companyId))).for("update");
+    const wakes = await tx.select().from(agentWakeupRequests).where(and(
+      eq(agentWakeupRequests.companyId, source.companyId), eq(agentWakeupRequests.agentId, source.agentId),
+      isNull(agentWakeupRequests.runId), eq(agentWakeupRequests.status, "deferred_issue_execution"),
+      sql`${agentWakeupRequests.payload}->>'museAssignmentFollowUp' = ${source.id}`)).orderBy(agentWakeupRequests.createdAt,agentWakeupRequests.id).for("update");
+    await tx.select({id:heartbeatRuns.id}).from(heartbeatRuns).where(eq(heartbeatRuns.id,source.runId)).for("update");
+    return withExternalAdmissionGuard(tx,source.companyId,source.agentId,async()=>{
     const [binding] = await tx.select().from(museAgentBindings).where(and(
       eq(museAgentBindings.id, source.bindingId), eq(museAgentBindings.companyId, source.companyId),
       eq(museAgentBindings.agentId, source.agentId), eq(museAgentBindings.generation, source.bindingGeneration),
@@ -83,10 +94,6 @@ export async function consumeMuseHistoryReceipt(db: Db, operation: typeof museRu
     }).onConflictDoUpdate({ target: [museMailboxItems.bindingId, museMailboxItems.bindingGeneration, museMailboxItems.sourceEventId],
       set: { references: sql`${museMailboxItems.references} || '{"consumed":true}'::jsonb` } });
     const now = new Date();
-    const wakes = await tx.select().from(agentWakeupRequests).where(and(
-      eq(agentWakeupRequests.companyId, source.companyId), eq(agentWakeupRequests.agentId, source.agentId),
-      isNull(agentWakeupRequests.runId), eq(agentWakeupRequests.status, "deferred_issue_execution"),
-      sql`${agentWakeupRequests.payload}->>'museAssignmentFollowUp' = ${source.id}`)).for("update");
     const consumed = new Set(comments.map(comment => comment.id));
     for (const wake of wakes) {
       const queued = queuedCommentIdsFromWakePayload(wake.payload);
@@ -99,5 +106,6 @@ export async function consumeMuseHistoryReceipt(db: Db, operation: typeof museRu
       }).where(and(eq(agentWakeupRequests.id, wake.id), eq(agentWakeupRequests.companyId, source.companyId),
         eq(agentWakeupRequests.status, "deferred_issue_execution")));
     }
+    });
   });
 }

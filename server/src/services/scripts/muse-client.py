@@ -64,18 +64,39 @@ class Client:
         fcntl.flock(self.lock, fcntl.LOCK_EX)
         self.path = self.directory / "worker.json"
         self.config = json.loads(self.path.read_text()) if self.path.exists() else None
+        self.rotation = self.directory / "credential-commit.json"
+        self.suspension = self.directory / "signal-suspended.json"
+        if self.rotation.exists():
+            staged = json.loads(self.rotation.read_text())
+            self._publish_credentials(staged)
+            self.rotation.unlink()
+            self.suspension.unlink(missing_ok=True)
+            descriptor = os.open(self.directory, os.O_RDONLY)
+            try: os.fsync(descriptor)
+            finally: os.close(descriptor)
     def close(self): self.lock.close()
     def store_credentials(self, value, base):
         required = {"version", "bindingId", "generation", "companyId", "agentId", "accessToken", "accessExpiresAt", "refreshToken", "refreshExpiresAt", "signalToken", "cleanupToken", "detectorCleanupToken"}
         if set(value) != required or value["version"] != 1 or value["bindingId"] != self.binding: raise RuntimeError("Unexpected pairing identity")
-        self.config = {**value, "origin": origin(base)}
-        save(self.path, self.config)
-        # Detector reads this file alone. No worker/refresh/cleanup credentials.
-        save(self.directory / "signal.json", {"origin": self.config["origin"], "bindingId": self.binding, "generation": value["generation"], "signalToken": value["signalToken"], "detectorCleanupToken": value["detectorCleanupToken"]})
+        staged = {**value, "origin": origin(base)}
+        save(self.rotation, staged)
+        self._publish_credentials(staged)
+        self.rotation.unlink()
+        self.suspension.unlink(missing_ok=True)
+        descriptor = os.open(self.directory, os.O_RDONLY)
+        try: os.fsync(descriptor)
+        finally: os.close(descriptor)
+    def _publish_credentials(self, staged):
+        self.config = staged
+        save(self.path, staged)
+        # Detector reads this file alone. A durable commit intent repairs an
+        # interrupted worker/signal publication under this same OS lock.
+        save(self.directory / "signal.json", {"origin": staged["origin"], "bindingId": self.binding, "generation": staged["generation"], "signalToken": staged["signalToken"], "detectorCleanupToken": staged["detectorCleanupToken"]})
     def access(self):
         if not self.config or self.config.get("reconnectRequired") or self.config.get("refreshPending"): raise RuntimeError("Reconnect Muse; credential rotation outcome is uncertain")
         expiry = datetime.datetime.fromisoformat(self.config["accessExpiresAt"].replace("Z", "+00:00")).timestamp()
         if expiry < datetime.datetime.now().timestamp() + 60:
+            save(self.suspension, {"bindingId": self.binding, "generation": self.config["generation"], "suspended": True})
             self.config["refreshPending"] = True; save(self.path, self.config)
             try:
                 value = http(self.config["origin"] + "/api/muse/v1/refresh", {"version": 1, "refreshToken": self.config["refreshToken"]})
@@ -86,8 +107,37 @@ class Client:
         return self.config["accessToken"]
     def query(self, value):
         return http(self.config["origin"] + "/api/muse/v1/queries", {"version": 1, **value}, self.access())
+    def journal_path(self, key):
+        return self.directory / "journal" / (hashlib.sha256(key.encode()).hexdigest() + ".json")
+    def receipt(self, key):
+        path = self.journal_path(key)
+        if not path.exists(): raise RuntimeError("No prepared command for that key")
+        journal = json.loads(path.read_text())
+        command = journal["command"]
+        if "assignmentId" not in command:
+            return {"requestId": command["requestId"], "command": command["command"], "state": journal["state"], "receipt": journal.get("receipt"), "instruction": "Retry only the same command key and unchanged input to inspect its durable idle receipt"}
+        result = self.query({"query": "operation.receipt", "assignmentId": command["assignmentId"], "requestId": command["requestId"]})
+        journal["receipt"] = result; journal["state"] = "received"; save(path, journal)
+        return {"assignmentId": command["assignmentId"], "requestId": command["requestId"], "receipt": result}
+    def mailbox(self, acknowledge=None):
+        path = self.directory / "mailbox.json"
+        state = json.loads(path.read_text()) if path.exists() else {"bindingId": self.binding, "generation": self.config["generation"], "ackedThrough": 0}
+        if state["bindingId"] != self.binding or state["generation"] != self.config["generation"]: raise RuntimeError("Mailbox generation changed; reconnect instructions are required")
+        if acknowledge is not None:
+            if acknowledge != state.get("batch", {}).get("nextCursor") or acknowledge < state["ackedThrough"]: raise RuntimeError("Acknowledge only the exact durably saved batch cursor")
+            state["ackedThrough"] = acknowledge; state.pop("batch", None); save(path, state)
+            return {"status": "acknowledged", "nextCursor": acknowledge}
+        result = self.query({"query": "mailbox", "after": state["ackedThrough"]})
+        if result.get("bindingId") != self.binding or result.get("generation") != self.config["generation"] or not isinstance(result.get("items"), list) or not isinstance(result.get("nextCursor"), int) or result["nextCursor"] < state["ackedThrough"]: raise RuntimeError("Mailbox response identity or cursor changed")
+        state["batch"] = result; save(path, state)
+        return result
+    def status(self):
+        identity = self.query({"query": "identify"})
+        identity["localPendingCommands"] = sum(1 for path in (self.directory / "journal").glob("*.json") if json.loads(path.read_text()).get("receipt", {}).get("status", "pending") in ("pending", "reserved", "dispatched", "unknown"))
+        identity["instructionsPath"] = str(ROOT / "instructions.md")
+        return identity
     def command(self, key, value):
-        path = self.directory / "journal" / (hashlib.sha256(key.encode()).hexdigest() + ".json")
+        path = self.journal_path(key)
         value = {"version": 1, **value}
         proposed = {k: v for k, v in value.items() if k != "requestId"}
         digest = hashlib.sha256(canonical(proposed)).hexdigest()
@@ -109,22 +159,31 @@ class Client:
     def answer(self, assignment, request):
         value = self.query({"query": "input.pending", "assignmentId": assignment, "nativeRequestId": request})
         if value.get("status") == "pending": return value
+        if value.get("assignmentId") != assignment or value.get("bindingId") != self.binding or value.get("generation") != self.config["generation"] or value.get("requestId") != request or not isinstance(value.get("turnId"), str) or not value["turnId"]: raise RuntimeError("Input response does not belong to this exact assignment and turn")
         path = self.directory / "continuations" / (assignment + ".json")
         old = json.loads(path.read_text()) if path.exists() else {"assignmentId": assignment, "inputs": {}}
         previous = old["inputs"].get(request)
-        if previous and previous["inputDigest"] != value["inputDigest"]: raise RuntimeError("Input changed within a turn")
+        if previous and (previous["inputDigest"] != value["inputDigest"] or previous["turnId"] != value["turnId"]): raise RuntimeError("Input changed within a turn")
         old["inputs"][request] = {**value, "continuationReceiptId": previous["continuationReceiptId"] if previous else str(uuid.uuid4())}
         save(path, old)
         return old["inputs"][request]
     def consume(self, assignment, request):
-        value = json.loads((self.directory / "continuations" / (assignment + ".json")).read_text())["inputs"][request]
+        continuation = json.loads((self.directory / "continuations" / (assignment + ".json")).read_text())
+        value = continuation["inputs"][request]
+        if continuation["assignmentId"] != assignment or value.get("assignmentId") != assignment or value.get("bindingId") != self.binding or value.get("generation") != self.config["generation"] or value.get("requestId") != request: raise RuntimeError("Continuation identity changed")
+        current = self.query({"query": "input.pending", "assignmentId": assignment, "nativeRequestId": request})
+        if any(current.get(field) != value.get(field) for field in ("assignmentId", "bindingId", "generation", "requestId", "turnId", "inputDigest")): raise RuntimeError("Pending input changed before consumption")
         return self.command("consume:" + assignment + ":" + request, {"command": "consume_input", "assignmentId": assignment, "nativeRequestId": request, "inputDigest": value["inputDigest"], "continuationReceiptId": value["continuationReceiptId"], "continuationPersisted": True})
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--binding", required=True)
     sub = parser.add_subparsers(dest="mode", required=True)
     pair = sub.add_parser("pair"); pair.add_argument("--origin", required=True); pair.add_argument("--ticket", required=True)
-    sub.add_parser("query")
+    sub.add_parser("query", help="Read JSON from stdin; see installed instructions.md for exact envelopes")
+    sub.add_parser("status", help="Inspect bound identity and local pending command count")
+    sub.add_parser("help", help="Read persistent Paperclip instructions")
+    receipt = sub.add_parser("receipt", help="Inspect the original durable command without resending it"); receipt.add_argument("--key", required=True)
+    mailbox = sub.add_parser("mailbox", help="Durably save mailbox references; explicitly acknowledge only after incorporating them"); mailbox.add_argument("--ack", type=int)
     command = sub.add_parser("command"); command.add_argument("--key", required=True)
     for name in ("answer", "consume-input"):
         child = sub.add_parser(name); child.add_argument("assignment"); child.add_argument("request")
@@ -136,13 +195,21 @@ def main():
             base = origin(args.origin)
             client.store_credentials(http(base + "/api/muse/v1/pair", {"version": 1, "ticket": args.ticket, "clientVersion": VERSION}), base)
             result = {"paired": True, "bindingId": client.binding, "version": VERSION}
-        elif args.mode == "query": result = client.query(json.load(sys.stdin))
+        elif args.mode == "help":
+            print((ROOT / "instructions.md").read_text()); return
+        elif args.mode == "status": result = client.status()
+        elif args.mode == "receipt": result = client.receipt(args.key)
+        elif args.mode == "mailbox": result = client.mailbox(args.ack)
+        elif args.mode == "query":
+            value = json.load(sys.stdin)
+            result = client.mailbox() if value.get("query") == "mailbox" else client.query(value)
         elif args.mode == "command": result = client.command(args.key, json.load(sys.stdin))
         elif args.mode == "answer": result = client.answer(args.assignment, args.request)
         elif args.mode == "consume-input": result = client.consume(args.assignment, args.request)
         elif args.mode == "cleanup":
             body = {"version": 1, "command": "control.inspect"} if args.inspect else {"version": 1, **json.load(sys.stdin)}
             result = http(client.config["origin"] + "/api/muse/v1/cleanup", body, client.config["cleanupToken"])
+            client.suspension.unlink(missing_ok=True)
         print(json.dumps(result, ensure_ascii=False))
     finally: client.close()
 if __name__ == "__main__":

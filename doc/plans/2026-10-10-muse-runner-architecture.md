@@ -128,3 +128,6 @@ Validation order: existing Dot compatibility; synthetic Muse pair/background cha
 Runtime owns Runner TS/Rust/contracts/generation, native runtime integration, heartbeat claim guard call sites, provider/tool/runtime/artifact registration. Control owns DB/migration, shared Muse DTO/protocol/feature settings, broker/identity/receiver/client/setup/routes/invitations/lifecycle and admission guard implementation. UI owns ui/**. Root owns Cloud ingress, integrated review/qualification tooling and cross-boundary fixes. Writers use isolated worktrees and exchange early contract commits; one DB migration owner and one Runner generated-contract owner.
 
 If independent implementation repeatedly requires alternate lifecycles, hidden policy copies or type escape hatches, stop that construction, re-ground the failing boundary and subtract the duplication before continuing.
+
+
+Implementation qualification evidence uses the original persisted 24-hour window. Idle coverage is bounded by persisted receiver contacts and excludes native runs, live assignments and pending input. A receiver gap longer than the 30-second contact persistence interval breaks idle coverage; the separate cadence check still requires at least 90% of gaps at or below seven seconds. Incomplete buckets, lost ingress tails or reader overflow leave evidence incomplete.

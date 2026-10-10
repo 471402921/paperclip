@@ -28,12 +28,12 @@ export function museTransportRoutes(db:Db,publicOrigin?:string) {
     const handler=async(req:Request,res:express.Response)=>{
       bound(req);
       if(route.path.endsWith("/manifest.json")) {res.set("Cache-Control","public, max-age=31536000, immutable").json((await museReceiverAssets()).manifest);return;}
-      if(route.path.endsWith("/client.py")||route.path.endsWith("/detector.sh")) {const assets=await museReceiverAssets();res.set("Cache-Control","public, max-age=31536000, immutable").type("text/plain").send(route.path.endsWith("/client.py")?assets.client:assets.detector);return;}
+      if(route.path.endsWith("/client.py")||route.path.endsWith("/detector.sh")||route.path.endsWith("/instructions.md")) {const assets=await museReceiverAssets();res.set("Cache-Control","public, max-age=31536000, immutable").type("text/plain").send(route.path.endsWith("/client.py")?assets.client:route.path.endsWith("/detector.sh")?assets.detector:assets.instructions);return;}
       if(route.path.endsWith("/pair")) {const value=musePairSchema.parse(req.body);res.json(await identity.pair(value.ticket,value.clientVersion));return;}
       if(route.path.endsWith("/refresh")) {const value=museRefreshSchema.parse(req.body);res.json(await identity.refresh(value.refreshToken));return;}
       if(route.path.endsWith("/signal")) {const subject=await identity.authenticate(bearer(req),"signal");res.json(await receiver.signal(subject));return;}
       if(route.path.endsWith("/cleanup")) {const value=museCleanupSchema.parse(req.body);const subject=await identity.authenticate(bearer(req),"cleanup");res.json(await broker.cleanup(subject,value));return;}
-      if(route.path.endsWith("/detector-cleanup")) {const value=museDetectorCleanupSchema.parse(req.body),subject=await identity.authenticate(bearer(req),"detector_cleanup");if(value.bindingId!==subject.bindingId||value.generation!==subject.generation)throw forbidden("Detector cleanup identity mismatch.");res.json(await broker.detectorCleanup(subject));return;}
+      if(route.path.endsWith("/detector-cleanup")) {const value=museDetectorCleanupSchema.parse(req.body),subject=await identity.authenticate(bearer(req),"detector_cleanup");if(value.bindingId!==subject.bindingId||value.generation!==subject.generation)throw forbidden("Detector cleanup identity mismatch.");res.json(await broker.detectorCleanup(subject,"detectorRemoved" in value));return;}
       const subject=await identity.authenticate(bearer(req));
       if(route.path.endsWith("/commands"))res.json(await broker.act(subject,museCommandSchema.parse(req.body)));
       else res.json(await broker.inspect(subject,museQuerySchema.parse(req.body)));
@@ -49,7 +49,7 @@ export function museBoardRoutes(db:Db,publicOrigin?:string) {
     const operatorId=req.actor.userId;
     if(!operatorId||!["session","cloud_tenant","board_key"].includes(req.actor.source??"")||req.actor.memberships?.find(m=>m.companyId===companyId)?.membershipRole==="viewer")throw forbidden("Sign in as a company operator to configure Muse.");
     const agentId=req.params.agentId?z.uuid().parse(req.params.agentId):undefined;
-    if(write) {const decision=await authorizationService(db).decide({actor:req.actor,action:agentId?"agent_config:update":"agents:create",resource:agentId?{type:"agent",companyId,agentId}:{type:"company",companyId}});if(!decision.allowed)throw forbidden(decision.explanation);}
+    if(write) {const decision=await authorizationService(db).decide({actor:req.actor,action:agentId?"agent_config:update":"agents:create",resource:agentId?{type:"agent",companyId,agentId}:{type:"company",companyId},scope:{requiresChangeGrant:true}});if(!decision.allowed)throw forbidden(decision.explanation);}
     if(agentId){const agent=await agentService(db).getById(agentId);if(!agent||agent.companyId!==companyId)throw notFound("Agent not found.");}
     return {companyId,agentId,operatorId};
   }

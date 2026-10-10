@@ -18,7 +18,8 @@ import { logActivity } from "../../services/activity-log.js";
 import { issueService } from "../../services/issues.js";
 import { getNativeReviewAssignment, readNativeReviewAssignmentContext } from "../../services/native-runtime/native-review-participant.js";
 import { withExternalAdmissionGuard, assertNoExternalOverlap, type ExternalAdmissionTransaction } from "./admission.js";
-import { submitExternalOperation } from "./native-operations.js";
+import { createNativeExternalBroker } from "./native-broker.js";
+import { consumeMuseHistoryReceipt } from "../../services/muse-assignment-follow-up.js";
 import type { heartbeatService } from "../../services/heartbeat.js";
 import { buildMuseSetupInstruction } from "../../services/muse-setup.js";
 
@@ -35,9 +36,8 @@ export function museExternalAgents(db:Db, options?:{heartbeat?:Heartbeat;publicO
 }
 function createMuseBroker(db:Db, publicOrigin?:string) {
   const identity=museIdentity(db);
-  const ports=new Map<string,{token:symbol;generation:number;send:(op:ExternalProviderOperation)=>Promise<void>;revoke?:()=>Promise<void>}>();
   async function heartbeat() { const configured=heartbeatContexts.get(db); if(configured)return configured; return (await import("../../services/heartbeat.js")).heartbeatService(db); }
-  function agentActor(s:AgentConnectionSubject,runId?:string):AuthorizationActor {return {type:"agent",agentId:s.agentId,companyId:s.companyId,runId};}
+  function agentActor(s:AgentConnectionSubject,runId?:string,responsibleUserId?:string|null):AuthorizationActor {return {type:"agent",agentId:s.agentId,companyId:s.companyId,runId,authorizingUserId:s.authorizingUserId,onBehalfOfUserId:responsibleUserId};}
   function authorizerActor(s:AgentConnectionSubject):AuthorizationActor { return {type:"board",userId:s.authorizingUserId,source:"session",ignoreInstanceAdmin:true}; }
   async function subjectBinding(s:AgentConnectionSubject,ready=true,paused=false) {
     const [b]=await db.select().from(bindings).where(and(eq(bindings.id,s.bindingId),eq(bindings.companyId,s.companyId),eq(bindings.agentId,s.agentId),eq(bindings.generation,s.generation),eq(bindings.operatorId,s.authorizingUserId),isNull(bindings.revokedAt)));
@@ -48,11 +48,10 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
     return b;
   }
   async function visible(s:AgentConnectionSubject,database:Db|ExternalAdmissionTransaction=db):Promise<SQL> {
-    return and(await issueReadSqlCondition(database,agentActor(s)),await issueReadSqlCondition(database,authorizerActor(s)))!;
+    return issueReadSqlCondition(database,agentActor(s));
   }
   async function assertIssue(s:AgentConnectionSubject,issueId:string,runResponsibleUserId?:string|null) {
-    const conditions=[eq(issues.companyId,s.companyId),eq(issues.id,issueId),await visible(s),isNull(issues.hiddenAt),isNull(issues.harnessKind)];
-    if(runResponsibleUserId && runResponsibleUserId!==s.authorizingUserId) conditions.push(await issueReadSqlCondition(db,{type:"board",userId:runResponsibleUserId,source:"session",ignoreInstanceAdmin:true}));
+    const conditions=[eq(issues.companyId,s.companyId),eq(issues.id,issueId),await issueReadSqlCondition(db,agentActor(s,undefined,runResponsibleUserId)),isNull(issues.hiddenAt),isNull(issues.harnessKind)];
     const [issue]=await db.select().from(issues).where(and(...conditions));
     if(!issue) throw notFound("Task is unavailable to the current Muse agent and authorizer.");
     return issue;
@@ -77,76 +76,26 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
     return {b,a,run};
   }
   async function fence(tx:ExternalAdmissionTransaction,b:typeof bindings.$inferSelect,reason:string) {
-    const live=await tx.select().from(assignments).where(and(eq(assignments.bindingId,b.id),eq(assignments.bindingGeneration,b.generation),inArray(assignments.status,["offered","claimed","accepted"])));
+    const live=await tx.select().from(assignments).where(and(eq(assignments.bindingId,b.id),eq(assignments.bindingGeneration,b.generation),sql`(${assignments.status} in ('offered','claimed','accepted') or (${assignments.status}='settled' and exists(select 1 from ${holds} where ${holds.assignmentId}=${assignments.id} and ${holds.provider}='muse' and ${holds.releasedAt} is null)))`));
     for(const a of live) {
       const [last]=await tx.select({id:operations.requestId}).from(operations).where(eq(operations.assignmentId,a.id)).orderBy(desc(operations.createdAt)).limit(1);
       const boundary:MuseStopBoundary={bindingId:b.id,generation:b.generation,assignmentId:a.id,runId:a.runId,turnId:a.turnId,assignmentRevision:a.revision,stopNonce:randomUUID(),operationBoundary:last?.id??null};
       await tx.update(assignments).set({status:"fenced"}).where(eq(assignments.id,a.id));
-      if(a.claimedAt) await tx.insert(holds).values({companyId:b.companyId,agentId:b.agentId,provider:"muse",assignmentId:a.id,bindingId:b.id,bindingGeneration:b.generation,runId:a.runId,workerUnknown:true,stopBoundary:boundary}).onConflictDoUpdate({target:[holds.provider,holds.assignmentId],set:{stopBoundary:boundary,workerUnknown:true,releasedAt:null,updatedAt:new Date()}});
+      const [unresolved]=await tx.select({id:operations.id}).from(operations).where(and(eq(operations.assignmentId,a.id),inArray(operations.status,["dispatched","pending","unknown"]))).limit(1);
+      if(a.claimedAt) await tx.insert(holds).values({companyId:b.companyId,agentId:b.agentId,provider:"muse",assignmentId:a.id,bindingId:b.id,bindingGeneration:b.generation,runId:a.runId,workerUnknown:true,nativeEffectsUnknown:!!unresolved,stopBoundary:boundary}).onConflictDoUpdate({target:[holds.provider,holds.assignmentId],set:{stopBoundary:boundary,workerUnknown:true,nativeEffectsUnknown:sql`${holds.nativeEffectsUnknown} or ${!!unresolved}`,releasedAt:null,updatedAt:new Date()}});
       await tx.insert(mailbox).values({companyId:b.companyId,bindingId:b.id,bindingGeneration:b.generation,assignmentId:a.id,kind:"authority_revoked",sourceEventId:`muse-stop:${boundary.stopNonce}`,references:{boundary,reason,externalStopConfirmed:false}}).onConflictDoNothing();
     }
     return live.map(a=>a.runId);
   }
-  async function forward(op:typeof operations.$inferSelect) {
-    const [a]=await db.select().from(assignments).where(eq(assignments.id,op.assignmentId));
-    const port=a&&ports.get(a.runId);
-    if(!a||!port||op.status!=="reserved")return;
-    const [owner]=await db.select().from(nativeRunFinalizations).where(eq(nativeRunFinalizations.runId,a.runId));
-    if(!owner||owner.controllerGeneration!==port.generation||a.controllerGeneration!==port.generation||!owner.leaseExpiresAt||owner.leaseExpiresAt<=new Date()||a.status==="fenced"||a.expiresAt<=new Date())return;
-    const command=externalCommandSchema.parse(op.command);
-    // Persist dispatch before I/O. Crash/lost ACK becomes an independent unknown
-    // effect barrier; it never redispatches automatically after reconnect.
-    const [claimed]=await db.update(operations).set({status:"dispatched",updatedAt:new Date()}).where(and(eq(operations.id,op.id),eq(operations.status,"reserved"))).returning();
-    if(!claimed)return;
-    try {await port.send(command); await db.update(operations).set({status:"pending",updatedAt:new Date()}).where(and(eq(operations.id,op.id),eq(operations.status,"dispatched")));}
-    catch(error) {
-      const rejected=error&&typeof error==="object"&&("dotOperationRejected" in error||"externalOperationRejected" in error);
-      await db.transaction(async tx=>{
-        await tx.update(operations).set({status:rejected?"rejected":"unknown",outcome:rejected?{status:"rejected",canReplay:false}:null,updatedAt:new Date()}).where(and(eq(operations.id,op.id),inArray(operations.status,["dispatched","pending"])));
-        if(!rejected) await tx.update(holds).set({nativeEffectsUnknown:true,updatedAt:new Date()}).where(and(eq(holds.provider,"muse"),eq(holds.assignmentId,a.id)));
-      });
-    }
-  }
-  async function operation(s:AgentConnectionSubject,id:string,requestId:string,action:ExternalProviderOperation["action"],input:Record<string,unknown>) {
-    const {b,a}=await authorizeAssignment(s,id);
-    if(action!=="accept" && !a.claimedAt)throw conflict("Claim the assignment before running an operation.");
-    if(action==="request_user_input")parsePaperclipQuestionSet(input.questionSet);
-    if(action==="renew" && (!Number.isSafeInteger(input.expiresAtUnixMs)||Number(input.expiresAtUnixMs)<=Date.now()||Number(input.expiresAtUnixMs)>Date.now()+2*60*60_000||Number(input.expiresAtUnixMs)>a.createdAt.getTime()+24*60*60_000))throw conflict("Renewal exceeds the bounded lease.");
-    const command:ExternalProviderOperation={requestId,bindingId:b.id,bindingGeneration:b.generation,runId:a.runId,normalizedSessionId:a.normalizedSessionId,turnId:a.turnId,assignmentRevision:a.revision,digest:externalOperationDigest(action,input),action,input};
-    return submitExternalOperation({command,assignmentId:a.id,replayableStates:["reserved"],forward,
-      inspect:async opId=>(await db.select().from(operations).where(eq(operations.id,opId)))[0],authorizeReceipt:async()=>{await authorizeAssignment(s,id,true);},
-      reserve:()=>db.transaction(tx=>withExternalAdmissionGuard(tx,b.companyId,b.agentId,async()=>{
-        await tx.select({id:bindings.id}).from(bindings).where(eq(bindings.id,b.id)).for("update");
-        const [current]=await tx.select().from(assignments).where(eq(assignments.id,a.id)).for("update");
-        if(!current||current.status==="fenced"||current.status==="settled"||current.expiresAt<=new Date()||current.controllerGeneration!==a.controllerGeneration)throw conflict("Assignment changed before admission.");
-        const [old]=await tx.select().from(operations).where(and(eq(operations.assignmentId,a.id),eq(operations.requestId,requestId)));
-        if(old){if(old.digest!==command.digest)throw conflict("Request ID reused with different arguments.");return old;}
-        const [count]=await tx.select({count:sql<number>`count(*)::int`}).from(operations).where(eq(operations.assignmentId,a.id));
-        if(count&&count.count>=4000)throw conflict("Assignment operation limit reached.");
-        if(action==="finish") {
-          const [pending]=await tx.select({id:inputs.id}).from(inputs).where(and(eq(inputs.assignmentId,a.id),isNull(inputs.consumedAt))).limit(1);
-          const [question]=await tx.select({id:operations.id}).from(operations).where(and(eq(operations.assignmentId,a.id),sql`${operations.command}->>'action' = 'request_user_input'`,inArray(operations.status,["reserved","dispatched","pending","unknown"])));
-          if(pending||question)throw conflict("Pending or unconsumed runtime input blocks finish.");
-        }
-        if(action==="consume_input") {
-          const [delivery]=await tx.select().from(inputs).where(and(eq(inputs.assignmentId,a.id),eq(inputs.requestId,String(input.requestId)),eq(inputs.turnId,a.turnId),eq(inputs.inputDigest,String(input.inputDigest))));
-          if(!delivery||input.continuationPersisted!==true||!z.uuid().safeParse(input.continuationReceiptId).success)throw conflict("Input must be durably ingested into this exact turn before consumption.");
-        }
-        if(action==="accept") {
-          if(current.claimedAt)throw conflict("Another accept request already claimed this assignment.");
-          if(current.acceptBy<=new Date())throw conflict("Assignment claim expired.");
-          await tx.update(assignments).set({status:"claimed",claimedAt:new Date()}).where(eq(assignments.id,a.id));
-          await tx.insert(holds).values({companyId:a.companyId,agentId:a.agentId,provider:"muse",assignmentId:a.id,bindingId:a.bindingId,bindingGeneration:a.bindingGeneration,runId:a.runId,workerUnknown:true}).onConflictDoNothing();
-        }
-        const [row]=await tx.insert(operations).values({companyId:a.companyId,assignmentId:a.id,requestId,digest:command.digest,command:{...command}}).returning();return row!;
-      })),
-    });
-  }
+  const nativeBroker=createNativeExternalBroker<AgentConnectionSubject>(db,"muse",{enabled:identity.enabled,authorize:async(s,id,settled)=>{const {b,a}=await authorizeAssignment(s,id,settled);return {binding:b,assignment:a};}});
+  const operation=nativeBroker.operation;
   const broker={
     enabled:identity.enabled,
     async createPairing(input:{companyId:string;agentId:string;operatorId:string;replaceBindingId?:string;expectedRevision?:number}):Promise<MusePairing> {
       if(!await identity.enabled())throw forbidden("Enable Muse and Paperclip Runner before connecting.");
-      const ticket=randomBytes(32).toString("base64url");
+      const ticket=randomBytes(32).toString("base64url"),bindingId=randomUUID();
+      // Validate the public assets before changing any existing invitation.
+      const setupInstruction=await buildMuseSetupInstruction(publicOrigin,ticket,bindingId);
       const b=await db.transaction(tx=>withExternalAdmissionGuard(tx,input.companyId,input.agentId,async()=>{
         const [agent]=await tx.select().from(agents).where(and(eq(agents.id,input.agentId),eq(agents.companyId,input.companyId))).for("update");
         if(!agent||agent.adapterType!=="paperclip_runner"||agent.adapterConfig.provider!=="muse"||!canConfigureAgentConnection(agent))throw conflict("Choose an approved Muse Runner agent.");
@@ -159,25 +108,25 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
           await tx.update(credentials).set({expiresAt:new Date(Date.now()+MUSE_CLEANUP_TTL_MS)}).where(and(eq(credentials.bindingId,old.id),inArray(credentials.kind,["cleanup","detector_cleanup"]),isNull(credentials.revokedAt)));
         } else if(input.replaceBindingId)throw conflict("Invitation changed. Refresh before replacing its ticket.");
         const [latest]=await tx.select({generation:bindings.generation}).from(bindings).where(and(eq(bindings.companyId,input.companyId),eq(bindings.agentId,input.agentId))).orderBy(desc(bindings.generation)).limit(1);
-        const [created]=await tx.insert(bindings).values({companyId:input.companyId,agentId:input.agentId,operatorId:input.operatorId,generation:(latest?.generation??0)+1,ticketHash:museCredentialHash(ticket),ticketExpiresAt:new Date(Date.now()+MUSE_TICKET_TTL_MS)}).returning();
+        const [created]=await tx.insert(bindings).values({id:bindingId,companyId:input.companyId,agentId:input.agentId,operatorId:input.operatorId,generation:(latest?.generation??0)+1,ticketHash:museCredentialHash(ticket),ticketExpiresAt:new Date(Date.now()+MUSE_TICKET_TTL_MS)}).returning();
         await logActivity(tx as unknown as Db,{companyId:input.companyId,actorType:"user",actorId:input.operatorId,action:"muse.pairing_created",entityType:"agent",entityId:input.agentId,details:{bindingId:created!.id,generation:created!.generation}});
         await updateAgentConfigurationInTransaction(tx as unknown as Db,agent.id,{adapterConfig:{...agent.adapterConfig,museBindingId:created!.id}},{recordRevision:{createdByUserId:input.operatorId,source:"muse-pairing"}});
         return created!;
       }));
-      return {bindingId:b.id,generation:b.generation,revision:b.revision,ticket,expiresAt:b.ticketExpiresAt!.toISOString(),assetVersion:1,setupInstruction:await buildMuseSetupInstruction(publicOrigin,ticket,b.id)};
+      return {bindingId:b.id,generation:b.generation,revision:b.revision,ticket,expiresAt:b.ticketExpiresAt!.toISOString(),assetVersion:1,setupInstruction};
     },
     async bindingForAgent(companyId:string,agentId:string):Promise<MuseBinding|null> {
       const [b]=await db.select().from(bindings).where(and(eq(bindings.companyId,companyId),eq(bindings.agentId,agentId))).orderBy(desc(bindings.generation)).limit(1);
       if(!b)return null;
       const live=await db.select({id:assignments.id}).from(assignments).where(and(eq(assignments.companyId,companyId),eq(assignments.agentId,agentId),inArray(assignments.status,["offered","claimed","accepted"])));
-      const unknown=await db.select({id:operations.id}).from(operations).innerJoin(assignments,eq(assignments.id,operations.assignmentId)).where(and(eq(assignments.companyId,companyId),eq(assignments.agentId,agentId),inArray(operations.status,["unknown","dispatched"])));
+      const unknown=await db.select({id:operations.id}).from(operations).innerJoin(assignments,eq(assignments.id,operations.assignmentId)).where(and(eq(assignments.companyId,companyId),eq(assignments.agentId,agentId),inArray(operations.status,["unknown","dispatched","pending"])));
       const pending=await db.select({id:inputs.id}).from(inputs).innerJoin(assignments,eq(assignments.id,inputs.assignmentId)).where(and(eq(assignments.companyId,companyId),eq(assignments.agentId,agentId),isNull(inputs.consumedAt)));
       const [stop]=await db.select().from(holds).where(and(eq(holds.companyId,companyId),eq(holds.agentId,agentId),eq(holds.provider,"muse"),isNull(holds.releasedAt))).orderBy(desc(holds.createdAt)).limit(1);
       return {id:b.id,generation:b.generation,revision:b.revision,status:b.status,paired:!!b.pairedAt,receiverDetected:!!b.receiverContactAt,backgroundReplyVerified:!!b.verifiedReplyAt,
         pairingExpiresAt:iso(b.ticketExpiresAt),challengeExpiresAt:iso(b.challengeExpiresAt),lastReceiverContactAt:iso(b.receiverContactAt),lastWorkerActivityAt:iso(b.workerActivityAt),lastVerifiedReplyAt:iso(b.verifiedReplyAt),contactPersistenceLagMs:30000,clientVersion:b.clientVersion,
         qualification:b.qualificationId&&b.qualificationExpiresAt?{id:b.qualificationId,expiresAt:b.qualificationExpiresAt.toISOString()}:null,
         liveAssignments:live.length,uncertainOperations:unknown.length,pendingInputs:pending.length,
-        cleanup:{pending:!!b.cleanupExpiresAt&&b.cleanupExpiresAt>new Date()&&(!b.detectorRemovedAt||!!stop),detectorRemoved:!!b.detectorRemovedAt,workerQuiescenceReported:!!stop?.workerReportedAt,expiresAt:iso(b.cleanupExpiresAt)},
+        cleanup:{detectorRemovalRequested:!!b.detectorRemovalRequestedAt,pending:!!b.cleanupExpiresAt&&b.cleanupExpiresAt>new Date()&&(!b.detectorRemovedAt||!!stop),detectorRemoved:!!b.detectorRemovedAt,workerQuiescenceReported:!!stop?.workerReportedAt,expiresAt:iso(b.cleanupExpiresAt)},
         stop:{status:!stop?.stopBoundary?"none":stop.operatorAttestedAt?"operator_attested":stop.workerReportedAt?"worker_reported":"cannot_confirm",nativeEffectsUnknown:!!stop?.nativeEffectsUnknown,boundary:stop?.stopBoundary??null}};
     },
     async snapshot(companyId:string,agentId:string,bindingId:string):Promise<MuseBindingSnapshot> {
@@ -208,13 +157,13 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
         if(!b)return [];
         if(input&&(b.generation!==input.generation||b.revision!==input.expectedRevision))throw conflict("Connection changed; refresh before disconnecting.");
         const runs=await fence(tx,b,"disconnect");
-        await tx.update(bindings).set({status:"revoked",revokedAt:new Date(),ticketHash:null,challengeHash:null,cleanupExpiresAt:new Date(Date.now()+MUSE_CLEANUP_TTL_MS),revision:b.revision+1,updatedAt:new Date()}).where(eq(bindings.id,b.id));
+        await tx.update(bindings).set({status:"revoked",revokedAt:new Date(),ticketHash:null,challengeHash:null,cleanupExpiresAt:new Date(Date.now()+MUSE_CLEANUP_TTL_MS),deadlineEnforcedAt:b.deadlineEnforcedAt??(b.qualificationExpiresAt&&b.qualificationExpiresAt<=new Date()?new Date():null),revision:b.revision+1,updatedAt:new Date()}).where(eq(bindings.id,b.id));
         await tx.update(credentials).set({revokedAt:new Date()}).where(and(eq(credentials.bindingId,b.id),inArray(credentials.kind,["access","refresh","signal"])));
         await tx.update(credentials).set({expiresAt:new Date(Date.now()+MUSE_CLEANUP_TTL_MS)}).where(and(eq(credentials.bindingId,b.id),inArray(credentials.kind,["cleanup","detector_cleanup"]),isNull(credentials.revokedAt)));
         await logActivity(tx as unknown as Db,{companyId,actorType:"user",actorId:operatorId,action:"muse.binding_revoked",entityType:"agent",entityId:agentId,details:{bindingId:b.id,generation:b.generation,externalStopConfirmed:false}});
         return runs;
       }));
-      await Promise.all(runs.map(async runId=>{await ports.get(runId)?.revoke?.().catch(()=>{});await(await heartbeat()).cancelRun(runId,"Muse connection revoked");}));
+      await Promise.all(runs.map(async runId=>{await nativeBroker.revokeRun(runId);await(await heartbeat()).cancelRun(runId,"Muse connection revoked");}));
     },
     async attestStop(companyId:string,agentId:string,operatorId:string,input:{boundary:MuseStopBoundary;expectedRevision:number;workerStopped:true}) {
       return db.transaction(tx=>withExternalAdmissionGuard(tx,companyId,agentId,async()=>{
@@ -235,7 +184,8 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
         for(const {a,run}of terminal) {
           if(a.status==="settled"&&a.acceptedResultAt) {
             await tx.update(assignments).set({finalizedAt:run.finishedAt}).where(eq(assignments.id,a.id));
-            const [unknown]=await tx.select({id:operations.id}).from(operations).where(and(eq(operations.assignmentId,a.id),inArray(operations.status,["unknown","dispatched"]))).limit(1);
+            const [unknown]=await tx.select({id:operations.id}).from(operations).where(and(eq(operations.assignmentId,a.id),inArray(operations.status,["unknown","dispatched","pending"]))).limit(1);
+            if(run.status!=="succeeded"||unknown) {await fence(tx,b,"run_terminal_after_result");continue;}
             if(!unknown&&run.status==="succeeded")await tx.update(holds).set({workerUnknown:false,releasedAt:new Date(),updatedAt:new Date()}).where(and(eq(holds.provider,"muse"),eq(holds.assignmentId,a.id),eq(holds.nativeEffectsUnknown,false)));
           } else if(["offered","claimed","accepted"].includes(a.status)) await fence(tx,b,"run_terminal");
         }
@@ -250,33 +200,52 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
           if(same?.qualificationStartedAt&&same.qualificationExpiresAt)return {qualificationId:input.qualificationId,startedAt:same.qualificationStartedAt.toISOString(),expiresAt:same.qualificationExpiresAt.toISOString(),revision:same.revision};
           throw conflict("Connection changed or qualification already exists.");
         }
+        if(b.qualificationId===input.qualificationId&&b.qualificationStartedAt&&b.qualificationExpiresAt)return {qualificationId:input.qualificationId,startedAt:b.qualificationStartedAt.toISOString(),expiresAt:b.qualificationExpiresAt.toISOString(),revision:b.revision};
         if(b.qualificationId)throw conflict("Another qualification already exists.");
         await assertMuseCurrentAuthority(tx,b);
-        await tx.update(bindings).set({qualificationId:input.qualificationId,qualificationStartedAt:new Date(),qualificationExpiresAt:input.expiresAt,revision:b.revision+1,updatedAt:new Date()}).where(eq(bindings.id,b.id));
-        return {qualificationId:input.qualificationId,startedAt:new Date().toISOString(),expiresAt:input.expiresAt.toISOString(),revision:b.revision+1};
+        await tx.update(bindings).set({qualificationId:input.qualificationId,qualificationStartedAt:new Date(input.expiresAt.getTime()-24*60*60_000),qualificationExpiresAt:input.expiresAt,revision:b.revision+1,updatedAt:new Date()}).where(eq(bindings.id,b.id));
+        return {qualificationId:input.qualificationId,startedAt:new Date(input.expiresAt.getTime()-24*60*60_000).toISOString(),expiresAt:input.expiresAt.toISOString(),revision:b.revision+1};
       }));
     },
     async endQualification(input:{companyId:string;agentId:string;bindingId:string;qualificationId:string;operatorId:string}) {
       const [b]=await db.select().from(bindings).where(and(eq(bindings.id,input.bindingId),eq(bindings.companyId,input.companyId),eq(bindings.agentId,input.agentId),eq(bindings.qualificationId,input.qualificationId)));
       if(!b)throw notFound("Qualification not found.");
-      await (await import("../../services/muse-receiver.js")).museReceiver(db).flush();
       if(!b.revokedAt)await broker.revoke(input.companyId,input.agentId,input.operatorId,{bindingId:b.id,generation:b.generation,expectedRevision:b.revision});
-      if(b.qualificationExpiresAt&&b.qualificationExpiresAt<=new Date())await db.update(bindings).set({deadlineEnforcedAt:new Date()}).where(and(eq(bindings.id,b.id),eq(bindings.qualificationId,input.qualificationId)));
+      await (await import("../../services/muse-receiver.js")).museReceiver(db).flush();
+      if(b.qualificationExpiresAt&&b.qualificationExpiresAt<=new Date())await db.update(bindings).set({deadlineEnforcedAt:new Date()}).where(and(eq(bindings.id,b.id),eq(bindings.qualificationId,input.qualificationId),isNull(bindings.deadlineEnforcedAt)));
     },
     async readQualificationEvidence(companyId:string,agentId:string,bindingId:string,qualificationId:string):Promise<MuseQualificationEvidence> {
       const [b]=await db.select().from(bindings).where(and(eq(bindings.id,bindingId),eq(bindings.companyId,companyId),eq(bindings.agentId,agentId),eq(bindings.qualificationId,qualificationId)));
       if(!b)throw notFound("Qualification not found.");
-      const contacts=await db.select().from(museReceiverContactBuckets).where(and(eq(museReceiverContactBuckets.bindingId,bindingId),eq(museReceiverContactBuckets.bindingGeneration,b.generation))).orderBy(asc(museReceiverContactBuckets.bucketAt)).limit(3000);
-      const samples=await db.select({id:assignments.id,runId:assignments.runId,issueId:heartbeatRuns.nativeIssueId,status:assignments.status,offeredAt:assignments.offeredAt,claimedAt:assignments.claimedAt,nativeAcceptedAt:assignments.nativeAcceptedAt,acceptedResultAt:assignments.acceptedResultAt,finalizedAt:assignments.finalizedAt}).from(assignments).innerJoin(heartbeatRuns,eq(heartbeatRuns.id,assignments.runId)).where(eq(assignments.bindingId,bindingId)).orderBy(asc(assignments.offeredAt)).limit(100);
       const startedAt=b.qualificationStartedAt??b.createdAt;
-      const endAt=b.revokedAt??contacts.at(-1)?.lastAt??startedAt;
+      const endAt=new Date(Math.min(b.revokedAt?.getTime()??Date.now(),b.qualificationExpiresAt!.getTime()));
+      const contactLimit=20_000;
+      const contactRows=await db.select().from(museReceiverContactBuckets).where(and(eq(museReceiverContactBuckets.bindingId,bindingId),eq(museReceiverContactBuckets.bindingGeneration,b.generation),sql`${museReceiverContactBuckets.bucketAt} >= ${new Date(Math.floor(startedAt.getTime()/30_000)*30_000).toISOString()}::timestamptz`,sql`${museReceiverContactBuckets.bucketAt} <= ${endAt.toISOString()}::timestamptz`)).orderBy(asc(museReceiverContactBuckets.bucketAt)).limit(contactLimit);
+      const contacts=contactRows.map(c=>({...c,timestamps:c.timestamps.filter(at=>Date.parse(at)>=startedAt.getTime()&&Date.parse(at)<=endAt.getTime())})).filter(c=>c.timestamps.length>0);
+      const samples=await db.select({id:assignments.id,runId:assignments.runId,issueId:heartbeatRuns.nativeIssueId,status:assignments.status,offeredAt:assignments.offeredAt,claimedAt:assignments.claimedAt,nativeAcceptedAt:assignments.nativeAcceptedAt,acceptedResultAt:assignments.acceptedResultAt,finalizedAt:assignments.finalizedAt}).from(assignments).innerJoin(heartbeatRuns,eq(heartbeatRuns.id,assignments.runId)).where(and(eq(assignments.bindingId,bindingId),sql`${assignments.offeredAt} >= ${startedAt.toISOString()}::timestamptz`,sql`${assignments.offeredAt} <= ${endAt.toISOString()}::timestamptz`)).orderBy(asc(assignments.offeredAt)).limit(100);
+      const inputPeriods=await db.select({start:inputs.createdAt,end:inputs.consumedAt}).from(inputs).innerJoin(assignments,eq(assignments.id,inputs.assignmentId)).where(and(eq(assignments.agentId,agentId),eq(assignments.companyId,companyId))).limit(1000);
+      const runPeriods=await db.select({start:heartbeatRuns.startedAt,end:heartbeatRuns.finishedAt}).from(heartbeatRuns).where(and(eq(heartbeatRuns.agentId,agentId),eq(heartbeatRuns.companyId,companyId),eq(heartbeatRuns.driverKind,"muse_external"),sql`(${heartbeatRuns.finishedAt} is null or ${heartbeatRuns.finishedAt} >= ${startedAt.toISOString()}::timestamptz)`)).limit(1000);
       const idleWindows:Array<{startedAt:string;endedAt:string}>=[];
-      let quietAt=startedAt;
-      for(const sample of samples) {if(sample.offeredAt>quietAt)idleWindows.push({startedAt:quietAt.toISOString(),endedAt:sample.offeredAt.toISOString()});if(!sample.finalizedAt){quietAt=endAt;break;}quietAt=sample.finalizedAt;}
-      if(quietAt<endAt)idleWindows.push({startedAt:quietAt.toISOString(),endedAt:endAt.toISOString()});
+      // Receiver gaps beyond the 30s persistence interval break idle coverage;
+      // the separate cadence qualification still requires 90% of gaps <=7s.
+      // Only receiver-observed intervals with no run/assignment/input period
+      // count as idle. Missing ingress or bounded-reader overflow proves none.
+      if(!b.cadenceEvidenceIncompleteAt&&!contacts.some(c=>c.incomplete)&&contactRows.length<contactLimit&&samples.length<100&&inputPeriods.length<1000&&runPeriods.length<1000) {
+        const minimum=startedAt.getTime(),maximum=Math.min(endAt.getTime(),b.qualificationExpiresAt!.getTime());
+        const occupied=[...samples.map(a=>({start:a.offeredAt,end:a.finalizedAt})),...inputPeriods,...runPeriods].map(p=>[Math.max(minimum,p.start?.getTime()??minimum),Math.min(maximum,p.end?.getTime()??maximum)] as const).filter(([start,end])=>start<end).sort((a,b)=>a[0]-b[0]);
+        const ingress=[...new Set(contacts.flatMap(c=>c.timestamps.map(Date.parse)))].filter(at=>at>=minimum&&at<=maximum).sort((a,b)=>a-b);
+        let start=ingress[0],previous=start;
+        const append=(from:number,to:number)=>{
+          let cursor=from;
+          for(const [busyStart,busyEnd]of occupied){if(busyEnd<=cursor||busyStart>=to)continue;if(busyStart>cursor)idleWindows.push({startedAt:new Date(cursor).toISOString(),endedAt:new Date(Math.min(busyStart,to)).toISOString()});cursor=Math.max(cursor,busyEnd);if(cursor>=to)break;}
+          if(cursor<to)idleWindows.push({startedAt:new Date(cursor).toISOString(),endedAt:new Date(to).toISOString()});
+        };
+        for(const at of ingress.slice(1)){if(at-previous>30_000){append(start,previous);start=at;}previous=at;}
+        if(start!==undefined)append(start,previous);
+      }
       return {qualificationId,startedAt:startedAt.toISOString(),expiresAt:b.qualificationExpiresAt!.toISOString(),stoppedAt:iso(b.revokedAt),deadlineEnforcedAt:iso(b.deadlineEnforcedAt),authorityRevoked:!!b.revokedAt,
-        contacts:contacts.map(c=>({replicaId:c.replicaId,bucketAt:c.bucketAt.toISOString(),firstAt:c.firstAt.toISOString(),lastAt:c.lastAt.toISOString(),contacts:c.contacts,gapsAtMostSevenSeconds:c.gapsAtMostSevenSeconds,maxGapMs:c.maxGapMs,timestamps:c.timestamps,incomplete:c.incomplete})),
-        assignments:samples.map(a=>({...a,offeredAt:a.offeredAt.toISOString(),claimedAt:iso(a.claimedAt),nativeAcceptedAt:iso(a.nativeAcceptedAt),acceptedResultAt:iso(a.acceptedResultAt),finalizedAt:iso(a.finalizedAt)})),idleWindows,persistenceLagMs:30000,cadenceEvidenceComplete:!b.cadenceEvidenceIncompleteAt&&!contacts.some(c=>c.incomplete)&&contacts.length<3000&&!!b.revokedAt};
+        contacts:contacts.map(c=>({replicaId:c.replicaId,bucketAt:c.bucketAt.toISOString(),firstAt:c.timestamps[0]!,lastAt:c.timestamps.at(-1)!,contacts:c.timestamps.length,gapsAtMostSevenSeconds:c.gapsAtMostSevenSeconds,maxGapMs:c.maxGapMs,timestamps:c.timestamps,incomplete:c.incomplete})),
+        assignments:samples.map(a=>({...a,offeredAt:a.offeredAt.toISOString(),claimedAt:iso(a.claimedAt),nativeAcceptedAt:iso(a.nativeAcceptedAt),acceptedResultAt:iso(a.acceptedResultAt),finalizedAt:iso(a.finalizedAt)})),idleWindows,persistenceLagMs:30000,cadenceEvidenceComplete:!b.cadenceEvidenceIncompleteAt&&!contacts.some(c=>c.incomplete)&&contactRows.length<contactLimit&&samples.length<100&&inputPeriods.length<1000&&runPeriods.length<1000&&!!b.revokedAt};
     },
     async act(s:AgentConnectionSubject,c:MuseCommand):Promise<Record<string,unknown>> {
       if(c.command==="challenge.confirm") {
@@ -288,8 +257,8 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
       }
       if(c.command==="task.create"||c.command==="task.comment")return idleMutation(s,c);
       if(c.command==="work.request"||c.command==="turn.request")return requestWork(s,c);
-      const input=c.command==="accept"?{}:c.command==="tool"?{name:c.name,arguments:c.arguments}:c.command==="progress"?{text:c.text}:c.command==="finish"?{result:c.result}:c.command==="renew"?{expiresAtUnixMs:c.expiresAtUnixMs}:c.command==="request_user_input"?{requestId:c.nativeRequestId,questionSet:c.questionSet}:{requestId:c.nativeRequestId,inputDigest:c.inputDigest,continuationReceiptId:c.continuationReceiptId,continuationPersisted:c.continuationPersisted};
-      return operation(s,c.assignmentId,c.requestId,c.command,input);
+      const input=c.command==="accept"?{}:c.command==="tool"?{name:c.name,arguments:c.arguments}:c.command==="progress"?{text:c.text}:c.command==="finish"?{result:c.result}:c.command==="renew"?{expiresAtUnixMs:c.expiresAtUnixMs}:c.command==="request_user_input"?{requestId:c.nativeRequestId,questionSet:c.questionSet}:{requestId:c.nativeRequestId,inputDigest:c.inputDigest};
+      return operation(s,c.assignmentId,c.requestId,c.command,input,c.command==="consume_input"?{continuationReceiptId:c.continuationReceiptId,continuationPersisted:c.continuationPersisted}:undefined);
     },
     async inspect(s:AgentConnectionSubject,q:MuseQuery):Promise<Record<string,unknown>> {
       const b=await subjectBinding(s,q.query!=="mailbox"&&q.query!=="identify",q.query==="mailbox");
@@ -298,12 +267,12 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
         const [current]=await tx.select().from(bindings).where(and(eq(bindings.id,b.id),eq(bindings.generation,b.generation),isNull(bindings.revokedAt))).for("update");if(!current)throw forbidden("Binding changed.");
         const rows=await tx.select().from(mailbox).where(and(eq(mailbox.bindingId,b.id),eq(mailbox.bindingGeneration,b.generation),gt(mailbox.id,q.after))).orderBy(asc(mailbox.id)).limit(50);
         const cursor=rows.at(-1)?.id??q.after;
-        await tx.update(bindings).set({workerCursor:Math.max(current.workerCursor,cursor)}).where(eq(bindings.id,b.id));
+        await tx.update(bindings).set({workerCursor:Math.max(current.workerCursor,q.after)}).where(eq(bindings.id,b.id));
         return {bindingId:b.id,generation:b.generation,items:rows,nextCursor:cursor};
       });
       if(q.query==="assignment.read") {const {a}=await authorizeAssignment(s,q.assignmentId);return {assignmentId:a.id,revision:a.revision,status:a.status,...a.projection,accounting:{usage:null,cost:null}};}
-      if(q.query==="operation.receipt") {await authorizeAssignment(s,q.assignmentId,true);const [op]=await db.select().from(operations).where(and(eq(operations.assignmentId,q.assignmentId),eq(operations.requestId,q.requestId)));if(!op)throw notFound("Receipt not found.");return op.outcome??{status:op.status,requestId:q.requestId,canReplay:op.status==="reserved"};}
-      if(q.query==="input.pending") {const {a}=await authorizeAssignment(s,q.assignmentId);const [delivery]=await db.select().from(inputs).where(and(eq(inputs.assignmentId,a.id),eq(inputs.requestId,q.nativeRequestId),eq(inputs.turnId,a.turnId)));return delivery?{requestId:delivery.requestId,turnId:delivery.turnId,inputDigest:delivery.inputDigest,response:delivery.response,consumed:!!delivery.consumedAt}:{status:"pending"};}
+      if(q.query==="operation.receipt") return nativeBroker.operationStatus(s,q.assignmentId,q.requestId);
+      if(q.query==="input.pending") {const {a}=await authorizeAssignment(s,q.assignmentId);const [delivery]=await db.select().from(inputs).where(and(eq(inputs.assignmentId,a.id),eq(inputs.requestId,q.nativeRequestId),eq(inputs.turnId,a.turnId)));return delivery?{assignmentId:a.id,bindingId:b.id,generation:b.generation,requestId:delivery.requestId,turnId:delivery.turnId,inputDigest:delivery.inputDigest,response:delivery.response,consumed:!!delivery.consumedAt}:{status:"pending"};}
       if(q.query==="task.list"||q.query==="task.search") {const condition=await visible(s);const rows=await db.select({id:issues.id,identifier:issues.identifier,title:issues.title,status:issues.status,assigneeAgentId:issues.assigneeAgentId}).from(issues).where(and(eq(issues.companyId,s.companyId),condition,isNull(issues.hiddenAt),isNull(issues.harnessKind),q.after?gt(issues.id,q.after):undefined,q.query==="task.search"?sql`(${issues.title} ilike ${`%${q.text}%`} or ${issues.description} ilike ${`%${q.text}%`})`:undefined)).orderBy(asc(issues.id)).limit(50);return {tasks:rows,nextCursor:rows.at(-1)?.id??null};}
       const issue=await assertIssue(s,q.issueId);
       if(q.query==="task.read")return {task:issue};
@@ -319,13 +288,13 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
         await tx.update(holds).set({workerReportedAt:new Date(),updatedAt:new Date()}).where(eq(holds.id,hold.id));return {status:"worker_reported",externalStopConfirmed:false,nativeEffectsUnknown:hold.nativeEffectsUnknown};
       }));
     },
-    async detectorCleanup(s:AgentConnectionSubject) {await db.update(bindings).set({detectorRemovedAt:new Date(),updatedAt:new Date()}).where(and(eq(bindings.id,s.bindingId),eq(bindings.generation,s.generation),eq(bindings.companyId,s.companyId)));return {status:"detector_removed",externalStopConfirmed:false};},
+    async detectorCleanup(s:AgentConnectionSubject,removed:boolean) {await db.update(bindings).set({...(removed?{detectorRemovedAt:new Date()}:{detectorRemovalRequestedAt:new Date()}),updatedAt:new Date()}).where(and(eq(bindings.id,s.bindingId),eq(bindings.generation,s.generation),eq(bindings.companyId,s.companyId)));return {status:removed?"detector_removed":"detector_removal_requested",externalStopConfirmed:false};},
     async authorizingUserIdForBinding(ref:{companyId:string;agentId:string;bindingId:string;bindingGeneration:number}) {
       const [b]=await db.select().from(bindings).where(and(eq(bindings.id,ref.bindingId),eq(bindings.generation,ref.bindingGeneration),eq(bindings.companyId,ref.companyId),eq(bindings.agentId,ref.agentId),isNull(bindings.revokedAt)));
-      if(!b)throw forbidden("Muse binding unavailable.");await assertMuseCurrentAuthority(db,b);return b.operatorId;
+      if(!b||!await identity.enabled())throw forbidden("Muse binding unavailable.");await assertMuseCurrentAuthority(db,b);return b.operatorId;
     },
     async assertRunAuthority(execution:Execution) {const ref=execution.provider.binding;const [b]=await db.select().from(bindings).where(and(eq(bindings.id,ref.bindingId),eq(bindings.generation,ref.bindingGeneration),eq(bindings.companyId,ref.companyId),eq(bindings.agentId,ref.agentId),isNull(bindings.revokedAt)));if(!b||!await identity.enabled())throw forbidden("Muse binding unavailable.");await assertMuseCurrentAuthority(db,b);const [a]=await db.select().from(assignments).where(and(eq(assignments.runId,execution.binding.runId),eq(assignments.bindingId,b.id),eq(assignments.bindingGeneration,b.generation)));if(!a||a.status==="fenced")throw forbidden("Muse assignment unavailable.");},
-    port:(execution:Execution):ExternalProviderPort & Required<Pick<ExternalProviderPort,"inputAvailable">>=>makePort(execution),
+    port:(execution:Execution):ExternalProviderPort & Required<Pick<ExternalProviderPort,"inputAvailable">>=>nativeBroker.port(execution),
   };
   async function idleMutation(s:AgentConnectionSubject,c:Extract<MuseCommand,{command:"task.create"|"task.comment"}>) {
     await subjectBinding(s);
@@ -333,6 +302,7 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
     return db.transaction(async tx=>{
       // Task lock precedes admission and binding. Parent creation locks its
       // existing parent first; new issue rows cannot be owned by another tx.
+      if(c.command==="task.create")await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`issue-privacy-tree:${s.companyId}`},0))`);
       const issueId=c.command==="task.comment"?c.issueId:c.parentId;
       if(issueId)await tx.select({id:issues.id}).from(issues).where(and(eq(issues.id,issueId),eq(issues.companyId,s.companyId))).for("update");
       return withExternalAdmissionGuard(tx,s.companyId,s.agentId,async()=>{
@@ -379,85 +349,5 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
     const run=await(await heartbeat()).wakeup(s.agentId,{source:"assignment",triggerDetail:"system",reason:"issue_assigned",payload:{issueId,museRequestId:c.requestId},contextSnapshot:{issueId},idempotencyKey:requestKey,requestedByActorType:"agent",requestedByActorId:s.agentId,allowRunCoalescing:false});
     return {status:"requested",issueId,runId:run?.id??null};
   }
-  function makePort(execution:Execution):ExternalProviderPort & Required<Pick<ExternalProviderPort,"inputAvailable">> {
-    const runId=execution.binding.runId,ref=execution.provider.binding;
-    async function checkBinding(payload:Record<string,unknown>) {
-      const binding=externalBindingSchema.parse(payload.binding);
-      if(binding.runId!==runId||binding.companyId!==execution.binding.companyId||binding.agentId!==execution.binding.agentId||binding.bindingId!==ref.bindingId||binding.bindingGeneration!==ref.bindingGeneration)throw conflict("Runner event binding mismatch.");return binding;
-    }
-    return {
-      attach:async(send,revoke,checkpoint)=>{
-        const [existing]=await db.select().from(assignments).where(eq(assignments.runId,runId));
-        if(existing&&checkpoint!==true)throw conflict("Muse target-owned checkpoint missing; reconcile the original execution.");
-        const [owner]=await db.select().from(nativeRunFinalizations).where(eq(nativeRunFinalizations.runId,runId));
-        if(!owner?.leaseExpiresAt||owner.leaseExpiresAt<=new Date()||ports.has(runId))throw conflict("Native run controller unavailable or already attached.");
-        const token=Symbol(runId);ports.set(runId,{token,generation:owner.controllerGeneration,send,revoke});
-        await db.transaction(async tx=>{
-          await tx.update(assignments).set({controllerGeneration:owner.controllerGeneration}).where(and(eq(assignments.runId,runId),eq(assignments.bindingGeneration,ref.bindingGeneration)));
-          // Interrupted dispatch cannot be replayed after controller replacement.
-          const interrupted=await tx.update(operations).set({status:"unknown",updatedAt:new Date()}).where(and(eq(operations.assignmentId,existing?.id??"00000000-0000-0000-0000-000000000000"),eq(operations.status,"dispatched"))).returning();
-          if(interrupted.length&&existing)await tx.update(holds).set({nativeEffectsUnknown:true,updatedAt:new Date()}).where(and(eq(holds.provider,"muse"),eq(holds.assignmentId,existing.id)));
-        });
-        let timer:NodeJS.Timeout|undefined;
-        const drain=async()=>{try{if(ports.get(runId)?.token!==token)return;const rows=await db.select({op:operations}).from(operations).innerJoin(assignments,eq(assignments.id,operations.assignmentId)).where(and(eq(assignments.runId,runId),eq(operations.status,"reserved"))).orderBy(asc(operations.createdAt)).limit(32);for(const {op}of rows){if(ports.get(runId)?.token!==token)break;await forward(op).catch(()=>{});}}finally{if(ports.get(runId)?.token===token){timer=setTimeout(()=>void drain().catch(()=>{}),2000);timer.unref();}}};void drain().catch(()=>{});
-        return async()=>{if(timer)clearTimeout(timer);if(ports.get(runId)?.token===token)ports.delete(runId);};
-      },
-      dispatch:async event=>{
-        const p=event.payload,binding=await checkBinding(p);
-        await db.transaction(tx=>withExternalAdmissionGuard(tx,binding.companyId,binding.agentId,async()=>{
-          const [b]=await tx.select().from(bindings).where(eq(bindings.id,binding.bindingId)).for("update");
-          if(!b)throw forbidden("Binding unavailable.");
-          if(p.kind==="authority_revoked"){await fence(tx,b,"runner_authority_revoked");return;}
-          if(b.generation!==binding.bindingGeneration||b.revokedAt||b.status!=="ready")throw forbidden("Dispatch generation fenced.");
-          await assertMuseCurrentAuthority(tx,b);
-          const [run]=await tx.select().from(heartbeatRuns).where(and(eq(heartbeatRuns.id,runId),eq(heartbeatRuns.companyId,b.companyId),eq(heartbeatRuns.agentId,b.agentId)));
-          const [owner]=await tx.select().from(nativeRunFinalizations).where(eq(nativeRunFinalizations.runId,runId));
-          if(!run||run.status!=="running"||run.runtimeMode!=="native"||run.nativeSessionId!==binding.normalizedSessionId||!owner?.leaseExpiresAt||owner.leaseExpiresAt<=new Date())throw forbidden("Dispatch lost native run authority.");
-          const [existing]=await tx.select().from(assignments).where(and(eq(assignments.runId,runId),eq(assignments.turnId,binding.turnId)));
-          if(existing&&externalOperationDigest("tool",existing.projection)!==externalOperationDigest("tool",p))throw conflict("Assignment event changed its immutable projection.");
-          const [a]=existing?[existing]:await tx.insert(assignments).values({companyId:b.companyId,bindingId:b.id,bindingGeneration:b.generation,runId,agentId:b.agentId,normalizedSessionId:binding.normalizedSessionId,turnId:binding.turnId,revision:binding.assignmentRevision,controllerGeneration:owner.controllerGeneration,catalogDigest:externalOperationDigest("tool",{tools:p.tools}),status:"offered",projection:p,acceptBy:new Date(Number(p.acceptByUnixMs)),expiresAt:new Date(Number(p.expiresAtUnixMs))}).returning();
-          if(!a)throw conflict("Assignment creation failed.");
-          await tx.insert(mailbox).values({companyId:b.companyId,bindingId:b.id,bindingGeneration:b.generation,assignmentId:a.id,kind:"assignment",sourceEventId:event.sourceEventId,references:{assignmentId:a.id,runId,revision:a.revision}}).onConflictDoNothing();
-        }));
-      },
-      settle:async event=>{
-        const p=event.payload,binding=await checkBinding(p),requestId=z.uuid().parse(p.requestId),outcome=z.record(z.string(),z.unknown()).parse(p.outcome);
-        await db.transaction(tx=>withExternalAdmissionGuard(tx,binding.companyId,binding.agentId,async()=>{
-          await tx.select({id:bindings.id}).from(bindings).where(eq(bindings.id,binding.bindingId)).for("update");
-          const [a]=await tx.select().from(assignments).where(and(eq(assignments.runId,runId),eq(assignments.bindingId,binding.bindingId),eq(assignments.bindingGeneration,binding.bindingGeneration),eq(assignments.turnId,binding.turnId),eq(assignments.normalizedSessionId,binding.normalizedSessionId),eq(assignments.revision,binding.assignmentRevision))).for("update");
-          const [op]=a?await tx.select().from(operations).where(and(eq(operations.assignmentId,a.id),eq(operations.requestId,requestId))).for("update"):[];
-          if(!a||!op)throw conflict("Native operation receipt has no reserved command.");
-          if(op.outcome&&externalOperationDigest("tool",op.outcome)!==externalOperationDigest("tool",outcome))throw conflict("Native operation conflicts with its immutable receipt.");
-          await tx.update(operations).set({status:outcome.status==="rejected"?"rejected":"settled",outcome,sourceEventId:event.sourceEventId,updatedAt:new Date()}).where(eq(operations.id,op.id));
-          const action=op.command.action;
-          if(a.status!=="fenced"&&outcome.status!=="rejected")await tx.update(assignments).set({lastActivityAt:new Date(),...(action==="accept"?{status:"accepted" as const,nativeAcceptedAt:new Date()}:{}),...(action==="finish"?{status:"settled" as const,acceptedResultAt:new Date()}:{}),...(action==="renew"&&outcome.status==="renewed"?{expiresAt:new Date(Number(outcome.expiresAtUnixMs))}:{})}).where(eq(assignments.id,a.id));
-          if(action==="consume_input"&&outcome.status!=="rejected") {const command=externalCommandSchema.parse(op.command);await tx.update(inputs).set({consumedAt:new Date(),continuationReceiptId:z.uuid().parse(command.input.continuationReceiptId)}).where(and(eq(inputs.assignmentId,a.id),eq(inputs.requestId,String(command.input.requestId)),eq(inputs.turnId,a.turnId),eq(inputs.inputDigest,String(command.input.inputDigest))));}
-          const [unknown]=await tx.select({id:operations.id}).from(operations).where(and(eq(operations.assignmentId,a.id),inArray(operations.status,["unknown","dispatched"]))).limit(1);
-          await tx.update(holds).set({nativeEffectsUnknown:!!unknown,updatedAt:new Date()}).where(and(eq(holds.provider,"muse"),eq(holds.assignmentId,a.id)));
-          // Self-authored progress, accepts and finish receipts never wake Muse.
-          if(action==="tool")await tx.insert(mailbox).values({companyId:a.companyId,bindingId:a.bindingId,bindingGeneration:a.bindingGeneration,assignmentId:a.id,kind:"operation_result",sourceEventId:event.sourceEventId,references:{assignmentId:a.id,requestId}}).onConflictDoNothing();
-        }));
-      },
-      inputAvailable:async event=>{
-        const p=event.payload,binding=await checkBinding(p),requestId=z.string().min(1).max(200).parse(p.requestId),turnId=z.literal(binding.turnId).parse(p.turnId),inputDigest=z.string().regex(/^sha256:[a-f0-9]{64}$/).parse(p.inputDigest),response=z.record(z.string(),z.unknown()).parse(p.response);
-        if(inputDigest!==externalOperationDigest("tool",{requestId,turnId,response})) {
-          // Runtime uses its canonical semantic-content digest rather than an operation envelope.
-          const {digestPaperclipSemanticContent}=await import("../../vendor/paperclip-runner/index.js");
-          if(inputDigest!==digestPaperclipSemanticContent({requestId,turnId,response}))throw conflict("Input digest does not match its canonical response.");
-        }
-        await db.transaction(tx=>withExternalAdmissionGuard(tx,binding.companyId,binding.agentId,async()=>{
-          const [b]=await tx.select().from(bindings).where(and(eq(bindings.id,binding.bindingId),eq(bindings.generation,binding.bindingGeneration),isNull(bindings.revokedAt))).for("update");
-          const [a]=await tx.select().from(assignments).where(and(eq(assignments.runId,runId),eq(assignments.bindingId,binding.bindingId),eq(assignments.bindingGeneration,binding.bindingGeneration),eq(assignments.turnId,turnId),eq(assignments.revision,binding.assignmentRevision))).for("update");
-          if(!b||!a||a.status==="fenced")throw forbidden("Input target authority unavailable.");
-          const [old]=await tx.select().from(inputs).where(and(eq(inputs.assignmentId,a.id),eq(inputs.requestId,requestId)));
-          if(old&&(old.inputDigest!==inputDigest||old.turnId!==turnId))throw conflict("Input delivery changed its immutable digest.");
-          await tx.insert(inputs).values({companyId:a.companyId,assignmentId:a.id,requestId,turnId,inputDigest,response,sourceEventId:event.sourceEventId}).onConflictDoNothing();
-          await tx.insert(mailbox).values({companyId:a.companyId,bindingId:a.bindingId,bindingGeneration:a.bindingGeneration,assignmentId:a.id,kind:"input_available",sourceEventId:event.sourceEventId,references:{assignmentId:a.id,requestId,turnId,inputDigest}}).onConflictDoNothing();
-        }));
-      },
-    };
-  }
   return broker;
 }
-const externalBindingSchema=z.object({companyId:z.uuid(),agentId:z.uuid(),bindingId:z.uuid(),bindingGeneration:z.number().int().positive(),runId:z.uuid(),normalizedSessionId:z.string().min(1),turnId:z.string().min(1),assignmentRevision:z.number().int().positive()}).strict();
-const externalCommandSchema=z.object({requestId:z.uuid(),bindingId:z.uuid(),bindingGeneration:z.number().int().positive(),runId:z.uuid(),normalizedSessionId:z.string().min(1),turnId:z.string().min(1),assignmentRevision:z.number().int().positive(),digest:z.string(),action:z.enum(["accept","tool","progress","finish","renew","request_user_input","consume_input"]),input:z.record(z.string(),z.unknown())}).strict();

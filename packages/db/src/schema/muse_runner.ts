@@ -16,7 +16,7 @@ export const museAgentBindings = pgTable("muse_agent_bindings", {
   receiverContactAt: time("receiver_contact_at"), workerActivityAt: time("worker_activity_at"), clientVersion: text("client_version"),
   workerCursor: integer("worker_cursor").notNull().default(0),
   qualificationId: uuid("qualification_id"), qualificationStartedAt: time("qualification_started_at"), qualificationExpiresAt: time("qualification_expires_at"), deadlineEnforcedAt: time("deadline_enforced_at"), cadenceEvidenceIncompleteAt: time("cadence_evidence_incomplete_at"),
-  cleanupExpiresAt: time("cleanup_expires_at"), detectorRemovedAt: time("detector_removed_at"), revokedAt: time("revoked_at"),
+  cleanupExpiresAt: time("cleanup_expires_at"), detectorRemovalRequestedAt: time("detector_removal_requested_at"), detectorRemovedAt: time("detector_removed_at"), revokedAt: time("revoked_at"),
   createdAt: time("created_at").notNull().defaultNow(), updatedAt: time("updated_at").notNull().defaultNow(),
 }, t => [uniqueIndex("muse_bindings_active_agent_uq").on(t.companyId, t.agentId).where(sql`${t.revokedAt} IS NULL`), uniqueIndex("muse_bindings_ticket_uq").on(t.ticketHash)]);
 
@@ -44,7 +44,7 @@ export const museRunnerAssignments = pgTable("muse_runner_assignments", {
 export const museRunnerOperations = pgTable("muse_runner_operations", {
   id: uuid("id").primaryKey().defaultRandom(), companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
   assignmentId: uuid("assignment_id").notNull().references(() => museRunnerAssignments.id, { onDelete: "cascade" }), requestId: uuid("request_id").notNull(),
-  digest: text("digest").notNull(), command: jsonb("command").$type<Record<string, unknown>>().notNull(),
+  continuationReceiptId: uuid("continuation_receipt_id"), digest: text("digest").notNull(), command: jsonb("command").$type<Record<string, unknown>>().notNull(),
   status: text("status").$type<"reserved" | "dispatched" | "pending" | "settled" | "rejected" | "unknown">().notNull().default("reserved"),
   outcome: jsonb("outcome").$type<Record<string, unknown>>(), sourceEventId: text("source_event_id"),
   createdAt: time("created_at").notNull().defaultNow(), updatedAt: time("updated_at").notNull().defaultNow(),
@@ -55,6 +55,7 @@ export const museMailboxItems = pgTable("muse_mailbox_items", {
   bindingId: uuid("binding_id").notNull().references(() => museAgentBindings.id, { onDelete: "cascade" }), bindingGeneration: integer("binding_generation").notNull(),
   assignmentId: uuid("assignment_id").references(() => museRunnerAssignments.id, { onDelete: "cascade" }),
   kind: text("kind").$type<"assignment" | "operation_result" | "authority_revoked" | "readiness_challenge" | "follow_up" | "input_available">().notNull(),
+  signalAttempt: integer("signal_attempt").notNull().default(0), signalNotifiedAt: time("signal_notified_at"),
   sourceEventId: text("source_event_id").notNull(), references: jsonb("references").$type<Record<string, unknown>>().notNull(), createdAt: time("created_at").notNull().defaultNow(),
 }, t => [uniqueIndex("muse_mailbox_event_uq").on(t.bindingId, t.bindingGeneration, t.sourceEventId), index("muse_mailbox_cursor_idx").on(t.bindingId, t.bindingGeneration, t.id)]);
 
