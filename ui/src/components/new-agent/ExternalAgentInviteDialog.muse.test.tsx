@@ -3,6 +3,7 @@ import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { ApiError } from "@/api/client";
 import { ExternalAgentInviteDialog } from "./ExternalAgentInviteDialog";
 import { museBinding, museConnection, musePairing } from "../../../storybook/stories/external-agent-invite/muse-fixtures";
 import { readMuseInvitationDraft } from "@/lib/muse-invitation-draft";
@@ -91,4 +92,53 @@ it("keeps every connection milestone behind the real hire approval", async () =>
   expect(document.querySelector('a[href="/approvals/hire"]')).not.toBeNull();
   expect(museApi.pair).not.toHaveBeenCalled();
   expect([...document.querySelectorAll("button")].some(b => b.textContent === "Done")).toBe(false);
+});
+
+it("starts one independent background challenge after fresh persisted pairing and receiver evidence", async () => {
+  museApi.resume.mockResolvedValue({ agent, approvalId: null, binding: museBinding });
+  museApi.connection.mockResolvedValue(museConnection);
+  museApi.verify.mockResolvedValue({ status: "pending" });
+  await render(); await click("Muse — Personal agentYour personal Muse at muse.ai");
+  expect(museApi.verify).toHaveBeenCalledWith("company", agent.id, { bindingId: museBinding.id, generation: museBinding.generation, expectedRevision: museBinding.revision });
+  await act(async () => cache.invalidateQueries({ queryKey: ["muse-binding", "company", "operator", agent.id] })); await flush();
+  expect(museApi.verify).toHaveBeenCalledTimes(1);
+  expect(museApi.pair).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("Waiting for Muse to reply to the background test");
+  expect(document.body.textContent).not.toContain("Muse is ready for tasks");
+});
+it("shows an actionable authenticated-instance requirement before an invitation exists", async () => {
+  museApi.resume.mockRejectedValue(new ApiError("Sign in as a company operator to configure Muse.", 403, {}));
+  await render(); await click("Muse — Personal agentYour personal Muse at muse.ai");
+  expect(document.body.textContent).toContain("Local trusted access alone cannot connect Muse");
+  expect(document.body.textContent).not.toContain("Watching for Muse to pair");
+  expect(document.body.textContent).not.toContain("Copy the setup prompt");
+  expect(document.querySelector('[aria-label="Muse connection checks"]')).toBeNull();
+  expect(document.querySelector('a[href="https://muse.ai"]')).toBeNull();
+  expect(museApi.create).not.toHaveBeenCalled();
+  museApi.resume.mockResolvedValue(null); await click("Refresh setup");
+  expect(document.querySelector('input[placeholder="Muse"]')).not.toBeNull();
+});
+it("does not show waiting milestones while the initial invitation request is loading", async () => {
+  museApi.resume.mockReturnValue(new Promise(() => {}));
+  await render(); await click("Muse — Personal agentYour personal Muse at muse.ai");
+  expect(document.body.textContent).toContain("Loading Muse invitation");
+  expect(document.querySelector('[aria-label="Muse connection checks"]')).toBeNull();
+  expect(document.querySelector('a[href="https://muse.ai"]')).toBeNull();
+});
+
+it("explains a missing public HTTPS URL and refreshes without preparing a ticket or another agent", async () => {
+  museApi.resume.mockResolvedValue({ agent, approvalId: null, binding: null });
+  museApi.connection.mockResolvedValue({ ...museConnection, publicOrigin: null, binding: null });
+  await render(); await click("Muse — Personal agentYour personal Muse at muse.ai");
+  expect(document.body.textContent).toContain("This instance has no public HTTPS URL for Muse");
+  expect(document.body.textContent).toContain("configure a stable public HTTPS address, then refresh setup");
+  expect(document.body.textContent).not.toContain("Copy the setup prompt");
+  expect(document.querySelector('[aria-label="Muse connection checks"]')).toBeNull();
+  expect(document.querySelector('a[href="https://muse.ai"]')).toBeNull();
+  expect(museApi.pair).not.toHaveBeenCalled();
+  museApi.connection.mockResolvedValue({ ...museConnection, binding: null });
+  await click("Refresh setup");
+  expect(museApi.pair).toHaveBeenCalledWith("company", agent.id, {});
+  expect(museApi.pair).toHaveBeenCalledTimes(1);
+  expect(museApi.create).not.toHaveBeenCalled();
 });

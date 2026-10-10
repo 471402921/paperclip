@@ -55,6 +55,7 @@ export function MuseConnectionDetails({ connection, pairing, busy, error, onTest
       <p className="text-xs text-muted-foreground">Receiver contact is persisted in batches and may lag by up to {Math.ceil(b.contactPersistenceLagMs / 1000)} seconds. Receiver checks do not prove worker readiness.</p>
       {b.status === "revoked" && <p role="status" className="text-sm text-muted-foreground">Disconnected. Paperclip credentials and execution authority were revoked.</p>}
       {(b.cleanup.pending || b.status === "revoked") && <div className="space-y-2 text-sm text-muted-foreground">
+        {"detectorRemovalRequested" in b.cleanup && b.cleanup.detectorRemovalRequested === true && !b.cleanup.detectorRemoved && <p>Detector removal requested; completion is not confirmed.</p>}
         <p>Detector removal: {b.cleanup.detectorRemoved ? "acknowledged" : "not confirmed"}. Worker quiescence: {b.cleanup.workerQuiescenceReported ? "reported" : "not confirmed"}.</p>
         {b.cleanup.expiresAt && <p className="text-xs">Cleanup capability expires {formatDateTime(b.cleanup.expiresAt)}.</p>}
         <p>Detector removal, worker stopping, and sandbox cleanup are separate. Paperclip cannot verify every private Muse tool or stop all personal Muse conversations.</p>

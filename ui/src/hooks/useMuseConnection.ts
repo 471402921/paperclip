@@ -45,7 +45,7 @@ export function useMuseConnection(companyId: string | undefined, agentId: string
   }, onSuccess: () => { void refresh(); }, onError: () => { setPairing(null); void state.refetch(); }, gcTime: 0 });
   const verify = useMutation({ mutationFn: async (binding: MuseBinding) => {
     await museInvitationsApi.verify(companyId!, agentId!, museBindingRevision(binding));
-  }, onSuccess: () => { void refresh(); } });
+  }, onSuccess: () => { void refresh(); }, onError: () => { void state.refetch(); } });
   const revoke = useMutation({ mutationFn: async (binding: MuseBinding) => {
     await museInvitationsApi.revoke(companyId!, agentId!, museBindingRevision(binding));
   }, onSuccess: () => { setPairing(null); void refresh(); } });

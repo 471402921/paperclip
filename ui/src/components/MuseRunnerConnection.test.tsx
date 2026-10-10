@@ -65,3 +65,13 @@ it("uses no-recent-response wording for an expired independent background test",
   expect(container.textContent).toContain("Silence does not identify a permission problem");
   expect(container.querySelector('a[href="https://muse.ai"]')).not.toBeNull();
 });
+
+it("distinguishes a detector removal request from acknowledged removal", async () => {
+  const pending = structuredClone(stoppedMuseConnection);
+  pending.binding!.cleanup.detectorRemoved = false;
+  Object.assign(pending.binding!.cleanup, { detectorRemovalRequested: true });
+  await render(pending);
+  expect(container.textContent).toContain("Detector removal requested; completion is not confirmed");
+  expect(container.textContent).toContain("Detector removal: not confirmed");
+  expect(container.textContent).not.toContain("Detector removal: acknowledged");
+});

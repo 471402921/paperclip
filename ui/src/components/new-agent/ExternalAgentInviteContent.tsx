@@ -156,6 +156,7 @@ export function ExternalAgentInviteContent({
   const detailsId = useId();
   const muse = preset === "muse";
   const museDetails = muse && !!museDraft;
+  const museAwaitingInvitation = muse && !museDetails && !museConnection && !approvalHref;
   const museReady = muse && !!museConnection?.ready && museConnection.paired && museConnection.receiverDetected && museConnection.backgroundReplyVerified && !museConnection.problem;
   const provider = presets.find(item => item.id === preset);
   const dot = preset === "dot";
@@ -173,12 +174,14 @@ export function ExternalAgentInviteContent({
         {provider && <AdapterMark type={provider.adapter} className="size-10" />}
         <div className="space-y-2">
           <DialogTitle className="text-xl font-semibold tracking-tight">
-            {!provider ? "Invite an external agent" : muse ? ready ? "Muse is connected" : museDetails ? "Invite your Muse" : "Connect your Muse" : dot ? ready ? "Your Dot is connected" : "Connect your Dot" : preset === "hermes" ? "Invite your Hermes agent" : "Invite your agent"}
+            {!provider ? "Invite an external agent" : muse ? ready ? "Muse is connected" : museDetails || museAwaitingInvitation ? "Invite your Muse" : "Connect your Muse" : dot ? ready ? "Your Dot is connected" : "Connect your Dot" : preset === "hermes" ? "Invite your Hermes agent" : "Invite your agent"}
           </DialogTitle>
           <DialogDescription className="text-sm leading-relaxed">
             {!provider ? `Bring an agent you already use into ${companyName}.`
               : muse ? museDetails ? `Give your personal Muse a name and role in ${companyName}.`
+              : museAwaitingInvitation ? "Muse requires an authenticated Paperclip instance with a public HTTPS URL and a company operator account."
               : ready ? `Muse can receive assignments and work with ${companyName}.`
+              : !prompt && !museConnection?.paired ? "We’re checking whether this instance can prepare Muse setup."
               : "Paste the setup prompt into your current Muse conversation. Approve this Paperclip hostname in Muse’s own permission UI. That standing permission applies to the hostname, including future requests."
               : ready ? `Your Dot can now receive assignments and work with ${companyName}.`
               : connection.problem === "agent_unavailable" ? "Your Dot is connected. This agent must be available in Paperclip before it can receive assignments."
@@ -189,10 +192,11 @@ export function ExternalAgentInviteContent({
           </DialogDescription>
         </div>
       </div>
-      {error && <div role="alert" className="space-y-3 text-sm text-destructive"><p>{error}</p><Button variant="outline" disabled={busy} onClick={onRetry}>Try again</Button></div>}
+      {error && <div role="alert" className="space-y-3 text-sm text-destructive"><p>{error}</p>{!museAwaitingInvitation && <Button variant="outline" disabled={busy} onClick={onRetry}>Try again</Button>}</div>}
       {!provider ? <><ExternalAgentPresetPicker onSelect={onSelect} dotDisabledReason={dotDisabledReason} museEnabled={museEnabled} />
         {dotDisabledReason && <p className="text-sm text-muted-foreground">{dotDisabledReason}</p>}</>
         : approvalHref ? <p className="text-sm text-muted-foreground">An organization admin needs to approve this agent before {muse ? "Muse" : "Dot"} can connect. This page will update after approval.</p>
+        : museAwaitingInvitation ? busy ? <p role="status" className="text-sm text-muted-foreground">Loading Muse invitation…</p> : null
         : muse && busy && !museDetails && !prompt && !museConnection?.paired ? <p role="status" className="text-sm text-muted-foreground">Loading Muse setup…</p>
         : museDetails ? <form id={detailsId} className="space-y-4" onSubmit={event => { event.preventDefault(); if (museDraft.name.trim() && !busy) onMuseContinue?.(); }}>
           <div className="space-y-2">
@@ -231,6 +235,7 @@ export function ExternalAgentInviteContent({
       {provider && (approvalHref ? <Button asChild><Link to={approvalHref} onClick={onClose}>Review approval</Link></Button>
         : museDetails ? <Button type="submit" form={detailsId} disabled={busy || !museDraft.name.trim()}>{busy ? "Preparing…" : "Continue"}</Button>
         : ready ? <Button onClick={onClose}>Done</Button>
+        : museAwaitingInvitation ? <Button disabled={busy} onClick={onRetry}>{busy ? "Loading setup…" : "Refresh setup"}</Button>
         : muse ? museConnection?.problem === "disconnected" ? <Button disabled={busy} onClick={onNewPrompt}>Reconnect Muse</Button>
           : museConnection?.problem === "prompt_unavailable" ? <Button disabled={busy} onClick={onNewPrompt}>Create a new prompt</Button>
           : !museConnection?.paired && prompt ? <AgentSetupPrompt key={prompt} prompt={prompt} label="Copy setup prompt" title="Connect your Muse" agent={{ name: "Muse", icon: <Bot className="size-5" /> }} description="Send this whole prompt to your current Muse conversation." align="end" className="min-w-0 shrink" onCopied={onCopied} />

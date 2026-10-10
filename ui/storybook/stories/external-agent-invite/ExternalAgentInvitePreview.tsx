@@ -26,6 +26,8 @@ export interface ExternalAgentInvitePreviewProps {
   stepDelayMs?: number;
   shell?: boolean;
   preparing?: boolean;
+  invitationUnavailable?: boolean;
+  error?: string;
 }
 
 /** Storybook owns simulation. No timer, fixture code, or fake status ships in the UI component. */
@@ -33,7 +35,7 @@ export function ExternalAgentInvitePreview({
   initialScreen = "entry", initialPreset = "dot", initialConnection = { phase: "waiting" },
   initialMuseConnection = { paired: false, receiverDetected: false, backgroundReplyVerified: false, ready: false },
   museDetails = false, museEnabled = false, pendingApproval = false,
-  companyName = "Paperclip", simulate = true, failTest = false, stepDelayMs = 2000, shell = true, preparing = false,
+  companyName = "Paperclip", simulate = true, failTest = false, stepDelayMs = 2000, shell = true, preparing = false, invitationUnavailable = false, error,
 }: ExternalAgentInvitePreviewProps) {
   const [screen, setScreen] = useState<"entry" | "picker" | "setup" | "closed">(initialScreen);
   const [preset, setPreset] = useState<ExternalAgentPreset>(initialPreset);
@@ -72,9 +74,10 @@ export function ExternalAgentInvitePreview({
           preset={screen === "picker" ? null : preset}
           companyName={companyName}
           busy={preparing}
-          prompt={preparing ? "" : preset === "muse" ? musePairing.setupInstruction : preset === "dot" ? dotInvitePrompt(generation) : externalInvitePrompt}
+          error={error}
+          prompt={preparing || invitationUnavailable ? "" : preset === "muse" ? musePairing.setupInstruction : preset === "dot" ? dotInvitePrompt(generation) : externalInvitePrompt}
           museEnabled={museEnabled}
-          museConnection={museConnection}
+          museConnection={invitationUnavailable ? undefined : museConnection}
           museDraft={museDraft}
           onMuseDraftChange={setMuseDraft}
           onMuseContinue={() => setMuseDraft(undefined)}
