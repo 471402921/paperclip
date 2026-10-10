@@ -91,6 +91,9 @@ it("uses the native request, exact question command ID and durable answer receip
   let driver = new RunnerdMuseDriver(options);
   let session = await driver.openSession({ runId: input.binding.runId, normalizedSessionId: input.session.normalizedSessionId! });
   try {
+    const prepared = commandSpy.mock.calls.find(call => call[0] === "run.prepare");
+    expect(JSON.stringify(prepared?.[1])).not.toContain("connections_search");
+    expect(JSON.stringify(prepared?.[1])).not.toContain("search_api");
     await session.startTurn({ message: { role: "user", text: "Read the selected environment." } });
     await send!(operation("accept", {}));
     const requestId = "original-native-question";

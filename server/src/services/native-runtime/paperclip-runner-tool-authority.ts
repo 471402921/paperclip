@@ -1182,6 +1182,11 @@ export class PaperclipRunnerToolAuthority {
     }) => {
       const parentIssueId = context.issue.conversationAgentId ? null : context.issue.id;
       const projectId = nullableProviderId(input.projectId) ?? (parentIssueId ? context.issue.projectId : null);
+      if (this.binding.museRuntime && projectId) {
+        const access = await authorizationService(tx).decide({ actor: this.#privacyActor(context.run), action: "project:read",
+          resource: { type: "project", companyId: this.binding.companyId, projectId } });
+        if (!access.allowed) throw forbidden("Project is unavailable to this Muse run");
+      }
       const scope = { projectId, parentIssueId, assigneeAgentId, assigneeUserId };
       const decision = await authorizationService(tx).decide({
         actor: this.#privacyActor(context.run),

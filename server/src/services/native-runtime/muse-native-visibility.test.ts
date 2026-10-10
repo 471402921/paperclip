@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { agents, approvals, authUsers, companies, companyMemberships, createDb, instanceUserRoles, issueAccessGrants, issues, projectAccessMembers, projects } from "@paperclipai/db";
+import { agents, approvals, authUsers, companies, companyMemberships, createDb, heartbeatRuns, instanceUserRoles, issueAccessGrants, issues, projectAccessMembers, projects } from "@paperclipai/db";
 import { startEmbeddedPostgresTestDatabase } from "../../__tests__/helpers/embedded-postgres.js";
 import { approvalReadSqlCondition, authorizationService, canActorReadIssuePrivacy, issueReadSqlCondition, projectReadSqlCondition, type AuthorizationActor } from "../authorization.js";
 import { PaperclipRunnerToolAuthority } from "./paperclip-runner-tool-authority.js";
@@ -48,6 +48,23 @@ describe("Muse native visibility intersection", () => {
     await db.update(companyMemberships).set({ status: "inactive" }).where(and(eq(companyMemberships.companyId, f.companyId), eq(companyMemberships.principalId, f.authorizer)));
     expect(await canActorReadIssuePrivacy(db, f.actor, f.issue)).toBe(false);
   });
+  it("filters native task search with the same authorizer and responsible-user predicates", async () => {
+    const f = await fixture(), runId = randomUUID();
+    await db.insert(heartbeatRuns).values({ id: runId, companyId: f.companyId, agentId: f.agentId, nativeIssueId: f.issue.id,
+      responsibleUserId: f.responsible, status: "running", runtimeMode: "native", invocationSource: "assignment" });
+    await db.update(issues).set({ executionRunId: runId }).where(eq(issues.id, f.issue.id));
+    await db.insert(issueAccessGrants).values({ issueId: f.issue.id, subjectType: "user", subjectId: f.authorizer, source: "explicit" });
+    const [hidden] = await db.insert(issues).values({ companyId: f.companyId, title: "Another private task", visibility: "private",
+      assigneeAgentId: f.agentId, responsibleUserId: f.responsible }).returning();
+    const authority = new PaperclipRunnerToolAuthority(db, { companyId: f.companyId, agentId: f.agentId, issueId: f.issue.id, runId,
+      museRuntime: true, externalAuthorizingUserId: f.authorizer, assertBridgeAuthority: async () => {} });
+    const result = await authority.execute({ tool: "search_tasks", callId: "search", arguments: { limit: 10 } });
+    expect(result).toMatchObject({ tasks: [{ id: f.issue.id }] });
+    expect(JSON.stringify(result)).not.toContain(hidden.id);
+    await db.update(companyMemberships).set({ status: "inactive" }).where(and(eq(companyMemberships.companyId, f.companyId), eq(companyMemberships.principalId, f.authorizer)));
+    await expect(authority.execute({ tool: "search_tasks", callId: "search-again", arguments: {} })).rejects.toThrow("no longer available");
+  });
+
   it("advertises only first-party tools for Muse and rejects missing authorizer authority", async () => {
     const f = await fixture();
     const authority = new PaperclipRunnerToolAuthority(db, { companyId: f.companyId, agentId: f.agentId, issueId: f.issue.id, runId: randomUUID(), museRuntime: true, apiToolsEnabled: true, workspaceBridge: true });

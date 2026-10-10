@@ -1360,7 +1360,7 @@ export function createHeartbeatQueue(db: Db, dependencies: HeartbeatQueueDepende
                 // explicitly bound queued-message envelope is subject to the
                 // live-comment discard gate below.
                 await withExternalAdmissionGuard(tx, run.companyId, run.agentId, () => assertNoExternalOverlap(tx, run.companyId, run.agentId));
-              const [claimedRun] = await tx
+                const [claimedRun] = await tx
                   .update(heartbeatRuns)
                   .set({
                     status: "running",
