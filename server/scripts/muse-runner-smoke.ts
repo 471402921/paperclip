@@ -103,8 +103,11 @@ async function until<T>(name: string, read: () => Promise<T>, predicate: (value:
   throw new Error(`Deadline while waiting for ${name}`);
 }
 async function signal() {
-  await http("/api/muse/v1/signal", "GET", undefined, undefined, false,
-    { "X-Paperclip-Muse-Binding": string(credentials?.bindingId) });
+  // This fallback belongs only to this synthetic operator peer. Real Muse
+  // detectors cannot use credentials; their contract is the public binding header.
+  const legacySyntheticToken = typeof credentials?.signalToken === "string" ? credentials.signalToken : undefined;
+  await http("/api/muse/v1/signal", "GET", undefined, legacySyntheticToken, false,
+    legacySyntheticToken ? {} : { "X-Paperclip-Muse-Binding": string(credentials?.bindingId) });
   detectorRequests++;
 }
 async function assignment(): Promise<Json> {
@@ -161,6 +164,8 @@ try {
     ? { replaceBindingId: previous.id, expectedRevision: previous.revision } : {}));
   credentials = object(await http("/api/muse/v1/pair", "POST", { version: 1, ticket: pairing.ticket, clientVersion: "1" }));
   assert.equal(credentials.companyId, companyId); assert.equal(credentials.agentId, agentId);
+  evidence.signalMode = typeof credentials.signalToken === "string" ? "authenticated_synthetic" : "public_binding_header";
+  evidence.liveMuseDetectorCompatible = evidence.signalMode === "public_binding_header";
   await signal(); detectorTimer = setInterval(() => {
     if (detectorFlight) return;
     detectorFlight = signal().catch(() => { detectorError = true; }).finally(() => { detectorFlight = undefined; });
@@ -234,7 +239,9 @@ try {
   assert.equal(runs.length, 2, "Unread follow-up must not create a third run"); assert.ok(runs.every(run => run.status === "succeeded"));
   evidence.runs = runs.map(run => ({ id: run.id, status: run.status, runtimeMode: run.runtimeMode, driverKind: run.driverKind,
     createdAt: run.createdAt, finishedAt: run.finishedAt, finalizationPhase: object(run.resultJson ?? {}).finalizationPhase }));
-  assert.equal(detectorError, false); evidence.detector = { syntheticPublicContacts: detectorRequests, cadenceMs: 5000, secretUsed: false, realHooksInstalled: false };
+  assert.equal(detectorError, false); evidence.detector = { syntheticContacts: detectorRequests, cadenceMs: 5000,
+    signalMode: evidence.signalMode, secretUsed: evidence.signalMode === "authenticated_synthetic",
+    realHooksInstalled: false, liveMuseCompatible: evidence.liveMuseDetectorCompatible };
   evidence.passed = true; step("passed", { nativeTurns: 2 });
 } catch (error) {
   evidence.passed = false; evidence.failure = { stage, observed: error instanceof Error ? error.message : "Unknown failure", classification: "requires diagnosis" };
