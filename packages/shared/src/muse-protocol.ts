@@ -48,7 +48,7 @@ export const museCommandSchema = z.discriminatedUnion("command", [
   z.object({ ...operation, command: z.literal("finish"), result: z.record(z.string(), z.unknown()) }).strict(),
   z.object({ ...operation, command: z.literal("renew"), expiresAtUnixMs: z.number().int().positive() }).strict(),
   z.object({ ...operation, command: z.literal("request_user_input"), nativeRequestId: boundedId, questionSet: paperclipQuestionSetPayloadSchema }).strict(),
-  z.object({ ...operation, command: z.literal("consume_input"), nativeRequestId: boundedId, inputDigest: z.string().regex(/^[a-f0-9]{64}$/), continuationReceiptId: id, continuationPersisted: z.literal(true) }).strict(),
+  z.object({ ...operation, command: z.literal("consume_input"), nativeRequestId: boundedId, inputDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/), continuationReceiptId: id, continuationPersisted: z.literal(true) }).strict(),
 ]);
 export const museQuerySchema = z.discriminatedUnion("query", [
   z.object({ ...envelope, query: z.literal("identify") }).strict(),

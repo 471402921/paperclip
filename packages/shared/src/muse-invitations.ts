@@ -29,3 +29,12 @@ export interface MusePairingInput { replaceBindingId?: string; expectedRevision?
 export interface MuseVerifyInput { bindingId: string; generation: number; expectedRevision: number }
 export interface MuseRevokeInput extends MuseVerifyInput {}
 export interface MuseAttestStopInput { boundary: MuseStopBoundary; expectedRevision: number; workerStopped: true }
+
+export interface MuseQualificationBeginResult { qualificationId: string; startedAt: string; expiresAt: string; revision: number }
+export interface MuseQualificationEvidence {
+  qualificationId: string; startedAt: string; expiresAt: string; stoppedAt: string | null; deadlineEnforcedAt: string | null;
+  authorityRevoked: boolean; persistenceLagMs: number; cadenceEvidenceComplete: boolean;
+  contacts: Array<{ replicaId: string; bucketAt: string; firstAt: string; lastAt: string; contacts: number; gapsAtMostSevenSeconds: number; maxGapMs: number; timestamps: string[]; incomplete: boolean }>;
+  assignments: Array<{ id: string; runId: string; issueId: string | null; status: string; offeredAt: string; claimedAt: string | null; nativeAcceptedAt: string | null; acceptedResultAt: string | null; finalizedAt: string | null }>;
+  idleWindows: Array<{ startedAt: string; endedAt: string }>;
+}
