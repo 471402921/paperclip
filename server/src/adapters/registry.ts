@@ -432,16 +432,19 @@ const paperclipRunnerAdapter: ServerAdapterModule = {
           if (!((os === "Linux" && arch === "x86_64") || (os === "Darwin" && (arch === "arm64" || (profile.acpxAgent !== "grok" && arch === "x86_64"))))) {
             throw new Error(`ACPX ${profile.acpxAgent} requires a qualified Linux x64 or macOS architecture.`);
           }
+          const runtimeUnverified = { code: "acpx_remote_runtime_unverified", level: "warn" as const,
+            message: "The remote platform is supported. Runtime package integrity and readiness must still be verified by the remote runner before launch." };
           if (target.transport === "computer" && profile.acpxAgent === "claude") {
             const hello = await claudeTestEnvironment({ ...context, adapterType: "claude_local",
               config: { ...context.config, engine: "cli", model: profile.model,
                 dangerouslySkipPermissions: context.config.acpxPermissionMode === "approve-all" } });
-            return { ...hello, adapterType: "paperclip_runner" };
+            return { ...hello, adapterType: "paperclip_runner",
+              status: hello.status === "fail" ? "fail" as const : "warn" as const,
+              checks: [...hello.checks, runtimeUnverified] };
           }
           return {
             adapterType: "paperclip_runner", status: "warn" as const, testedAt: new Date().toISOString(),
-            checks: [{ code: "acpx_remote_runtime_unverified", level: "warn" as const,
-              message: "The remote platform is supported. Runtime package integrity and readiness must still be verified by the remote runner before launch." }],
+            checks: [runtimeUnverified],
           };
         }
         const { probeAcpxClaudeInstallation, probeAcpxGrokInstallation, probeAcpxCursorInstallation, probeAcpxPiInstallation } = await import("../vendor/paperclip-runner/live/index.js");

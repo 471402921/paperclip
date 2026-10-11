@@ -219,7 +219,7 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
     executionTargetIsRemote,
     executionCwd: effectiveExecutionCwd,
   });
-  if (!executionTargetIsRemote) {
+  if (executionTarget?.workspaceRealization?.mode !== "in_place") {
     await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
   }
 

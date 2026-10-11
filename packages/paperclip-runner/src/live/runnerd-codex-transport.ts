@@ -3493,7 +3493,8 @@ export function createRunnerdCodexAppServerArgs(input: {
       ...(input.persistentAgentHome ? { AGENT_HOME: input.persistentAgentHome } : {}),
     },
     [...(input.readOnlyRoots ?? []), ...codexExecutableReadOnlyRoots(input.environment ?? {}, input.codexCommand)],
-    input.instructionWorkingCopyRoot ?? input.persistentAgentHome,
+    input.instructionWorkingCopyRoot,
+    input.persistentAgentHome,
   );
 }
 
