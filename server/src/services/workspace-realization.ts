@@ -93,6 +93,7 @@ export function readWorkspaceRealizationRequest(value: unknown): WorkspaceRealiz
       repoRef: readString(source.repoRef),
       strategy: source.strategy === "git_worktree" ? "git_worktree" : "project_primary",
       branchName: readString(source.branchName),
+      ...(readString(source.existingBranch) ? { existingBranch: readString(source.existingBranch)! } : {}),
       worktreePath: readString(source.worktreePath),
     },
     additionalSources: readAdditionalSources(parsed.additionalSources),
@@ -137,6 +138,7 @@ export function buildWorkspaceRealizationRequest(input: {
       repoRef: input.workspace.repoRef,
       strategy: input.workspace.strategy,
       branchName: input.workspace.branchName,
+      ...(input.workspace.existingBranch ? { existingBranch: input.workspace.existingBranch } : {}),
       worktreePath: input.workspace.worktreePath,
     },
     // The additional (referenced) sources carry the read-only referenced-project workspaces. Run
