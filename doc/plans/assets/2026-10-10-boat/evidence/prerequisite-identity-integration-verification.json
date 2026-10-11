@@ -1,0 +1,40 @@
+{
+  "capturedAt": "2026-10-11T12:39:41.688522+00:00",
+  "commit": "7634c65d227fb5f738c9c55a78ad3927b31c680f",
+  "base": "8ecad0f3594ce4ae4383b7e9a20671579290eff0",
+  "changedFiles": [
+    "server/src/services/native-runtime/native-session-executor.test.ts"
+  ],
+  "productionChanged": false,
+  "prerequisiteBranchChanged": false,
+  "diagnosis": "Identity-only target mock lacked full Boat retainWarm/retire lifecycle; runtime-only prerequisite did not exercise those callbacks.",
+  "correction": "Typed AdapterComputerExecutionTarget supplies retention and retirement with beforeStop; unused process operations throw. Identity assertions retained, lifecycle ordering asserted.",
+  "validation": {
+    "red": {
+      "failed": 4,
+      "log": "prerequisite-identity-full-boat-red.log"
+    },
+    "focusedGreen": {
+      "passed": 4,
+      "filtered": 831,
+      "log": "prerequisite-identity-full-boat-green.log"
+    },
+    "fullGreen": {
+      "passed": 835,
+      "skipped": 0,
+      "log": "prerequisite-identity-full-boat-suite-authorized.log"
+    },
+    "initialFullSandboxFailure": {
+      "passed": 820,
+      "blockedByLoopbackPermission": 15,
+      "log": "prerequisite-identity-full-boat-suite.log"
+    },
+    "serverTypecheck": "passed",
+    "diffCheck": "passed"
+  },
+  "review": {
+    "agent": "live_state_probe",
+    "verdict": "approved; no actionable findings"
+  },
+  "pushed": false
+}

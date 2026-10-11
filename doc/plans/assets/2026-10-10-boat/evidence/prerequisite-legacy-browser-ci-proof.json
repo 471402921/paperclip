@@ -1,0 +1,46 @@
+{
+  "capturedAt": "2026-10-11T12:40:48.385626+00:00",
+  "status": "legacy_browser_local_gap_closed_on_both_exact_PR_heads",
+  "proofs": [
+    {
+      "pr": 15878,
+      "head": "e318850909c0777565b43644a4d8114c6006da60",
+      "runId": 38139748925,
+      "jobId": 114470999277,
+      "jobUrl": "https://github.com/paperclipai/paperclip/actions/runs/38139748925/job/114470999277",
+      "legacyCasesPassed": 6,
+      "caseLines": [
+        "2026-10-11T12:36:45.4017259Z   \u2713   4 [chromium] \u203a tests/e2e/legacy-failure-continuation.spec.ts:15:3 \u203a legacy startup hold: task_retry reaches a new agent response (6.8s)",
+        "2026-10-11T12:36:50.9322411Z   \u2713   5 [chromium] \u203a tests/e2e/legacy-failure-continuation.spec.ts:15:3 \u203a legacy startup hold: thread_retry reaches a new agent response (5.5s)",
+        "2026-10-11T12:36:57.1828762Z   \u2713   6 [chromium] \u203a tests/e2e/legacy-failure-continuation.spec.ts:15:3 \u203a legacy startup hold: inbox_retry reaches a new agent response (6.2s)",
+        "2026-10-11T12:37:03.3765962Z   \u2713   7 [chromium] \u203a tests/e2e/legacy-failure-continuation.spec.ts:15:3 \u203a legacy startup hold: message reaches a new agent response (6.2s)",
+        "2026-10-11T12:37:09.6694980Z   \u2713   8 [chromium] \u203a tests/e2e/legacy-failure-continuation.spec.ts:15:3 \u203a legacy startup hold: queued_interrupt reaches a new agent response (6.3s)",
+        "2026-10-11T12:37:35.2555785Z   \u2713   9 [chromium] \u203a tests/e2e/legacy-failure-continuation.spec.ts:15:3 \u203a legacy startup hold: automatic_message reaches a new agent response (25.6s)"
+      ],
+      "summary": [
+        "2026-10-11T12:38:16.7811856Z   20 passed (2.6m)"
+      ],
+      "log": "fixture-e31885-e2e8.log"
+    },
+    {
+      "pr": 15880,
+      "head": "1525c4ef2794d5a914232adfaccdcd4cbe12826e",
+      "runId": 38139759525,
+      "jobId": 114471037156,
+      "jobUrl": "https://github.com/paperclipai/paperclip/actions/runs/38139759525/job/114471037156",
+      "legacyCasesPassed": 6,
+      "caseLines": [
+        "2026-10-11T12:36:58.4793219Z   \u2713   4 [chromium] \u203a tests/e2e/legacy-failure-continuation.spec.ts:15:3 \u203a legacy startup hold: task_retry reaches a new agent response (8.0s)",
+        "2026-10-11T12:37:05.9014664Z   \u2713   5 [chromium] \u203a tests/e2e/legacy-failure-continuation.spec.ts:15:3 \u203a legacy startup hold: thread_retry reaches a new agent response (7.4s)",
+        "2026-10-11T12:37:13.8160529Z   \u2713   6 [chromium] \u203a tests/e2e/legacy-failure-continuation.spec.ts:15:3 \u203a legacy startup hold: inbox_retry reaches a new agent response (7.9s)",
+        "2026-10-11T12:37:21.4146176Z   \u2713   7 [chromium] \u203a tests/e2e/legacy-failure-continuation.spec.ts:15:3 \u203a legacy startup hold: message reaches a new agent response (7.6s)",
+        "2026-10-11T12:37:28.9009864Z   \u2713   8 [chromium] \u203a tests/e2e/legacy-failure-continuation.spec.ts:15:3 \u203a legacy startup hold: queued_interrupt reaches a new agent response (7.5s)",
+        "2026-10-11T12:37:45.3613173Z   \u2713   9 [chromium] \u203a tests/e2e/legacy-failure-continuation.spec.ts:15:3 \u203a legacy startup hold: automatic_message reaches a new agent response (16.4s)"
+      ],
+      "summary": [
+        "2026-10-11T12:38:35.7862626Z   20 passed (2.8m)"
+      ],
+      "log": "runtime-1525c4-e2e8.log"
+    }
+  ]
+}

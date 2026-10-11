@@ -1,0 +1,172 @@
+{
+  "status": "cold_passed_warm_in_progress_post_idle_unverified",
+  "deployment": {
+    "version": 1,
+    "requestId": "076bf489-963d-4c36-aa86-261e0995c2f3",
+    "sha": "05f3725af838b5a074707df1d6ed1e193bdfe49e",
+    "stage": "deploy",
+    "hostname": "boat.staging.paperclip.app",
+    "environment": "staging",
+    "status": "succeeded",
+    "verification": "verified",
+    "appVersion": "sha-05f3725af838b5a074707df1d6ed1e193bdfe49e-cloud",
+    "targetStackId": "stack-pool-474c42a4b545",
+    "campaignUrl": "https://admin-staging.paperclip.app/admin/fleet/campaigns/fleet-campaign-1791706430005",
+    "checkedAt": "2026-10-11T12:23:23.944Z"
+  },
+  "package": {
+    "observedAt": "2026-10-11T12:24:41.177Z",
+    "schema": "paperclip-runner/remote-provider-pack/v1",
+    "digest": "sha256:eee8609e9377e24a4588f27816834f15a665d22e23521edc1cf498f9c35f7fff",
+    "sourceRevision": "05f3725af838b5a074707df1d6ed1e193bdfe49e",
+    "target": {
+      "platform": "linux",
+      "architecture": "x64"
+    },
+    "pins": {
+      "nodeMinimum": "24.11.0",
+      "codex": "0.160.0",
+      "opencode": "1.18.34",
+      "acpx": "0.13.1",
+      "grok": "1.0.13",
+      "claudeAcp": "0.73.0",
+      "codexAcp": "1.6.2"
+    },
+    "distDigest": "sha256:0e19b77d134842210d6c182fc6ca9f4b0a41199765dd38744413ffe8135edeab",
+    "bridgeDigest": "sha256:16c5243e9bb5144eb10d51fc8c4600ac054587e94cb271c0ae4820d2c11ed724",
+    "claudeProfileDigest": "sha256:9d73d1f0f121fb96cc8badb28c22d5bff02d8582eb2e40360a81c189e1b9422a",
+    "artifacts": {
+      "nodeCommand": {
+        "expectedSha256": "sha256:7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c",
+        "actualSha256": "sha256:7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c"
+      },
+      "productionLock": {
+        "expectedSha256": "sha256:df5143e56269823c040be51a5e45bd53cadb60fecb50fb09ba2848f23e621b67",
+        "actualSha256": "sha256:df5143e56269823c040be51a5e45bd53cadb60fecb50fb09ba2848f23e621b67"
+      },
+      "acpxSidecar": {
+        "expectedSha256": "sha256:7f166631e53435fdc108fcfb8f3ada3e55a9f61edcf724390ed3712f27a5ed65",
+        "actualSha256": "sha256:7f166631e53435fdc108fcfb8f3ada3e55a9f61edcf724390ed3712f27a5ed65"
+      }
+    },
+    "packages": {
+      "node": {
+        "available": false
+      },
+      "acpx": {
+        "version": "0.13.1"
+      },
+      "@agentclientprotocol/claude-agent-acp": {
+        "version": "0.73.0"
+      },
+      "@anthropic-ai/claude-agent-sdk": {
+        "available": false
+      }
+    },
+    "loaderFeatures": {
+      "closedModuleFence": true,
+      "boundedReread": true,
+      "readContinuity": true,
+      "uidGidLinkCount": true,
+      "fatalImportMarker": true,
+      "explicitTerminator": true
+    }
+  },
+  "cold": {
+    "observedAt": "2026-10-11T12:40:27.372Z",
+    "phase": "cold_observation",
+    "guestReads": false,
+    "runs": [
+      {
+        "id": "c1f126ed-9e41-4cb0-a5f8-e7230dd55241",
+        "providerBefore": null,
+        "providerAfter": "8ea7d6cb-8a13-4dd0-a38e-82fedf3f23c7",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T12:25:01.606Z",
+        "finishedAt": "2026-10-11T12:39:57.782Z",
+        "nativeSessionId": "22eaa9ff-691f-40a3-89e9-6d8b7e54aaa6",
+        "runnerInstanceId": "4484e99a-25d5-4b20-af44-63d3fa89c9dd",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      }
+    ],
+    "taskSessions": [
+      {
+        "lastRunId": "c1f126ed-9e41-4cb0-a5f8-e7230dd55241",
+        "displayId": "8ea7d6cb-8a13-4dd0-a38e-82fedf3f23c7",
+        "ids": {
+          "sessionId": "22eaa9ff-691f-40a3-89e9-6d8b7e54aaa6"
+        },
+        "updatedAt": "2026-10-11T12:40:00.705Z"
+      }
+    ],
+    "owners": [
+      {
+        "id": "4c38a6c2-00c2-4b00-8032-69e99990417b",
+        "phase": "warm",
+        "deadline": "2026-10-11T12:44:56.404Z",
+        "boot": "b0463ce3-25e0-4c2a-8c35-b09388e5c2fe",
+        "launch": 1
+      }
+    ],
+    "controller": [
+      {
+        "stateKey": "2e2e0ed6fabec5a50ca1534a2e830a406521e6945903d44c26c2b3daf73b472b",
+        "pack": "sha256:eee8609e9377e24a4588f27816834f15a665d22e23521edc1cf498f9c35f7fff",
+        "commands": [
+          {
+            "controllerSeq": 2,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T12:26:10.589Z",
+            "status": "completed",
+            "type": "session.open"
+          },
+          {
+            "controllerSeq": 3,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T12:39:28.895Z",
+            "status": "completed",
+            "type": "turn.start"
+          },
+          {
+            "controllerSeq": 4,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T12:39:40.346Z",
+            "status": "completed",
+            "type": "semantic_tool.result"
+          },
+          {
+            "controllerSeq": 5,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T12:39:50.351Z",
+            "status": "completed",
+            "type": "semantic_tool.result"
+          }
+        ],
+        "runnerPresent": false,
+        "lifecycle": null
+      }
+    ]
+  },
+  "proof": {
+    "sha256": "e646d151756f1efdb9e19d99a2a0971810468087c457fa458f1311c42ef07424",
+    "hostname": "box-node-8fb1e7496568573d",
+    "utc": "2026-10-11T12:39:34Z",
+    "source": "expanded actual command output in ordinary task BOA11"
+  }
+}
