@@ -960,6 +960,28 @@ os.execve(command[0],command,env)
     expect(readFileSync(f.calls, "utf8")).toBe(expected.repeat(2));
   });
 
+  it("shares the remaining Connect preparation bound with input readiness and provider credentials", async () => {
+    let clock = 1_000_000;
+    const time = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    const scoped = { ...record, id: randomUUID(), providerId: `bx_${randomUUID()}` };
+    const execute = vi.fn(async () => {
+      clock = 1_120_001;
+      return { exitCode: 0, stdout: "{}", stderr: "", timedOut: false, signal: null, pid: null, startedAt: "" };
+    });
+    sshFactory.mockReturnValue({ execute });
+    const fetcher = vi.fn(async () => {
+      clock += 90_000;
+      return json({ hostKey: "ssh-ed25519 AAAA", sshEndpoint: "fixture.invalid:2222" });
+    });
+    const backend = boatBackend(async () => "fixture", fetcher);
+    try {
+      await expect(backend.desktop(scoped, { deadlineMs: 1_120_000 })).rejects.toThrow("timed out");
+      expect(execute).toHaveBeenCalledWith(expect.objectContaining({ command: "timeout", timeoutMs: 30_000 }));
+      expect(fetcher).toHaveBeenCalledOnce(); // No late desktop credential request.
+      await expect(backend.renew(scoped, { deadlineMs: 1_120_000 })).rejects.toThrow("timed out");
+      expect(fetcher).toHaveBeenCalledOnce();
+    } finally { time.mockRestore(); sshFactory.mockReset(); }
+  });
   it("requests a fresh stream on every Connect but reuses credentials during presence", async () => {
     const id = randomUUID();
     const scoped = { ...record, id, providerId: `bx_${id}` };

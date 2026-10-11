@@ -300,6 +300,45 @@ describe("computer ownership", () => {
     expect((await f.repository.get(f.scope)).ledger).toMatchObject({ status: "detached", action: null });
     expect(f.backend.stop).toHaveBeenCalledOnce();
   });
+  it("starts viewer lifetime after bounded preparation, not when Connect was requested", async () => {
+    const f = fixture(); await f.attach();
+    vi.mocked(f.backend.ready).mockImplementationOnce(async () => {
+      f.advance(110_000);
+      await f.service.reconcile();
+    });
+    const viewer = await f.service.connect({ ...f.scope, userId: "alice", idleTimeoutMs: 10_000 });
+    expect(viewer.expiresAt).toBe("2026-10-10T12:02:00.000Z");
+    expect((await f.repository.get(f.scope)).ledger.owners).toEqual([expect.objectContaining({
+      id: viewer.owner.ownerId, phase: "active", deadline: viewer.expiresAt, absoluteDeadline: viewer.expiresAt,
+    })]);
+    expect(f.backend.stop).not.toHaveBeenCalled();
+    expect(f.backend.ready).toHaveBeenCalledWith(expect.anything(), { deadlineMs: Date.parse("2026-10-10T12:02:00Z") });
+  });
+  it.each(["ready", "desktop"] as const)("does not publish a viewer retired during %s preparation", async (step) => {
+    const f = fixture(); await f.attach();
+    const retireViewer = async () => {
+      const record = await f.repository.get(f.scope);
+      const owner = record.ledger.owners.find(owner => owner.kind === "viewer")!;
+      await f.service.retire({ ...f.scope, owner: { computerId: record.id, ownerId: owner.id, generation: owner.generation } });
+    };
+    if (step === "ready") vi.mocked(f.backend.ready).mockImplementationOnce(retireViewer);
+    else vi.mocked(f.backend.desktop).mockImplementationOnce(async () => {
+      await retireViewer();
+      return { viewerUrl: "https://test.on.boat.dev/#credential", expiresAt: "2026-10-10T12:09:00Z" };
+    });
+    await expect(f.service.connect({ ...f.scope, userId: "alice", idleTimeoutMs: 10_000 })).rejects.toMatchObject({ code: "conflict" });
+    if (step === "ready") expect(f.backend.desktop).not.toHaveBeenCalled();
+    expect((await f.repository.get(f.scope)).ledger.owners.every(owner => owner.phase === "retired")).toBe(true);
+  });
+  it("does not publish or continue viewer preparation after its absolute preparation bound", async () => {
+    const f = fixture(); await f.attach();
+    vi.mocked(f.backend.claim).mockClear();
+    vi.mocked(f.backend.ready).mockImplementationOnce(async () => { f.advance(120_001); });
+    await expect(f.service.connect({ ...f.scope, userId: "alice", idleTimeoutMs: 10_000 })).rejects.toMatchObject({ code: "provider_error" });
+    expect(f.backend.claim).not.toHaveBeenCalled();
+    expect(f.backend.desktop).not.toHaveBeenCalled();
+    expect((await f.repository.get(f.scope)).ledger.owners.every(owner => owner.phase === "retired")).toBe(true);
+  });
   it("viewer renewals cannot extend the absolute warm deadline or use another user", async () => {
     const f = fixture();
     await f.attach();
