@@ -445,7 +445,18 @@ export type NativeInstructionWorkingCopy = {
   retirementFailed?: () => Promise<void>;
 };
 
+type WarmRetirementDiagnostic = {
+  computerId?: string;
+  ownerId?: string;
+  ownerGeneration?: number;
+  preparingRunId?: string;
+  phase: "computer_retirement" | "session_close" | "controller_detach" | "instruction_collection" | "access_cleanup";
+  closeState: "not_started" | "pending" | "completed" | "failed";
+  failureCode: ReturnType<typeof nativeSessionFailureSourceCode> | "computer_owner_retirement_superseded" | "native_session_close_unrecoverable";
+};
+
 type WarmNativeSession = {
+  onRetirementDiagnostic?: (diagnostic: WarmRetirementDiagnostic) => void;
   computerTarget?: AdapterComputerExecutionTarget;
   runId: string;
   instructionWorkingCopy?: NativeInstructionWorkingCopy;
@@ -490,35 +501,70 @@ class ComputerOwnerSupersededError extends Error {
   constructor() { super("computer_owner_retirement_superseded"); }
 }
 
-async function closeWarmNativeSession(entry: WarmNativeSession, reason: string, preserveInstructionsForRunId?: string) {
+export async function closeWarmNativeSession(entry: WarmNativeSession, reason: string, preserveInstructionsForRunId?: string) {
   let closeFailure: unknown;
   let closeCompleted = false;
-  const close = async () => {
-    try { await entry.session.close({ reason }); closeCompleted = true; }
-    catch (error) { closeFailure = error; throw error; }
-  };
-  // Reserve the exact generation before protocol close. A winning admission
-  // must never receive a stale controller's suspend/kill command. The module
-  // always hard-retires descendants after the bounded graceful window.
-  if (entry.computerTarget && !(await entry.computerTarget.retire({ beforeStop: close }))) {
-    throw new ComputerOwnerSupersededError();
-  }
-  const stopping = entry.githubAccess?.stop();
-  try {
+  let closeState: WarmRetirementDiagnostic["closeState"] = "not_started";
+  let phase: WarmRetirementDiagnostic["phase"] = "computer_retirement";
+  const observer = entry.onRetirementDiagnostic;
+  const computer = entry.computerTarget?.resourceAuthority;
+  const context = { ...(computer ? { computerId: computer.computerId, ownerId: computer.ownerId, ownerGeneration: computer.generation } : {}),
+    ...(entry.preparingRunId ? { preparingRunId: entry.preparingRunId } : {}) };
+  const report = (error: unknown, failedPhase = phase) => {
     try {
-      if (!entry.computerTarget) await close();
-      if (closeFailure || !closeCompleted) {
-        await entry.session.detachControllerForRestart?.();
-        throw closeFailure ?? new NativeSessionCleanupQuarantinedError();
-      }
-    } catch (error) {
-      try { await entry.instructionWorkingCopy?.retirementFailed?.(); }
-      catch (receiptError) { throw new AggregateError([error, receiptError], "Warm instruction retirement and receipt both failed"); }
+      observer?.({ ...context, phase: failedPhase, closeState,
+        failureCode: error instanceof ComputerOwnerSupersededError
+          ? "computer_owner_retirement_superseded"
+          : error instanceof Error && "code" in error && error.code === "native_session_close_unrecoverable"
+            ? "native_session_close_unrecoverable" : nativeSessionFailureSourceCode(error) });
+    } catch { /* Diagnostics never own retirement or alter its result. */ }
+  };
+  const close = async () => {
+    closeState = "pending";
+    try { await entry.session.close({ reason }); closeCompleted = true; closeState = "completed"; }
+    catch (error) {
+      closeFailure = error;
+      closeState = "failed";
+      // Graceful retirement can finish its bounded wait before close rejects.
+      // Preserve that late initiating failure without exposing arbitrary text.
+      report(error, "session_close");
       throw error;
     }
-    await entry.instructionWorkingCopy?.collectStopped();
-    if (entry.instructionCopy?.runId !== preserveInstructionsForRunId) await entry.instructionCopy?.collectStopped();
-  } finally { await stopping; }
+  };
+  try {
+    // Reserve the exact generation before protocol close. A winning admission
+    // must never receive a stale controller's suspend/kill command. The module
+    // always hard-retires descendants after the bounded graceful window.
+    if (entry.computerTarget && !(await entry.computerTarget.retire({ beforeStop: close }))) {
+      throw new ComputerOwnerSupersededError();
+    }
+    const stopping = entry.githubAccess?.stop();
+    try {
+      try {
+        phase = "session_close";
+        if (!entry.computerTarget) await close();
+        if (closeFailure || !closeCompleted) {
+          phase = "controller_detach";
+          await entry.session.detachControllerForRestart?.();
+          phase = "session_close";
+          throw closeFailure ?? new NativeSessionCleanupQuarantinedError();
+        }
+      } catch (error) {
+        try { await entry.instructionWorkingCopy?.retirementFailed?.(); }
+        catch (receiptError) { throw new AggregateError([error, receiptError], "Warm instruction retirement and receipt both failed"); }
+        throw error;
+      }
+      phase = "instruction_collection";
+      await entry.instructionWorkingCopy?.collectStopped();
+      if (entry.instructionCopy?.runId !== preserveInstructionsForRunId) await entry.instructionCopy?.collectStopped();
+    } finally {
+      try { await stopping; }
+      catch (error) { phase = "access_cleanup"; throw error; }
+    }
+  } catch (error) {
+    report(error);
+    throw error;
+  }
 }
 
 const warmNativeSessions = new Map<string, WarmNativeSession>();
@@ -8622,6 +8668,16 @@ async function executePaperclipNativeSessionWithinScope(
   const configuredEnvironmentDigest = createHash("sha256")
     .update(JSON.stringify(configuredEnvironment(input.runnerEnvironment)))
     .digest("hex");
+  const onRetirementDiagnostic = (diagnostic: WarmRetirementDiagnostic) => {
+    // Use the persistent run log even after the turn's output stream is closed.
+    // The payload contains only closed enums and this execution's bound IDs.
+    void Promise.resolve().then(() => input.onEvent?.({
+      eventType: "native_session.retirement_diagnostic", stream: "system", level: "warn",
+      message: "Native session retirement did not complete.",
+      payload: { ...diagnostic, runId: input.execution.binding.runId,
+        normalizedSessionId: nativeSessionKey(input.execution), runnerInstanceId: effectiveRunnerInstanceId },
+    })).catch(() => undefined);
+  };
   const warmSessionOwnerToken = Symbol(
     `native-warm-session:${input.execution.binding.runId}`,
   );
@@ -8695,6 +8751,7 @@ async function executePaperclipNativeSessionWithinScope(
         entry.instructionWorkingCopy = input.instructionWorkingCopy?.checkpointWarm ? undefined : input.instructionWorkingCopy;
         entry.busy = true;
         entry.runId = input.execution.binding.runId;
+        entry.onRetirementDiagnostic = onRetirementDiagnostic;
         entry.computerTarget = input.runnerExecutionTarget?.kind === "remote" && input.runnerExecutionTarget.transport === "computer" ? input.runnerExecutionTarget : undefined;
         entry.ownerToken = warmSessionOwnerToken;
         entry.environmentId =
@@ -9069,6 +9126,7 @@ async function executePaperclipNativeSessionWithinScope(
                       : undefined,
                     session,
                     runId: input.execution.binding.runId,
+                    onRetirementDiagnostic,
                     computerTarget: input.runnerExecutionTarget?.kind === "remote" && input.runnerExecutionTarget.transport === "computer" ? input.runnerExecutionTarget : undefined,
                     ownerToken: warmSessionOwnerToken,
                     configDigest: warmConfigDigest,
@@ -9086,6 +9144,7 @@ async function executePaperclipNativeSessionWithinScope(
                 const owner = warmNativeSessions.get(warmSessionId);
                 if (owner) {
                   owner.runId = input.execution.binding.runId;
+                  owner.onRetirementDiagnostic = onRetirementDiagnostic;
                   owner.computerTarget = input.runnerExecutionTarget?.kind === "remote" && input.runnerExecutionTarget.transport === "computer" ? input.runnerExecutionTarget : undefined;
                 }
                 if (owner && input.instructionWorkingCopy?.runId && input.instructionWorkingCopy.checkpointWarm) owner.instructionCopy = {
