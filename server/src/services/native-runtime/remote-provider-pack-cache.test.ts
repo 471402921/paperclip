@@ -120,6 +120,19 @@ describe("persistent computer provider pack cache", () => {
     expect(() => computerProviderPackCachePath("/agents/../a", digest)).toThrow("identity_invalid");
   });
 
+  it("preserves transport-shared upload backpressure through the ownership guard", async () => {
+    const input = await fixture();
+    const withStdinUploadSlot = vi.fn(async (operation: () => Promise<void>) => operation());
+    await expect(prepareComputerProviderPackCache({ ...input,
+      runner: { ...input.runner, withStdinUploadSlot } as CommandManagedRuntimeRunner,
+      stage: async (root, guarded) => {
+        expect(guarded.withStdinUploadSlot).toBe(withStdinUploadSlot);
+        await guarded.withStdinUploadSlot!(() => input.stage(root, guarded), { timeoutMs: 180_000 });
+      },
+    })).resolves.toBe("published");
+    expect(withStdinUploadSlot).toHaveBeenCalledOnce();
+  });
+
   it("verifies a shared hit before the compression/upload callback and excludes its ownership marker", async () => {
     const input = await fixture();
     const stage = vi.fn(input.stage); const verify = vi.fn(input.verify);
