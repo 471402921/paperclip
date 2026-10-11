@@ -1,0 +1,364 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-11T07:08:10.911066+00:00",
+  "source": {
+    "deployment": 22,
+    "servingCommit": "92be5d8596fd457d624280e49dd18b122ca82ee7",
+    "verifiedAt": "2026-10-11T06:55:24.595Z",
+    "status": "succeeded",
+    "verification": "verified"
+  },
+  "scope": {
+    "sandboxId": "bx_b8sawfyp",
+    "companyId": "76e38a59-75e7-5ff8-a4bf-ebb78a7b8ebe",
+    "environmentId": "8c78970d-76b4-42e5-b45e-eca4deb85a67",
+    "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+    "taskId": "7d3472d4-461f-44ce-90ed-139e878df200"
+  },
+  "results": {
+    "ordinarySavedContinuation": {
+      "status": "passed",
+      "runId": "2d067f32-3614-41eb-8f6d-670502aff86c",
+      "observedAt": "2026-10-11T07:01:34.625704+00:00",
+      "normalizedSessionId": "06496696-b312-4268-ac40-66770aaa6f1a",
+      "logicalRunnerId": "0005a613-101d-475f-9409-8b8e8b87e9ce",
+      "providerThreadId": "01a12881-5d3b-72a0-b4c3-d993f5b089e1",
+      "matchesPreviouslyRecordedSavedIdentity": true,
+      "proofSha256": "f9253e57dadaefe9276e99a9cd0cb9fad68d2704dd820b61e026edf6e6527c46",
+      "proofBytes": 24,
+      "proofMatchesOriginal": true,
+      "runnerLifecycle": "ready",
+      "providerLifecycle": "session_open",
+      "outboxCount": 0,
+      "pendingTerminalDeliveryIsNull": true,
+      "completedTurnAuthoritative": true,
+      "controllerDeploymentRecovery": "Ordinary same-task continuation after controlled deployment22 preserved the original saved identities and proof; no manual task/session reset was used.",
+      "limit": "This is controlled-deployment recovery, not an active controller-crash test. The initiating deployment21 cleanup-quarantine cause remains unknown."
+    },
+    "warmHmr": {
+      "status": "passed",
+      "runId": "9cc22b3c-ba7d-4f01-bb5a-7367349f68aa",
+      "beforeObservedAt": "2026-10-11T07:01:34.625704+00:00",
+      "afterObservedAt": "2026-10-11T07:03:36.891899+00:00",
+      "sameProcessIdentities": true,
+      "sameBoot": true,
+      "bootId": "91790981-bff6-43a8-8f82-ef7d4c397df8",
+      "ownerId": "f414c237-68a1-4451-9545-dd8342865c04",
+      "processes": [
+        {
+          "role": "runner",
+          "pid": 30593,
+          "startTicks": 33571
+        },
+        {
+          "role": "codex",
+          "pid": 30796,
+          "startTicks": 33705
+        },
+        {
+          "role": "computer_use_driver",
+          "pid": 30866,
+          "startTicks": 33714
+        },
+        {
+          "role": "vite",
+          "pid": 31815,
+          "startTicks": 34936
+        }
+      ],
+      "sameNormalizedSession": true,
+      "sameLogicalRunner": true,
+      "sameProviderThread": true,
+      "proofUnchanged": true,
+      "vitePort": 5173,
+      "vitePid": 31815,
+      "postTurnRunnerLifecycle": "ready",
+      "postTurnProviderLifecycle": "session_open",
+      "postTurnOutboxCount": 0,
+      "postTurnPendingTerminalDeliveryIsNull": true,
+      "postTurnCompletedTurnAuthoritative": true,
+      "browserObservation": {
+        "source": "Parent normal browser observation and before/after screenshots",
+        "observedAtApprox": "2026-10-11T07:03:15Z",
+        "headingBeforeSuffix": "0450",
+        "headingAfterSuffix": "0702",
+        "unsavedDraftBeforeAndAfter": "staging22 unsaved draft 0702",
+        "pageSessionBeforeAndAfter": "1791702073810",
+        "reloadPerformed": false
+      }
+    },
+    "computerNavigation": {
+      "status": "failed_to_reach_target",
+      "runId": "2d067f32-3614-41eb-8f6d-670502aff86c",
+      "target": "https://example.com/",
+      "parentVisualObservation": "Connected desktop showed Chrome New Tab with malformed omnibox suggestion; the agent reported navigation failure.",
+      "actualToolCallsObserved": true,
+      "exactTranscriptThreadId": "01a12881-5d3b-72a0-b4c3-d993f5b089e1",
+      "transcriptTimeRange": [
+        "2026-10-11T06:55:00Z",
+        "2026-10-11T07:01:00Z"
+      ],
+      "inputSummary": [
+        {
+          "timestamp": "2026-10-11T06:58:48.249Z",
+          "tool": "launch_app",
+          "arguments": {
+            "name": "Google Chrome"
+          }
+        },
+        {
+          "timestamp": "2026-10-11T06:58:53.945Z",
+          "tool": "bring_to_front",
+          "arguments": {
+            "pid": 31558,
+            "window_id": 29360131
+          }
+        },
+        {
+          "timestamp": "2026-10-11T06:58:53.947Z",
+          "tool": "click",
+          "arguments": {
+            "pid": 31558,
+            "window_id": 29360131,
+            "x": 210,
+            "y": 50,
+            "delivery_mode": "foreground"
+          }
+        },
+        {
+          "timestamp": "2026-10-11T06:58:54.053Z",
+          "tool": "hotkey",
+          "arguments": {
+            "pid": 31558,
+            "window_id": 29360131,
+            "keys": [
+              "ctrl",
+              "l"
+            ],
+            "delivery_mode": "foreground",
+            "x": 210,
+            "y": 50
+          }
+        },
+        {
+          "timestamp": "2026-10-11T06:58:54.056Z",
+          "tool": "hotkey",
+          "arguments": {
+            "pid": 31558,
+            "window_id": 29360131,
+            "keys": [
+              "ctrl",
+              "a"
+            ],
+            "delivery_mode": "foreground",
+            "x": 210,
+            "y": 50
+          }
+        },
+        {
+          "timestamp": "2026-10-11T06:58:54.066Z",
+          "tool": "press_key",
+          "arguments": {
+            "pid": 31558,
+            "window_id": 29360131,
+            "key": "BACKSPACE",
+            "delivery_mode": "foreground"
+          }
+        },
+        {
+          "timestamp": "2026-10-11T06:58:58.831Z",
+          "tool": "type_text",
+          "arguments": {
+            "pid": 31558,
+            "window_id": 29360131,
+            "x": 210,
+            "y": 50,
+            "text": "https://example.com/",
+            "delivery_mode": "foreground"
+          }
+        },
+        {
+          "timestamp": "2026-10-11T06:58:58.833Z",
+          "tool": "press_key",
+          "arguments": {
+            "pid": 31558,
+            "window_id": 29360131,
+            "key": "ENTER",
+            "delivery_mode": "foreground"
+          }
+        },
+        {
+          "timestamp": "2026-10-11T06:59:09.016Z",
+          "tool": "get_window_state",
+          "arguments": {
+            "pid": 31558,
+            "window_id": 29360131,
+            "include_screenshot": true,
+            "max_elements": 200,
+            "max_depth": 8
+          }
+        },
+        {
+          "timestamp": "2026-10-11T06:59:38.075Z",
+          "tool": "bring_to_front",
+          "arguments": {
+            "pid": 31558,
+            "window_id": 29360131
+          }
+        },
+        {
+          "timestamp": "2026-10-11T06:59:40.727Z",
+          "tool": "click",
+          "arguments": {
+            "pid": 31558,
+            "window_id": 29360131,
+            "x": 194,
+            "y": 50,
+            "delivery_mode": "foreground"
+          }
+        },
+        {
+          "timestamp": "2026-10-11T06:59:43.716Z",
+          "tool": "hotkey",
+          "arguments": {
+            "pid": 31558,
+            "window_id": 29360131,
+            "keys": [
+              "ctrl",
+              "l"
+            ],
+            "delivery_mode": "foreground"
+          }
+        },
+        {
+          "timestamp": "2026-10-11T06:59:46.100Z",
+          "tool": "hotkey",
+          "arguments": {
+            "pid": 31558,
+            "window_id": 29360131,
+            "keys": [
+              "ctrl",
+              "a"
+            ],
+            "delivery_mode": "foreground"
+          }
+        },
+        {
+          "timestamp": "2026-10-11T06:59:47.901Z",
+          "tool": "press_key",
+          "arguments": {
+            "pid": 31558,
+            "window_id": 29360131,
+            "key": "BACKSPACE",
+            "delivery_mode": "foreground"
+          }
+        },
+        {
+          "timestamp": "2026-10-11T06:59:49.856Z",
+          "tool": "type_text",
+          "arguments": {
+            "pid": 31558,
+            "window_id": 29360131,
+            "text": "https://example.com/",
+            "delivery_mode": "foreground"
+          }
+        },
+        {
+          "timestamp": "2026-10-11T06:59:52.223Z",
+          "tool": "press_key",
+          "arguments": {
+            "pid": 31558,
+            "window_id": 29360131,
+            "key": "ENTER",
+            "delivery_mode": "foreground"
+          }
+        },
+        {
+          "timestamp": "2026-10-11T07:00:00.468Z",
+          "tool": "get_window_state",
+          "arguments": {
+            "pid": 31558,
+            "window_id": 29360131,
+            "include_screenshot": true
+          }
+        }
+      ],
+      "hotkeySchemaObservation": {
+        "at": "2026-10-11T07:07:05.335650+00:00",
+        "initializeSucceeded": true,
+        "toolsListSucceeded": true,
+        "inputActionsRequested": false,
+        "documentedExample": [
+          "ctrl",
+          "c"
+        ],
+        "actualHotkeys": [
+          [
+            "ctrl",
+            "l"
+          ],
+          [
+            "ctrl",
+            "a"
+          ]
+        ],
+        "lowercaseModifierAdvertisedValid": true,
+        "foregroundModeAllowed": true,
+        "optionalCoordinatesAdvertisedForFocus": true
+      },
+      "limits": [
+        "Correct target text and advertised-valid lowercase hotkeys were sent. The exact driver or focus failure is not established.",
+        "The second navigation attempt sent calls sequentially several seconds apart, so the first tightly grouped calls alone do not explain all observed failure.",
+        "Actual computer-tool invocation is proved; successful navigation is not claimed for this source."
+      ]
+    }
+  },
+  "viewerLifecycle": {
+    "normalCloseAt": "2026-10-11T07:03:59Z",
+    "source": "parent normal UI closure",
+    "postCloseArchiveStatus": "not_observed_in_this_receipt"
+  },
+  "evidenceCollection": {
+    "processAndCheckpointMethod": "Guarded read-only provider status and scoped guest metadata under the existing product-authorized runner.",
+    "inputDiagnosisMethod": "Exact saved provider thread; only computer-tool inputs inside the current run time window, followed by installed-driver MCP tools/list. No computer input actions issued by the observer.",
+    "observerLifecycleMutation": false,
+    "observerSourceEdits": false,
+    "guestReadsStoppedAfterSchema": true
+  },
+  "limitations": [
+    "Staging21 quarantine initiating cause remains unknown.",
+    "This receipt does not repeat all four runtime qualifications on deployment22.",
+    "Sibling-stop isolation and post-viewer normal archive are not proved here.",
+    "Configured warm expiry timestamp was not exposed by the guest checkpoint."
+  ],
+  "evidence": [
+    {
+      "name": "staging-deploy-22-result.json",
+      "sha256": "ead8a73e2962ae0df086dad7abd9d43a4b257c1d4597b0b49c8babb1564847df"
+    },
+    {
+      "name": "retry-staging-22-nativecodex-baseline.json",
+      "sha256": "eba1d355e26b6f93f98a15c36759ce2f9075073e8b816bdc0be74897637ebc96"
+    },
+    {
+      "name": "retry-staging-22-nativecodex-hmr-settled.json",
+      "sha256": "37131bc94b52a9fc7aeeee52e8fe1a6816cd12c68fb947dafdc91f34a82588a4"
+    },
+    {
+      "name": "retry-staging-22-computer-inputs-filesystem.json",
+      "sha256": "4013f380975fe925b64d18e9502058e274479195b3c1f1cfa5ed44e0714f47be"
+    },
+    {
+      "name": "retry-staging-22-hotkey-schema.json",
+      "sha256": "73af47e83a5fab0df16f67bc707f5eb99561f27293a84d6658a110a18e5c3e89"
+    },
+    {
+      "name": "staging22-hmr-before.png",
+      "sha256": "4e2178e2ddd2ff5a53d071a94ed22440e10e9e89a2a761dcadde8e2c8bd86be3"
+    },
+    {
+      "name": "staging22-hmr-after.png",
+      "sha256": "eaabee0be9a4325e24ec9cf1134d252e5246292e8b185c35bd39531e8fd3546f"
+    }
+  ]
+}

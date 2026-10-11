@@ -1,0 +1,198 @@
+{
+  "recordedAt": "2026-10-11T07:00:01.646823+00:00",
+  "taskId": "ef14981f-cdab-42ef-a963-309c052e5808",
+  "identifier": "BOA-21",
+  "controllerSource": "3f0efd3f7274e61590cf4bf3e237b75b4f7ff167",
+  "fixSource": "16f1c67531ea1e46fe93ece4326c982bb53e5f04",
+  "providerPackDigest": "sha256:4e9ede0507204690c01d943f61e5189efdfe38855f4f8952d88045ce7a71f13d",
+  "coldAndWarmRuns": [
+    {
+      "id": "f32eda91-446b-4eae-bacc-ff95211302f4",
+      "status": "succeeded",
+      "created_at": "2026-10-11T06:45:42.106Z",
+      "started_at": "2026-10-11T06:45:42.143Z",
+      "finished_at": "2026-10-11T06:56:59.596Z",
+      "error_code": null,
+      "error": null,
+      "native_session_id": "f408ef63-1ad4-4229-9bf0-2eb8ecdbe5ad",
+      "runner_instance_id": "35d2bd79-6e2c-4e09-a375-8bfc132ab3a2",
+      "session_id_before": null,
+      "session_id_after": "41a0d5cd-fa74-46bd-b098-0167e80c6758",
+      "execution_stage": "preparing"
+    },
+    {
+      "id": "dba6f9fd-3537-490b-ac47-b455b8a0d388",
+      "status": "succeeded",
+      "created_at": "2026-10-11T06:57:42.335Z",
+      "started_at": "2026-10-11T06:57:42.372Z",
+      "finished_at": "2026-10-11T06:58:57.712Z",
+      "error_code": null,
+      "error": null,
+      "native_session_id": "f408ef63-1ad4-4229-9bf0-2eb8ecdbe5ad",
+      "runner_instance_id": "35d2bd79-6e2c-4e09-a375-8bfc132ab3a2",
+      "session_id_before": "41a0d5cd-fa74-46bd-b098-0167e80c6758",
+      "session_id_after": "41a0d5cd-fa74-46bd-b098-0167e80c6758",
+      "execution_stage": "preparing"
+    }
+  ],
+  "warmOwner": {
+    "id": "fbc45caa-0c3b-40f5-8e1c-5736dbfa31b2",
+    "kind": "runner",
+    "phase": "warm",
+    "runId": "dba6f9fd-3537-490b-ac47-b455b8a0d388",
+    "deadline": "2026-10-11T07:03:57.669Z",
+    "generation": 2,
+    "process": {
+      "nonce": "f3633c99-0dd1-49d3-aa74-e3f1ecdd7180",
+      "bootId": "1ecbeef9-edbe-4347-ab7a-c24e0a528441",
+      "unitName": "paperclip-fbc45caa-0c3b-40f5-8e1c-5736dbfa31b2.service",
+      "launchGeneration": 1
+    }
+  },
+  "liveRunnerExecutableProof": {
+    "sandboxId": "bx_ndnggjad",
+    "exitCode": 0,
+    "timedOut": false,
+    "data": {
+      "checkedAt": "2026-10-11T06:57:03.136619+00:00",
+      "ownerId": "fbc45caa-0c3b-40f5-8e1c-5736dbfa31b2",
+      "bootId": "1ecbeef9-edbe-4347-ab7a-c24e0a528441",
+      "launchGeneration": 1,
+      "pid": 57415,
+      "startTicks": "86874",
+      "runnerSha256": "8f90f35f94f2266b0a441a0013b73c3a7ba1f736de6a21b541c96da0f8de5f05",
+      "runnerBytes": 37554768,
+      "expectedHashMatches": true,
+      "admissionStages": [],
+      "journalExitCode": 0
+    },
+    "error": null
+  },
+  "postArchiveContinuation": {
+    "status": "failed",
+    "runId": "ec0b5e2b-aea3-42d3-b2ac-f0a0cf714393",
+    "nativeSessionId": "f408ef63-1ad4-4229-9bf0-2eb8ecdbe5ad",
+    "runnerInstanceId": "35d2bd79-6e2c-4e09-a375-8bfc132ab3a2",
+    "providerThreadBefore": "41a0d5cd-fa74-46bd-b098-0167e80c6758",
+    "providerThreadAfter": "41a0d5cd-fa74-46bd-b098-0167e80c6758",
+    "physicalOwner": {
+      "id": "0dfa2b99-4fa1-476e-908f-9fdf69347a80",
+      "kind": "runner",
+      "phase": "active",
+      "runId": "ec0b5e2b-aea3-42d3-b2ac-f0a0cf714393",
+      "deadline": null,
+      "generation": 1,
+      "process": {
+        "nonce": "d4efda7e-739b-4284-ab6c-e87b8784f7d9",
+        "bootId": "2968e236-5a78-4193-9e6c-a113bb913074",
+        "unitName": "paperclip-0dfa2b99-4fa1-476e-908f-9fdf69347a80.service",
+        "launchGeneration": 1
+      }
+    },
+    "selectedProviderPackDigest": "4e9ede0507204690c01d943f61e5189efdfe38855f4f8952d88045ce7a71f13d",
+    "sessionReopen": "resumed",
+    "primaryFailure": {
+      "observedFinishedAt": "2026-10-11T07:10:53.266Z",
+      "code": "provider_transport_failed",
+      "command": "turn.start",
+      "cause": "ACPX sidecar request timed out at turn.start",
+      "lastAdmissionStage": "ready",
+      "lastAdmissionElapsedMs": 2520,
+      "sessionOnlyEventTypes": [
+        "session.resumed",
+        "session.capabilities.updated",
+        "session.goal.snapshot",
+        "run.attached"
+      ],
+      "providerOutputObserved": false,
+      "turnStartIssuedAt": "2026-10-11T07:09:59.312Z",
+      "transportCloseStartedAt": "2026-10-11T07:10:29.315Z",
+      "elapsedUntilTransportCloseMs": 30003
+    },
+    "automaticRecovery": {
+      "finishedAt": "2026-10-11T07:12:22.183Z",
+      "code": "adapter_failed",
+      "message": "runner_state_identity_mismatch: authority_indeterminate",
+      "identityRotated": false,
+      "succeeded": false,
+      "kind": "scheduled_quarantined_cleanup_recovery"
+    },
+    "guestObserverReadsBeforeAdmission": false,
+    "fixtureResetOrManualRetry": false,
+    "acceptance": "not_passed"
+  },
+  "observerPolicy": "After the cold runner hash at 06:57:03, no guest observer reads occurred through the failed post-idle admission and cleanup. Later bounded read-only diagnosis used a normal viewer after terminal failure (07:16:10\u201307:17:17); viewer closed normally 07:17:42. No provider commands, resets, or cache mutations.",
+  "naturalArchive": {
+    "owner": {
+      "checkedAt": "2026-10-11T07:06:28.446Z",
+      "owners": [
+        {
+          "id": "fbc45caa-0c3b-40f5-8e1c-5736dbfa31b2",
+          "kind": "runner",
+          "phase": "retired",
+          "runId": "dba6f9fd-3537-490b-ac47-b455b8a0d388",
+          "deadline": null,
+          "generation": 2,
+          "process": {
+            "nonce": "f3633c99-0dd1-49d3-aa74-e3f1ecdd7180",
+            "bootId": "1ecbeef9-edbe-4347-ab7a-c24e0a528441",
+            "unitName": "paperclip-fbc45caa-0c3b-40f5-8e1c-5736dbfa31b2.service",
+            "launchGeneration": 1
+          }
+        }
+      ]
+    },
+    "provider": {
+      "checkedAt": "2026-10-11T07:06:28.906Z",
+      "id": "bx_ndnggjad",
+      "state": "archived",
+      "health": "ok",
+      "hydrated": true,
+      "stop": {
+        "id": "stop_629e46626e5468c5",
+        "status": "completed",
+        "requestedAt": null,
+        "lastAttemptAt": "2026-10-11T07:04:20.880Z",
+        "endedAt": "2026-10-11T07:04:20.880Z",
+        "error": null
+      }
+    },
+    "guestReadsSinceWarmTurn": false
+  },
+  "updatedAt": "2026-10-11T07:12:53.893381+00:00",
+  "proofFiles": [
+    {
+      "name": "boat-final-claude.txt",
+      "sha256": "14fa23911a1a95ede22a93f43fc027934b20a1ba497f8e6120abc8769498e124",
+      "verifiedIn": [
+        "cold",
+        "warm"
+      ]
+    },
+    {
+      "name": "boat-claude-framing-proof.txt",
+      "sha256": "afaf525f4bf0c38614c5df0cf97140e7d1bf9cad96faa293e2317dc82116af4a",
+      "verifiedIn": [
+        "cold",
+        "warm"
+      ]
+    }
+  ],
+  "postFailureReadOnlyDiagnosis": {
+    "viewerOwnerId": "020eea2f-f880-44c7-9c6f-4d6d78135611",
+    "observedAt": "2026-10-11T07:17:17.209Z",
+    "viewerClosedAt": "2026-10-11T07:17:42Z",
+    "acpxLastPromptAt": "2026-10-11T07:09:59.511Z",
+    "acpxLastRequestMatchesFailedTurn": false,
+    "acpxAgentStartedAt": "2026-10-11T06:58:37.408Z",
+    "claudeLastAssistantTimestamp": "2026-10-11T06:58:56.236Z",
+    "claudePostIdleMessagesObserved": false,
+    "runnerLifecycle": "suspended",
+    "providerLifecycle": "closed",
+    "activeTurnId": null,
+    "providerExitUnconfirmed": false,
+    "conclusion": "Turn preparation persisted; live ready checkpoint was not observed. The exact spawn/initialize/session-load/ownership blocker remains undetermined.",
+    "providerExecution": false,
+    "guestFileChanges": false
+  }
+}
