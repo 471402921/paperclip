@@ -629,8 +629,8 @@ print('{}')
       const value = await api(record, "GET", `/stops/${segment(id)}`);
       return stopReceipt(value.stop ?? value, id);
     },
-    async renew(record) {
-      await api(record, "PATCH", "", { ttlSeconds: 300 });
+    async renew(record, options) {
+      await api(record, "PATCH", "", { ttlSeconds: 300 }, options);
     },
     computerTool() {
       return {
@@ -640,7 +640,7 @@ print('{}')
     },
     async desktop(record, options) {
       if (options?.checkInput !== false)
-        await execute(record, `${desktopReadinessProgram}\nprint('{}')`, {});
+        await execute(record, `${desktopReadinessProgram}\nprint('{}')`, {}, true, options);
       const cached = desktopCache.get(record.id);
       // Explicit Connect must obtain a new stream session, including after a
       // failed connection. Only presence renewals reuse existing credentials.
@@ -650,7 +650,7 @@ print('{}')
         Date.parse(cached.expiresAt) > Date.now() + 60_000
       )
         return cached;
-      const value = await api(record, "POST", "/desktop", {});
+      const value = await api(record, "POST", "/desktop", {}, options);
       const url = new URL(value.desktopUrl);
       if (url.protocol !== "https:" || !url.hostname.endsWith(".on.boat.dev"))
         throw new ComputerError("provider_error", "Invalid Boat desktop URL");
