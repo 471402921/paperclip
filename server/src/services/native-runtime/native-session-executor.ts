@@ -1,3 +1,4 @@
+import { COMMAND_DIAGNOSTIC_PHASES, reportCommandPhase, type CommandDiagnosticObserver } from "@paperclipai/adapter-utils/command-diagnostics";
 import { computerService } from "../../modules/computers/index.js";
 import { readNativeComputerWorkspaceReference } from "./native-workspace-sync.js";
 import { adapterExecutionTargetIsCommandBacked, type AdapterComputerExecutionTarget } from "@paperclipai/adapter-utils/execution-target";
@@ -10509,6 +10510,7 @@ export async function stageRemoteRunnerFile(input: {
   sourcePath: string;
   targetPath: string;
   mode: number;
+  onLog?: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
 }): Promise<void> {
   const runner = input.runner;
   if (runner.syncIn) {
@@ -10528,11 +10530,15 @@ export async function stageRemoteRunnerFile(input: {
     return;
   }
   const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
-  const run = async (script: string, stdin?: string) => {
+  const run = async (script: string, stdin?: string, onPhase?: CommandDiagnosticObserver) => {
     const result = await runner.execute({
-      command: "sh", args: ["-c", script], stdin,
+      command: "sh", args: ["-c", script], stdin, onPhase,
       bypassSession: true, timeoutMs: 180_000,
+    }).catch(error => {
+      reportCommandPhase(onPhase, "command_rejected");
+      throw error;
     });
+    reportCommandPhase(onPhase, result.timedOut ? "command_timed_out" : result.exitCode !== 0 ? "command_failed" : "command_completed");
     if (result.exitCode !== 0 || result.timedOut) {
       throw new Error(`runner_remote_staging_failed: exit=${result.exitCode} timedOut=${result.timedOut}${result.stderr.trim() ? ` ${redactSensitiveText(result.stderr).trim().slice(-512)}` : ""}`);
     }
@@ -10545,7 +10551,7 @@ export async function stageRemoteRunnerFile(input: {
   }
   const remoteUpload = `${input.targetPath}.upload-${randomUUID()}`;
   try {
-    await uploadRemoteRunnerFileChunks({ sourcePath: input.sourcePath, remotePath: remoteUpload, run, runner });
+    await uploadRemoteRunnerFileChunks({ sourcePath: input.sourcePath, remotePath: remoteUpload, run, runner, onLog: input.onLog });
     await run(`chmod ${input.mode.toString(8)} ${quote(remoteUpload)} && mv -f ${quote(remoteUpload)} ${quote(input.targetPath)}`);
   } finally {
     await run(`rm -f ${quote(remoteUpload)}`).catch(() => undefined);
@@ -10575,7 +10581,8 @@ async function uploadRemoteRunnerFileChunks(input: {
   runner: CommandManagedRuntimeRunner;
   sourcePath: string;
   remotePath: string;
-  run: (script: string, stdin?: string) => Promise<void>;
+  run: (script: string, stdin?: string, onPhase?: CommandDiagnosticObserver) => Promise<void>;
+  onLog?: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
   onProgress?: (completedBytes: number, totalBytes: number) => Promise<void>;
 }): Promise<void> {
   const { run, remotePath } = input;
@@ -10598,12 +10605,40 @@ async function uploadRemoteRunnerFileChunks(input: {
       // Disjoint fixed offsets permit bounded parallel upload and idempotent
       // writes. The final digest rejects missing, duplicated, or partial bytes.
       const offset = chunkIndex++;
+      const queuedAt = Date.now();
+      // Opt-in controller diagnosis only. Keep one bounded timing per closed
+      // phase and a compact final record; never await a diagnostic log write.
+      const phaseTimes: Partial<Record<(typeof COMMAND_DIAGNOSTIC_PHASES)[number], number>> = {};
+      const onPhase: CommandDiagnosticObserver | undefined = input.onLog &&
+        process.env.PAPERCLIP_RUNNER_ARTIFACT_UPLOAD_DIAGNOSTICS === "1" ? phase => {
+        if (!COMMAND_DIAGNOSTIC_PHASES.includes(phase) || phaseTimes[phase] !== undefined) return;
+        const elapsedMs = Math.min(3_600_000, Math.max(0, Math.trunc(Date.now() - queuedAt)));
+        phaseTimes[phase] = elapsedMs;
+        const final = phase === "chunk_completed" || phase === "chunk_failed";
+        const snapshot = final || phase === "ssh_timeout" || phase === "ssh_kill";
+        if (!final && phase !== "chunk_queued" && phase !== "upload_admitted" &&
+            phase !== "ssh_spawned" && phase !== "ssh_timeout" && phase !== "ssh_kill") return;
+        return input.onLog!("stderr", `[paperclip-runner] artifact_upload ${JSON.stringify({
+          chunk: offset, phase, elapsedMs, ...(snapshot ? { phaseTimes } : {}),
+        })}\n`);
+      } : undefined;
       const upload = () => run(
         `base64 -d | dd of=${quote(remotePath)} bs=4194304 seek=${offset} conv=notrunc 2>/dev/null`,
-        chunk.toString("base64"));
-      pending.push(withRemoteArtifactUploadSlot(() => input.runner.withStdinUploadSlot
-        ? input.runner.withStdinUploadSlot(upload, { timeoutMs: 180_000 })
-        : upload()).catch((error) => { uploadError ??= error; }));
+        chunk.toString("base64"), onPhase);
+      reportCommandPhase(onPhase, "chunk_queued");
+      pending.push(withRemoteArtifactUploadSlot(() => {
+        reportCommandPhase(onPhase, "global_admitted");
+        return input.runner.withStdinUploadSlot
+          ? input.runner.withStdinUploadSlot(upload, { timeoutMs: 180_000, onPhase })
+          : upload();
+      }).then(() => {
+        reportCommandPhase(onPhase, "global_released");
+        reportCommandPhase(onPhase, "chunk_completed");
+      }, (error) => {
+        reportCommandPhase(onPhase, "global_released");
+        reportCommandPhase(onPhase, "chunk_failed");
+        uploadError ??= error;
+      }));
       if (pending.length === REMOTE_ARTIFACT_UPLOAD_CONCURRENCY) {
         await Promise.all(pending);
         pending.length = 0;
@@ -10651,6 +10686,7 @@ export async function stageRemoteRunnerDirectory(input: {
   sourcePath: string;
   targetPath: string;
   mode: number;
+  onLog?: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
   excludeEntries?: readonly string[];
   onProgress?: (completedBytes: number, totalBytes: number) => Promise<void>;
 }): Promise<void> {
@@ -10694,11 +10730,15 @@ export async function stageRemoteRunnerDirectory(input: {
   const archivePath = join(stagingRoot, "payload.tar.gz");
   const remoteArchive = `${input.targetPath}.upload-${randomUUID()}.tar.gz`;
   const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
-  const run = async (script: string, stdin?: string) => {
+  const run = async (script: string, stdin?: string, onPhase?: CommandDiagnosticObserver) => {
     const result = await input.runner.execute({
-      command: "sh", args: ["-c", script], stdin,
+      command: "sh", args: ["-c", script], stdin, onPhase,
       bypassSession: true, timeoutMs: 180_000,
+    }).catch(error => {
+      reportCommandPhase(onPhase, "command_rejected");
+      throw error;
     });
+    reportCommandPhase(onPhase, result.timedOut ? "command_timed_out" : result.exitCode !== 0 ? "command_failed" : "command_completed");
     if (result.exitCode !== 0 || result.timedOut) {
       throw new Error(`runner_remote_directory_staging_failed: exit=${result.exitCode} timedOut=${result.timedOut}${result.stderr.trim() ? ` ${redactSensitiveText(result.stderr).trim().slice(-512)}` : ""}`);
     }
@@ -10712,7 +10752,7 @@ export async function stageRemoteRunnerDirectory(input: {
         (error) => error ? reject(error) : resolve());
     });
     await uploadRemoteRunnerFileChunks({
-      sourcePath: archivePath, remotePath: remoteArchive, run, runner: input.runner, onProgress: input.onProgress,
+      sourcePath: archivePath, remotePath: remoteArchive, run, runner: input.runner, onProgress: input.onProgress, onLog: input.onLog,
     });
     await run(`umask 077 && mkdir -p ${quote(input.targetPath)} && ` +
       `tar -xzf ${quote(remoteArchive)} -C ${quote(input.targetPath)} && chmod ${input.mode.toString(8)} ${quote(input.targetPath)}`);
@@ -12596,6 +12636,7 @@ async function createRunnerdBackendWithinSessionClaim(
         target: remoteTarget,
         runner: remoteCommandRunner,
         sourcePath: sourceBinary,
+        onLog: input.onLog,
         targetPath: remoteBinary,
         mode: 0o700,
       });
@@ -12728,6 +12769,7 @@ async function createRunnerdBackendWithinSessionClaim(
               sourcePath: configuredProviderPackRoot,
               targetPath: root,
               mode: 0o700,
+              onLog: input.onLog,
               onProgress: async (completed, total) => {
                 await input.onLog?.("stderr", `[paperclip-runner] Uploading provider pack: ${Math.round(completed / 1024 / 1024)} / ${Math.round(total / 1024 / 1024)} MiB.\n`);
               },

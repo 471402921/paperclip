@@ -1,3 +1,4 @@
+import type { CommandManagedRuntimeRunner } from "@paperclipai/adapter-utils/command-managed-runtime";
 import { createBoatTransportAdmission } from "../../modules/computers/adapters/boat.js";
 import { closeWarmNativeSession, compareAndSealRetiredComputerCheckpoint, retiredComputerCheckpointIsSettled, retiredComputerCheckpointUnsettledReason, retireUnlaunchedComputerAttempt, nativeSessionBootstrapTimeoutMs } from "./native-session-executor.js";
 import { prepareHeartbeatGitHubLaunchers } from "../heartbeat-github-launchers.js";
@@ -2718,6 +2719,45 @@ describe("remote provider checkpoint restores", () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 
+  it.each([{ enabled: false, rejects: false }, { enabled: true, rejects: false }, { enabled: true, rejects: true }])("records every artifact chunk outcome with private-safe diagnostics (enabled=$enabled, observer rejects=$rejects)", async ({ enabled, rejects }) => {
+    vi.stubEnv("PAPERCLIP_RUNNER_ARTIFACT_UPLOAD_DIAGNOSTICS", enabled ? "1" : "");
+    const root = await mkdtemp(join(tmpdir(), "artifact-phase-outcomes-"));
+    const sourcePath = join(root, "private-source-canary");
+    await writeFile(sourcePath, Buffer.alloc(9 * 1024 * 1024));
+    const lines: string[] = [];
+    let chunk = 0;
+    const admission = createBoatTransportAdmission();
+    const result = { exitCode: 0, signal: null, timedOut: false, stdout: "", stderr: "", pid: null, startedAt: "" };
+    const runner: CommandManagedRuntimeRunner = {
+      withStdinUploadSlot: admission.withStdinUploadSlot,
+      execute: async request => {
+        if (!request.stdin) return result;
+        await request.onPhase?.("private-phase-canary" as never);
+        const index = chunk++;
+        if (index === 2) throw new Error("private-exception-canary");
+        return { ...result, exitCode: index === 0 ? null : 1, timedOut: index === 0, stderr: "private-stderr-canary" };
+      },
+    };
+    try {
+      await expect(stageRemoteRunnerFile({ target: { kind: "remote", transport: "computer" } as never,
+        runner, sourcePath, targetPath: "/private-target-canary", mode: 0o700,
+        onLog: async (_stream, text) => { lines.push(text); if (rejects) throw new Error("private-observer-canary"); },
+      })).rejects.toThrow("runner_remote_staging_failed");
+      if (!enabled) { expect(lines).toEqual([]); return; }
+      const events = lines.map(line => JSON.parse(line.slice(line.indexOf("{"))));
+      expect(events.filter(event => event.phase === "chunk_failed").map(event => event.chunk)).toEqual([0, 1, 2]);
+      const outcomes = events.filter(event => event.phase === "chunk_failed");
+      for (const phase of ["command_timed_out", "command_failed", "command_rejected"]) {
+        expect(outcomes.filter(event => event.phaseTimes[phase] !== undefined)).toHaveLength(1);
+      }
+      expect(outcomes.every(event => event.phaseTimes.upload_released !== undefined && event.phaseTimes.global_released !== undefined)).toBe(true);
+      expect(events).toHaveLength(9); // queued + admitted + final for each chunk
+      expect(outcomes.flatMap(event => Object.values(event.phaseTimes)).every(ms => Number.isInteger(ms) && Number(ms) >= 0 && Number(ms) <= 3_600_000)).toBe(true);
+      expect(events.every(event => Number.isInteger(event.elapsedMs) && event.elapsedMs >= 0 && event.elapsedMs <= 3_600_000)).toBe(true);
+      expect(lines.join("")).not.toContain("canary");
+    } finally { vi.unstubAllEnvs(); await rm(root, { recursive: true, force: true }); }
+  });
+
   it("shares Boat upload capacity across concurrent packs before command deadlines begin", async () => {
     const root = await mkdtemp(join(tmpdir(), "paperclip-boat-upload-pressure-"));
     const sourcePath = join(root, "source");
@@ -2806,6 +2846,8 @@ describe("remote provider checkpoint restores", () => {
   });
 
   it.each([{ sizeMiB: 0, corrupt: false }, { sizeMiB: 65, corrupt: false }, { sizeMiB: 0, corrupt: true }])("stages a $sizeMiB MiB provider pack through a command-only computer runner (corrupt=$corrupt)", async ({ sizeMiB, corrupt }) => {
+    vi.stubEnv("PAPERCLIP_RUNNER_ARTIFACT_UPLOAD_DIAGNOSTICS", "1");
+    const lines: string[] = [];
     const root = await mkdtemp(join(tmpdir(), "paperclip-computer-pack-"));
     const sourcePath = join(root, "source");
     const targetPath = join(root, "remote pack's files");
@@ -2843,6 +2885,7 @@ describe("remote provider checkpoint restores", () => {
         targetPath,
         mode: 0o700,
         onProgress,
+        onLog: async (_stream, text) => { lines.push(text); },
       });
       if (corrupt) {
         await expect(staging).rejects.toThrow();
@@ -2851,6 +2894,10 @@ describe("remote provider checkpoint restores", () => {
         return;
       }
       await staging;
+      const outcomes = lines.map(line => JSON.parse(line.slice(line.indexOf("{"))))
+        .filter(event => event.phase === "chunk_completed");
+      expect(outcomes).toHaveLength(sizeMiB ? 17 : 1);
+      expect(outcomes.every(event => event.phaseTimes.command_completed !== undefined)).toBe(true);
       expect(onProgress.mock.calls[0]![0]).toBe(0);
       expect(onProgress.mock.calls.at(-1)![0]).toBe(onProgress.mock.calls.at(-1)![1]);
       expect(await readFile(join(targetPath, "provider-pack.json"), "utf8")).toBe(manifest);
@@ -2867,6 +2914,7 @@ describe("remote provider checkpoint restores", () => {
       expect(execute.mock.calls[0]![0]).toMatchObject({ bypassSession: true });
       expect((await readdir(root)).some((name) => name.includes(".upload-"))).toBe(false);
     } finally {
+      vi.unstubAllEnvs();
       await rm(root, { recursive: true, force: true });
     }
   }, 60_000);

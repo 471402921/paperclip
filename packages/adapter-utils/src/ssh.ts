@@ -1,3 +1,4 @@
+import { reportCommandPhase, type CommandDiagnosticObserver } from "./command-diagnostics.js";
 import { randomUUID } from "node:crypto";
 import { execFile, spawn } from "node:child_process";
 import { constants as fsConstants, createReadStream, createWriteStream, promises as fs } from "node:fs";
@@ -76,6 +77,7 @@ export function createSshCommandManagedRuntimeRunner(input: {
       try {
         const result = await runSshCommand(input.spec, remoteCommand, {
           stdin: commandInput.stdin,
+          onPhase: commandInput.onPhase,
           timeoutMs: commandInput.timeoutMs,
           maxBuffer: maxBufferBytes,
         });
@@ -225,6 +227,7 @@ async function spawnText(
   args: string[],
   options: {
     stdin?: string;
+    onPhase?: CommandDiagnosticObserver;
     timeout?: number;
     maxBuffer?: number;
   } = {},
@@ -234,6 +237,7 @@ async function spawnText(
       stdio: [options.stdin != null ? "pipe" : "ignore", "pipe", "pipe"],
     });
 
+    reportCommandPhase(options.onPhase, "ssh_spawned");
     const maxBuffer = options.maxBuffer ?? 1024 * 128;
     let stdout = "";
     let stderr = "";
@@ -272,12 +276,14 @@ async function spawnText(
     const timeout = options.timeout && options.timeout > 0
       ? setTimeout(() => {
           timedOut = true;
+          reportCommandPhase(options.onPhase, "ssh_timeout");
           child.kill("SIGTERM");
           // Escalate to SIGKILL after a 5s grace window so a hung remote
           // command that ignores SIGTERM cannot keep the child alive
           // indefinitely.
           killEscalation = setTimeout(() => {
             try {
+              reportCommandPhase(options.onPhase, "ssh_kill");
               child.kill("SIGKILL");
             } catch {
               // child may have already exited between the SIGTERM and the
@@ -301,11 +307,14 @@ async function spawnText(
     });
 
     child.on("error", (error) => {
+      reportCommandPhase(options.onPhase, "ssh_spawn_error");
       clearTimers();
       finishReject(Object.assign(error, { code: null }));
     });
 
+    child.on("exit", () => reportCommandPhase(options.onPhase, "ssh_exit"));
     child.on("close", (code, signal) => {
+      reportCommandPhase(options.onPhase, "ssh_close");
       clearTimers();
       if (settled) return;
       settled = true;
@@ -328,10 +337,16 @@ async function spawnText(
       // queued. A stream error is independent of the ChildProcess error event.
       // Observe it before writing, then preserve the remote exit diagnostics
       // when close arrives instead of letting EPIPE crash the controller.
-      child.stdin.on("error", (error) => { stdinError = error; });
+      // This is local pipe flush, not proof of guest receipt or execution.
+      child.stdin.on("finish", () => reportCommandPhase(options.onPhase, "ssh_stdin_flushed"));
+      child.stdin.on("error", (error) => {
+        reportCommandPhase(options.onPhase, "ssh_stdin_error");
+        stdinError = error;
+      });
       try {
         child.stdin.end(options.stdin);
       } catch (error) {
+        reportCommandPhase(options.onPhase, "ssh_stdin_error");
         stdinError = error instanceof Error ? error : new Error(String(error));
         child.stdin.destroy();
       }
@@ -1293,13 +1308,16 @@ export async function runSshCommand(
   options: {
     env?: Record<string, string>;
     stdin?: string;
+    onPhase?: CommandDiagnosticObserver;
     timeoutMs?: number;
     maxBuffer?: number;
   } = {},
 ): Promise<SshCommandResult> {
   let cleanup: () => Promise<void> = () => Promise.resolve();
   try {
+    reportCommandPhase(options.onPhase, "ssh_auth_prepare");
     const auth = await createSshAuthArgs(config);
+    reportCommandPhase(options.onPhase, "ssh_auth_ready");
     cleanup = auth.cleanup;
     const sshArgs = [...auth.args];
     const envEntries = Object.entries(options.env ?? {})
@@ -1342,6 +1360,7 @@ export async function runSshCommand(
     return options.stdin != null
       ? await spawnText("ssh", sshArgs, {
           stdin: options.stdin,
+          onPhase: options.onPhase,
           timeout: options.timeoutMs ?? 15_000,
           maxBuffer: options.maxBuffer ?? 1024 * 128,
         })
@@ -1350,7 +1369,9 @@ export async function runSshCommand(
           maxBuffer: options.maxBuffer ?? 1024 * 128,
         });
   } finally {
+    reportCommandPhase(options.onPhase, "ssh_auth_cleanup");
     await cleanup();
+    reportCommandPhase(options.onPhase, "ssh_auth_cleaned");
   }
 }
 
