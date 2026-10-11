@@ -1,5 +1,6 @@
 import {
   existsSync,
+  unlinkSync,
   readFileSync,
   readdirSync,
   statSync,
@@ -510,6 +511,24 @@ describe("confined computer files", () => {
     expect(f.call({ action: "read", path: "ok", maxBytes: 4 })).toEqual({
       error: "invalid",
     });
+  });
+  it("stages empty seed directories with exact upload ownership and no-follow paths", () => {
+    const f = fixture(); const seedId = randomUUID();
+    f.call({ action: "seed-begin", seedId });
+    expect(f.call({ action: "seed-directory", seedId, path: "empty/nested" })).toEqual({});
+    expect(existsSync(f.root)).toBe(false);
+    expect(f.call({ action: "seed-directory", seedId: randomUUID(), path: "foreign" })).toEqual({ error: "conflict" });
+    expect(f.call({ action: "seed-directory", seedId, path: "../escape" })).toEqual({ error: "invalid" });
+    const staging = join(f.temp, `.paperclip-seed-home-${seedId}`, "tree");
+    const outside = join(f.temp, "outside"); mkdirSync(outside);
+    symlinkSync(outside, join(staging, "alias"));
+    expect(f.call({ action: "seed-directory", seedId, path: "alias/escape" })).toEqual({ error: "invalid" });
+    expect(readdirSync(outside)).toEqual([]);
+    // A malicious link must not be included in the successful fixture publication.
+    unlinkSync(join(staging, "alias"));
+    expect(f.call({ action: "seed-commit", seedId })).toEqual({ seeded: true });
+    expect(statSync(join(f.root, "empty/nested")).isDirectory()).toBe(true);
+    expect(statSync(join(f.root, "empty/nested")).mode & 0o777).toBe(0o700);
   });
   it("publishes bounded seed chunks atomically and aborts partial homes", () => {
     const f = fixture(); const seedId = randomUUID();

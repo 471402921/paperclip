@@ -757,6 +757,12 @@ with open(output,'wb') as out,open(error,'wb') as err:
     expect(chunks.map(input => input.offset)).toEqual([0, 1024 * 1024, 2 * 1024 * 1024]);
     expect(chunks.every(input => Buffer.from(input.base64 as string, "base64").length <= 1024 * 1024)).toBe(true);
     vi.mocked(f.backend.remote).mockClear();
+    await expect(files.seedFiles((async function* () {})(), ["empty", "empty/nested"])).resolves.toEqual({ seeded: true });
+    const directoryRequests = vi.mocked(f.backend.remote).mock.calls.map(([, input]) => input);
+    expect(directoryRequests.map(input => input.action)).toEqual(["seed-begin", "seed-directory", "seed-directory", "seed-commit"]);
+    expect(directoryRequests.slice(1, 3).map(input => input.path)).toEqual(["empty", "empty/nested"]);
+    expect(new Set(directoryRequests.map(input => input.seedId)).size).toBe(1);
+    vi.mocked(f.backend.remote).mockClear();
     await expect(files.seedFiles((async function* () {
       yield { path: "first", offset: 0, bytes: Buffer.from("first") };
       throw new Error("source disappeared");
