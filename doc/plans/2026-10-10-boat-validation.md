@@ -1,8 +1,24 @@
 # Boat validation
 
-**Experimental and unmerged. Local journeys and partial staging qualification passed on the sources below; final-source staging acceptance remains incomplete.** A successful build, probe, or earlier-source journey does not establish the remaining product conditions.
+**Experimental, draft and unmerged. All four runner combinations completed on final staging source `88ef170f5c`; the final browser HMR and manual keyboard repeats remain inconclusive.** Earlier-source passes are retained separately, not promoted to final-source proof.
 
-Historical screenshots and receipts are preserved on the [fixed evidence branch](https://github.com/paperclipai/paperclip/tree/5909bfac9fa41405beb3fe8a65253dc28ba52835/doc/plans/assets/2026-10-10-boat). Historical links below use that exact commit; the implementation PR keeps a bounded set of current proofs.
+## Final staging qualification (2026-10-11 16:08 UTC)
+
+Deployment33 is verified serving `88ef170f5c2439a057805e36cede29ef037ec618` at `boat.staging.paperclip.app`. The machine was archived before ordinary browser-submitted tasks started. Native Codex, native Claude, legacy Codex and legacy Claude all succeeded. Both native agents retained their original saved native, logical and provider sessions, without recovery. The three Codex turns shared one physical owner/boot. Legacy completed-tool outputs independently establish the original distinct personal-file hashes and agent-home UUIDs on the same Boat hostname; model final prose was not used as that proof.
+
+Native Codex used actual computer tools to navigate Chromium to `https://example.net/?boat-final-88ef.`; the embedded desktop independently displayed Example Domain and that address. [Desktop screenshot](assets/2026-10-10-boat/staging33-desktop-agent.png).
+
+The first generated Vite preview returned “upstream unavailable”: the agent's command bound the server to localhost. A same-task follow-up corrected its bind to `0.0.0.0:5173`. The preview then loaded; the observer entered an unsaved draft and recorded page-session `1791734187603`. A heading-only follow-up succeeded with the agent reporting unchanged Vite PID/start ticks `79081/61654`, but Chrome subsequently showed `ERR_BLOCKED_BY_CLIENT`. The browser after-state was not captured, so **final-source HMR is inconclusive**. No browser security setting was bypassed. [Blocked-preview screenshot](assets/2026-10-10-boat/staging33-vite-blocked.png). The earlier stage27 HMR pass remains valid only for its recorded source.
+
+The final manual keyboard repeat was blocked by the locked Mac; user unlock was requested. This is not a pass. Earlier stage25 Chrome mouse/keyboard evidence remains separate. The Computer connection later expired normally; the observer closed its Computer panel and preview tab without reconnecting.
+
+All six final-source runs succeeded, all leases released with successful cleanup, and all four physical owners retired. Native Claude released at15:56:37.660; native Codex released at16:04:55.354. Boat naturally archived at **16:05:00.001 UTC**, independently observed archived/healthy at16:07:06.495. No forced stop, guest probe, prewarming, saved-state reset or timeout extension was used. [Complete scoped live receipts](assets/2026-10-10-boat/evidence/staging33-live-evidence.json).
+
+Combined code `43db2529a18fafdd3f4b5443076f357e1d59fe9a` passed full workspace typecheck and build. Final core `d2bd3b8f6f` and staging88ef each passed77 adapter cases and normal server typecheck; all338 staging migration paths/modes/blobs are unchanged. At15:36UTC all four draft PRs had green checks, exact-head5/5 review and no unresolved threads; that receipt covers code heads, not this later evidence-only update. Historical broad local-suite failures below remain recorded. [Source-bound checks and review](assets/2026-10-10-boat/evidence/review-corrections-verification.json).
+
+Remaining acceptance gaps are the final browser HMR/manual-keyboard repeats, active controller-crash recovery and live feature-off cleanup. Cold full-Claude setup remains slow (13m29 in the complete lifecycle below). Failed historical sessions/quarantines remain preserved; healthy saved-task continuation does not claim their recovery. Nothing is merged to master.
+
+Historical screenshots and receipts are preserved on the [fixed evidence commit](https://github.com/paperclipai/paperclip/tree/5909bfac9fa41405beb3fe8a65253dc28ba52835/doc/plans/assets/2026-10-10-boat). The dated history below preserves older source boundaries and failures; later observations supersede then-pending status.
 
 ## Claude lifecycle passed on corrected package (2026-10-11 15:11 UTC)
 

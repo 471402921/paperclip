@@ -414,5 +414,202 @@
         "sha256": "2182464a2623abfbdc17d19cfdb9544c50e6948811b567b7e3dc1f944f61774f"
       }
     ]
+  },
+  "finalReviewedSource": {
+    "capturedAt": "2026-10-11T15:37:52.494277+00:00",
+    "localBranchCorrection": {
+      "capturedAt": "2026-10-11T15:20:34.966011+00:00",
+      "baseCommit": "e72f29cd85ace0a4425bb57837ecd1d3faf4fec4",
+      "review": "https://github.com/paperclipai/paperclip/pull/15813#discussion_r4242069674",
+      "status": "reviewed uncommitted correction; no push or deployment",
+      "rootCause": "Fresh worktree preparation fetched origin for every existing bare local branch, rejecting verified unpushed branches without a remote counterpart.",
+      "behavior": [
+        "Explicit refs/heads names use the verified local commit.",
+        "Bare local branches prefer origin and use their captured local commit only after authenticated ls-remote exits 2 for the exact remote branch.",
+        "Remote lookup errors and fetch errors fail closed; explicit remote names never fall back locally.",
+        "Tags, commit expressions, existingBranch attachment and dirty existing worktrees retain their prior behavior."
+      ],
+      "files": [
+        {
+          "path": "server/src/modules/computers/adapters/remote-program.ts",
+          "sha256": "2a05b10bad000033f5e8f10fd4eb43968c302ed6d9532f13dc27a89ec08a2763"
+        },
+        {
+          "path": "server/src/modules/computers/adapters/boat.test.ts",
+          "sha256": "7c560afe76fef1b0e289f0aef901174a0428d15d9c49db7403573fe4fc436649"
+        }
+      ],
+      "validation": {
+        "red": {
+          "failed": 2,
+          "log": "/tmp/boat-architect/boat-local-base-red.log"
+        },
+        "finalAdapterSuite": {
+          "passed": 77,
+          "failed": 0,
+          "skipped": 0,
+          "log": "/tmp/boat-architect/boat-local-base-final-green.log"
+        },
+        "normalServerTypecheck": {
+          "exitCode": 0,
+          "command": "pnpm --filter @paperclipai/server typecheck",
+          "log": "/tmp/boat-architect/boat-local-base-final-normal-tsc.log"
+        },
+        "diffCheck": {
+          "exitCode": 0
+        },
+        "independentReview": {
+          "reviewer": "quarantine_root_cause",
+          "verdict": "approved; no actionable findings",
+          "includes": "Successful remote-presence query followed by failed fetch rejects without creating the target."
+        }
+      },
+      "scopeLimits": [
+        "No live provider operations or saved-state changes.",
+        "No changes outside the two listed source/test paths.",
+        "No commit, push, or deployment performed."
+      ]
+    },
+    "stagingPort": {
+      "capturedAt": "2026-10-11T15:23:04.332972+00:00",
+      "sourceCommit": "88ef170f5c2439a057805e36cede29ef037ec618",
+      "validation": {
+        "adapterSuite": {
+          "path": "server/src/modules/computers/adapters/boat.test.ts",
+          "passed": 77,
+          "failed": 0,
+          "skipped": 0,
+          "log": "/tmp/boat-architect/staging-local-base-final-tests.log",
+          "config": "/tmp/boat-architect/staging-reviewed-port-vitest.config.mjs"
+        },
+        "normalServerTypecheck": {
+          "exitCode": 0,
+          "command": "pnpm --filter @paperclipai/server typecheck",
+          "log": "/tmp/boat-architect/staging-local-base-final-tsc.log"
+        },
+        "diffCheck": "passed"
+      },
+      "migrationHistory": {
+        "capturedAt": "2026-10-11T15:22:22.939552+00:00",
+        "sourceCommit": "88ef170f5c2439a057805e36cede29ef037ec618",
+        "baselineCommit": "05f3725af838b5a074707df1d6ed1e193bdfe49e",
+        "migrationBlobCount": 338,
+        "samePathsModesAndBlobIds": true,
+        "treeListingSha256": "58006545ca33ced32094c671c95d2a3be3230bdbfdd69fe92141181713d9a285",
+        "databaseApplied": false
+      },
+      "worktree": "clean",
+      "operations": {
+        "sourceEdits": false,
+        "indexChanges": false,
+        "commits": false,
+        "push": false,
+        "deploy": false,
+        "liveProviderCalls": false,
+        "databaseMigrationApplied": false
+      },
+      "boundary": "Source qualification only; no additional live acceptance claim."
+    },
+    "combinedChecks": {
+      "source": "43db2529a18fafdd3f4b5443076f357e1d59fe9a",
+      "typecheckExit": 0,
+      "buildExit": 0,
+      "logs": [
+        {
+          "name": "combined-43db-typecheck.log",
+          "sha256": "f4591a9c8e4d405639cd434970d79751a6add0ccb58f5ba98d9f4cdae579bd57"
+        },
+        {
+          "name": "combined-43db-build.log",
+          "sha256": "0c02e68b200a0cc9ddcb6f6a8202d68ede11a4e6383112235bcc4e0137dc9dfe"
+        }
+      ]
+    },
+    "ciAndReview": {
+      "observedAt": "2026-10-11T15:36:34.338824+00:00",
+      "prs": [
+        {
+          "number": 15878,
+          "url": "https://github.com/paperclipai/paperclip/pull/15878",
+          "head": "e318850909c0777565b43644a4d8114c6006da60",
+          "base": "master",
+          "draft": true,
+          "files": 5,
+          "mergeable": "MERGEABLE",
+          "checks": {
+            "SKIPPED": 2,
+            "SUCCESS": 53
+          },
+          "unresolved": 0,
+          "threadsPaginationComplete": true,
+          "greptile": {
+            "exactHead": true,
+            "score": 5,
+            "updatedAt": "2026-10-11T12:39:02Z"
+          }
+        },
+        {
+          "number": 15880,
+          "url": "https://github.com/paperclipai/paperclip/pull/15880",
+          "head": "0c4bb6fa57bb7c5c3090291617e5b95d93d77a92",
+          "base": "codex/boat-fixture-prerequisite",
+          "draft": true,
+          "files": 77,
+          "mergeable": "MERGEABLE",
+          "checks": {
+            "SUCCESS": 54,
+            "SKIPPED": 2
+          },
+          "unresolved": 0,
+          "threadsPaginationComplete": true,
+          "greptile": {
+            "exactHead": true,
+            "score": 5,
+            "updatedAt": "2026-10-11T14:34:35Z"
+          }
+        },
+        {
+          "number": 15813,
+          "url": "https://github.com/paperclipai/paperclip/pull/15813",
+          "head": "d2bd3b8f6f4ba405470ef09958a71ff7eb2aaa37",
+          "base": "codex/boat-runtime-prerequisite",
+          "draft": true,
+          "files": 96,
+          "mergeable": "MERGEABLE",
+          "checks": {
+            "SUCCESS": 53
+          },
+          "unresolved": 0,
+          "threadsPaginationComplete": true,
+          "greptile": {
+            "exactHead": true,
+            "score": 5,
+            "updatedAt": "2026-10-11T15:29:00Z"
+          }
+        },
+        {
+          "number": 15804,
+          "url": "https://github.com/paperclipai/paperclip/pull/15804",
+          "head": "43db2529a18fafdd3f4b5443076f357e1d59fe9a",
+          "base": "codex/boat-environment-core",
+          "draft": true,
+          "files": 83,
+          "mergeable": "MERGEABLE",
+          "checks": {
+            "SUCCESS": 53
+          },
+          "unresolved": 0,
+          "threadsPaginationComplete": true,
+          "greptile": {
+            "exactHead": true,
+            "score": 5,
+            "updatedAt": "2026-10-11T15:28:08Z"
+          }
+        }
+      ],
+      "allCurrentChecksTerminalWithoutFailures": true,
+      "noWorkflowReruns": true
+    },
+    "sourceBoundary": "Staging88ef verified serving; final jobs and cleanup passed. Final browser HMR and manual keyboard repeat remain inconclusive; see staging33-live-evidence.json."
   }
 }
