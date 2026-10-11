@@ -9,6 +9,15 @@ import {
 } from "./wake-context.js";
 
 describe("wake context", () => {
+  it("requires the computer-specific non-assignee receipt for a computer wait", () => {
+    expect(isNonAssigneeWorkspaceBusyRetry("computer_admission_wait", {
+      computerAdmissionDeferredWhileAssignee: false,
+    })).toBe(true);
+    for (const context of [{}, { computerAdmissionDeferredWhileAssignee: true }, { workspaceBusyDeferredWhileAssignee: false }, { aiConnectionBusyDeferredWhileAssignee: false }]) {
+      expect(isNonAssigneeWorkspaceBusyRetry("computer_admission_wait", context)).toBe(false);
+    }
+    expect(isNonAssigneeWorkspaceBusyRetry("transient_failure", { computerAdmissionDeferredWhileAssignee: false })).toBe(false);
+  });
   it("requires the subscription-specific non-assignee receipt for a subscription wait", () => {
     expect(isNonAssigneeWorkspaceBusyRetry("ai_connection_busy", {
       aiConnectionBusyDeferredWhileAssignee: false,
