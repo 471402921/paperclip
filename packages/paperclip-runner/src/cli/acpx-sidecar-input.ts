@@ -90,7 +90,11 @@ function directAcpxSidecarErrorCode(error: Error): string | null {
     typeof details.stderrSummary === "string" ? details.stderrSummary : "";
   // Bootstrap writes this fixed marker before printing private error details and
   // terminating. Never copy those details into the public classification.
-  const importFailure = /(?:^|\n)PAPERCLIP_ACPX_IMPORT_FAILURE:(UNVERIFIED_MODULE|OTHER)(?::([A-Z_]+))?(?:\r?\n|$)/.exec(stderr);
+  // ACPX collapses stderr whitespace into one line. An explicit terminator
+  // preserves the token boundary without accepting arbitrary appended text.
+  // Retain the original line-delimited form for older immutable provider packs.
+  const importFailure = /(?:^|\s)PAPERCLIP_ACPX_IMPORT_FAILURE:(UNVERIFIED_MODULE|OTHER)(?::([A-Z_]+))?:END(?=\s|$)/.exec(stderr)
+    ?? /(?:^|\n)PAPERCLIP_ACPX_IMPORT_FAILURE:(UNVERIFIED_MODULE|OTHER)(?::([A-Z_]+))?(?:\r?\n|$)/.exec(stderr);
   if (importFailure?.[1] === "UNVERIFIED_MODULE" && importFailure[2] === undefined) return "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE";
   if (importFailure?.[1] === "UNVERIFIED_MODULE" && MODULE_FENCES.has(importFailure[2])) {
     return `AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.${importFailure[2]}`;

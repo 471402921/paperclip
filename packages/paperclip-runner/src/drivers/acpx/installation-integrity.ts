@@ -2051,7 +2051,7 @@ function snapshotBootstrap(format: AcpxCommandFormat, guarded = false): string {
     guarded
       ? "const exitOnImportFailure = reapOnGuardianLoss;"
       : "const exitOnImportFailure = process.exit.bind(process);",
-    'import(target).catch((error) => { let category = "OTHER"; try { if (error?.code === "ERR_ACPX_UNVERIFIED_MODULE") { category = "UNVERIFIED_MODULE"; const fence = error.moduleFence; if (["RESOLUTION", "OPEN", "BOUNDS", "ANCESTRY", "FORMAT", "PATH_IDENTITY", "READ_RESULT", "SIZE", "DEVICE", "INODE", "MODE", "UID", "GID", "LINK_COUNT", "MTIME", "BYTE_CONTINUITY", "REPEATED_CTIME"].includes(fence)) category += ":" + fence; } } catch {} try { writeImportFailure(2, "PAPERCLIP_ACPX_IMPORT_FAILURE:" + category + "\\n"); console.error(error); } finally { exitOnImportFailure(1); } });',
+    'import(target).catch((error) => { let category = "OTHER"; try { if (error?.code === "ERR_ACPX_UNVERIFIED_MODULE") { category = "UNVERIFIED_MODULE"; const fence = error.moduleFence; if (["RESOLUTION", "OPEN", "BOUNDS", "ANCESTRY", "FORMAT", "PATH_IDENTITY", "READ_RESULT", "SIZE", "DEVICE", "INODE", "MODE", "UID", "GID", "LINK_COUNT", "MTIME", "BYTE_CONTINUITY", "REPEATED_CTIME"].includes(fence)) category += ":" + fence; } } catch {} try { writeImportFailure(2, "PAPERCLIP_ACPX_IMPORT_FAILURE:" + category + ":END\\n"); console.error(error); } finally { exitOnImportFailure(1); } });',
   ].join("");
 }
 
