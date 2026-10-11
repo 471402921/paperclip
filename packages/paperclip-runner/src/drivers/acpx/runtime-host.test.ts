@@ -201,6 +201,54 @@ afterEach(async () => {
 });
 
 describe("ACPX runtime host", () => {
+  it.each(["throw", "reject"] as const)("keeps admission diagnostics observational when the observer can %s", async (failure) => {
+    const fixture = await hostFixture();
+    const port = runtimePort({ getStatus: async () => ({ models: { currentModelId: "claude-sonnet-5" } }) });
+    const gate = deferred<AcpxRuntimePort>();
+    const stages: Array<{ stage: string; elapsedMs: number }> = [];
+    const enteredRuntime = deferred<void>();
+    const openRuntime = vi.fn((_options: AcpxRuntimePortOpenOptions) => {
+      enteredRuntime.resolve();
+      return gate.promise;
+    });
+    const opening = trackAdmissionOpening(AcpxRuntimeHost.open({
+      ...fixture.options, agent: "claude", model: "claude-sonnet-5",
+      semanticTools: { tools: [], handler: async () => ({}) },
+    }, {
+      ...fixture.dependencies({ openRuntime }),
+      onAdmissionStage: (stage, elapsedMs) => {
+        stages.push({ stage, elapsedMs });
+        if (failure === "throw") throw new Error("private-observer-canary");
+        return Promise.reject(new Error("private-observer-canary"));
+      },
+    }));
+    try {
+      await enteredRuntime.promise;
+      expect(openRuntime).toHaveBeenCalledOnce();
+      expect(stages.at(-1)?.stage).toBe("handshake");
+    } finally {
+      gate.resolve(port);
+    }
+    const host = await opening;
+    expect(stages.map(({ stage }) => stage)).toEqual([
+      "binding", "installation", "sandbox", "lifetime", "agent_files", "skills",
+      "command", "tool_bridge", "handshake", "verification", "ready",
+    ]);
+    for (const [index, { elapsedMs }] of stages.entries()) {
+      expect(Number.isInteger(elapsedMs)).toBe(true);
+      expect(elapsedMs).toBeGreaterThanOrEqual(stages[index - 1]?.elapsedMs ?? 0);
+      expect(elapsedMs).toBeLessThanOrEqual(3_600_000);
+    }
+    expect(() => openRuntime.mock.calls[0]![0].onTurnStage?.("turn_initialize")).not.toThrow();
+    await Promise.resolve();
+    expect(stages.at(-1)?.stage).toBe("turn_initialize");
+    expect(Number.isInteger(stages.at(-1)?.elapsedMs)).toBe(true);
+    expect(host.identity().acpxRecordId).toBe("record-1");
+    await host.close({ reason: "diagnostic observer test complete" });
+    expect(port.close).toHaveBeenCalledOnce();
+    expect(fixture.commandClose).toHaveBeenCalledOnce();
+  });
+
   it.each([undefined, "plan", "ask"] as const)("requires observed Cursor mode %s in the host identity", async selected => {
     const fixture = await hostFixture();
     const mode = selected ?? "agent";
@@ -899,6 +947,34 @@ describe("ACPX runtime host", () => {
     expect(runtime.startTurn).not.toHaveBeenCalled();
     expect(runtime.close).toHaveBeenCalledOnce();
     expect(fixture.commandClose).toHaveBeenCalledOnce();
+  });
+
+  it("gives Claude shells only the registered persistent home while keeping provider HOME isolated", async () => {
+    const fixture = await hostFixture();
+    const home = await realpath(await mkdtemp(join(tmpdir(), "paperclip-computer-agent-home-")));
+    temporaryDirectories.push(home);
+    const context: NativeRuntimeContextSnapshot = {
+      prompt: { revision: PAPERCLIP_EXECUTION_PROMPT_REVISION, text: PAPERCLIP_EXECUTION_PROMPT, digest: nativeRuntimePromptDigest() },
+      instructions: { entryPath: "AGENTS.md", bundle: { schema: NATIVE_RUNTIME_ASSET_SCHEMA, digest: "0".repeat(64), manifestDigest: "0".repeat(64), rootPath: home, fileCount: 0, totalBytes: 0 } },
+      persistentAgentHome: { rootPath: home }, skills: [],
+      mcp: { assignmentSetId: "none", digest: "0".repeat(64), bindingId: null }, aggregateDigest: "",
+    };
+    context.aggregateDigest = canonicalNativeRuntimeContextDigest(context);
+    let observed: { home: string; agentHome: string } | undefined;
+    const host = await AcpxRuntimeHost.open({ ...fixture.options, agent: "claude", model: "claude-sonnet-5",
+      environment: { AGENT_HOME: "/ambient/untrusted" }, runtimeContext: context,
+    }, fixture.dependencies({ openRuntime: async launch => {
+      observed = JSON.parse(execFileSync(process.execPath, ["-e", 'console.log(JSON.stringify({home:process.env.HOME,agentHome:process.env.AGENT_HOME}))'], {
+        env: launch.launchEnvironment, encoding: "utf8", timeout: 5_000,
+      }));
+      return runtimePort({ getStatus: async () => ({ models: { currentModelId: "claude-sonnet-5" } }) });
+    } }));
+    try {
+      expect(observed?.agentHome).toBe(home);
+      expect(observed?.home).not.toBe(home);
+      expect(observed?.home).toContain("home");
+      expect(context.instructions.workingCopy).toBeUndefined();
+    } finally { await host.close({ reason: "persistent home verified" }); }
   });
 
   it.each(["cursor", "copilot", "pi"] as const)("binds %s agent files from each registered run copy, never ambient roots", async (agent) => {

@@ -3,11 +3,15 @@ import { constants } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { fork, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
+import { pathToFileURL } from "node:url";
+import { acpxSidecarErrorCode } from "../../cli/acpx-sidecar-input.js";
 import {
   chmod,
   link,
   mkdir,
   mkdtemp,
+  open,
+  type FileHandle,
   readFile,
   realpath,
   rename,
@@ -15,6 +19,7 @@ import {
   symlink,
   stat,
   writeFile,
+  utimes,
 } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
@@ -25,11 +30,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveQualifiedAcpxProfile } from "./qualified-profiles.js";
 import {
   verifyProvisionedGrokExecutable,
+  openVerifiedRuntimeExecutable,
+  inspectCommand,
   builtinGrokLauncherPath,
   awaitVerifiedAcpxProviderExit,
   awaitVerifiedAcpxProviderOwnership,
   createAcpxPackageJsonResolver,
   guardSnapshotModuleLookup,
+  readStableSnapshotModuleSource,
   guardSnapshotModuleResolution,
   reapCurrentProviderProcessGroup,
   sanitizedNodeEnvironment,
@@ -54,6 +62,66 @@ afterEach(async () => {
 });
 
 describe("ACPX installation integrity", () => {
+  describe.each(["runtime", "command"] as const)("%s executable hydration", (kind) => {
+  const verify = kind === "runtime" ? openVerifiedRuntimeExecutable : inspectCommand;
+  it.each(["once", "every_read", "wrong_digest", "mode", "mtime", "replacement", "symlink", "second_content"] as const)("requires stable full re-verification after a ctime-only transition (%s)", async (transition) => {
+    const directory = await mkdtemp(join(tmpdir(), "paperclip-runtime-hydration-"));
+    temporaryDirectories.push(directory);
+    const executable = join(directory, "runtime");
+    const bytes = Buffer.from("qualified runtime fixture");
+    await writeFile(executable, bytes, { mode: 0o755 });
+    const digest = `sha256:${createHash("sha256").update(transition === "wrong_digest" ? "wrong" : bytes).digest("hex")}`;
+    const probe = await open(executable, "r");
+    const prototype = Object.getPrototypeOf(probe) as FileHandle;
+    const originalRead = probe.read;
+    await probe.close();
+    let reads = 0;
+    const readSpy = vi.spyOn(prototype, "read").mockImplementation(async function (this: FileHandle, ...args: Parameters<FileHandle["read"]>) {
+      if (reads === 1 && transition === "second_content") {
+        await writeFile(executable, Buffer.alloc(bytes.length, 120));
+      }
+      const result = await Reflect.apply(originalRead, this, args);
+      reads += 1;
+      if (reads === 1 || transition === "every_read") {
+        const before = await stat(executable, { bigint: true });
+        // chmod to the existing mode models Boat hydration: ctime alone changes.
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          await chmod(executable, 0o755);
+          if ((await stat(executable, { bigint: true })).ctimeNs !== before.ctimeNs) break;
+          await new Promise((resolve) => setTimeout(resolve, 1));
+        }
+        const after = await stat(executable, { bigint: true });
+        expect(after.ctimeNs).not.toBe(before.ctimeNs);
+        expect([after.dev, after.ino, after.size, after.mode, after.mtimeNs]).toEqual([before.dev, before.ino, before.size, before.mode, before.mtimeNs]);
+        if (transition === "mode") await chmod(executable, 0o700);
+        if (transition === "mtime") await utimes(executable, new Date(0), new Date(0));
+        if (transition === "replacement" || transition === "symlink") {
+          const moved = `${executable}.original`;
+          await rename(executable, moved);
+          if (transition === "symlink") await symlink(moved, executable);
+          else await writeFile(executable, bytes, { mode: 0o755 });
+        }
+      }
+      return result;
+    });
+    try {
+      if (transition === "once") {
+        const verified = await verify(executable, digest, "fixture");
+        try {
+          const stable = await stat(executable, { bigint: true });
+          if ("bytes" in verified) expect(verified.bytes).toEqual(bytes);
+          expect(verified.identity.changedNanoseconds).toBe(stable.ctimeNs.toString());
+          expect(verified.identity.modifiedNanoseconds).toBe(stable.mtimeNs.toString());
+        } finally { if ("handle" in verified) await verified.handle.close(); }
+      } else {
+        await expect(verify(executable, digest, "fixture")).rejects.toThrow(transition === "wrong_digest" ? "digest mismatch" : "changed while it was verified");
+      }
+      expect(reads).toBe(["once", "every_read", "second_content"].includes(transition) ? 2 : 1);
+    } finally { readSpy.mockRestore(); }
+  });
+
+  });
+
   it.each([false, true])("admits only the declared qualified Codex platform in its npm-hoisted slot (published platform declaration: %s)", async (publishedDeclaration) => {
     const parent = await realpath(await mkdtemp(join(tmpdir(), "paperclip-codex-npm-hoist-")));
     temporaryDirectories.push(parent);
@@ -1642,6 +1710,189 @@ describe("ACPX installation integrity", () => {
       await expectFailure(child, "requires Linux descriptor-pinned paths");
     }
   });
+  describe("descriptor-pinned dependency read continuity", () => {
+    it.each(["stable", "once", "recurring", "changed_bytes", "dev", "ino", "mode", "uid", "gid", "nlink", "size", "mtimeNs", "not_regular", "oversized", "snapshot_first", "snapshot_second"] as const)(
+      "requires bounded complete read continuity (%s)", (transition) => {
+        const original = Buffer.from("qualified fixture bytes");
+        const changed = Buffer.from("different fixture bytes");
+        expect(changed.length).toBe(original.length);
+        const initial = { dev: 1n, ino: 2n, mode: 0o100444n, uid: 1000n, gid: 1000n, nlink: 1n, size: BigInt(original.length),
+          mtimeNs: 10n, ctimeNs: 20n, isFile: () => true };
+        let pass = 0;
+        const verify = vi.fn((bytes: Buffer) => {
+          if (transition.startsWith("snapshot_")) {
+            const expected = createHash("sha256").update(original).digest("hex");
+            if (createHash("sha256").update(bytes).digest("hex") !== expected) throw new Error("snapshot digest mismatch");
+          }
+        });
+        const read = () => readStableSnapshotModuleSource({
+          before: { ...initial, ...(transition === "oversized" ? { size: 17n } : {}) },
+          maxBytes: transition === "oversized" ? 16 : 64,
+          stat: () => {
+            const metadata = { ...initial, ctimeNs: transition === "stable" ? 20n : 21n };
+            if (transition === "recurring" && pass === 2) metadata.ctimeNs = 22n;
+            if (["dev", "ino", "mode", "uid", "gid", "nlink", "size", "mtimeNs"].includes(transition)) {
+              const field = transition as "dev" | "ino" | "mode" | "uid" | "gid" | "nlink" | "size" | "mtimeNs";
+              metadata[field] += 1n;
+            }
+            if (transition === "not_regular") metadata.isFile = () => false;
+            return metadata;
+          },
+          read: (buffer, offset, length, position) => {
+            if (position === 0) pass += 1;
+            const source = (transition === "snapshot_first"
+              || ((transition === "changed_bytes" || transition === "snapshot_second") && pass === 2)) ? changed : original;
+            return source.copy(buffer, offset, position, position + length);
+          },
+          verify,
+        });
+        if (transition === "stable" || transition === "once") {
+          expect(read()).toEqual(original);
+          expect(pass).toBe(transition === "stable" ? 1 : 2);
+          expect(verify).toHaveBeenCalledTimes(pass);
+        } else {
+          expect(read).toThrow();
+          const reasons: Record<string, string> = { recurring: "REPEATED_CTIME", changed_bytes: "BYTE_CONTINUITY",
+            dev: "DEVICE", ino: "INODE", mode: "MODE", uid: "UID", gid: "GID", nlink: "LINK_COUNT",
+            size: "SIZE", mtimeNs: "MTIME", not_regular: "BOUNDS", oversized: "BOUNDS" };
+          if (reasons[transition]) {
+            pass = 0;
+            expect(read).toThrow(expect.objectContaining({ code: "ERR_ACPX_UNVERIFIED_MODULE", moduleFence: reasons[transition] }));
+          }
+          expect(pass).toBeLessThanOrEqual(2);
+          if (transition === "snapshot_second") expect(verify).toHaveBeenCalledTimes(2);
+        }
+      },
+    );
+  });
+
+  it.runIf(process.platform !== "win32").each(["once", "recurring", "bytes", "mode", "rename", "replacement", "symlink"] as const)("loads dependency bytes only after stable ctime-only continuity (%s)", async (transition) => {
+    const fixture = await installationFixture();
+    await writeFile(join(fixture.commandDirectory, "dependency.mjs"), 'export const value = "dependency-success";');
+    const command = `import fs from 'node:fs';
+      const read = fs.readSync.bind(fs), stat = fs.fstatSync.bind(fs);
+      let moduleFd, passes = 0;
+      fs.readSync = (fd, buffer, offset, length, position) => {
+        const count = read(fd, buffer, offset, length, position);
+        if (buffer.subarray(offset, offset + count).includes(Buffer.from('dependency-success'))) {
+          moduleFd = fd; passes += 1;
+          if (${JSON.stringify(transition)} === 'bytes' && passes === 2) buffer[offset] = 0;
+          if (passes === 1 && ['rename','replacement','symlink'].includes(${JSON.stringify(transition)})) {
+            const named = new URL('./dependency.mjs', import.meta.url);
+            fs.renameSync(named, new URL('./moved.mjs', import.meta.url));
+            if (${JSON.stringify(transition)} === 'replacement') fs.writeFileSync(named, buffer.subarray(offset, offset + count));
+            if (${JSON.stringify(transition)} === 'symlink') fs.symlinkSync('./moved.mjs', named);
+          }
+        }
+        return count;
+      };
+      fs.fstatSync = (fd, options) => {
+        const metadata = stat(fd, options);
+        if (fd === moduleFd && options?.bigint) {
+          metadata.ctimeNs += ${JSON.stringify(transition)} === 'recurring' ? BigInt(passes) : 1n;
+          if (${JSON.stringify(transition)} === 'mode') metadata.mode ^= 0o100n;
+        }
+        return metadata;
+      };
+      const dependency = await import('./dependency.mjs');
+      process.stdout.write(dependency.value);`;
+    await writeFile(fixture.commandPath, command);
+    await writeFile(fixture.serverPackageJsonPath, JSON.stringify({ version: "0.0.33", bin: "bin/server.js", type: "module" }));
+    const installation = await verifyQualifiedAcpxInstallation({ ...fixture.profile,
+      commandDigest: `sha256:${createHash("sha256").update(command).digest("hex")}`,
+    }, fixture.resolve);
+    const lease = await installation.openCommand();
+    const child = lease.spawn();
+    const closed = once(child, "close");
+    let stdout = "";
+    child.stdout?.on("data", bytes => { stdout += String(bytes); });
+    let stderr = "";
+    child.stderr?.on("data", bytes => { stderr += String(bytes); });
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 4_000);
+    try {
+      const [code] = await closed;
+      expect(code).toBe(transition === "once" ? 0 : 1);
+      expect(stdout).toBe(transition === "once" ? "dependency-success" : "");
+      const fences: Record<string, string> = { recurring: "REPEATED_CTIME", bytes: "BYTE_CONTINUITY", mode: "MODE" };
+      const fence = fences[transition];
+      if (fence && !(transition === "bytes" && process.platform === "darwin")) {
+        expect(stderr).toContain(`PAPERCLIP_ACPX_IMPORT_FAILURE:UNVERIFIED_MODULE:${fence}:END\n`);
+      }
+    } finally {
+      clearTimeout(timeout);
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      await closed;
+      await lease.close();
+    }
+  });
+
+  it.runIf(process.platform !== "win32").each(["OTHER", "UNVERIFIED_MODULE"] as const)(
+    "settles a guarded ESM import failure without guardian retirement (%s)",
+    async (category) => {
+      const fixture = await installationFixture();
+      const outside = join(fixture.root, "private-canary.mjs");
+      await writeFile(outside, 'throw new Error("must-not-execute");');
+      const command = category === "OTHER"
+        ? 'throw new Error("guarded-import-fixture-failed private-canary");'
+        : `import ${JSON.stringify(pathToFileURL(outside).href)};`;
+      await writeFile(fixture.commandPath, command);
+      await writeFile(fixture.serverPackageJsonPath, JSON.stringify({
+        version: "0.0.33", bin: "bin/server.js", type: "module",
+      }));
+      const installation = await verifyQualifiedAcpxInstallation({
+        ...fixture.profile,
+        commandDigest: `sha256:${createHash("sha256").update(command).digest("hex")}`,
+      }, fixture.resolve);
+      const credentialHome = join(fixture.root, "credential-home");
+      await mkdir(credentialHome, { mode: 0o700 });
+      const credential = await stageManagedCodexCredential({
+        agentHomeDirectory: credentialHome,
+        environment: { PAPERCLIP_ACPX_CODEX_AUTH_JSON_SECRET: '{"fixture":true}' },
+      });
+      const lease = await installation.openCommand();
+      const child = lease.spawn([], {}, {
+        credentialFenceFds: credential.lifetimeFenceFds,
+        activateCredentialFenceOwner: pid => credential.activateLifetimeOwner(pid),
+      });
+      const exit = once(child, "exit");
+      const closed = once(child, "close");
+      let stderr = "";
+      const failureSeen = new Promise<void>(resolve => child.stderr?.on("data", bytes => {
+        stderr += String(bytes);
+        if (stderr.includes("PAPERCLIP_ACPX_IMPORT_FAILURE:")) resolve();
+      }));
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let startupTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([failureSeen, new Promise<never>((_, reject) => {
+          startupTimer = setTimeout(() => reject(new Error("fixture startup marker missing")), 3_000);
+        })]);
+        // Bound starts after the exact child error, excluding startup speed.
+        const settled = await Promise.race([exit.then(() => true), new Promise<boolean>(resolve => {
+          timer = setTimeout(() => resolve(false), 500);
+        })]);
+        expect(settled).toBe(true);
+        await closed;
+        await awaitVerifiedAcpxProviderExit(child);
+        expect(child.exitCode === 0 && child.signalCode === null).toBe(false);
+        const code = acpxSidecarErrorCode(Object.assign(new Error("private-canary"), {
+          detailCode: "AGENT_STARTUP_FAILED", stderrSummary: stderr.replace(/\s+/gu, " ").trim().slice(0, 8192),
+          exitCode: child.exitCode, signal: child.signalCode,
+        }));
+        expect(code).toBe(category === "UNVERIFIED_MODULE" ? "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.ANCESTRY" : "AGENT_STARTUP_FAILED.OTHER");
+        expect(code).not.toMatch(/canary|\//);
+        expect(stderr).not.toContain("must-not-execute");
+      } finally {
+        if (timer) clearTimeout(timer);
+        if (startupTimer) clearTimeout(startupTimer);
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+        await exit;
+        await lease.close();
+        await credential.close();
+      }
+    },
+  );
+
   it.runIf(process.platform !== "win32")(
     "rejects incomplete or duplicate provider credential quorum descriptors",
     async () => {

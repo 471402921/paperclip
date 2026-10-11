@@ -1,3 +1,4 @@
+import { createTurnAdmissionDiagnostics } from "./turn-admission-diagnostics.js";
 import { createPiThinkingAdmission, resolvePiThinkingLevel } from "./pi-thinking.js";
 import type { ChildProcess } from "node:child_process";
 
@@ -190,6 +191,7 @@ export async function openQualifiedAcpxRuntime(
   const createRegistry = dependencies.createRegistry ?? createAgentRegistry;
   const createStore = dependencies.createStore ?? createRuntimeStore;
   const createRuntime = dependencies.createRuntime ?? createAcpRuntime;
+  const turnDiagnostics = createTurnAdmissionDiagnostics(options.onTurnStage);
   const runtimeCloseTimeoutMs =
     dependencies.runtimeCloseTimeoutMs ?? DEFAULT_RUNTIME_CLOSE_TIMEOUT_MS;
   const retainedCleanupOwners = new WeakSet<Promise<void>>();
@@ -426,6 +428,8 @@ export async function openQualifiedAcpxRuntime(
         : null;
     },
     onSessionNotification: acceptGoalNotification,
+    onAcpMessage: turnDiagnostics.onAcpMessage,
+    onAgentSpawn: () => turnDiagnostics.report("turn_spawned"),
     spawnEnvironment: () => ({
       ...definedEnvironment(options.launchEnvironment),
       ...(options.profile.agent === "claude"
@@ -447,6 +451,7 @@ export async function openQualifiedAcpxRuntime(
       options.signal?.throwIfAborted();
       options.assertWorkspaceHeld?.();
       commandLaunches.count += 1;
+      turnDiagnostics.report("turn_spawn");
       return children.add(
         options.command.spawn(input.args, input.options, {
           credentialFenceFds,
@@ -605,6 +610,7 @@ export async function openQualifiedAcpxRuntime(
       commandLaunches,
       permissionBoundary,
       extensionBoundary,
+      turnDiagnostics,
       options.profile.agent === "copilot" ? assertCopilotPromptPolicy : undefined,
     );
   } catch (error) {
@@ -1035,6 +1041,7 @@ function runtimePort(
   commandLaunches: { count: number; refreshConsumedCommand?: () => Promise<void> },
   permissionBoundary: { active: AbortController | null; hasAdmittedTurn: boolean; handler?: AcpRuntimeOptions["onPermissionRequest"] },
   extensionBoundary: AcpxRuntimeExtensionBoundary,
+  turnDiagnostics: ReturnType<typeof createTurnAdmissionDiagnostics>,
   assertPromptPolicy?: (text: string) => void,
 ): AcpxRuntimePort {
   extensionBoundary.sessionIds = new Set([identity.backendSessionId]);
@@ -1395,6 +1402,7 @@ function runtimePort(
     startTurn(input) {
       assertPromptPolicy?.(input.text);
       if (extensionBoundary.active) throw new Error("ACPX runtime already has an active turn");
+      const turnProgress = turnDiagnostics.begin();
       const approval = new AbortController();
       const controller = new AbortController();
       const extensionTurn: AcpxRuntimeExtensionTurn = {
@@ -1405,6 +1413,7 @@ function runtimePort(
       };
       extensionBoundary.active = extensionTurn;
       const releaseExtensionTurn = (): void => {
+        turnProgress.end();
         controller.abort(new Error("ACPX extension turn expired"));
         if (extensionBoundary.active === extensionTurn) extensionBoundary.active = null;
       };
@@ -1433,7 +1442,11 @@ function runtimePort(
         void finishOwnershipAdmission().catch(() => undefined);
         throw error;
       }
-      const guarded = turnWithVerifiedLifetimeOwnership(turn, finishOwnershipAdmission);
+      const guarded = turnWithVerifiedLifetimeOwnership(turn, async () => {
+        turnProgress.report("turn_ownership");
+        await finishOwnershipAdmission();
+        turnProgress.report("turn_ownership_verified");
+      }, () => turnProgress.report("turn_prompt_submitted"));
       extensionTurn.promptStarted = guarded.promptStarted;
       const result = guarded.result.then(
         (value) => {
@@ -1484,6 +1497,7 @@ function runtimePort(
 function turnWithVerifiedLifetimeOwnership(
   turn: AcpxRuntimeTurn,
   finishOwnershipAdmission: () => Promise<void>,
+  onPromptSubmitted: () => void,
 ): AcpxRuntimeTurn {
   // A persisted ACPX session can be loaded without starting an agent process.
   // Keep the narrowly scoped turn admission open until either the provider has
@@ -1491,7 +1505,7 @@ function turnWithVerifiedLifetimeOwnership(
   // stable-empty seal in SpawnedChildSet then rejects every later spawn.
   const reachedAdmissionBoundary = Promise.race([
     turn.promptStarted.then(
-      () => undefined,
+      () => onPromptSubmitted(),
       () => undefined,
     ),
     turn.result.then(

@@ -550,7 +550,7 @@ export async function claimWarmNativeInstructionCopy(input: {
 function instructionTargetIdentity(target?: AdapterExecutionTarget | null): string {
   return JSON.stringify(target?.kind === "remote" ? {
     environmentId: target.environmentId, cwd: target.remoteCwd,
-    providerLeaseId: target.transport === "sandbox" ? target.sandboxLeaseAcquisition?.providerLeaseId : target.spec,
+    providerLeaseId: target.transport === "sandbox" ? target.sandboxLeaseAcquisition?.providerLeaseId : target.transport === "computer" ? [target.resourceAuthority.computerId, target.resourceAuthority.ownerId] : target.spec,
   } : { kind: "local", environmentId: target?.environmentId });
 }
 

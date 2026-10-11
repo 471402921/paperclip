@@ -1,3 +1,4 @@
+import type { AcpxTurnAdmissionStage } from "./turn-admission-diagnostics.js";
 import { piProviderConfiguration } from "./pi-provider-config.js";
 import { withAcpxTurnCancellation } from "./turn-cancellation.js";
 import { resolveAcpxProviderMode } from "./provider-mode.js";
@@ -149,6 +150,8 @@ export interface AcpxRuntimePort {
 }
 
 export interface AcpxRuntimePortOpenOptions {
+  /** Closed active-turn progress, measured from the host admission origin. */
+  onTurnStage?: (stage: AcpxTurnAdmissionStage) => void;
   /** A durable identity was admitted; restored native mode must already match. */
   restoringSession?: boolean;
   /** Ephemeral provider extension metadata; mandatory ACP caps remain host-owned. */
@@ -199,7 +202,12 @@ export interface AcpxRetainedCleanupFailure {
   error: unknown;
 }
 
+export type AcpxAdmissionStage = AcpxTurnAdmissionStage | "binding" | "installation" | "sandbox" | "lifetime"
+  | "agent_files" | "skills" | "command" | "tool_bridge" | "handshake" | "verification" | "ready" | "cleanup";
+
 export interface AcpxRuntimeHostDependencies {
+  /** Closed diagnostic progress only; observer failures cannot affect ownership. */
+  onAdmissionStage?: (stage: AcpxAdmissionStage, elapsedMs: number) => void;
   verifyInstallation?: (
     profile: QualifiedAcpxProfile,
   ) => Promise<VerifiedAcpxInstallation>;
@@ -325,6 +333,15 @@ export class AcpxRuntimeHost {
     options: OpenAcpxRuntimeHostOptions,
     dependencies: AcpxRuntimeHostDependencies,
   ): Promise<AcpxRuntimeHost> {
+    const admissionStarted = performance.now();
+    const reportStage = (stage: AcpxAdmissionStage): void => {
+      try {
+        void Promise.resolve(dependencies.onAdmissionStage?.(stage,
+          Math.max(0, Math.min(3_600_000, Math.round(performance.now() - admissionStarted))),
+        )).catch(() => undefined);
+      } catch { /* Diagnostics never own admission or cleanup. */ }
+    };
+    reportStage("binding");
     options.signal?.throwIfAborted();
     if (options.agent === "pi" && typeof options.providerPolicy?.readOnly !== "boolean") {
       throw new Error("Pi admission requires an explicit task execution policy");
@@ -368,6 +385,7 @@ export class AcpxRuntimeHost {
       );
     }
 
+    reportStage("installation");
     const installation = await runAbortableAdmissionStage(
       options.signal,
       () =>
@@ -422,6 +440,7 @@ export class AcpxRuntimeHost {
       retainRuntimeHostCleanup(ownedCleanup);
     };
     try {
+      reportStage("sandbox");
       const sandbox = await runAbortableAdmissionStage(
         options.signal,
         () =>
@@ -443,6 +462,7 @@ export class AcpxRuntimeHost {
           }),
         dependencies.retainAdmissionCleanup,
       );
+      reportStage("lifetime");
       if (options.agent === "codex") {
         credential = await acquireAbortableAdmissionResource({
           signal: options.signal,
@@ -483,7 +503,8 @@ export class AcpxRuntimeHost {
       // agent and run. Environment/config values cannot widen the grant. Each
       // resumed process receives the newly registered copy; collection already
       // requires verified provider shutdown in the native executor.
-      const agentFiles = ["cursor", "copilot", "pi"].includes(options.agent)
+      reportStage("agent_files");
+      const agentFiles = options.runtimeContext?.persistentAgentHome || ["cursor", "copilot", "pi"].includes(options.agent)
         ? bindAcpxAgentFiles(options.runtimeContext, [sandbox.root,
           ...(installation.agentServerPackageJsonPath === null ? [] : [dirname(installation.agentServerPackageJsonPath)]),
         ]) : null;
@@ -522,6 +543,7 @@ export class AcpxRuntimeHost {
           PAPERCLIP_PI_READ_ROOTS: JSON.stringify([...(options.providerPolicy?.readRoots ?? []), ...skills.readRoots]),
         });
       }
+      reportStage("skills");
       if (options.agent === "claude" || options.agent === "grok") {
         // The lifetime lease proves the previous provider has stopped. Refresh
         // the assigned snapshot before every launch, including durable resume;
@@ -534,6 +556,7 @@ export class AcpxRuntimeHost {
         );
         options.signal?.throwIfAborted();
       }
+      reportStage("command");
       command = await acquireAbortableAdmissionResource({
         signal: options.signal,
         acquire: () => installation.openCommand({ signal: options.signal }),
@@ -547,6 +570,7 @@ export class AcpxRuntimeHost {
         signal => installation.openCommand({ signal }),
       );
       command = commandOwner.command;
+      reportStage("tool_bridge");
       toolBridge = options.semanticTools
         ? await acquireAbortableAdmissionResource({
             signal: options.signal,
@@ -561,6 +585,7 @@ export class AcpxRuntimeHost {
       if (admittedLifetime === null) {
         throw new Error("ACPX provider lifetime lease is unavailable");
       }
+      reportStage("handshake");
       runtime = await acquireAbortableAdmissionResource({
         signal: options.signal,
         acquire: async () => {
@@ -568,6 +593,7 @@ export class AcpxRuntimeHost {
           agentFiles?.assertHeld();
           await assertAcpxProfileWorkspace(options.agent, binding.workspacePath);
           return dependencies.openRuntime({
+            onTurnStage: reportStage,
             ...(options.clientCapabilities === undefined ? {} : {
               clientCapabilities: structuredClone(options.clientCapabilities),
             }),
@@ -628,6 +654,7 @@ export class AcpxRuntimeHost {
           });
         },
       });
+      reportStage("verification");
       const runtimeIdentity = await runAbortableAdmissionStage(
         options.signal,
         () =>
@@ -661,6 +688,7 @@ export class AcpxRuntimeHost {
         verifyExpectedAcpxIdentity(options.expectedIdentity, binding, identity);
       }
       options.signal?.throwIfAborted();
+      reportStage("ready");
       admissionSucceeded = true;
       return new AcpxRuntimeHost({
         runtime,
@@ -676,6 +704,7 @@ export class AcpxRuntimeHost {
           : [],
       });
     } catch (error) {
+      reportStage("cleanup");
       error = classifyAcpxProfileError(options.agent, error) ?? error;
       const cleanup = cleanupRuntimeResources(
         runtime,
