@@ -901,6 +901,7 @@ finally:
       gitAuth?: { configArgs: string[]; env: Record<string, string> };
       branch?: string;
       baseRef?: string;
+      existingBranch?: string;
       mode: "shared" | "worktree";
     },
   ) {

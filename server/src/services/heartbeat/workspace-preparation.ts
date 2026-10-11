@@ -33,6 +33,7 @@ import {
   cleanupExecutionWorkspaceArtifacts,
   ensurePersistedExecutionWorkspaceAvailable,
   realizeExecutionWorkspace,
+  WorkspaceRuntimeValidationFailure,
   type ExecutionWorkspaceInput,
   type RealizedExecutionWorkspace,
 } from "../workspace-runtime.js";
@@ -468,6 +469,14 @@ export async function prepareHeartbeatWorkspace(db: Db, input: HeartbeatWorkspac
       agentId: agent.id,
     },
   );
+  const computerExistingBranch = selectedEnvironmentForConfig?.driver === "computer"
+    ? readNonEmptyString(workspaceStrategyForFingerprint.existingBranch) : null;
+  if (computerExistingBranch && latestWorkspaceStrategyType !== "git_worktree") {
+    throw new WorkspaceRuntimeValidationFailure("An existing branch requires the git_worktree workspace strategy.", {
+      workspaceValidation: { reason: "existing_branch_requires_git_worktree", requestedExistingBranch: computerExistingBranch,
+        strategyType: latestWorkspaceStrategyType },
+    });
+  }
   const {
     executionWorkspace,
     reusedExecutionWorkspace,
@@ -477,8 +486,11 @@ export async function prepareHeartbeatWorkspace(db: Db, input: HeartbeatWorkspac
       ...executionWorkspaceBase,
       strategy: selectedEnvironmentForConfig?.driver === "computer" ? latestWorkspaceStrategyType : "project_primary",
       cwd: resolvedWorkspace.cwd,
+      repoRef: selectedEnvironmentForConfig?.driver === "computer" && latestWorkspaceStrategyType === "git_worktree"
+        ? readNonEmptyString(workspaceStrategyForFingerprint.baseRef) ?? executionWorkspaceBase.repoRef : executionWorkspaceBase.repoRef,
       branchName: selectedEnvironmentForConfig?.driver === "computer" && latestWorkspaceStrategyType === "git_worktree" && issueId
-        ? reusableExistingExecutionWorkspace?.branchName ?? `paperclip/task-${issueId}` : null,
+        ? computerExistingBranch ?? reusableExistingExecutionWorkspace?.branchName ?? `paperclip/task-${issueId}` : null,
+      ...(computerExistingBranch ? { existingBranch: computerExistingBranch } : {}),
       worktreePath: null, warnings: [], created: false, branchCreatedByRuntime: false,
     } as RealizedExecutionWorkspace,
     reusedExecutionWorkspace: false,
