@@ -6,6 +6,7 @@ import { resolvePaperclipRunnerIdleTimeoutMs } from "@paperclipai/adapter-utils"
 import { computerService, ComputerError } from "../modules/computers/index.js";
 import { computerOwnerFromLease } from "../services/computer-environment-driver.js";
 import { environmentService } from "../services/environments.js";
+import { isExecutionForcedToKubernetes } from "../services/execution-allowlist.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { logActivity } from "../services/activity-log.js";
 import { conflict, notFound, unprocessable } from "../errors.js";
@@ -39,9 +40,17 @@ export function computerRoutes(db: Db, computers = computerService(db)) {
       if (req.method === "GET") { res.json(null); return; }
       throw unprocessable("Boat environments are disabled.");
     }
+    const instanceSettings = await settings.get();
+    // Heartbeat forces Kubernetes before using agent or instance defaults.
+    // This read path must neither expose Boat nor provision an environment;
+    // missing managed Kubernetes configuration also cannot fall back to Boat.
+    if (isExecutionForcedToKubernetes(instanceSettings.general)) {
+      if (req.method === "GET") { res.json(null); return; }
+      throw notFound("Computer not available for this task");
+    }
     const [agent] = issue.assigneeAgentId ? await db.select().from(agents)
       .where(and(eq(agents.companyId, issue.companyId), eq(agents.id, issue.assigneeAgentId))).limit(1) : [];
-    const environmentId = agent?.defaultEnvironmentId ?? (await settings.get()).defaultEnvironmentId;
+    const environmentId = agent?.defaultEnvironmentId ?? instanceSettings.defaultEnvironmentId;
     const [environment] = environmentId ? await db.select().from(environments).where(eq(environments.id, environmentId)).limit(1) : [];
     if (!environment || environment.driver !== "computer" || environment.metadata?.computerCompanyId !== issue.companyId || environment.status !== "active") {
       if (req.method === "GET") { res.json(null); return; }

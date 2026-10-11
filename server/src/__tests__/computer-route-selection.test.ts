@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import express from "express";
 import request from "supertest";
 import { eq } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { agents, companies, createDb, environmentLeases, environments, issues, type Db, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS } from "@paperclipai/db";
 import { computerRoutes } from "../routes/computers.js";
 import type { computerService } from "../modules/computers/index.js";
@@ -18,13 +18,18 @@ if (!support.supported) console.warn(`Skipping computer route database tests: ${
 describe.skipIf(!support.supported)("task computer environment selection", () => {
   let database: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>>;
   let db: Db;
+  let managedEnvironmentId: string | null = null;
   beforeAll(async () => {
     database = await startEmbeddedPostgresTestDatabase("paperclip-computer-routes");
     db = createDb(database.connectionString);
   }, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS);
   afterAll(async () => { await db?.$client.end(); await database?.cleanup(); });
+  afterEach(async () => {
+    if (managedEnvironmentId) await db.delete(environments).where(eq(environments.id, managedEnvironmentId));
+    managedEnvironmentId = null;
+  });
   beforeEach(() => {
-    settings.get.mockResolvedValue({ defaultEnvironmentId: null });
+    settings.get.mockResolvedValue({ defaultEnvironmentId: null, general: { executionMode: "any" } });
     settings.getExperimental.mockResolvedValue({ enableBoatEnvironments: true });
   });
 
@@ -55,6 +60,46 @@ describe.skipIf(!support.supported)("task computer environment selection", () =>
     expect(f.computers.connect).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { selection: "agent", managedEnvironment: true },
+    { selection: "instance", managedEnvironment: true },
+    { selection: "agent", managedEnvironment: false },
+    { selection: "instance", managedEnvironment: false },
+  ])("refuses Boat access under forced Kubernetes ($selection default, managed row $managedEnvironment)", async ({ selection, managedEnvironment }) => {
+    const f = await fixture();
+    if (selection === "instance") {
+      await db.update(agents).set({ defaultEnvironmentId: null }).where(eq(agents.id, f.agent.id));
+    }
+    settings.get.mockResolvedValue({
+      defaultEnvironmentId: selection === "instance" ? f.selected.id : null,
+      general: { executionMode: "kubernetes" },
+    });
+    if (managedEnvironment) {
+      const [managed] = await db.insert(environments).values({
+        name: randomUUID(), driver: "sandbox", config: { provider: "kubernetes" },
+        metadata: { managedKubernetesSandbox: true },
+      }).returning();
+      managedEnvironmentId = managed.id;
+    }
+    // Even a usable historical Boat lease must not override the execution policy.
+    await db.insert(environmentLeases).values({
+      companyId: f.company.id, issueId: f.issue.id, environmentId: f.selected.id,
+      provider: "boat", providerLeaseId: f.owner.ownerId, metadata: { computerOwner: f.owner },
+    });
+    expect((await request(f.app).get(f.base)).body).toBeNull();
+    expect((await request(f.app).post(`${f.base}/connect`).send({ environmentId: f.selected.id })).status).toBe(404);
+    expect((await request(f.app).post(`${f.base}/preview`).send({ environmentId: f.selected.id, port: 5173 })).status).toBe(404);
+    expect((await request(f.app).post(`${f.base}/presence`).send({ environmentId: f.selected.id, owner: f.owner })).status).toBe(404);
+    expect(f.computers.connect).not.toHaveBeenCalled();
+    expect(f.computers.preview).not.toHaveBeenCalled();
+    expect(f.computers.renewViewer).not.toHaveBeenCalled();
+    // A viewer opened before the policy changed can still release its exact owner.
+    expect((await request(f.app).post(`${f.base}/disconnect`).send({ environmentId: f.selected.id, owner: f.owner })).status).toBe(204);
+    expect(f.computers.disconnectViewer).toHaveBeenCalledWith({
+      companyId: f.company.id, environmentId: f.selected.id, owner: f.owner, userId: "board",
+    });
+  });
+
   it("selects Boat B before its first run and cannot preview Boat A's lease", async () => {
     const f = await fixture();
     expect((await request(f.app).get(f.base)).body).toEqual({ environmentId: f.selected.id, name: f.selected.name });
@@ -68,7 +113,7 @@ describe.skipIf(!support.supported)("task computer environment selection", () =>
   it("uses the current instance default when the agent has no selection", async () => {
     const f = await fixture();
     await db.update(agents).set({ defaultEnvironmentId: null }).where(eq(agents.id, f.agent.id));
-    settings.get.mockResolvedValue({ defaultEnvironmentId: f.selected.id });
+    settings.get.mockResolvedValue({ defaultEnvironmentId: f.selected.id, general: { executionMode: "any" } });
     expect((await request(f.app).get(f.base)).body).toEqual({ environmentId: f.selected.id, name: f.selected.name });
   });
 
