@@ -1,0 +1,39 @@
+{
+  "checkedAt": "2026-10-11T08:14:57.809071+00:00",
+  "issueId": "0ce8247c-b59d-48c3-aa8c-d5a6ae23e96b",
+  "identifier": "BOA-22",
+  "controllerSource": "ecc9b2fa9fe28d214d5c6b9db82b46cf19ba22cc",
+  "coreCorrections": [
+    "8198c9a571ea24aedc32040d0ebae90535694421",
+    "d14578ad13e681cd5dde0025061c8b1493b0aed1"
+  ],
+  "artifactSource": "86c1aa2b0c53b1b41888cea6b8e04e42e28dd05c",
+  "providerPackDigest": "sha256:4ef25756f766016da224f37f68c138c0c4a9ef9d128e6c2fc415f5c57ce38573",
+  "configuredRunnerSha256": "b47ed0f4f29e4c945d12fa4f351c01ee5f03685974bf03591689969bb3b85b73",
+  "runId": "6bc40f44-946c-4ed5-ba4c-b58dea5fe1c1",
+  "nativeSessionId": "007cb3e0-e42b-445d-bcaf-84c9a66943ef",
+  "runnerInstanceId": "ad29bcb9-506b-49eb-bf8c-60646c0788cb",
+  "startedAt": "2026-10-11T08:04:17.255Z",
+  "finishedAt": "2026-10-11T08:11:43.478Z",
+  "status": "failed_before_provider",
+  "errorCode": "native_session_interrupted",
+  "error": "Computer upload timed out waiting for capacity",
+  "providerConnections": 0,
+  "committedProviderEvents": 0,
+  "runnerArtifactPreparationMs": 343560,
+  "providerPackUploadProgressObserved": false,
+  "operatorAction": "Ordinary task comment; no reset or manual session change. Product chose a new session after the preceding pre-provider failure.",
+  "observerPolicy": "Read-only controller/DB/event metadata and task-owned host process names/elapsed times. No guest reads or prewarming.",
+  "diagnosis": {
+    "proven": "An artifact chunk expired waiting for the shared upload slot while other chunks retained slots; runner artifact preparation failed before provider-pack preparation or provider launch.",
+    "hostSnapshot": {
+      "checkedAt": "2026-10-11T08:11:00.088Z",
+      "sshChildCount": 1,
+      "sshElapsedSeconds": 157
+    },
+    "unknown": "No retained per-chunk phase/result log identifies whether active work waited in SSH transfer, remote owner-lock setup, unit launch, foreground completion, or close/cleanup. The first queue error masks later active chunk errors.",
+    "deadlineContract": "Raw SSH timer starts before stdin submission; SIGTERM at deadline, SIGKILL after5s, settlement awaits close and auth cleanup. Host snapshot does not prove a timeout overrun.",
+    "nextEvidence": "Closed per-chunk phase and outcome timings, without payload/argv/path output. No further timeout/backpressure change justified from this result."
+  },
+  "acceptance": "not_passed"
+}

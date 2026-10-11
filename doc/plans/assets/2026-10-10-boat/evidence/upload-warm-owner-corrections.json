@@ -1,0 +1,49 @@
+{
+  "recordedAt": "2026-10-11T08:21:25.647229+00:00",
+  "source": {
+    "upload": "8198c9a571ea24aedc32040d0ebae90535694421",
+    "warmOwner": "d14578ad13e681cd5dde0025061c8b1493b0aed1",
+    "moduleBoundary": "086a9dbbd870b631f8b5d70c04acceededb943e3",
+    "combined": "2a5eca4220bb9050a024d833480287b8296ce2b3",
+    "stagingCandidate": "ca07557247533531b85045a1dc20c231dc9cd1de",
+    "localServing": "ecc9b2fa9fe28d214d5c6b9db82b46cf19ba22cc"
+  },
+  "upload": {
+    "regression": "two simultaneous transfers rejected under old queue-inclusive command deadlines; both complete byte-identically with shared per-machine slots",
+    "boundaryTestsPassed": 150,
+    "focusedTestsPassed": 28,
+    "adapterAndServerTypecheck": "passed",
+    "independentReview": "no actionable findings",
+    "limits": "Unrelated bulk contention or stalled active SSH can still hit unchanged active-command deadlines; live retry not qualified."
+  },
+  "warmOwner": {
+    "redCases": 2,
+    "finalTestsPassed": 33,
+    "skipped": 0,
+    "serverTypecheck": "passed",
+    "independentReview": "approved after correcting independent launch/owner generation assumption",
+    "protected": "exact company/environment/agent/run/owner/generation binding with valid process metadata and bounded warm deadline/grace",
+    "cleanupPreserved": "expired or mismatched authority; concurrent retention CAS",
+    "causalBoundary": "Staging audit proves orphan sweep participated; deterministic test reproduces premature reclamation. Historical physical retirement time is unavailable."
+  },
+  "moduleBoundary": {
+    "oldHeadPolicyChecks": "failed on direct domain import; preserved",
+    "correction": "use existing public computers module entry point",
+    "moduleGate": "passed",
+    "reaperTestsPassed": 33,
+    "serverTypecheck": "passed"
+  },
+  "live": {
+    "local47": "Failed before provider at08:11:43.478: upload capacity timeout while active chunks retained slots. No provider-pack progress, runner connections or provider events. Scheduling fix alone not qualified.",
+    "deployment24": "local official-helper process interrupted before rollout; preview build may finish; staging unchanged",
+    "deployment25": "Official immutable image build in progress; not verified serving",
+    "acceptance": "incomplete"
+  },
+  "constraints": [
+    "No master merge",
+    "No forced provider stop",
+    "No quarantine/checkpoint/cache reset",
+    "No migration history rewrite",
+    "Warm timeout and existing shutdown grace unchanged"
+  ]
+}
