@@ -93,6 +93,7 @@ if act=='workspace':
    return result.stdout.strip() if result.returncode==0 else None
   def worktree_base(value):
    if not value or value=='HEAD':return 'HEAD'
+   if value.startswith('refs/heads/'):return commit_ref(value) or fail('command_failed')
    remotes=run(['git','remote'],checkout).splitlines()
    remote=None;remote_branch=None
    candidate=value[len('refs/remotes/'):] if value.startswith('refs/remotes/') else value
@@ -102,12 +103,18 @@ if act=='workspace':
    else:
     local=value[len('refs/heads/'):] if value.startswith('refs/heads/') else value
     local_branch=subprocess.run(['git','show-ref','--verify','--quiet','refs/heads/'+local],cwd=checkout,capture_output=True).returncode==0
-    # Tags and commit expressions retain their exact meaning. A local branch
-    # with origin uses the remote counterpart rather than unpushed divergence.
+    # Tags and commit expressions retain their exact meaning. Bare branches
+    # prefer origin; only a successful absence check permits a local-only base.
     if not local_branch:
      resolved=commit_ref(value)
      if resolved:return resolved
-    if 'origin' in remotes:remote,remote_branch='origin',local
+    if 'origin' in remotes:
+     if local_branch:
+      local_commit=commit_ref('refs/heads/'+local)
+      present=subprocess.run(['git']+auth.get('configArgs',[])+['ls-remote','--exit-code','--heads','--','origin','refs/heads/'+local],cwd=checkout,env=git_env,capture_output=True,text=True)
+      if present.returncode==2:return local_commit or fail('command_failed')
+      if present.returncode:fail('command_failed')
+     remote,remote_branch='origin',local
     else:return commit_ref(value) or fail('command_failed')
    if remote_branch=='HEAD':return commit_ref(value) or fail('command_failed')
    if subprocess.run(['git','check-ref-format','refs/heads/'+remote_branch],cwd=checkout,capture_output=True).returncode:
