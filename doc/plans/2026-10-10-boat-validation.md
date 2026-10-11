@@ -4,7 +4,7 @@
 
 ## Final staging qualification (2026-10-11 16:08 UTC)
 
-Deployment33 is verified serving `88ef170f5c2439a057805e36cede29ef037ec618` at `boat.staging.paperclip.app`. The machine was archived before ordinary browser-submitted tasks started. Native Codex, native Claude, legacy Codex and legacy Claude all succeeded. Both native agents retained their original saved native, logical and provider sessions, without recovery. The three Codex turns shared one physical owner/boot. Legacy completed-tool outputs independently establish the original distinct personal-file hashes and agent-home UUIDs on the same Boat hostname; model final prose was not used as that proof.
+Deployment33 is verified serving `88ef170f5c2439a057805e36cede29ef037ec618` at `boat.staging.paperclip.app`. The machine was archived before ordinary browser-submitted tasks started. Native Codex, native Claude, legacy Codex and legacy Claude all succeeded. Both native agents retained their original saved native, logical and provider sessions, without recovery. The three Codex turns shared one physical owner. Legacy completed-tool outputs independently establish the original distinct personal-file hashes and agent-home UUIDs on the same Boat hostname; model final prose was not used as that proof.
 
 Native Codex used actual computer tools to navigate Chromium to `https://example.net/?boat-final-88ef.`; the embedded desktop independently displayed Example Domain and that address. [Desktop screenshot](assets/2026-10-10-boat/staging33-desktop-agent.png).
 
