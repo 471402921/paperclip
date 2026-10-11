@@ -1,0 +1,30 @@
+{
+  "schema": "boat-upstream-integration-verification/v1",
+  "capturedAt": "2026-10-11T12:12:27.836159+00:00",
+  "mergeCommit": "0eac0a26e90e1e8f3f935d345ec872903bd54c35",
+  "upstreamCommit": "e733bddc45e00efb1819fffa8677f7b0d07802c5",
+  "featureParent": "1f66cac0f83484e01bdd4d4e9dc3375c3e7665c6",
+  "branch": "codex/boat-environment-core",
+  "conflictResolution": "Retain both ComputerStopPendingError and selectHeartbeatEnvironment imports.",
+  "newTests": "Agent-default and instance-default Boat selection with zero acquired run leases.",
+  "verification": {
+    "passed": 240,
+    "files": 8,
+    "skipped": 0,
+    "serverTypecheck": "passed",
+    "diffCheck": "passed",
+    "independentReview": "live_state_probe approved unchanged extraction and retained Boat fences",
+    "initialFailure": "New test fixture reused a globally unique environment name; made agent/instance fixture names distinct, affected 8-case suite then passed.",
+    "logs": [
+      "core-e733-merge-tests.log",
+      "core-e733-selection-final.log",
+      "core-e733-ownership-tests.log",
+      "core-e733-merge-tsc.log"
+    ]
+  },
+  "databasePolicy": "Uniquely named disposable databases on the existing task-owned PostgreSQL server; product database untouched.",
+  "migrationChanges": false,
+  "liveControllerChanged": false,
+  "stagingChanged": false,
+  "pushed": false
+}
