@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { executionFailureRetryCount } from "./execution-recovery-attempt.js";
+import { executionFailureRetryCount, isComputerAdmissionWait } from "./execution-recovery-attempt.js";
 
 describe("failure attempts across resource waits", () => {
   it("preserves prior failures through subscription waits without trusting unrelated context", () => {
@@ -41,5 +41,47 @@ describe("persisted independent accounting", () => {
     ]) expect(executionFailureRetryCount({ scheduledRetryReason: "transient_failure", scheduledRetryAttempt: 2,
       contextSnapshot: { executionRetryAccounting },
     })).toBe(2);
+  });
+});
+
+
+describe("structural computer admission wait receipt", () => {
+  function receipt() {
+    return {
+      id: "run-1", companyId: "company-1", status: "cancelled", runtimeMode: "legacy",
+      errorCode: "computer_admission_wait",
+      resultJson: {
+        executionRecovery: { kind: "computer_admission_wait", providerWorkStarted: false },
+        cancellation: { expected: true, source: "control_plane", initiator: { type: "system" } },
+        computerAdmission: {
+          runId: "run-1", companyId: "company-1",
+          computerId: "11111111-1111-4111-8111-111111111111",
+          environmentId: "22222222-2222-4222-8222-222222222222", stopId: "stop-1",
+        },
+      },
+    };
+  }
+
+  it("recognizes the recorded never-dispatched wait without treating a code alone as proof", () => {
+    const run = receipt();
+    expect(isComputerAdmissionWait(run)).toBe(true);
+    expect(isComputerAdmissionWait({ ...run, resultJson: {} })).toBe(false);
+    expect(isComputerAdmissionWait({ ...run, resultJson: { ...run.resultJson, executionRecovery: { kind: "computer_admission_wait", providerWorkStarted: true } } })).toBe(false);
+    expect(isComputerAdmissionWait({ ...run, resultJson: { ...run.resultJson, cancellation: { ...run.resultJson.cancellation, initiator: { type: "user" } } } })).toBe(false);
+  });
+
+  it("rejects foreign run/company receipts, invalid identities and already settled retries", () => {
+    const run = receipt();
+    for (const computerAdmission of [
+      { ...run.resultJson.computerAdmission, runId: "another-run" },
+      { ...run.resultJson.computerAdmission, companyId: "another-company" },
+      { ...run.resultJson.computerAdmission, computerId: "invalid" },
+      { ...run.resultJson.computerAdmission, environmentId: "invalid" },
+      { ...run.resultJson.computerAdmission, stopId: "" },
+    ]) expect(isComputerAdmissionWait({ ...run, resultJson: { ...run.resultJson, computerAdmission } })).toBe(false);
+    expect(isComputerAdmissionWait({ ...run, resultJson: { ...run.resultJson, computerAdmissionRetryOutcome: "superseded" } })).toBe(false);
+    expect(isComputerAdmissionWait({ ...run, runnerProfileJson: { nativeExecutionInput: { version: 1 } } })).toBe(false);
+    expect(isComputerAdmissionWait({ ...run, runtimeMode: "native" })).toBe(false);
+    expect(isComputerAdmissionWait({ ...run, status: "failed" })).toBe(false);
   });
 });
