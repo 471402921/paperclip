@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { Db } from "@paperclipai/db";
-import { agents, companies, createDb, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS, heartbeatRuns, issues, nativeRunFinalizations } from "@paperclipai/db";
+import { agents, companies, createDb, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS, heartbeatRuns, issues, nativeRunFinalizations, environments, environmentLeases } from "@paperclipai/db";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "../../__tests__/helpers/embedded-postgres.js";
+import { buildNativeExecutionInput } from "../native-runtime/native-execution-input.js";
+import { nativeRuntimeContextFixture } from "../native-runtime/runtime-context.test-fixture.js";
 import { environmentRuntimeService } from "../environment-runtime.js";
 import { environmentService } from "../environments.js";
 import { createHeartbeatRecovery, type HeartbeatRecoveryDependencies } from "./recovery.js";
@@ -196,6 +198,118 @@ describePostgres("heartbeat recovery module ownership", () => {
     expect((await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, run.id)))[0].status).toBe("running");
     await Promise.all([...deps.activeRunExecutionPromises]);
     await db.delete(heartbeatRuns).where(eq(heartbeatRuns.id, run.id));
+  });
+
+  async function seedComputerRun(mode: "warm" | "per_turn" = "warm") {
+    const run = await seedRun();
+    const [environment] = await db.insert(environments).values({ name: `Computer ${run.id}`, driver: "computer" }).returning();
+    const [lease] = await db.insert(environmentLeases).values({ companyId: run.companyId, environmentId: environment.id,
+      heartbeatRunId: run.id, issueId: run.issueId, provider: "boat", providerLeaseId: randomUUID(),
+      leasePolicy: "reuse_by_environment", metadata: { driver: "computer" } }).returning();
+    const execution = buildNativeExecutionInput({
+      companyId: run.companyId, runId: run.id, agentId: run.agentId,
+      issue: { id: run.issueId!, identifier: null, title: "Computer lifecycle", description: null, workMode: "standard" },
+      taskPrompt: "Complete the turn", workspace: { id: randomUUID(), cwd: "/workspace", repoUrl: null, repoRef: null, branchName: null },
+      normalizedSessionId: null, lifecyclePolicy: mode === "warm" ? { mode, idleTimeoutMs: 300_000 } : { mode, idleTimeoutMs: null },
+      completionContract: { id: randomUUID(), sha256: `sha256:${"a".repeat(64)}`, schemaVersion: "paperclip.run-result.v1",
+        contract: { revision: "1", objective: "Complete the turn", criteria: [{ id: "output", requirement: "Complete the turn" }] } },
+      runtimeContext: nativeRuntimeContextFixture(),
+    });
+    const [settled] = await db.update(heartbeatRuns).set({ runtimeMode: "native", status: "succeeded", runnerProfileJson: {
+      nativeExecutionInput: execution, nativeComputerWorkspace: { kind: "remote-persistent", leaseId: lease.id,
+        providerLeaseId: lease.providerLeaseId, computerId: randomUUID(), ownerGeneration: 1, listenerPort: 47000, remoteCwd: "/workspace" },
+    } }).where(eq(heartbeatRuns.id, run.id)).returning();
+    // Current agent settings deliberately disagree with the frozen run policy.
+    await db.update(agents).set({ adapterConfig: { lifecycleMode: mode === "warm" ? "per_turn" : "warm" } }).where(eq(agents.id, run.agentId));
+    return { run: settled, lease };
+  }
+
+  function settleThroughRecovery(deps: ReturnType<typeof callbacks>, run: Run, startup = false) {
+    native.finalizations.mockImplementationOnce(async (_db, _ids, options) => {
+      await (options as { onWorkspaceSettled: (input: { runId: string; companyId: string; agentId: string; succeeded: boolean }) => Promise<void> })
+        .onWorkspaceSettled({ runId: run.id, companyId: run.companyId, agentId: run.agentId, succeeded: true });
+    });
+    const recovery = createHeartbeatRecovery(db, deps);
+    return startup ? recovery.recoverNativeRunsAfterRestart() : recovery.reapOrphanedRuns({ staleThresholdMs: 60_000 });
+  }
+
+  it("leaves an active computer executor's warm lease return to that executor", async () => {
+    const { run, lease } = await seedComputerRun();
+    const deps = callbacks(db);
+    deps.getRun.mockResolvedValue(run);
+    deps.activeRunExecutions.add(run.id);
+    // Hold the executor's final lease return until the recovered-finalization
+    // callback has had its opportunity to incorrectly request physical Stop.
+    const stoppingRelease = vi.fn(async () => undefined);
+    deps.releaseEnvironmentLeasesForRun.mockImplementation(stoppingRelease);
+    await settleThroughRecovery(deps, run);
+    expect(stoppingRelease).not.toHaveBeenCalled();
+    expect(deps.finalizeAgentStatus).not.toHaveBeenCalled();
+    await deps.environmentRuntime.releaseRunLeases(run.id, "released", undefined, "keep_running");
+    deps.activeRunExecutions.delete(run.id);
+    expect(await environmentService(db).getLeaseById(lease.id)).toMatchObject({ status: "retained", releasedAt: null });
+    // A later recovery observation also uses the frozen warm policy, and cannot
+    // shorten the owner's deadline by issuing an unrelated Stop.
+    await settleThroughRecovery(deps, run);
+    expect(stoppingRelease).toHaveBeenCalledWith(expect.objectContaining({ providerResourceDisposition: "keep_running" }));
+  });
+
+  it.each([
+    ["warm", false], ["per_turn", false], ["warm", true], ["per_turn", true],
+  ] as const)("recovers inactive computer cleanup using its frozen %s policy (startup %s)", async (mode, startup) => {
+    const { run } = await seedComputerRun(mode);
+    const deps = callbacks(db);
+    deps.getRun.mockResolvedValue(run);
+    await settleThroughRecovery(deps, run, startup);
+    expect(deps.releaseEnvironmentLeasesForRun).toHaveBeenCalledWith(expect.objectContaining({
+      providerResourceDisposition: mode === "warm" ? "keep_running" : "stop_and_retain",
+    }));
+    expect(deps.getAgent).not.toHaveBeenCalled();
+  });
+
+  it("rechecks computer executor ownership after the awaited run read", async () => {
+    const { run } = await seedComputerRun();
+    const deps = callbacks(db);
+    deps.getRun.mockImplementation(async () => { deps.activeRunExecutions.add(run.id); return run; });
+    await settleThroughRecovery(deps, run);
+    expect(deps.releaseEnvironmentLeasesForRun).not.toHaveBeenCalled();
+    expect(deps.finalizeAgentStatus).not.toHaveBeenCalled();
+  });
+
+  it.each(["missing", "malformed", "foreign-run", "foreign-company", "foreign-agent", "foreign-task", "noncomputer", "failed", "cancelled", "export-retry"])(
+    "does not earn recovered computer warmth from %s policy evidence", async variant => {
+      const { run } = await seedComputerRun();
+      const profile = structuredClone(run.runnerProfileJson!);
+      const execution = profile.nativeExecutionInput as { binding: Record<string, string>; session: { lifecyclePolicy: unknown } };
+      if (variant === "missing") delete profile.nativeExecutionInput;
+      if (variant === "malformed") execution.session.lifecyclePolicy = { mode: "warm", idleTimeoutMs: -1 };
+      if (variant.startsWith("foreign-")) execution.binding[({ "foreign-run": "runId", "foreign-company": "companyId", "foreign-agent": "agentId", "foreign-task": "issueId" } as Record<string, string>)[variant]] = randomUUID();
+      if (variant === "noncomputer") delete profile.nativeComputerWorkspace;
+      const candidate = { ...run, runnerProfileJson: profile,
+        ...(variant === "failed" || variant === "cancelled" ? { status: variant } : {}),
+        ...(variant === "export-retry" ? { resultJson: { workspaceExportRetry: true } } : {}),
+      };
+      const deps = callbacks(db);
+      deps.getRun.mockResolvedValue(candidate);
+      await settleThroughRecovery(deps, candidate);
+      expect(deps.releaseEnvironmentLeasesForRun).toHaveBeenCalledWith(expect.objectContaining({ providerResourceDisposition: "stop_and_retain" }));
+    },
+  );
+
+  it("preserves an active sandbox's delegated workspace-finalization cleanup", async () => {
+    const { run } = await seedComputerRun();
+    const profile: Record<string, unknown> = { ...run.runnerProfileJson, nativeWorkspaceSync: {
+      schema: "paperclip.native-workspace-sync/v2", state: "finalized", descriptorSha256: "a".repeat(64), baselineSha256: "b".repeat(64),
+      finalHostSha256: "c".repeat(64), workspaceId: randomUUID(), leaseId: randomUUID(), providerLeaseId: "sandbox",
+      remoteCwd: "/workspace", resourceDisposition: "destroy",
+    } };
+    delete profile.nativeComputerWorkspace;
+    const deps = callbacks(db);
+    deps.getRun.mockResolvedValue({ ...run, runnerProfileJson: profile });
+    deps.activeRunExecutions.add(run.id);
+    await settleThroughRecovery(deps, run);
+    expect(deps.releaseEnvironmentLeasesForRun).toHaveBeenCalledWith(expect.objectContaining({ providerResourceDisposition: "destroy" }));
+    expect(deps.finalizeAgentStatus).toHaveBeenCalledWith(run.agentId, "succeeded", null, expect.any(Object));
   });
 
   it("settles persisted native results before claiming restart authority and tracks the exact execution", async () => {
