@@ -458,10 +458,11 @@ impl AcpxSidecarTransport {
                     let error = response.error.expect("failed response has validated error");
                     return Ok(CommandOutcome::Rejected(LocalRunnerError::invalid(
                         format!(
-                            "ACPX sidecar command {} was rejected (retryable={}, classification={}){}",
+                            "ACPX sidecar command {} was rejected (retryable={}, classification={}){}{}",
                             command.as_str(),
                             error.retryable,
                             response_error_classification(&error),
+                            response_error_module_fence(&error).map(|fence| format!(" moduleFence={fence}")).unwrap_or_default(),
                             self.diagnostic_suffix(),
                         ),
                     )));
@@ -923,7 +924,34 @@ fn stderr_diagnostic_categories(value: &str) -> BTreeSet<&'static str> {
     categories
 }
 
+// Only fixed loader fence codes may cross the private provider-stderr boundary.
+fn response_error_module_fence(error: &ResponseError) -> Option<&'static str> {
+    match error.code.as_str() {
+        "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.RESOLUTION" => Some("resolution"),
+        "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.OPEN" => Some("open"),
+        "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.BOUNDS" => Some("bounds"),
+        "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.ANCESTRY" => Some("ancestry"),
+        "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.FORMAT" => Some("format"),
+        "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.PATH_IDENTITY" => Some("path_identity"),
+        "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.READ_RESULT" => Some("read_result"),
+        "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.SIZE" => Some("size"),
+        "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.DEVICE" => Some("device"),
+        "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.INODE" => Some("inode"),
+        "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.MODE" => Some("mode"),
+        "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.UID" => Some("uid"),
+        "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.GID" => Some("gid"),
+        "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.LINK_COUNT" => Some("link_count"),
+        "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.MTIME" => Some("mtime"),
+        "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.BYTE_CONTINUITY" => Some("byte_continuity"),
+        "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.REPEATED_CTIME" => Some("repeated_ctime"),
+        _ => None,
+    }
+}
+
 fn response_error_classification(error: &ResponseError) -> &'static str {
+    if response_error_module_fence(error).is_some() {
+        return "agent_startup_unverified_module";
+    }
     match error.code.as_str() {
         "ACP_MODEL_UNSUPPORTED" => return "requested_model_unsupported",
         "AGENT_STARTUP_FAILED" => return "agent_startup_failed",
@@ -1179,7 +1207,7 @@ mod tests {
             })
             .collect();
         let response = json!({ "protocolVersion": GENERATED_ACPX_SIDECAR_PROTOCOL_VERSION,
-            "id": 1, "ok": false, "error": { "code": "UNKNOWN_PRIVATE_CODE",
+            "id": 1, "ok": false, "error": { "code": "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.REPEATED_CTIME",
             "message": "/private/token-canary", "retryable": false } });
         let lines = frames
             .iter()
@@ -1203,9 +1231,12 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(
-            error.contains("was rejected (retryable=false, classification=unclassified)"),
+            error.contains(
+                "was rejected (retryable=false, classification=agent_startup_unverified_module)"
+            ),
             "{error}"
         );
+        assert!(error.contains("moduleFence=repeated_ctime"), "{error}");
         assert!(
             error.contains("admissionStage=handshake admissionElapsedMs=24"),
             "{error}"
@@ -1213,7 +1244,7 @@ mod tests {
         assert!(
             !error.contains("private")
                 && !error.contains("canary")
-                && !error.contains("UNKNOWN_PRIVATE_CODE"),
+                && !error.contains("AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.REPEATED_CTIME"),
             "{error}"
         );
         assert!(!transport.poisoned);
@@ -1358,6 +1389,48 @@ mod tests {
             };
             assert!(message.contains(expected), "unexpected error: {message}");
             assert!(!message.contains("Q7Z9"), "error leaked input: {message}");
+        }
+    }
+
+    #[test]
+    fn module_fence_diagnostics_are_closed_and_keep_the_top_level_category() {
+        for (suffix, expected) in [
+            ("RESOLUTION", Some("resolution")),
+            ("OPEN", Some("open")),
+            ("BOUNDS", Some("bounds")),
+            ("ANCESTRY", Some("ancestry")),
+            ("FORMAT", Some("format")),
+            ("PATH_IDENTITY", Some("path_identity")),
+            ("READ_RESULT", Some("read_result")),
+            ("SIZE", Some("size")),
+            ("DEVICE", Some("device")),
+            ("INODE", Some("inode")),
+            ("MODE", Some("mode")),
+            ("UID", Some("uid")),
+            ("GID", Some("gid")),
+            ("LINK_COUNT", Some("link_count")),
+            ("MTIME", Some("mtime")),
+            ("BYTE_CONTINUITY", Some("byte_continuity")),
+            ("REPEATED_CTIME", Some("repeated_ctime")),
+            ("MODE private-canary", None),
+            ("MODE.PRIVATE_CANARY", None),
+            ("PRIVATE_CANARY", None),
+            ("", None),
+        ] {
+            let error = ResponseError {
+                code: format!("AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.{suffix}"),
+                message: "/private/token-canary MODE".to_owned(),
+                retryable: false,
+            };
+            assert_eq!(response_error_module_fence(&error), expected);
+            assert_eq!(
+                response_error_classification(&error),
+                if expected.is_some() {
+                    "agent_startup_unverified_module"
+                } else {
+                    "unclassified"
+                }
+            );
         }
     }
 

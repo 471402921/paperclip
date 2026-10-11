@@ -90,8 +90,11 @@ function directAcpxSidecarErrorCode(error: Error): string | null {
     typeof details.stderrSummary === "string" ? details.stderrSummary : "";
   // Bootstrap writes this fixed marker before printing private error details and
   // terminating. Never copy those details into the public classification.
-  const importFailure = /(?:^|\n)PAPERCLIP_ACPX_IMPORT_FAILURE:(UNVERIFIED_MODULE|OTHER)(?:\r?\n|$)/.exec(stderr);
-  if (importFailure?.[1] === "UNVERIFIED_MODULE") return "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE";
+  const importFailure = /(?:^|\n)PAPERCLIP_ACPX_IMPORT_FAILURE:(UNVERIFIED_MODULE|OTHER)(?::([A-Z_]+))?(?:\r?\n|$)/.exec(stderr);
+  if (importFailure?.[1] === "UNVERIFIED_MODULE" && importFailure[2] === undefined) return "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE";
+  if (importFailure?.[1] === "UNVERIFIED_MODULE" && MODULE_FENCES.has(importFailure[2])) {
+    return `AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.${importFailure[2]}`;
+  }
   if (/ERR_ACPX_UNVERIFIED_MODULE/.test(stderr)) {
     return "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE";
   }
@@ -110,7 +113,7 @@ function directAcpxSidecarErrorCode(error: Error): string | null {
   if (/ERR_INVALID_ARG|invalid argument/i.test(stderr)) {
     return "AGENT_STARTUP_FAILED.INVALID_ARGUMENT";
   }
-  if (importFailure) return "AGENT_STARTUP_FAILED.OTHER";
+  if (importFailure?.[1] === "OTHER" && importFailure[2] === undefined) return "AGENT_STARTUP_FAILED.OTHER";
   if (!stderr.trim()) return "AGENT_STARTUP_FAILED.NO_STDERR";
   if (typeof details.signal === "string" && details.signal) {
     return "AGENT_STARTUP_FAILED.SIGNAL";
@@ -134,6 +137,8 @@ const GENERIC_ACPX_OUTPUT_CODES = new Set([
   "USAGE",
 ]);
 
+const MODULE_FENCES = new Set(["RESOLUTION", "OPEN", "BOUNDS", "ANCESTRY", "FORMAT", "PATH_IDENTITY", "READ_RESULT", "SIZE", "DEVICE", "INODE", "MODE", "UID", "GID", "LINK_COUNT", "MTIME", "BYTE_CONTINUITY", "REPEATED_CTIME"]);
+
 const STABLE_ACPX_SIDECAR_CODES = new Set([
   "COPILOT_POLICY_VIOLATION",
   "COPILOT_DETACHED_WORK_UNSUPPORTED",
@@ -151,6 +156,7 @@ const STABLE_ACPX_SIDECAR_CODES = new Set([
   "AGENT_STARTUP_FAILED.SIGNAL",
   "AGENT_STARTUP_FAILED.SYNTAX_ERROR",
   "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE",
+  ...Array.from(MODULE_FENCES, fence => `AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.${fence}`),
   "AUTH_REQUIRED",
   "CLAUDE_ACP_SESSION_CREATE_TIMEOUT",
   "SESSION_CONFIG_OPTION_REPLAY_FAILED",

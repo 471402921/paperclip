@@ -126,6 +126,21 @@ describe("ACPX sidecar input sequencing", () => {
     expect(acpxSidecarErrorCode(new Error("wrapped", { cause: error }))).toBe(code);
   });
 
+  it.each(["RESOLUTION", "OPEN", "BOUNDS", "ANCESTRY", "FORMAT", "PATH_IDENTITY", "READ_RESULT",
+    "SIZE", "DEVICE", "INODE", "MODE", "UID", "GID", "LINK_COUNT", "MTIME", "BYTE_CONTINUITY", "REPEATED_CTIME"])(
+    "preserves only closed module fence %s", fence => {
+      const classify = (marker: string) => acpxSidecarErrorCode(Object.assign(new Error("private-canary"), {
+        detailCode: "AGENT_STARTUP_FAILED", stderrSummary: `${marker}\nprivate-canary /secret`, exitCode: 1,
+      }));
+      expect(classify(`PAPERCLIP_ACPX_IMPORT_FAILURE:UNVERIFIED_MODULE:${fence}`))
+        .toBe(`AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.${fence}`);
+      for (const suffix of ["PRIVATE_CANARY", `${fence} private-canary`, `${fence}.PRIVATE_CANARY`]) {
+        expect(classify(`PAPERCLIP_ACPX_IMPORT_FAILURE:UNVERIFIED_MODULE:${suffix}`))
+          .toBe("AGENT_STARTUP_FAILED.EXIT_NONZERO");
+      }
+    },
+  );
+
   it.each(["OTHER", "UNVERIFIED_MODULE"])("classifies closed import marker %s without private stderr", category => {
     const classify = (stderrSummary: string) => acpxSidecarErrorCode(Object.assign(new Error("private-canary"), {
       detailCode: "AGENT_STARTUP_FAILED", stderrSummary, exitCode: 1,
