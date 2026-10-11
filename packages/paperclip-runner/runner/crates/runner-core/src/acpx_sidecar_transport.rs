@@ -828,6 +828,20 @@ fn parse_admission_diagnostic(line: &str) -> Option<(&'static str, u64)> {
         .split_once(": elapsedMs=")?;
     let stage = match stage {
         "binding" => "binding",
+        "turn_prepare" => "turn_prepare",
+        "turn_spawn" => "turn_spawn",
+        "turn_spawned" => "turn_spawned",
+        "turn_initialize" => "turn_initialize",
+        "turn_initialized" => "turn_initialized",
+        "turn_session_load" => "turn_session_load",
+        "turn_session_loaded" => "turn_session_loaded",
+        "turn_session_resume" => "turn_session_resume",
+        "turn_session_resumed" => "turn_session_resumed",
+        "turn_session_new" => "turn_session_new",
+        "turn_session_created" => "turn_session_created",
+        "turn_prompt_submitted" => "turn_prompt_submitted",
+        "turn_ownership" => "turn_ownership",
+        "turn_ownership_verified" => "turn_ownership_verified",
         "installation" => "installation",
         "sandbox" => "sandbox",
         "lifetime" => "lifetime",
@@ -1110,6 +1124,38 @@ mod tests {
         assert!(transport
             .request(GeneratedAcpxSidecarCommand::SessionOpen, json!({}))
             .is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn turn_start_timeout_distinguishes_lazy_initialize_load_and_ownership() {
+        for stage in ["turn_initialize", "turn_session_load", "turn_ownership"] {
+            let script = format!(
+                "printf '%s\\n' '[paperclip-acpx-sidecar] admission_{stage}: elapsedMs=42' '[paperclip-acpx-sidecar] admission_turn_prompt_submitted: elapsedMs=43 /private/token-canary' >&2; sleep 2"
+            );
+            let config = AcpxSidecarTransportConfig {
+                command: PathBuf::from("/bin/sh"),
+                args: vec!["-c".into(), script],
+                verified_launch: None,
+                request_timeout: Duration::from_millis(200),
+                shutdown_grace: Duration::from_millis(10),
+            };
+            let mut transport = AcpxSidecarTransport::start(&config).unwrap();
+            let error = transport
+                .request(GeneratedAcpxSidecarCommand::TurnStart, json!({}))
+                .err()
+                .unwrap()
+                .to_string();
+            assert!(error.contains("request timed out at turn.start"), "{error}");
+            assert!(
+                error.contains(&format!("admissionStage={stage} admissionElapsedMs=42")),
+                "{error}"
+            );
+            assert!(
+                !error.contains("private") && !error.contains("canary"),
+                "{error}"
+            );
+        }
     }
 
     #[cfg(unix)]

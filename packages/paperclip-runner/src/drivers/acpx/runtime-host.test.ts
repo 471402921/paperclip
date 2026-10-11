@@ -207,7 +207,7 @@ describe("ACPX runtime host", () => {
     const gate = deferred<AcpxRuntimePort>();
     const stages: Array<{ stage: string; elapsedMs: number }> = [];
     const enteredRuntime = deferred<void>();
-    const openRuntime = vi.fn(() => {
+    const openRuntime = vi.fn((_options: AcpxRuntimePortOpenOptions) => {
       enteredRuntime.resolve();
       return gate.promise;
     });
@@ -239,6 +239,10 @@ describe("ACPX runtime host", () => {
       expect(elapsedMs).toBeGreaterThanOrEqual(stages[index - 1]?.elapsedMs ?? 0);
       expect(elapsedMs).toBeLessThanOrEqual(3_600_000);
     }
+    expect(() => openRuntime.mock.calls[0]![0].onTurnStage?.("turn_initialize")).not.toThrow();
+    await Promise.resolve();
+    expect(stages.at(-1)?.stage).toBe("turn_initialize");
+    expect(Number.isInteger(stages.at(-1)?.elapsedMs)).toBe(true);
     expect(host.identity().acpxRecordId).toBe("record-1");
     await host.close({ reason: "diagnostic observer test complete" });
     expect(port.close).toHaveBeenCalledOnce();
