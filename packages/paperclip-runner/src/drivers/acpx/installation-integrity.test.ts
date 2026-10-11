@@ -3,6 +3,8 @@ import { constants } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { fork, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
+import { pathToFileURL } from "node:url";
+import { acpxSidecarErrorCode } from "../../cli/acpx-sidecar-input.js";
 import {
   chmod,
   link,
@@ -1707,6 +1709,73 @@ describe("ACPX installation integrity", () => {
       await expectFailure(child, "requires Linux descriptor-pinned paths");
     }
   });
+  it.runIf(process.platform !== "win32").each(["OTHER", "UNVERIFIED_MODULE"] as const)(
+    "settles a guarded ESM import failure without guardian retirement (%s)",
+    async (category) => {
+      const fixture = await installationFixture();
+      const outside = join(fixture.root, "private-canary.mjs");
+      await writeFile(outside, 'throw new Error("must-not-execute");');
+      const command = category === "OTHER"
+        ? 'throw new Error("guarded-import-fixture-failed private-canary");'
+        : `import ${JSON.stringify(pathToFileURL(outside).href)};`;
+      await writeFile(fixture.commandPath, command);
+      await writeFile(fixture.serverPackageJsonPath, JSON.stringify({
+        version: "0.0.33", bin: "bin/server.js", type: "module",
+      }));
+      const installation = await verifyQualifiedAcpxInstallation({
+        ...fixture.profile,
+        commandDigest: `sha256:${createHash("sha256").update(command).digest("hex")}`,
+      }, fixture.resolve);
+      const credentialHome = join(fixture.root, "credential-home");
+      await mkdir(credentialHome, { mode: 0o700 });
+      const credential = await stageManagedCodexCredential({
+        agentHomeDirectory: credentialHome,
+        environment: { PAPERCLIP_ACPX_CODEX_AUTH_JSON_SECRET: '{"fixture":true}' },
+      });
+      const lease = await installation.openCommand();
+      const child = lease.spawn([], {}, {
+        credentialFenceFds: credential.lifetimeFenceFds,
+        activateCredentialFenceOwner: pid => credential.activateLifetimeOwner(pid),
+      });
+      const exit = once(child, "exit");
+      const closed = once(child, "close");
+      let stderr = "";
+      const failureSeen = new Promise<void>(resolve => child.stderr?.on("data", bytes => {
+        stderr += String(bytes);
+        if (stderr.includes("PAPERCLIP_ACPX_IMPORT_FAILURE:")) resolve();
+      }));
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let startupTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([failureSeen, new Promise<never>((_, reject) => {
+          startupTimer = setTimeout(() => reject(new Error("fixture startup marker missing")), 3_000);
+        })]);
+        // Bound starts after the exact child error, excluding startup speed.
+        const settled = await Promise.race([exit.then(() => true), new Promise<boolean>(resolve => {
+          timer = setTimeout(() => resolve(false), 500);
+        })]);
+        expect(settled).toBe(true);
+        await closed;
+        await awaitVerifiedAcpxProviderExit(child);
+        expect(child.exitCode === 0 && child.signalCode === null).toBe(false);
+        const code = acpxSidecarErrorCode(Object.assign(new Error("private-canary"), {
+          detailCode: "AGENT_STARTUP_FAILED", stderrSummary: stderr,
+          exitCode: child.exitCode, signal: child.signalCode,
+        }));
+        expect(code).toBe(`AGENT_STARTUP_FAILED.${category}`);
+        expect(code).not.toMatch(/canary|\//);
+        expect(stderr).not.toContain("must-not-execute");
+      } finally {
+        if (timer) clearTimeout(timer);
+        if (startupTimer) clearTimeout(startupTimer);
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+        await exit;
+        await lease.close();
+        await credential.close();
+      }
+    },
+  );
+
   it.runIf(process.platform !== "win32")(
     "rejects incomplete or duplicate provider credential quorum descriptors",
     async () => {

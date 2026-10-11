@@ -126,6 +126,28 @@ describe("ACPX sidecar input sequencing", () => {
     expect(acpxSidecarErrorCode(new Error("wrapped", { cause: error }))).toBe(code);
   });
 
+  it.each(["OTHER", "UNVERIFIED_MODULE"])("classifies closed import marker %s without private stderr", category => {
+    const classify = (stderrSummary: string) => acpxSidecarErrorCode(Object.assign(new Error("private-canary"), {
+      detailCode: "AGENT_STARTUP_FAILED", stderrSummary, exitCode: 1,
+    }));
+    expect(classify(`PAPERCLIP_ACPX_IMPORT_FAILURE:${category}\nprivate-canary /secret`))
+      .toBe(`AGENT_STARTUP_FAILED.${category}`);
+    expect(classify(`private-canary PAPERCLIP_ACPX_IMPORT_FAILURE:OTHER\n`))
+      .toBe("AGENT_STARTUP_FAILED.EXIT_NONZERO");
+    expect(classify(`PAPERCLIP_ACPX_IMPORT_FAILURE:OTHER private-canary\n`))
+      .toBe("AGENT_STARTUP_FAILED.EXIT_NONZERO");
+  });
+
+  it.each([
+    ["Error [ERR_MODULE_NOT_FOUND]: private-canary", "MODULE_NOT_FOUND"],
+    ["SyntaxError: private-canary", "SYNTAX_ERROR"],
+  ])("preserves detailed closed startup category with a generic import marker (%s)", (detail, category) => {
+    expect(acpxSidecarErrorCode(Object.assign(new Error("private-canary"), {
+      detailCode: "AGENT_STARTUP_FAILED",
+      stderrSummary: `PAPERCLIP_ACPX_IMPORT_FAILURE:OTHER\n${detail}`,
+    }))).toBe(`AGENT_STARTUP_FAILED.${category}`);
+  });
+
   it("preserves stable ACPX error identities without copying startup stderr", () => {
     const missingModule = Object.assign(new Error("provider exited"), {
       detailCode: "AGENT_STARTUP_FAILED",
