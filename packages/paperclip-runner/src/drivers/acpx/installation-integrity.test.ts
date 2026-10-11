@@ -37,6 +37,7 @@ import {
   awaitVerifiedAcpxProviderOwnership,
   createAcpxPackageJsonResolver,
   guardSnapshotModuleLookup,
+  readStableSnapshotModuleSource,
   guardSnapshotModuleResolution,
   reapCurrentProviderProcessGroup,
   sanitizedNodeEnvironment,
@@ -1709,6 +1710,110 @@ describe("ACPX installation integrity", () => {
       await expectFailure(child, "requires Linux descriptor-pinned paths");
     }
   });
+  describe("descriptor-pinned dependency read continuity", () => {
+    it.each(["stable", "once", "recurring", "changed_bytes", "dev", "ino", "mode", "uid", "gid", "nlink", "size", "mtimeNs", "not_regular", "oversized", "snapshot_first", "snapshot_second"] as const)(
+      "requires bounded complete read continuity (%s)", (transition) => {
+        const original = Buffer.from("qualified fixture bytes");
+        const changed = Buffer.from("different fixture bytes");
+        expect(changed.length).toBe(original.length);
+        const initial = { dev: 1n, ino: 2n, mode: 0o100444n, uid: 1000n, gid: 1000n, nlink: 1n, size: BigInt(original.length),
+          mtimeNs: 10n, ctimeNs: 20n, isFile: () => true };
+        let pass = 0;
+        const verify = vi.fn((bytes: Buffer) => {
+          if (transition.startsWith("snapshot_")) {
+            const expected = createHash("sha256").update(original).digest("hex");
+            if (createHash("sha256").update(bytes).digest("hex") !== expected) throw new Error("snapshot digest mismatch");
+          }
+        });
+        const read = () => readStableSnapshotModuleSource({
+          before: { ...initial, ...(transition === "oversized" ? { size: 17n } : {}) },
+          maxBytes: transition === "oversized" ? 16 : 64,
+          stat: () => {
+            const metadata = { ...initial, ctimeNs: transition === "stable" ? 20n : 21n };
+            if (transition === "recurring" && pass === 2) metadata.ctimeNs = 22n;
+            if (["dev", "ino", "mode", "uid", "gid", "nlink", "size", "mtimeNs"].includes(transition)) {
+              const field = transition as "dev" | "ino" | "mode" | "uid" | "gid" | "nlink" | "size" | "mtimeNs";
+              metadata[field] += 1n;
+            }
+            if (transition === "not_regular") metadata.isFile = () => false;
+            return metadata;
+          },
+          read: (buffer, offset, length, position) => {
+            if (position === 0) pass += 1;
+            const source = (transition === "snapshot_first"
+              || ((transition === "changed_bytes" || transition === "snapshot_second") && pass === 2)) ? changed : original;
+            return source.copy(buffer, offset, position, position + length);
+          },
+          verify,
+        });
+        if (transition === "stable" || transition === "once") {
+          expect(read()).toEqual(original);
+          expect(pass).toBe(transition === "stable" ? 1 : 2);
+          expect(verify).toHaveBeenCalledTimes(pass);
+        } else {
+          expect(read).toThrow();
+          expect(pass).toBeLessThanOrEqual(2);
+          if (transition === "snapshot_second") expect(verify).toHaveBeenCalledTimes(2);
+        }
+      },
+    );
+  });
+
+  it.runIf(process.platform !== "win32").each(["once", "recurring", "bytes", "mode", "rename", "replacement", "symlink"] as const)("loads dependency bytes only after stable ctime-only continuity (%s)", async (transition) => {
+    const fixture = await installationFixture();
+    await writeFile(join(fixture.commandDirectory, "dependency.mjs"), 'export const value = "dependency-success";');
+    const command = `import fs from 'node:fs';
+      const read = fs.readSync.bind(fs), stat = fs.fstatSync.bind(fs);
+      let moduleFd, passes = 0;
+      fs.readSync = (fd, buffer, offset, length, position) => {
+        const count = read(fd, buffer, offset, length, position);
+        if (buffer.subarray(offset, offset + count).includes(Buffer.from('dependency-success'))) {
+          moduleFd = fd; passes += 1;
+          if (${JSON.stringify(transition)} === 'bytes' && passes === 2) buffer[offset] = 0;
+          if (passes === 1 && ['rename','replacement','symlink'].includes(${JSON.stringify(transition)})) {
+            const named = new URL('./dependency.mjs', import.meta.url);
+            fs.renameSync(named, new URL('./moved.mjs', import.meta.url));
+            if (${JSON.stringify(transition)} === 'replacement') fs.writeFileSync(named, buffer.subarray(offset, offset + count));
+            if (${JSON.stringify(transition)} === 'symlink') fs.symlinkSync('./moved.mjs', named);
+          }
+        }
+        return count;
+      };
+      fs.fstatSync = (fd, options) => {
+        const metadata = stat(fd, options);
+        if (fd === moduleFd && options?.bigint) {
+          metadata.ctimeNs += ${JSON.stringify(transition)} === 'recurring' ? BigInt(passes) : 1n;
+          if (${JSON.stringify(transition)} === 'mode') metadata.mode ^= 0o100n;
+        }
+        return metadata;
+      };
+      const dependency = await import('./dependency.mjs');
+      process.stdout.write(dependency.value);`;
+    await writeFile(fixture.commandPath, command);
+    await writeFile(fixture.serverPackageJsonPath, JSON.stringify({ version: "0.0.33", bin: "bin/server.js", type: "module" }));
+    const installation = await verifyQualifiedAcpxInstallation({ ...fixture.profile,
+      commandDigest: `sha256:${createHash("sha256").update(command).digest("hex")}`,
+    }, fixture.resolve);
+    const lease = await installation.openCommand();
+    const child = lease.spawn();
+    const closed = once(child, "close");
+    let stdout = "";
+    child.stdout?.on("data", bytes => { stdout += String(bytes); });
+    // Drain private stderr while keeping it out of test/report output.
+    child.stderr?.resume();
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 4_000);
+    try {
+      const [code] = await closed;
+      expect(code).toBe(transition === "once" ? 0 : 1);
+      expect(stdout).toBe(transition === "once" ? "dependency-success" : "");
+    } finally {
+      clearTimeout(timeout);
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      await closed;
+      await lease.close();
+    }
+  });
+
   it.runIf(process.platform !== "win32").each(["OTHER", "UNVERIFIED_MODULE"] as const)(
     "settles a guarded ESM import failure without guardian retirement (%s)",
     async (category) => {
