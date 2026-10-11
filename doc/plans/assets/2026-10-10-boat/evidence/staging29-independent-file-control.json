@@ -1,0 +1,827 @@
+{
+  "stage": "verified_control_complete_naturally_archived",
+  "source": "05f3725af838b5a074707df1d6ed1e193bdfe49e",
+  "taskId": "2937dea4-930c-4012-bd7c-3ea8191eaa6a",
+  "taskIdentifier": "BOA-12",
+  "setupRaw": {
+    "observedAt": "2026-10-11T13:33:00.152Z",
+    "guestReads": false,
+    "runId": "b3986762-03f2-49e5-b342-3760a874a3b2",
+    "sourceEvents": [
+      {
+        "seq": "80",
+        "eventType": "tool.execution.completed"
+      }
+    ],
+    "events": [
+      {
+        "schema": "paperclip/boat-link-layout-setup/v1",
+        "fixtureName": "boat-link-layout-control-20261011-99259312-418b-4c4a-a21e-3022ae72eba8",
+        "startedAt": "2026-10-11T13:31:40.951Z",
+        "created": true,
+        "complete": true,
+        "expectedHash": "42ce37809e7b25a8a04da912f303e3e2991a8d525ccb62d1008ed05172b24e5f",
+        "files": [
+          {
+            "name": "hard-a.js",
+            "before": {
+              "dev": "100",
+              "ino": "16515",
+              "mode": "33152",
+              "uid": "1000",
+              "gid": "1000",
+              "nlink": "2",
+              "size": "102",
+              "mtimeNs": "1791725500000000000",
+              "ctimeNs": "1791725500000000000"
+            },
+            "after": {
+              "dev": "100",
+              "ino": "16515",
+              "mode": "33152",
+              "uid": "1000",
+              "gid": "1000",
+              "nlink": "2",
+              "size": "102",
+              "mtimeNs": "1791725500000000000",
+              "ctimeNs": "1791725500000000000"
+            },
+            "sha256": "42ce37809e7b25a8a04da912f303e3e2991a8d525ccb62d1008ed05172b24e5f",
+            "hashMatches": true
+          },
+          {
+            "name": "hard-b.js",
+            "before": {
+              "dev": "100",
+              "ino": "16515",
+              "mode": "33152",
+              "uid": "1000",
+              "gid": "1000",
+              "nlink": "2",
+              "size": "102",
+              "mtimeNs": "1791725500000000000",
+              "ctimeNs": "1791725500000000000"
+            },
+            "after": {
+              "dev": "100",
+              "ino": "16515",
+              "mode": "33152",
+              "uid": "1000",
+              "gid": "1000",
+              "nlink": "2",
+              "size": "102",
+              "mtimeNs": "1791725500000000000",
+              "ctimeNs": "1791725500000000000"
+            },
+            "sha256": "42ce37809e7b25a8a04da912f303e3e2991a8d525ccb62d1008ed05172b24e5f",
+            "hashMatches": true
+          },
+          {
+            "name": "independent-a.js",
+            "before": {
+              "dev": "100",
+              "ino": "16517",
+              "mode": "33152",
+              "uid": "1000",
+              "gid": "1000",
+              "nlink": "1",
+              "size": "102",
+              "mtimeNs": "1791725500000000000",
+              "ctimeNs": "1791725500000000000"
+            },
+            "after": {
+              "dev": "100",
+              "ino": "16517",
+              "mode": "33152",
+              "uid": "1000",
+              "gid": "1000",
+              "nlink": "1",
+              "size": "102",
+              "mtimeNs": "1791725500000000000",
+              "ctimeNs": "1791725500000000000"
+            },
+            "sha256": "42ce37809e7b25a8a04da912f303e3e2991a8d525ccb62d1008ed05172b24e5f",
+            "hashMatches": true
+          },
+          {
+            "name": "independent-b.js",
+            "before": {
+              "dev": "100",
+              "ino": "16518",
+              "mode": "33152",
+              "uid": "1000",
+              "gid": "1000",
+              "nlink": "1",
+              "size": "102",
+              "mtimeNs": "1791725500000000000",
+              "ctimeNs": "1791725500000000000"
+            },
+            "after": {
+              "dev": "100",
+              "ino": "16518",
+              "mode": "33152",
+              "uid": "1000",
+              "gid": "1000",
+              "nlink": "1",
+              "size": "102",
+              "mtimeNs": "1791725500000000000",
+              "ctimeNs": "1791725500000000000"
+            },
+            "sha256": "42ce37809e7b25a8a04da912f303e3e2991a8d525ccb62d1008ed05172b24e5f",
+            "hashMatches": true
+          }
+        ],
+        "hardPairSharesInode": true,
+        "independentPairDistinct": true,
+        "linkCountsExpected": true,
+        "finishedAt": "2026-10-11T13:31:40.953Z"
+      }
+    ]
+  },
+  "warm": {
+    "observedAt": "2026-10-11T13:34:25.843Z",
+    "phase": "cold_observation",
+    "guestReads": false,
+    "runs": [
+      {
+        "id": "b3986762-03f2-49e5-b342-3760a874a3b2",
+        "providerBefore": null,
+        "providerAfter": "01a12b29-3ec0-7861-86d6-dacc5f581978",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T13:29:15.810Z",
+        "finishedAt": "2026-10-11T13:33:24.493Z",
+        "nativeSessionId": "ad240cf6-7040-40d5-ade2-e9dfe45e9aba",
+        "runnerInstanceId": "3a4d738a-94c4-4b07-9746-f5f5a3e2742c",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      }
+    ],
+    "taskSessions": [
+      {
+        "lastRunId": "b3986762-03f2-49e5-b342-3760a874a3b2",
+        "displayId": "01a12b29-3ec0-7861-86d6-dacc5f581978",
+        "ids": {
+          "sessionId": "ad240cf6-7040-40d5-ade2-e9dfe45e9aba"
+        },
+        "updatedAt": "2026-10-11T13:33:26.952Z"
+      }
+    ],
+    "owners": [
+      {
+        "id": "0901af03-28d7-4c86-927b-eb179a6cd21e",
+        "phase": "warm",
+        "deadline": "2026-10-11T13:38:22.030Z",
+        "boot": "487239d1-f9b5-4cb5-abab-dc1e855baf03",
+        "launch": 1
+      }
+    ],
+    "controller": [
+      {
+        "stateKey": "be282577a3c2e3d719a42410880471d153a671b2f80d7d5b2380df51579b299c",
+        "pack": null,
+        "commands": [
+          {
+            "controllerSeq": 3,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T13:31:25.902Z",
+            "status": "completed",
+            "type": "session.goal.get"
+          },
+          {
+            "controllerSeq": 4,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T13:31:26.125Z",
+            "status": "completed",
+            "type": "turn.start"
+          },
+          {
+            "controllerSeq": 5,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T13:31:40.814Z",
+            "status": "completed",
+            "type": "semantic_tool.result"
+          },
+          {
+            "controllerSeq": 6,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T13:31:56.382Z",
+            "status": "completed",
+            "type": "semantic_tool.result"
+          }
+        ],
+        "runnerPresent": false,
+        "lifecycle": null
+      }
+    ]
+  },
+  "retired": {
+    "observedAt": "2026-10-11T13:39:11.926Z",
+    "phase": "cold_observation",
+    "guestReads": false,
+    "runs": [
+      {
+        "id": "b3986762-03f2-49e5-b342-3760a874a3b2",
+        "providerBefore": null,
+        "providerAfter": "01a12b29-3ec0-7861-86d6-dacc5f581978",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T13:29:15.810Z",
+        "finishedAt": "2026-10-11T13:33:24.493Z",
+        "nativeSessionId": "ad240cf6-7040-40d5-ade2-e9dfe45e9aba",
+        "runnerInstanceId": "3a4d738a-94c4-4b07-9746-f5f5a3e2742c",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      }
+    ],
+    "taskSessions": [
+      {
+        "lastRunId": "b3986762-03f2-49e5-b342-3760a874a3b2",
+        "displayId": "01a12b29-3ec0-7861-86d6-dacc5f581978",
+        "ids": {
+          "sessionId": "ad240cf6-7040-40d5-ade2-e9dfe45e9aba"
+        },
+        "updatedAt": "2026-10-11T13:33:26.952Z"
+      }
+    ],
+    "owners": [
+      {
+        "id": "0901af03-28d7-4c86-927b-eb179a6cd21e",
+        "phase": "retired",
+        "deadline": null,
+        "boot": "487239d1-f9b5-4cb5-abab-dc1e855baf03",
+        "launch": 1
+      }
+    ],
+    "controller": [
+      {
+        "stateKey": "be282577a3c2e3d719a42410880471d153a671b2f80d7d5b2380df51579b299c",
+        "pack": null,
+        "commands": [
+          {
+            "controllerSeq": 5,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T13:31:40.814Z",
+            "status": "completed",
+            "type": "semantic_tool.result"
+          },
+          {
+            "controllerSeq": 6,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T13:31:56.382Z",
+            "status": "completed",
+            "type": "semantic_tool.result"
+          },
+          {
+            "controllerSeq": 7,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T13:38:23.447Z",
+            "status": "completed",
+            "type": "runner.drain"
+          },
+          {
+            "controllerSeq": 8,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T13:38:23.619Z",
+            "status": "completed",
+            "type": "runner.suspend"
+          }
+        ],
+        "runnerPresent": false,
+        "lifecycle": null
+      }
+    ]
+  },
+  "provider": {
+    "observedAt": "2026-10-11T13:40:59.724Z",
+    "providerId": "bx_b8sawfyp",
+    "guestRead": false,
+    "state": "archiving",
+    "health": "ok",
+    "stop": {
+      "id": "stop_3120351aab962362",
+      "status": "pending",
+      "timestamps": {},
+      "errorPresent": false
+    }
+  },
+  "limitations": [
+    "Four-file controlled experiment, not full Claude package qualification.",
+    "Stored tool output is truncated at 4096 bytes. Full result reconstructed from stored prefix and earlier visible streamed text, then verified against persisted SHA-256 of the complete tool output.",
+    "Historical BOA-2 resume remains blocked by preexisting pending controller commands. No session, checkpoint, quarantine or package was reset."
+  ],
+  "archiveBeforeRead": {
+    "observedAt": "2026-10-11T13:45:17.869Z",
+    "providerId": "bx_b8sawfyp",
+    "guestRead": false,
+    "state": "archived",
+    "health": "ok",
+    "stop": {
+      "id": "stop_3120351aab962362",
+      "status": "completed",
+      "timestamps": {
+        "endedAt": "2026-10-11T13:44:23.518Z"
+      },
+      "errorPresent": false
+    }
+  },
+  "read": {
+    "runId": "b7b60bc3-8f1b-412c-8246-2ba221e076c6",
+    "eventSeq": "102",
+    "eventType": "tool.execution.completed",
+    "outputDigest": "sha256:5f6c986acaae576d4fb670a7f4409c18c7836ded6b14e66b6a13642ca72f8f41",
+    "verification": "Full JSON reconstructed from the tool prefix and earlier visible streamed reply; exact SHA-256 matches the persisted full tool-output digest.",
+    "result": {
+      "schema": "paperclip/boat-link-layout-read/v1",
+      "fixtureName": "boat-link-layout-control-20261011-99259312-418b-4c4a-a21e-3022ae72eba8",
+      "startedAt": "2026-10-11T13:48:05.319Z",
+      "expectedHash": "42ce37809e7b25a8a04da912f303e3e2991a8d525ccb62d1008ed05172b24e5f",
+      "files": [
+        {
+          "name": "hard-a.js",
+          "guardOutcome": "accepted",
+          "readHashes": [
+            "42ce37809e7b25a8a04da912f303e3e2991a8d525ccb62d1008ed05172b24e5f",
+            "42ce37809e7b25a8a04da912f303e3e2991a8d525ccb62d1008ed05172b24e5f"
+          ],
+          "passes": [
+            {
+              "after": {
+                "dev": "76",
+                "ino": "3307",
+                "mode": "33152",
+                "uid": "1000",
+                "gid": "1000",
+                "nlink": "1",
+                "size": "102",
+                "mtimeNs": "1791725500000000000",
+                "ctimeNs": "1791726485000000000"
+              },
+              "pathEqual": true,
+              "namedEqual": true
+            },
+            {
+              "after": {
+                "dev": "76",
+                "ino": "3307",
+                "mode": "33152",
+                "uid": "1000",
+                "gid": "1000",
+                "nlink": "1",
+                "size": "102",
+                "mtimeNs": "1791725500000000000",
+                "ctimeNs": "1791726485000000000"
+              },
+              "pathEqual": true,
+              "namedEqual": true
+            }
+          ],
+          "readBytes": 204,
+          "initialDescriptor": {
+            "dev": "76",
+            "ino": "3307",
+            "mode": "33152",
+            "uid": "1000",
+            "gid": "1000",
+            "nlink": "1",
+            "size": "102",
+            "mtimeNs": "1791725500000000000",
+            "ctimeNs": "1791725500000000000"
+          },
+          "hashMatches": true,
+          "finalNamed": {
+            "dev": "76",
+            "ino": "3307",
+            "mode": "33152",
+            "uid": "1000",
+            "gid": "1000",
+            "nlink": "1",
+            "size": "102",
+            "mtimeNs": "1791725500000000000",
+            "ctimeNs": "1791726485000000000"
+          }
+        },
+        {
+          "name": "hard-b.js",
+          "guardOutcome": "rejected",
+          "readHashes": [
+            "42ce37809e7b25a8a04da912f303e3e2991a8d525ccb62d1008ed05172b24e5f"
+          ],
+          "passes": [
+            {
+              "after": {
+                "dev": "76",
+                "ino": "3308",
+                "mode": "33152",
+                "uid": "1000",
+                "gid": "1000",
+                "nlink": "2",
+                "size": "102",
+                "mtimeNs": "1791725500000000000",
+                "ctimeNs": "1791726485000000000"
+              },
+              "pathEqual": true,
+              "namedEqual": true
+            }
+          ],
+          "readBytes": 102,
+          "initialDescriptor": {
+            "dev": "76",
+            "ino": "3308",
+            "mode": "33152",
+            "uid": "1000",
+            "gid": "1000",
+            "nlink": "1",
+            "size": "102",
+            "mtimeNs": "1791725500000000000",
+            "ctimeNs": "1791725500000000000"
+          },
+          "moduleFence": "LINK_COUNT",
+          "failingRead": {
+            "attempt": 1,
+            "nlinkBefore": "1",
+            "nlinkAfter": "2",
+            "direction": "increase",
+            "equal": {
+              "dev": true,
+              "ino": true,
+              "mode": true,
+              "uid": true,
+              "gid": true,
+              "size": true,
+              "mtime": true,
+              "ctime": false
+            }
+          },
+          "error": null,
+          "finalNamed": {
+            "dev": "76",
+            "ino": "3308",
+            "mode": "33152",
+            "uid": "1000",
+            "gid": "1000",
+            "nlink": "2",
+            "size": "102",
+            "mtimeNs": "1791725500000000000",
+            "ctimeNs": "1791726485000000000"
+          }
+        },
+        {
+          "name": "independent-a.js",
+          "guardOutcome": "accepted",
+          "readHashes": [
+            "42ce37809e7b25a8a04da912f303e3e2991a8d525ccb62d1008ed05172b24e5f",
+            "42ce37809e7b25a8a04da912f303e3e2991a8d525ccb62d1008ed05172b24e5f"
+          ],
+          "passes": [
+            {
+              "after": {
+                "dev": "76",
+                "ino": "3309",
+                "mode": "33152",
+                "uid": "1000",
+                "gid": "1000",
+                "nlink": "1",
+                "size": "102",
+                "mtimeNs": "1791725500000000000",
+                "ctimeNs": "1791726485000000000"
+              },
+              "pathEqual": true,
+              "namedEqual": true
+            },
+            {
+              "after": {
+                "dev": "76",
+                "ino": "3309",
+                "mode": "33152",
+                "uid": "1000",
+                "gid": "1000",
+                "nlink": "1",
+                "size": "102",
+                "mtimeNs": "1791725500000000000",
+                "ctimeNs": "1791726485000000000"
+              },
+              "pathEqual": true,
+              "namedEqual": true
+            }
+          ],
+          "readBytes": 204,
+          "initialDescriptor": {
+            "dev": "76",
+            "ino": "3309",
+            "mode": "33152",
+            "uid": "1000",
+            "gid": "1000",
+            "nlink": "1",
+            "size": "102",
+            "mtimeNs": "1791725500000000000",
+            "ctimeNs": "1791725500000000000"
+          },
+          "hashMatches": true,
+          "finalNamed": {
+            "dev": "76",
+            "ino": "3309",
+            "mode": "33152",
+            "uid": "1000",
+            "gid": "1000",
+            "nlink": "1",
+            "size": "102",
+            "mtimeNs": "1791725500000000000",
+            "ctimeNs": "1791726485000000000"
+          }
+        },
+        {
+          "name": "independent-b.js",
+          "guardOutcome": "accepted",
+          "readHashes": [
+            "42ce37809e7b25a8a04da912f303e3e2991a8d525ccb62d1008ed05172b24e5f",
+            "42ce37809e7b25a8a04da912f303e3e2991a8d525ccb62d1008ed05172b24e5f"
+          ],
+          "passes": [
+            {
+              "after": {
+                "dev": "76",
+                "ino": "3310",
+                "mode": "33152",
+                "uid": "1000",
+                "gid": "1000",
+                "nlink": "1",
+                "size": "102",
+                "mtimeNs": "1791725500000000000",
+                "ctimeNs": "1791726485000000000"
+              },
+              "pathEqual": true,
+              "namedEqual": true
+            },
+            {
+              "after": {
+                "dev": "76",
+                "ino": "3310",
+                "mode": "33152",
+                "uid": "1000",
+                "gid": "1000",
+                "nlink": "1",
+                "size": "102",
+                "mtimeNs": "1791725500000000000",
+                "ctimeNs": "1791726485000000000"
+              },
+              "pathEqual": true,
+              "namedEqual": true
+            }
+          ],
+          "readBytes": 204,
+          "initialDescriptor": {
+            "dev": "76",
+            "ino": "3310",
+            "mode": "33152",
+            "uid": "1000",
+            "gid": "1000",
+            "nlink": "1",
+            "size": "102",
+            "mtimeNs": "1791725500000000000",
+            "ctimeNs": "1791725500000000000"
+          },
+          "hashMatches": true,
+          "finalNamed": {
+            "dev": "76",
+            "ino": "3310",
+            "mode": "33152",
+            "uid": "1000",
+            "gid": "1000",
+            "nlink": "1",
+            "size": "102",
+            "mtimeNs": "1791725500000000000",
+            "ctimeNs": "1791726485000000000"
+          }
+        }
+      ],
+      "complete": true,
+      "finishedAt": "2026-10-11T13:48:05.327Z"
+    }
+  },
+  "postWarm": {
+    "observedAt": "2026-10-11T13:53:54.452Z",
+    "phase": "cold_observation",
+    "guestReads": false,
+    "runs": [
+      {
+        "id": "b7b60bc3-8f1b-412c-8246-2ba221e076c6",
+        "providerBefore": "01a12b29-3ec0-7861-86d6-dacc5f581978",
+        "providerAfter": "01a12b29-3ec0-7861-86d6-dacc5f581978",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T13:45:27.509Z",
+        "finishedAt": "2026-10-11T13:51:17.289Z",
+        "nativeSessionId": "ad240cf6-7040-40d5-ade2-e9dfe45e9aba",
+        "runnerInstanceId": "3a4d738a-94c4-4b07-9746-f5f5a3e2742c",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      }
+    ],
+    "taskSessions": [
+      {
+        "lastRunId": "b7b60bc3-8f1b-412c-8246-2ba221e076c6",
+        "displayId": "01a12b29-3ec0-7861-86d6-dacc5f581978",
+        "ids": {
+          "sessionId": "ad240cf6-7040-40d5-ade2-e9dfe45e9aba"
+        },
+        "updatedAt": "2026-10-11T13:51:19.655Z"
+      }
+    ],
+    "owners": [
+      {
+        "id": "8d7c3954-ad3e-4e81-8832-7f01a7c88817",
+        "phase": "warm",
+        "deadline": "2026-10-11T13:56:15.423Z",
+        "boot": "7c7ebc43-74fc-47bf-8cad-2371263713c4",
+        "launch": 1
+      }
+    ],
+    "controller": [
+      {
+        "stateKey": "be282577a3c2e3d719a42410880471d153a671b2f80d7d5b2380df51579b299c",
+        "pack": null,
+        "commands": [
+          {
+            "controllerSeq": 3,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T13:47:42.123Z",
+            "status": "completed",
+            "type": "session.snapshot"
+          },
+          {
+            "controllerSeq": 4,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T13:47:42.253Z",
+            "status": "completed",
+            "type": "session.goal.get"
+          },
+          {
+            "controllerSeq": 5,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T13:47:42.516Z",
+            "status": "completed",
+            "type": "turn.start"
+          },
+          {
+            "controllerSeq": 6,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T13:48:23.891Z",
+            "status": "completed",
+            "type": "semantic_tool.result"
+          }
+        ],
+        "runnerPresent": false,
+        "lifecycle": null
+      }
+    ]
+  },
+  "finalCleanup": {
+    "observedAt": "2026-10-11T13:58:26.090Z",
+    "phase": "cold_observation",
+    "guestReads": false,
+    "runs": [
+      {
+        "id": "b7b60bc3-8f1b-412c-8246-2ba221e076c6",
+        "providerBefore": "01a12b29-3ec0-7861-86d6-dacc5f581978",
+        "providerAfter": "01a12b29-3ec0-7861-86d6-dacc5f581978",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T13:45:27.509Z",
+        "finishedAt": "2026-10-11T13:51:17.289Z",
+        "nativeSessionId": "ad240cf6-7040-40d5-ade2-e9dfe45e9aba",
+        "runnerInstanceId": "3a4d738a-94c4-4b07-9746-f5f5a3e2742c",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      }
+    ],
+    "taskSessions": [
+      {
+        "lastRunId": "b7b60bc3-8f1b-412c-8246-2ba221e076c6",
+        "displayId": "01a12b29-3ec0-7861-86d6-dacc5f581978",
+        "ids": {
+          "sessionId": "ad240cf6-7040-40d5-ade2-e9dfe45e9aba"
+        },
+        "updatedAt": "2026-10-11T13:51:19.655Z"
+      }
+    ],
+    "owners": [
+      {
+        "id": "8d7c3954-ad3e-4e81-8832-7f01a7c88817",
+        "phase": "retired",
+        "deadline": null,
+        "boot": "7c7ebc43-74fc-47bf-8cad-2371263713c4",
+        "launch": 1
+      }
+    ],
+    "controller": [
+      {
+        "stateKey": "be282577a3c2e3d719a42410880471d153a671b2f80d7d5b2380df51579b299c",
+        "pack": null,
+        "commands": [
+          {
+            "controllerSeq": 5,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T13:47:42.516Z",
+            "status": "completed",
+            "type": "turn.start"
+          },
+          {
+            "controllerSeq": 6,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T13:48:23.891Z",
+            "status": "completed",
+            "type": "semantic_tool.result"
+          },
+          {
+            "controllerSeq": 7,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T13:56:17.130Z",
+            "status": "completed",
+            "type": "runner.drain"
+          },
+          {
+            "controllerSeq": 8,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T13:56:17.335Z",
+            "status": "completed",
+            "type": "runner.suspend"
+          }
+        ],
+        "runnerPresent": false,
+        "lifecycle": null
+      }
+    ]
+  },
+  "finalArchive": {
+    "observedAt": "2026-10-11T13:58:37.440Z",
+    "providerId": "bx_b8sawfyp",
+    "guestRead": false,
+    "state": "archived",
+    "health": "ok",
+    "stop": {
+      "id": "stop_af5a0f632cf1677a",
+      "status": "completed",
+      "timestamps": {
+        "endedAt": "2026-10-11T13:56:40.667Z"
+      },
+      "errorPresent": false
+    }
+  }
+}
