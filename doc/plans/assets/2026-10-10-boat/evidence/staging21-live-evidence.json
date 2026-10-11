@@ -1,0 +1,116 @@
+{
+  "schema": "boat.staging.qualification.evidence.v1",
+  "recordedAt": "2026-10-11T06:04:27.886191+00:00",
+  "source": {
+    "deployment": 21,
+    "commit": "388a16905b5d1924ce88a1fe550d0f65ebbaf00e",
+    "verifiedAt": "2026-10-11T05:54:57.175Z"
+  },
+  "status": "native_vite_restart_failed_cleanup_quarantine",
+  "nativeCodex": {
+    "taskId": "7d3472d4-461f-44ce-90ed-139e878df200",
+    "proofSha256": "f9253e57dadaefe9276e99a9cd0cb9fad68d2704dd820b61e026edf6e6527c46",
+    "proofUnchanged": true,
+    "persistedHeadingTurn": {
+      "requestReplayed": false,
+      "parentObservedResultAtApprox": "2026-10-11T05:57:00Z",
+      "reason": "No Vite listener available; no edit performed.",
+      "hmrPassed": false,
+      "runId": "d8aa39b4-b792-44c5-91d5-e88f7258e1e5",
+      "startedAt": "2026-10-11T05:54:37Z",
+      "finishedAt": "2026-10-11T05:57:08Z",
+      "runStatus": "succeeded",
+      "taskDisposition": "blocked",
+      "workspaceFinalize": "succeeded",
+      "sourceBoundary": "Run started before official deployment21 serving verification at05:54:57; it spans the rollout boundary."
+    },
+    "transitionalSample": {
+      "observedAt": "2026-10-11T05:56:20.207928Z",
+      "nativeOwnedProcesses": 0,
+      "nativeOwnedListeners": 0,
+      "savedRunnerCheckpointPresent": false,
+      "savedProviderCheckpointPresent": true,
+      "savedProviderThreadId": "01a12881-5d3b-72a0-b4c3-d993f5b089e1",
+      "interpretation": "In-flight preparation observation only; no corruption claim."
+    },
+    "normalViteRestartFollowup": {
+      "parentSubmittedAtApprox": "2026-10-11T05:57:00Z",
+      "timeoutSettingsChanged": false,
+      "firstAttempt": {
+        "runId": "47d76138-3533-4904-9285-0b3d873ea3bb",
+        "startedAt": "2026-10-11T05:57:25Z",
+        "finishedAt": "2026-10-11T05:57:59Z",
+        "status": "failed",
+        "errorCode": "native_session_cleanup_quarantined",
+        "failurePhase": "bootstrap",
+        "providerWorkStarted": false,
+        "timeoutFired": false,
+        "effectiveTimeoutSec": 0,
+        "observedRunEventTypes": [
+          "started",
+          "native_session_cleanup_quarantined"
+        ]
+      },
+      "automaticAttempt": {
+        "runId": "ddce73cb-d592-4007-8b16-5c011945d681",
+        "startedAt": "2026-10-11T05:58:00Z",
+        "finishedAt": "2026-10-11T05:58:36Z",
+        "status": "failed",
+        "errorCode": "native_session_cleanup_quarantined"
+      },
+      "result": "failed_before_provider_work"
+    },
+    "postFailureObservation": {
+      "at": "2026-10-11T06:00:45.856001Z",
+      "bootId": "c6a9890c-b025-4ae1-837f-148704d2d7b5",
+      "nativeOwnedProcesses": 0,
+      "nativeOwnedListeners": 0,
+      "runnerCheckpointPresent": true,
+      "checkpointRunId": "d8aa39b4-b792-44c5-91d5-e88f7258e1e5",
+      "runnerLifecycle": "ready",
+      "providerLifecycle": "session_open",
+      "outboxCount": 0,
+      "pendingTerminalDeliveryIsNull": true,
+      "completedTurnAuthoritative": true,
+      "savedNormalizedSessionId": "06496696-b312-4268-ac40-66770aaa6f1a",
+      "savedProviderThreadId": "01a12881-5d3b-72a0-b4c3-d993f5b089e1",
+      "proofUnchanged": true
+    }
+  },
+  "receipts": [
+    {
+      "name": "staging-deploy-21-result.json",
+      "sha256": "38b8a3a4dbe1554466043dbdbf8d163b8a7d4d64d2eb389bdeaf79966b1a6aec"
+    },
+    {
+      "name": "retry-staging-21-provider-baseline.json",
+      "sha256": "bcf15979a0e4fbccad59ea8583d905f7a8b12607d7ff1639682e2ec191646828"
+    },
+    {
+      "name": "retry-staging-21-nativecodex-persisted-heading.json",
+      "sha256": "8a21fc9d7c5169209d9eada4070c84bf7d2ddbf1c95c5845d96825918fda89ef"
+    },
+    {
+      "name": "retry-staging-21-nativecodex-quarantine.json",
+      "sha256": "95cd02ed158098140478f85bb5fd86e78fb9b0cb1ed155aec3eae9192a4c9fc6"
+    }
+  ],
+  "limits": [
+    "No inference is made about the initiating cleanup/retirement cause.",
+    "The heading turn succeeded at run level but left the task blocked because Vite was unavailable; no HMR edit was performed.",
+    "Both subsequent Vite-restart attempts failed cleanup quarantine; no native preview/HMR pass is claimed.",
+    "Additional fence inspection was stopped by provider guard after normal viewer unmount. No retry, reset, or manual wake occurred."
+  ],
+  "viewerLifecycle": {
+    "parentNavigatedAwayAtApprox": "2026-10-11T06:00:00Z",
+    "viewerUnmount": "normal_navigation",
+    "laterGuestDiagnostic": "blocked_by_provider_state_guard",
+    "guestReadAfterBlockedGuard": false,
+    "manualWakeOrReset": false
+  },
+  "evidenceAttribution": {
+    "runAudit": "Exact run IDs and timestamps from parent UI audit, relayed by quarantine diagnosis worker; audit precision nearest second.",
+    "guestEvidence": "Independent guarded read-only checkpoint/process/proof observations.",
+    "cleanupCause": "Exact initiating cleanup or retirement error remains unavailable. Prior heading stderr exposed no quarantine reason."
+  }
+}

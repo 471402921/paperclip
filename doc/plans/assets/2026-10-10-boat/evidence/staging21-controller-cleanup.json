@@ -1,0 +1,439 @@
+{
+  "schema": "boat.staging.controller-diagnostics.evidence.v1",
+  "extractedAt": "2026-10-11T06:18:07.315407+00:00",
+  "method": "Decoded quoted DOM generic values as JSON strings, concatenated terminal wrap fragments, and parsed the unique complete diagnostic JSON object. No source values were inferred.",
+  "sourceCaptureTimes": "Neither source output contains a diagnostic/browser capture timestamp. File modification timestamps are metadata only.",
+  "sources": [
+    {
+      "name": "staging21-controller-console-read.txt",
+      "sha256": "11d7402666ecc2aaf7ccdb2ac0432c80384ef48f79bd34f53010a60f6eddbe42",
+      "bytes": 6085,
+      "captureTimeInContent": null,
+      "sourceFileModifiedAt": "2026-10-11T06:13:12.104224+00:00",
+      "sourceFileModifiedAtMeaning": "Filesystem metadata only; not asserted as browser or diagnostic capture time."
+    },
+    {
+      "name": "staging21-controller-db-read.txt",
+      "sha256": "cf52d75e892051a675e486a16e248e99cdf4e501ce937af45bae4047bed455bd",
+      "bytes": 8431,
+      "captureTimeInContent": null,
+      "sourceFileModifiedAt": "2026-10-11T06:15:45.651326+00:00",
+      "sourceFileModifiedAtMeaning": "Filesystem metadata only; not asserted as browser or diagnostic capture time."
+    },
+    {
+      "name": "staging21-controller-db-read-2.txt",
+      "sha256": "615d51f4695377d3a7532272312c4463cd3c63a2990c197599cc766519ec752e",
+      "bytes": 8790,
+      "captureTimeInContent": null,
+      "sourceFileModifiedAt": "2026-10-11T06:16:56.588468+00:00",
+      "sourceFileModifiedAtMeaning": "Filesystem metadata only; not asserted as browser or diagnostic capture time."
+    }
+  ],
+  "scope": {
+    "normalizedSessionId": "06496696-b312-4268-ac40-66770aaa6f1a",
+    "runId": "d8aa39b4-b792-44c5-91d5-e88f7258e1e5",
+    "followingAttemptRunIds": [
+      "47d76138-3533-4904-9285-0b3d873ea3bb",
+      "ddce73cb-d592-4007-8b16-5c011945d681"
+    ]
+  },
+  "currentControllerObservation": {
+    "baseExists": true,
+    "matchingStateCount": 1,
+    "stateKey": "b4e89cdf379be2fef8dc8a3df1a3e1e9a7965cf26425305506b68ecb9e45a70c",
+    "schema": "paperclip.runner.durable.control-plane-state.v1",
+    "identity": {
+      "runId": "d8aa39b4-b792-44c5-91d5-e88f7258e1e5",
+      "normalizedSessionId": "06496696-b312-4268-ac40-66770aaa6f1a",
+      "runnerInstanceId": "0005a613-101d-475f-9409-8b8e8b87e9ce",
+      "environmentLeaseId": "5957cc86-4533-49e5-a2af-0edbc79a472f"
+    },
+    "controllerEpochFieldPresent": false,
+    "pendingWarmTransitionPresent": false,
+    "commands": [
+      {
+        "controllerSeq": 1,
+        "status": "completed",
+        "type": "run.attach"
+      },
+      {
+        "controllerSeq": 2,
+        "status": "completed",
+        "type": "session.snapshot"
+      },
+      {
+        "controllerSeq": 3,
+        "status": "completed",
+        "type": "session.snapshot"
+      },
+      {
+        "controllerSeq": 4,
+        "status": "completed",
+        "type": "session.goal.get"
+      },
+      {
+        "controllerSeq": 5,
+        "status": "completed",
+        "type": "turn.start"
+      },
+      {
+        "controllerSeq": 6,
+        "status": "completed",
+        "type": "semantic_tool.result"
+      }
+    ],
+    "controllerLocalRunnerState": null,
+    "cleanupActivationPresent": false
+  },
+  "currentDatabaseObservation": {
+    "source": "staging21-controller-db-read-2.txt",
+    "returnedRuns": [
+      {
+        "id": "ddce73cb-d592-4007-8b16-5c011945d681",
+        "status": "failed",
+        "error_code": "adapter_failed",
+        "native_session_id": null,
+        "runner_instance_id": null,
+        "started_at": "2026-10-11T05:58:00.710Z",
+        "finished_at": "2026-10-11T05:58:36.390Z",
+        "issue_id": "7d3472d4-461f-44ce-90ed-139e878df200",
+        "result_keys": [
+          "stopReason",
+          "timeoutFired",
+          "timeoutSource",
+          "executionRecovery",
+          "timeoutConfigured",
+          "effectiveTimeoutSec"
+        ],
+        "recovery": {
+          "kind": "bootstrap",
+          "providerWorkStarted": false
+        },
+        "knownErrorCodes": [
+          "native_session_cleanup_quarantined"
+        ],
+        "errorCategory": "cleanup_other"
+      },
+      {
+        "id": "47d76138-3533-4904-9285-0b3d873ea3bb",
+        "status": "failed",
+        "error_code": "adapter_failed",
+        "native_session_id": null,
+        "runner_instance_id": null,
+        "started_at": "2026-10-11T05:57:25.465Z",
+        "finished_at": "2026-10-11T05:57:59.611Z",
+        "issue_id": "7d3472d4-461f-44ce-90ed-139e878df200",
+        "result_keys": [
+          "stopReason",
+          "timeoutFired",
+          "timeoutSource",
+          "executionRecovery",
+          "timeoutConfigured",
+          "effectiveTimeoutSec"
+        ],
+        "recovery": {
+          "kind": "bootstrap",
+          "providerWorkStarted": false
+        },
+        "knownErrorCodes": [
+          "native_session_cleanup_quarantined"
+        ],
+        "errorCategory": "cleanup_other"
+      },
+      {
+        "id": "d8aa39b4-b792-44c5-91d5-e88f7258e1e5",
+        "status": "succeeded",
+        "error_code": null,
+        "native_session_id": "06496696-b312-4268-ac40-66770aaa6f1a",
+        "runner_instance_id": "0005a613-101d-475f-9409-8b8e8b87e9ce",
+        "started_at": "2026-10-11T05:54:37.004Z",
+        "finished_at": "2026-10-11T05:57:08.096Z",
+        "issue_id": "7d3472d4-461f-44ce-90ed-139e878df200",
+        "result_keys": [
+          "summary",
+          "decisionId",
+          "stopReason",
+          "failureCode",
+          "assessmentId",
+          "nativeResult",
+          "timeoutFired",
+          "nextAttemptAt",
+          "timeoutSource",
+          "nativeTerminal",
+          "configFreshness",
+          "instructionSave",
+          "issueStatusAfter",
+          "finalizationPhase",
+          "issueStatusBefore",
+          "timeoutConfigured",
+          "statusVersionAfter",
+          "effectiveTimeoutSec",
+          "originalFailureCode",
+          "prpRunTerminalState",
+          "statusVersionBefore",
+          "verificationCaveats",
+          "planSynchronizations",
+          "presentationDecision",
+          "prpTurnTerminalState",
+          "authoritativeDecision",
+          "finalizationReasonCode",
+          "workspaceFinalizeStatus",
+          "ignoredAttentionRequests",
+          "finalizationPolicyVersion",
+          "prpReportedWorkDisposition",
+          "externalChatReviewPresentation"
+        ],
+        "recovery": {
+          "kind": null,
+          "providerWorkStarted": null
+        },
+        "knownErrorCodes": [],
+        "errorCategory": null
+      }
+    ],
+    "returnedFinalizations": [
+      {
+        "runId": "d8aa39b4-b792-44c5-91d5-e88f7258e1e5",
+        "phase": "committed",
+        "failureCode": null,
+        "recoveryState": null,
+        "detailKeys": [],
+        "knownCauseCodes": [],
+        "history": []
+      }
+    ],
+    "leases": [
+      {
+        "id": "98118809-b4b5-4424-a415-115139bb4920",
+        "status": "failed",
+        "cleanup_status": "success",
+        "heartbeat_run_id": "ddce73cb-d592-4007-8b16-5c011945d681",
+        "acquired_at": "2026-10-11T05:58:09.958Z",
+        "released_at": "2026-10-11T05:58:39.619Z",
+        "updated_at": "2026-10-11T05:58:39.619Z",
+        "owner": {
+          "ownerId": "e6a15939-7665-4c3d-9ae1-933d8fcd2c01",
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "generation": 1
+        }
+      },
+      {
+        "id": "599bd9a8-0257-4089-8c5d-4cb01240fab2",
+        "status": "failed",
+        "cleanup_status": "success",
+        "heartbeat_run_id": "47d76138-3533-4904-9285-0b3d873ea3bb",
+        "acquired_at": "2026-10-11T05:57:33.665Z",
+        "released_at": "2026-10-11T05:58:03.414Z",
+        "updated_at": "2026-10-11T05:58:03.414Z",
+        "owner": {
+          "ownerId": "1605dd13-3314-4df3-80d5-783eb501fc21",
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "generation": 1
+        }
+      },
+      {
+        "id": "55b1b69c-3254-4f6c-902e-ed12148c1386",
+        "status": "released",
+        "cleanup_status": "success",
+        "heartbeat_run_id": "d8aa39b4-b792-44c5-91d5-e88f7258e1e5",
+        "acquired_at": "2026-10-11T05:54:45.660Z",
+        "released_at": "2026-10-11T05:58:36.264Z",
+        "updated_at": "2026-10-11T05:58:36.264Z",
+        "owner": {
+          "ownerId": "7d485ed0-d46e-4b35-a652-e7ac24514549",
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "generation": 1
+        }
+      }
+    ],
+    "owners": [
+      {
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "id": "7d485ed0-d46e-4b35-a652-e7ac24514549",
+        "generation": 1,
+        "phase": "retired",
+        "runId": "d8aa39b4-b792-44c5-91d5-e88f7258e1e5",
+        "deadline": null,
+        "retirementDeadline": null,
+        "admittedAt": "2026-10-11T05:54:39.805Z",
+        "processBindingRecorded": true
+      },
+      {
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "id": "1605dd13-3314-4df3-80d5-783eb501fc21",
+        "generation": 1,
+        "phase": "retired",
+        "runId": "47d76138-3533-4904-9285-0b3d873ea3bb",
+        "deadline": null,
+        "retirementDeadline": null,
+        "admittedAt": "2026-10-11T05:57:28.028Z",
+        "processBindingRecorded": false
+      },
+      {
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "id": "e6a15939-7665-4c3d-9ae1-933d8fcd2c01",
+        "generation": 1,
+        "phase": "retired",
+        "runId": "ddce73cb-d592-4007-8b16-5c011945d681",
+        "deadline": null,
+        "retirementDeadline": null,
+        "admittedAt": "2026-10-11T05:58:04.340Z",
+        "processBindingRecorded": false
+      }
+    ]
+  },
+  "interpretationLimits": [
+    "The controller diagnostic returned one matching identity bound to the preceding successful heading run; all six returned commands are completed and no pending warm transition is recorded.",
+    "No controllerEpoch field was returned. This is not an epoch value of zero or null.",
+    "The controller-local runner-state result is null. This does not establish absence of the remote Boat guest checkpoint.",
+    "All three returned owners are retired with null current deadlines. The preceding owner retains a process binding object; that historical binding is not evidence that its OS process is alive.",
+    "The two following failed leases both report successful cleanup and owners with no process binding. This does not explain the initiating native-session cleanup quarantine.",
+    "No failure code, cause code, recovery state, or recovery history was returned for the successful preceding finalization. No initiating quarantine cause is established.",
+    "The second exact-scope query returns all three runs. The first query returned only the successful heading run; its narrower result must not be used to infer missing failed-run rows.",
+    "Both failed-run rows have error_code adapter_failed, knownErrorCodes containing native_session_cleanup_quarantined, recovery kind bootstrap, providerWorkStarted false, and diagnostic errorCategory cleanup_other. cleanup_other is the diagnostic output category, not a more specific native error code.",
+    "The preceding heading lease reports released_at05:58:36.264Z. This is its recorded final release time, not proof of when its process stopped or the initiating quarantine cause."
+  ],
+  "networkDatabaseBrowserOrGuestActionsPerformedByExtractor": false,
+  "earlierDatabaseObservation": {
+    "returnedRuns": [
+      {
+        "id": "d8aa39b4-b792-44c5-91d5-e88f7258e1e5",
+        "status": "succeeded",
+        "error_code": null,
+        "native_session_id": "06496696-b312-4268-ac40-66770aaa6f1a",
+        "runner_instance_id": "0005a613-101d-475f-9409-8b8e8b87e9ce",
+        "started_at": "2026-10-11T05:54:37.004Z",
+        "finished_at": "2026-10-11T05:57:08.096Z",
+        "recovery": {
+          "kind": null,
+          "providerWorkStarted": null
+        }
+      }
+    ],
+    "returnedFinalizations": [
+      {
+        "runId": "d8aa39b4-b792-44c5-91d5-e88f7258e1e5",
+        "phase": "committed",
+        "failureCode": null,
+        "recoveryState": null,
+        "detailKeys": [],
+        "knownCauseCodes": [],
+        "history": []
+      }
+    ],
+    "leases": [
+      {
+        "id": "98118809-b4b5-4424-a415-115139bb4920",
+        "status": "failed",
+        "cleanup_status": "success",
+        "heartbeat_run_id": "ddce73cb-d592-4007-8b16-5c011945d681",
+        "owner": {
+          "ownerId": "e6a15939-7665-4c3d-9ae1-933d8fcd2c01",
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "generation": 1
+        }
+      },
+      {
+        "id": "599bd9a8-0257-4089-8c5d-4cb01240fab2",
+        "status": "failed",
+        "cleanup_status": "success",
+        "heartbeat_run_id": "47d76138-3533-4904-9285-0b3d873ea3bb",
+        "owner": {
+          "ownerId": "1605dd13-3314-4df3-80d5-783eb501fc21",
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "generation": 1
+        }
+      },
+      {
+        "id": "55b1b69c-3254-4f6c-902e-ed12148c1386",
+        "status": "released",
+        "cleanup_status": "success",
+        "heartbeat_run_id": "d8aa39b4-b792-44c5-91d5-e88f7258e1e5",
+        "owner": {
+          "ownerId": "7d485ed0-d46e-4b35-a652-e7ac24514549",
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "generation": 1
+        }
+      }
+    ],
+    "owners": [
+      {
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "id": "7d485ed0-d46e-4b35-a652-e7ac24514549",
+        "generation": 1,
+        "phase": "retired",
+        "runId": "d8aa39b4-b792-44c5-91d5-e88f7258e1e5",
+        "deadline": null,
+        "retirementDeadline": null,
+        "processBindingRecorded": true
+      },
+      {
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "id": "1605dd13-3314-4df3-80d5-783eb501fc21",
+        "generation": 1,
+        "phase": "retired",
+        "runId": "47d76138-3533-4904-9285-0b3d873ea3bb",
+        "deadline": null,
+        "retirementDeadline": null,
+        "processBindingRecorded": false
+      },
+      {
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "id": "e6a15939-7665-4c3d-9ae1-933d8fcd2c01",
+        "generation": 1,
+        "phase": "retired",
+        "runId": "ddce73cb-d592-4007-8b16-5c011945d681",
+        "deadline": null,
+        "retirementDeadline": null,
+        "processBindingRecorded": false
+      }
+    ]
+  },
+  "recordedTimeline": [
+    {
+      "kind": "run",
+      "runId": "d8aa39b4-b792-44c5-91d5-e88f7258e1e5",
+      "startedAt": "2026-10-11T05:54:37.004Z",
+      "finishedAt": "2026-10-11T05:57:08.096Z",
+      "status": "succeeded"
+    },
+    {
+      "kind": "run",
+      "runId": "47d76138-3533-4904-9285-0b3d873ea3bb",
+      "startedAt": "2026-10-11T05:57:25.465Z",
+      "finishedAt": "2026-10-11T05:57:59.611Z",
+      "status": "failed"
+    },
+    {
+      "kind": "run",
+      "runId": "ddce73cb-d592-4007-8b16-5c011945d681",
+      "startedAt": "2026-10-11T05:58:00.710Z",
+      "finishedAt": "2026-10-11T05:58:36.390Z",
+      "status": "failed"
+    },
+    {
+      "kind": "lease",
+      "runId": "d8aa39b4-b792-44c5-91d5-e88f7258e1e5",
+      "leaseId": "55b1b69c-3254-4f6c-902e-ed12148c1386",
+      "acquiredAt": "2026-10-11T05:54:45.660Z",
+      "releasedAt": "2026-10-11T05:58:36.264Z",
+      "cleanupStatus": "success"
+    },
+    {
+      "kind": "lease",
+      "runId": "47d76138-3533-4904-9285-0b3d873ea3bb",
+      "leaseId": "599bd9a8-0257-4089-8c5d-4cb01240fab2",
+      "acquiredAt": "2026-10-11T05:57:33.665Z",
+      "releasedAt": "2026-10-11T05:58:03.414Z",
+      "cleanupStatus": "success"
+    },
+    {
+      "kind": "lease",
+      "runId": "ddce73cb-d592-4007-8b16-5c011945d681",
+      "leaseId": "98118809-b4b5-4424-a415-115139bb4920",
+      "acquiredAt": "2026-10-11T05:58:09.958Z",
+      "releasedAt": "2026-10-11T05:58:39.619Z",
+      "cleanupStatus": "success"
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "checkedAt": "2026-10-11T06:11:28.198894+00:00",
+  "prs": [
+    {
+      "pr": 15813,
+      "head": "6c2a0a2bd86ef411bbc0e273b179d5bc4f1a3733",
+      "reviewHead": "6c2a0a2bd86ef411bbc0e273b179d5bc4f1a3733",
+      "mergeable": "MERGEABLE",
+      "counts": {
+        "SKIPPED": 4,
+        "SUCCESS": 54
+      },
+      "failures": [],
+      "focusChecks": [
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-11T06:04:40Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/paperclipai/paperclip/actions/runs/38116618493/job/114402683080",
+          "name": "ci / e2e shard (8/8)",
+          "startedAt": "2026-10-11T06:00:53Z",
+          "status": "COMPLETED",
+          "workflowName": "PR"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-11T06:08:45Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://app.greptile.com/paperclip-org-3/github/paperclipai/paperclip/-/pull/15813",
+          "name": "Greptile Review",
+          "startedAt": "2026-10-11T06:00:18Z",
+          "status": "COMPLETED",
+          "workflowName": ""
+        }
+      ],
+      "pending": [],
+      "unresolved": [],
+      "moreThreads": false,
+      "greptileSummary": [
+        {
+          "url": "https://github.com/paperclipai/paperclip/pull/15813#issuecomment-6099291617",
+          "updatedAt": "2026-10-11T06:08:57Z",
+          "reviewedCommits": [
+            "6c2a0a2bd86ef411bbc0e273b179d5bc4f1a3733"
+          ],
+          "score": [
+            "5"
+          ]
+        }
+      ]
+    },
+    {
+      "pr": 15804,
+      "head": "818f94594db17bb3249cadc33fd7e26535102421",
+      "reviewHead": "818f94594db17bb3249cadc33fd7e26535102421",
+      "mergeable": "MERGEABLE",
+      "counts": {
+        "CANCELLED": 1,
+        "SUCCESS": 54
+      },
+      "failures": [
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-11T06:00:15Z",
+          "conclusion": "CANCELLED",
+          "detailsUrl": "https://github.com/paperclipai/paperclip/actions/runs/38116617979/job/114402654995",
+          "name": "ci / Select trusted runner",
+          "startedAt": "2026-10-11T06:00:14Z",
+          "status": "COMPLETED",
+          "workflowName": "PR"
+        }
+      ],
+      "focusChecks": [
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-11T06:05:46Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/paperclipai/paperclip/actions/runs/38116619352/job/114402831615",
+          "name": "ci / e2e shard (8/8)",
+          "startedAt": "2026-10-11T06:01:38Z",
+          "status": "COMPLETED",
+          "workflowName": "PR"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-11T06:06:55Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://app.greptile.com/paperclip-org-3/github/paperclipai/paperclip/-/pull/15804",
+          "name": "Greptile Review",
+          "startedAt": "2026-10-11T06:00:19Z",
+          "status": "COMPLETED",
+          "workflowName": ""
+        }
+      ],
+      "pending": [],
+      "unresolved": [],
+      "moreThreads": false,
+      "greptileSummary": [
+        {
+          "url": "https://github.com/paperclipai/paperclip/pull/15804#issuecomment-6098591173",
+          "updatedAt": "2026-10-11T06:07:01Z",
+          "reviewedCommits": [
+            "818f94594db17bb3249cadc33fd7e26535102421"
+          ],
+          "score": [
+            "5"
+          ]
+        }
+      ]
+    }
+  ]
+}

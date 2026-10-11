@@ -1,0 +1,83 @@
+{
+  "recordedAt": "2026-10-11T06:22:07.110957+00:00",
+  "taskId": "6047cbba-7f5e-484a-bf02-0f4080bb2abd",
+  "identifier": "BOA-20",
+  "controllerSource": "441e88c09a4b16fd4f1403e6c4e813d00653edf5",
+  "providerPackDigest": "sha256:d7275d9204e60a0a5dcb8dc536da95e945e6b90b7bdfda964d82084895ec5952",
+  "nativeSessionId": "840002e9-636c-4467-8807-4f539b20532e",
+  "coldAndWarmRuns": [
+    {
+      "id": "9c6e6129-7334-4ff3-9806-dfd6f62ebe7a",
+      "status": "succeeded",
+      "created_at": "2026-10-11T06:06:27.373Z",
+      "started_at": "2026-10-11T06:06:27.408Z",
+      "finished_at": "2026-10-11T06:18:48.433Z",
+      "error_code": null,
+      "error": null,
+      "native_session_id": "840002e9-636c-4467-8807-4f539b20532e",
+      "runner_instance_id": "7305da06-73ee-45d6-91ff-e97331c0c8cb",
+      "session_id_before": null,
+      "session_id_after": "27e34901-7792-4d23-9189-e2c2ead86f64",
+      "execution_stage": "preparing"
+    },
+    {
+      "id": "cee9d644-ee75-4fc3-8675-305e7c43ad0d",
+      "status": "succeeded",
+      "created_at": "2026-10-11T06:19:23.179Z",
+      "started_at": "2026-10-11T06:19:23.228Z",
+      "finished_at": "2026-10-11T06:21:16.372Z",
+      "error_code": null,
+      "error": null,
+      "native_session_id": "840002e9-636c-4467-8807-4f539b20532e",
+      "runner_instance_id": "7305da06-73ee-45d6-91ff-e97331c0c8cb",
+      "session_id_before": "27e34901-7792-4d23-9189-e2c2ead86f64",
+      "session_id_after": "27e34901-7792-4d23-9189-e2c2ead86f64",
+      "execution_stage": "preparing"
+    }
+  ],
+  "warmOwner": {
+    "id": "d5e181b2-0f13-477c-a467-f7ba6178efa6",
+    "kind": "runner",
+    "phase": "warm",
+    "runId": "cee9d644-ee75-4fc3-8675-305e7c43ad0d",
+    "deadline": "2026-10-11T06:26:16.327Z",
+    "generation": 2,
+    "process": {
+      "nonce": "b695c043-2e2a-4aaf-87b4-bf4e67b046f4",
+      "bootId": "16f7855c-bb8d-47ad-9c8c-73b4b5859fc2",
+      "unitName": "paperclip-d5e181b2-0f13-477c-a467-f7ba6178efa6.service",
+      "launchGeneration": 1
+    }
+  },
+  "liveExecutableProof": {
+    "sandboxId": "bx_ndnggjad",
+    "exitCode": 0,
+    "timedOut": false,
+    "data": {
+      "checkedAt": "2026-10-11T06:18:56.753083+00:00",
+      "ownerId": "d5e181b2-0f13-477c-a467-f7ba6178efa6",
+      "bootId": "16f7855c-bb8d-47ad-9c8c-73b4b5859fc2",
+      "launchGeneration": 1,
+      "pid": 65892,
+      "startTicks": "85589",
+      "runnerSha256": "8f90f35f94f2266b0a441a0013b73c3a7ba1f736de6a21b541c96da0f8de5f05",
+      "runnerBytes": 37554768,
+      "expectedHashMatches": true,
+      "admissionStages": [],
+      "journalExitCode": 0
+    },
+    "error": null
+  },
+  "postArchiveContinuation": "Pending natural expiry/archive and ordinary UI continuation",
+  "observerPolicy": "No guest reads after initial executable hash; no runtime executable prewarming, owner renewal, or provider wake by diagnostics.",
+  "browserProof": {
+    "warmCommandUtc": "2026-10-11T06:21:01Z",
+    "hostname": "box-node-48caa46a23581168",
+    "proofHashes": {
+      "boat-final-claude.txt": "14fa23911a1a95ede22a93f43fc027934b20a1ba497f8e6120abc8769498e124",
+      "boat-claude-framing-proof.txt": "afaf525f4bf0c38614c5df0cf97140e7d1bf9cad96faa293e2317dc82116af4a"
+    },
+    "observation": "Expanded actual warm command output in the task UI; final task status Done.",
+    "screenshot": "../local-44-claude-warm-proof.png"
+  }
+}

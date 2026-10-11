@@ -1,0 +1,175 @@
+{
+  "scope": "Authorized read-only installation verification while normal Computer viewer was connected; no provider/session launch, guest writes, or cache replacement. Viewer closed normally at about 05:51 UTC.",
+  "task": "BOA19",
+  "machine": "bx_ndnggjad",
+  "sourceFix": "6c2a0a2bd86ef411bbc0e273b179d5bc4f1a3733",
+  "conclusion": "First full read of an untouched restored executable changed only ctime; pinned digest matched. Repeating the retained installation verifier after first read succeeded.",
+  "expectedExecutableSha256": "fe503f65c6289d59c23e5b21ae44f03583f997dd33a2cbfc75ab4f96fb8fc73f",
+  "observations": [
+    {
+      "receipt": "retry-local43-installation-readonly.json",
+      "receiptSha256": "060d99f63f16aae438f7cfc951216e6ad119cb7c2c35d9931e34f4afc48d35be",
+      "result": {
+        "sandboxId": "bx_ndnggjad",
+        "exitCode": 0,
+        "timedOut": false,
+        "data": {
+          "checkedAt": "2026-10-11T05:47:57.561Z",
+          "elapsedMs": 2550,
+          "result": "rejected",
+          "category": "runtime_executable_changed",
+          "code": "other",
+          "messageSha256": "64fb89f8936a11d2342383c83a2cc910158e1baa9c42f6d5177f7cfd46d2fc60",
+          "sourceFunctions": [
+            "verifyQualifiedAcpxInstallation",
+            "openVerifiedRuntimeExecutable"
+          ],
+          "openCommandInvoked": false
+        },
+        "error": null
+      }
+    },
+    {
+      "receipt": "retry-local43-installation-stat-readonly-corrected.json",
+      "receiptSha256": "0cd77fe24b65fa90ad066114f6e98b0068b0a8e05a14d83a06d590b90c091eaa",
+      "result": {
+        "sandboxId": "bx_ndnggjad",
+        "exitCode": 0,
+        "timedOut": false,
+        "data": {
+          "checkedAt": "2026-10-11T05:49:44.853Z",
+          "elapsedMs": 212,
+          "lexicalBefore": {
+            "dev": "119",
+            "ino": "12588",
+            "size": "241667256",
+            "mode": "33216",
+            "mtimeNs": "1791693636000000000",
+            "ctimeNs": "1791697677000000000"
+          },
+          "before": {
+            "dev": "119",
+            "ino": "12588",
+            "size": "241667256",
+            "mode": "33216",
+            "mtimeNs": "1791693636000000000",
+            "ctimeNs": "1791697677000000000"
+          },
+          "after": {
+            "dev": "119",
+            "ino": "12588",
+            "size": "241667256",
+            "mode": "33216",
+            "mtimeNs": "1791693636000000000",
+            "ctimeNs": "1791697677000000000"
+          },
+          "lexicalAfter": {
+            "dev": "119",
+            "ino": "12588",
+            "size": "241667256",
+            "mode": "33216",
+            "mtimeNs": "1791693636000000000",
+            "ctimeNs": "1791697677000000000"
+          },
+          "position": 241667256,
+          "reads": 231,
+          "lastRead": 494776,
+          "digest": "fe503f65c6289d59c23e5b21ae44f03583f997dd33a2cbfc75ab4f96fb8fc73f"
+        },
+        "error": null
+      }
+    },
+    {
+      "receipt": "retry-local43-installation-oldpack-stat-readonly.json",
+      "receiptSha256": "32aaa257cbfc1f5779ddf406e3d7ab195c223adce20bd9369a81370662690757",
+      "result": {
+        "sandboxId": "bx_ndnggjad",
+        "exitCode": 0,
+        "timedOut": false,
+        "data": {
+          "checkedAt": "2026-10-11T05:50:34.192Z",
+          "elapsedMs": 7382,
+          "lexicalBefore": {
+            "dev": "119",
+            "ino": "13067",
+            "size": "241667256",
+            "mode": "33216",
+            "mtimeNs": "1791638362000000000",
+            "ctimeNs": "1791638362000000000"
+          },
+          "before": {
+            "dev": "119",
+            "ino": "13067",
+            "size": "241667256",
+            "mode": "33216",
+            "mtimeNs": "1791638362000000000",
+            "ctimeNs": "1791638362000000000"
+          },
+          "after": {
+            "dev": "119",
+            "ino": "13067",
+            "size": "241667256",
+            "mode": "33216",
+            "mtimeNs": "1791638362000000000",
+            "ctimeNs": "1791697833000000000"
+          },
+          "lexicalAfter": {
+            "dev": "119",
+            "ino": "13067",
+            "size": "241667256",
+            "mode": "33216",
+            "mtimeNs": "1791638362000000000",
+            "ctimeNs": "1791697833000000000"
+          },
+          "position": 241667256,
+          "reads": 231,
+          "lastRead": 494776,
+          "digest": "fe503f65c6289d59c23e5b21ae44f03583f997dd33a2cbfc75ab4f96fb8fc73f"
+        },
+        "error": null
+      }
+    },
+    {
+      "receipt": "retry-local43-installation-readonly-repeat.json",
+      "receiptSha256": "0b56d9fb5c815c0fbfc2b27d6180aa785a6fbf7c438413c60d1e5ce43480f796",
+      "result": {
+        "sandboxId": "bx_ndnggjad",
+        "exitCode": 0,
+        "timedOut": false,
+        "data": {
+          "checkedAt": "2026-10-11T05:50:39.089Z",
+          "elapsedMs": 580,
+          "result": "verified",
+          "commandDigest": "sha256:9d73d1f0f121fb96cc8badb28c22d5bff02d8582eb2e40360a81c189e1b9422a",
+          "openCommandInvoked": false
+        },
+        "error": null
+      }
+    }
+  ],
+  "identityCorrection": {
+    "runId": "133211e6-142a-4b29-90b0-944e3e8adbbd",
+    "selectedNativeSessionId": "b24e7b47-5135-4a72-8820-0e44e1f2f3bd",
+    "selectedRunnerId": "1bfaa364-347e-4280-af6d-937cb01a3731",
+    "selection": "fresh native session despite ordinary same-task user comment; not proof of original session resume",
+    "originalNativeSessionId": "438f844d-05d6-4ce2-ba3e-edbd97abca66",
+    "originalRunnerId": "13a06b89-735f-45d0-97cb-e41b4ff757cd",
+    "savedProviderPackDigest": "sha256:af875f72dbce8bf9f1bb2cce962e8380d5b23dd72fb98c84d04e949d9665c719"
+  },
+  "diagnosticCorrection": {
+    "admissionStage": "installation",
+    "admissionElapsedMs": 1,
+    "meaning": "Timestamp of entry to installation relative to session.open; not duration of installation"
+  },
+  "verification": {
+    "red": "Two new regression failures on unchanged verifier",
+    "green": {
+      "passed": 77,
+      "existingPlatformSkips": 6
+    },
+    "typescript": "Runtime and surfaces passed",
+    "independentReview": "No actionable findings",
+    "liveFixedPack": "Not yet tested"
+  },
+  "preservation": "Original failed records and immutable af875/a02 packs retained. New pack will be tested with a fresh normal task."
+}
