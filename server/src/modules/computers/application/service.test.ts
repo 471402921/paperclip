@@ -529,6 +529,191 @@ describe("computer ownership", () => {
     await Promise.all([first, second]);
     expect(f.backend.stop).toHaveBeenCalledOnce();
   });
+  async function reconciliationFleet(count: number) {
+    const f = fixture();
+    await f.attach();
+    const template = await f.repository.get(f.scope);
+    const records = Array.from({ length: count }, (_, index): ComputerRecord => ({
+      ...structuredClone(template), id: `computer-${index}`, environmentId: `environment-${index}`,
+      ledger: { ...structuredClone(template.ledger), owners: [{
+        id: `viewer-${index}`, generation: 1, kind: "viewer", phase: "active", userId: "alice", port: 0,
+        deadline: "2026-10-10T13:00:00Z", absoluteDeadline: "2026-10-10T13:00:00Z", process: null,
+      }] },
+    }));
+    const find = (scope: { companyId: string; environmentId: string }) => {
+      const record = records.find(record => record.companyId === scope.companyId && record.environmentId === scope.environmentId);
+      if (!record) throw new ComputerError("not_found", "missing");
+      return record;
+    };
+    const repository: ComputerRepository = {
+      ...f.repository,
+      get: async scope => structuredClone(find(scope)),
+      update: async (scope, change) => change(find(scope)),
+      all: vi.fn(async () => structuredClone(records)),
+    };
+    return { backend: f.backend, repository, service: createComputerService(repository, f.backend) };
+  }
+  it("renews a healthy computer before its TTL despite four unavailable providers", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-10T12:00:00Z"));
+    let pending: Promise<unknown> | undefined;
+    try {
+      const f = await reconciliationFleet(5);
+      const renewedAt: number[] = [];
+      const start = Date.now();
+      vi.mocked(f.backend.renew).mockImplementation(async record => {
+        if (record.id === "computer-4") { renewedAt.push(Date.now() - start); return; }
+        await new Promise(resolve => setTimeout(resolve, 90_000));
+        throw new Error("provider unavailable");
+      });
+      pending = f.service.reconcile().catch(error => error);
+      await vi.advanceTimersByTimeAsync(300_000);
+      expect(renewedAt).toEqual([90_000]);
+      const failure = await pending;
+      expect(failure).toBeInstanceOf(AggregateError);
+      expect((failure as AggregateError).errors).toHaveLength(4);
+      expect(f.backend.stop).not.toHaveBeenCalled();
+      vi.mocked(f.backend.renew).mockResolvedValue(undefined).mockClear();
+      await f.service.reconcile();
+      expect(f.backend.renew).toHaveBeenCalledTimes(5);
+    } finally {
+      await vi.runAllTimersAsync();
+      await pending;
+      vi.useRealTimers();
+    }
+  });
+  it("renews again while a larger unrelated stop backlog is still running", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-10T12:00:00Z"));
+    let pending: Promise<void> | undefined;
+    try {
+      const f = await reconciliationFleet(21);
+      for (let index = 0; index < 20; index++) await f.repository.update({ companyId: "company", environmentId: `environment-${index}` }, record => {
+        record.ledger.owners = [];
+        record.ledger.action = { kind: "stop", id: `action-${index}`, providerStopId: `stop-${index}` };
+      });
+      let activeStops = 0, maximumStops = 0;
+      vi.mocked(f.backend.stopStatus).mockImplementation(async (_record, id) => {
+        maximumStops = Math.max(maximumStops, ++activeStops);
+        await new Promise(resolve => setTimeout(resolve, 90_000));
+        activeStops--;
+        return { id, status: "pending" };
+      });
+      const renewedAt: number[] = [];
+      const start = Date.now();
+      vi.mocked(f.backend.renew).mockImplementation(async () => { renewedAt.push(Date.now() - start); });
+      pending = f.service.reconcile("cleanup");
+      const initialRenewal = f.service.reconcile("renewal");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(f.backend.renew).toHaveBeenCalledOnce();
+      expect(f.backend.renew).toHaveBeenCalledWith(expect.objectContaining({ id: "computer-20" }));
+      await vi.advanceTimersByTimeAsync(240_000);
+      const nextRenewal = f.service.reconcile("renewal");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(renewedAt).toEqual([0, 240_000]);
+      await Promise.all([initialRenewal, nextRenewal]);
+      expect(activeStops).toBe(4);
+      expect(f.backend.stopStatus).toHaveBeenCalledTimes(12);
+      await vi.runAllTimersAsync(); await pending;
+      expect(maximumStops).toBe(4);
+      expect(f.backend.stopStatus).toHaveBeenCalledTimes(20);
+      expect((await f.repository.get({ companyId: "company", environmentId: "environment-0" })).ledger.action)
+        .toMatchObject({ id: "action-0", providerStopId: "stop-0" });
+    } finally {
+      await vi.runAllTimersAsync(); await pending;
+      vi.useRealTimers();
+    }
+  });
+  it("bounds fleet reconciliation and shares an overlapping sweep without duplicate renewals", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-10T12:00:00Z"));
+    let first: Promise<unknown> | undefined, second: Promise<unknown> | undefined;
+    try {
+      const f = await reconciliationFleet(9);
+      let active = 0, maximum = 0;
+      const calls: string[] = [];
+      vi.mocked(f.backend.renew).mockImplementation(async record => {
+        calls.push(record.id); maximum = Math.max(maximum, ++active);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        active--;
+      });
+      first = f.service.reconcile(); second = f.service.reconcile();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(active).toBe(4);
+      await vi.runAllTimersAsync();
+      await Promise.all([first, second]);
+      expect(maximum).toBe(4);
+      expect(calls).toHaveLength(9);
+      expect(new Set(calls).size).toBe(9);
+      expect(f.repository.all).toHaveBeenCalledTimes(2);
+      const later = f.service.reconcile();
+      await vi.runAllTimersAsync(); await later;
+      expect(f.repository.all).toHaveBeenCalledTimes(4);
+      expect(calls).toHaveLength(18);
+    } finally {
+      await vi.runAllTimersAsync();
+      await Promise.all([first, second]);
+      vi.useRealTimers();
+    }
+  });
+  it("shares exact in-flight work when a record changes reconciliation lanes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-10T12:00:00Z"));
+    let release!: () => void;
+    const pending: Promise<void>[] = [];
+    try {
+      const f = await reconciliationFleet(1);
+      vi.mocked(f.backend.renew).mockImplementation(() => new Promise<void>(resolve => { release = resolve; }));
+      pending.push(f.service.reconcile("renewal"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(f.backend.renew).toHaveBeenCalledOnce();
+      await f.repository.update({ companyId: "company", environmentId: "environment-0" }, record => {
+        record.ledger.owners = [];
+        record.ledger.action = { kind: "stop", id: "action-0", providerStopId: "stop-0" };
+      });
+      pending.push(f.service.reconcile("cleanup"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(f.backend.stopStatus).not.toHaveBeenCalled();
+      release(); await Promise.all(pending);
+      await f.service.reconcile("cleanup");
+      expect(f.backend.renew).toHaveBeenCalledOnce();
+      expect(f.backend.stopStatus).toHaveBeenCalledOnce();
+    } finally {
+      release?.(); await Promise.allSettled(pending);
+      vi.useRealTimers();
+    }
+  });
+  it("bounds independently scheduled renewal and cleanup to eight total workers", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-10T12:00:00Z"));
+    const pending: Promise<void>[] = [];
+    try {
+      const f = await reconciliationFleet(12);
+      for (let index = 6; index < 12; index++) await f.repository.update({ companyId: "company", environmentId: `environment-${index}` }, record => {
+        record.ledger.owners = [];
+        record.ledger.action = { kind: "stop", id: `action-${index}`, providerStopId: `stop-${index}` };
+      });
+      let active = 0, maximum = 0;
+      const delay = async () => {
+        maximum = Math.max(maximum, ++active);
+        await new Promise(resolve => setTimeout(resolve, 1000)); active--;
+      };
+      vi.mocked(f.backend.renew).mockImplementation(delay);
+      vi.mocked(f.backend.stopStatus).mockImplementation(async (_record, id) => {
+        await delay(); return { id, status: "pending" };
+      });
+      pending.push(f.service.reconcile("renewal"), f.service.reconcile("cleanup"), f.service.reconcile());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(active).toBe(8);
+      await vi.runAllTimersAsync(); await Promise.all(pending);
+      expect(maximum).toBe(8);
+      expect(f.backend.renew).toHaveBeenCalledTimes(6);
+      expect(f.backend.stopStatus).toHaveBeenCalledTimes(6);
+    } finally {
+      await vi.runAllTimersAsync(); await Promise.allSettled(pending);
+      vi.useRealTimers();
+    }
+  });
   it.each(["retire", "warm"] as const)("waits for terminal predecessor %s before admitting its follow-up", async (transition) => {
     const f = fixture();
     await f.attach();
