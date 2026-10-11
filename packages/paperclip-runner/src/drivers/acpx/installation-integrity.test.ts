@@ -64,7 +64,7 @@ afterEach(async () => {
 describe("ACPX installation integrity", () => {
   describe.each(["runtime", "command"] as const)("%s executable hydration", (kind) => {
   const verify = kind === "runtime" ? openVerifiedRuntimeExecutable : inspectCommand;
-  it.each(["once", "every_read", "wrong_digest", "mode", "mtime", "replacement", "symlink", "second_content"] as const)("requires stable full re-verification after a ctime-only transition (%s)", async (transition) => {
+  it.each(["once", "every_read", "wrong_digest", "mode", "mtime", "replacement", "symlink", "second_content", "uid", "gid", "nlink"] as const)("requires stable full re-verification after a ctime-only transition (%s)", async (transition) => {
     const directory = await mkdtemp(join(tmpdir(), "paperclip-runtime-hydration-"));
     temporaryDirectories.push(directory);
     const executable = join(directory, "runtime");
@@ -74,8 +74,15 @@ describe("ACPX installation integrity", () => {
     const probe = await open(executable, "r");
     const prototype = Object.getPrototypeOf(probe) as FileHandle;
     const originalRead = probe.read;
+    const originalStat = probe.stat;
     await probe.close();
     let reads = 0;
+    // Model ownership changes without requiring privileged chown in the test.
+    const statSpy = vi.spyOn(prototype, "stat").mockImplementation(async function (this: FileHandle, ...args: Parameters<FileHandle["stat"]>) {
+      const metadata = await Reflect.apply(originalStat, this, args);
+      if (reads > 0 && (transition === "uid" || transition === "gid")) metadata[transition] += 1n;
+      return metadata;
+    });
     const readSpy = vi.spyOn(prototype, "read").mockImplementation(async function (this: FileHandle, ...args: Parameters<FileHandle["read"]>) {
       if (reads === 1 && transition === "second_content") {
         await writeFile(executable, Buffer.alloc(bytes.length, 120));
@@ -93,6 +100,7 @@ describe("ACPX installation integrity", () => {
         const after = await stat(executable, { bigint: true });
         expect(after.ctimeNs).not.toBe(before.ctimeNs);
         expect([after.dev, after.ino, after.size, after.mode, after.mtimeNs]).toEqual([before.dev, before.ino, before.size, before.mode, before.mtimeNs]);
+        if (transition === "nlink") await link(executable, `${executable}.link`);
         if (transition === "mode") await chmod(executable, 0o700);
         if (transition === "mtime") await utimes(executable, new Date(0), new Date(0));
         if (transition === "replacement" || transition === "symlink") {
@@ -117,7 +125,7 @@ describe("ACPX installation integrity", () => {
         await expect(verify(executable, digest, "fixture")).rejects.toThrow(transition === "wrong_digest" ? "digest mismatch" : "changed while it was verified");
       }
       expect(reads).toBe(["once", "every_read", "second_content"].includes(transition) ? 2 : 1);
-    } finally { readSpy.mockRestore(); }
+    } finally { readSpy.mockRestore(); statSpy.mockRestore(); }
   });
 
   });

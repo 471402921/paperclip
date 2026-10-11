@@ -527,3 +527,16 @@ it("exposes a trusted persistent personal directory without instruction files", 
   expect(supplied).not.toContain('AGENT_HOME="/untrusted"');
   expect(createRunnerdCodexAppServerArgs(options).join("\n")).not.toContain("AGENT_HOME");
 });
+
+it("grants separate registered personal and instruction directories to Codex shells", () => {
+  const args = createRunnerdCodexAppServerArgs({
+    environment: { AGENT_HOME: "/untrusted" }, codexHome: "/private-provider",
+    persistentAgentHome: "/personal/agent", instructionWorkingCopyRoot: "/instructions/run",
+  }).join("\n");
+  expect(args).toContain('AGENT_HOME="/personal/agent"');
+  for (const root of ["/personal/agent", "/instructions/run"]) {
+    expect(args).toContain(`"${root}"="write"`);
+    expect(args).toContain(`"${root}"="read"`);
+  }
+  expect(args).not.toContain("/untrusted");
+});
