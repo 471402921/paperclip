@@ -891,6 +891,34 @@ describe("Boat SSH admission", () => {
       await Promise.all([...jobs, queued]);
     } finally { vi.useRealTimers(); }
   });
+  it("bounds and cancels queued upload slots without starting their callbacks", async () => {
+    vi.useFakeTimers();
+    try {
+      const admission = createBoatTransportAdmission();
+      const completions: Array<() => void> = [];
+      const occupied = Array.from({ length: 4 }, () => admission.withStdinUploadSlot(
+        () => new Promise<void>(resolve => completions.push(resolve)), { timeoutMs: 180_000 }));
+      await vi.advanceTimersByTimeAsync(0);
+      const aborted = new AbortController();
+      const cancelledOperation = vi.fn(async () => undefined);
+      const cancelled = admission.withStdinUploadSlot(cancelledOperation, { timeoutMs: 180_000, signal: aborted.signal });
+      const cancelledAssertion = expect(cancelled).rejects.toThrow("cancelled");
+      aborted.abort();
+      await cancelledAssertion;
+      const expiredOperation = vi.fn(async () => undefined);
+      const expired = admission.withStdinUploadSlot(expiredOperation, { timeoutMs: 999_999 });
+      const expiredAssertion = expect(expired).rejects.toThrow("timed out waiting for capacity");
+      await vi.advanceTimersByTimeAsync(180_000);
+      await expiredAssertion;
+      expect(cancelledOperation).not.toHaveBeenCalled();
+      expect(expiredOperation).not.toHaveBeenCalled();
+      completions.splice(0).forEach(resolve => resolve());
+      await Promise.all(occupied);
+      await expect(admission.withStdinUploadSlot(async () => { throw new Error("failed upload"); }, { timeoutMs: 1000 })).rejects.toThrow("failed upload");
+      await expect(admission.withStdinUploadSlot(async () => "next", { timeoutMs: 1000 })).resolves.toBe("next");
+    } finally { vi.useRealTimers(); }
+  });
+
   it("releases all capacity after failed or cancelled transport commands without replay", async () => {
     const admission = createBoatTransportAdmission();
     const runner = { execute: vi.fn(async () => { throw new Error("transport cancelled"); }) };

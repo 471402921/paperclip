@@ -228,6 +228,7 @@ export function createComputerService(
     const runnerFor = (
       processScoped: boolean,
     ): CommandManagedRuntimeRunner => ({
+      withStdinUploadSlot: (processScoped ? control : raw).withStdinUploadSlot,
       execute: async (input) => {
         const current = await (processScoped
           ? processScope()

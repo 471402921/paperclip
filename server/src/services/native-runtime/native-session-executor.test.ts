@@ -1,3 +1,4 @@
+import { createBoatTransportAdmission } from "../../modules/computers/adapters/boat.js";
 import { closeWarmNativeSession, compareAndSealRetiredComputerCheckpoint, retiredComputerCheckpointIsSettled, retiredComputerCheckpointUnsettledReason, retireUnlaunchedComputerAttempt, nativeSessionBootstrapTimeoutMs } from "./native-session-executor.js";
 import { prepareHeartbeatGitHubLaunchers } from "../heartbeat-github-launchers.js";
 import { RemoteProviderPackVerificationError } from "./remote-provider-pack-cache.js";
@@ -2715,6 +2716,62 @@ describe("remote provider checkpoint restores", () => {
       expect(maxInFlight).toBe(3);
       expect((await readdir(root)).some((name) => name.includes(".upload-"))).toBe(false);
     } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("shares Boat upload capacity across concurrent packs before command deadlines begin", async () => {
+    const root = await mkdtemp(join(tmpdir(), "paperclip-boat-upload-pressure-"));
+    const sourcePath = join(root, "source");
+    const bytes = randomBytes(24 * 1024 * 1024);
+    await writeFile(sourcePath, bytes);
+    const admission = createBoatTransportAdmission();
+    const result = { exitCode: 0, signal: null, timedOut: false, stdout: "", stderr: "", pid: null, startedAt: "" };
+    let active = 0;
+    let peak = 0;
+    let entered!: () => void;
+    const firstBatch = new Promise<void>(resolve => { entered = resolve; });
+    let wake: (() => void) | undefined;
+    const budgets: number[] = [];
+    const raw = { execute: vi.fn(async (request: { command: string; args?: string[]; stdin?: string; timeoutMs?: number }) => {
+      if (!request.stdin) {
+        execFileSync(request.command, request.args ?? []);
+        return result;
+      }
+      active++;
+      peak = Math.max(peak, active);
+      if (active === 4) entered();
+      wake?.(); wake = undefined;
+      budgets.push(request.timeoutMs!);
+      try {
+        await new Promise(resolve => setTimeout(resolve, Math.min(100_000, request.timeoutMs!)));
+        if (request.timeoutMs! < 100_000) return { ...result, exitCode: null, timedOut: true };
+        execFileSync(request.command, request.args ?? [], { input: request.stdin });
+        return result;
+      } finally { active--; }
+    }) };
+    const runner = {
+      withStdinUploadSlot: admission.withStdinUploadSlot,
+      execute: (request: Parameters<typeof admission>[1]) => admission(raw, request, true),
+    };
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    try {
+      let settled = false;
+      const transfer = Promise.allSettled(["one", "two"].map(name => stageRemoteRunnerFile({
+        target: { kind: "remote", transport: "computer" } as never,
+        runner: runner as never, sourcePath, targetPath: join(root, name), mode: 0o700,
+      }))).then(results => { settled = true; wake?.(); wake = undefined; return results; });
+      await firstBatch;
+      await expect(admission(raw, { command: "true", timeoutMs: 1000 }, true)).resolves.toMatchObject({ exitCode: 0 });
+      while (!settled) {
+        if (!active) await new Promise<void>(resolve => { wake = resolve; });
+        if (!settled) await vi.advanceTimersByTimeAsync(100_000);
+      }
+      const results = await transfer;
+      expect(results.map(result => result.status)).toEqual(["fulfilled", "fulfilled"]);
+      expect(peak).toBe(4);
+      expect(budgets).toHaveLength(12);
+      expect(budgets.every(budget => budget > 99_999)).toBe(true);
+      for (const name of ["one", "two"]) expect((await readFile(join(root, name))).equals(bytes)).toBe(true);
+    } finally { vi.useRealTimers(); await rm(root, { recursive: true, force: true }); }
   });
 
   it("shares eight upload slots across concurrent artifact transfers", async () => {

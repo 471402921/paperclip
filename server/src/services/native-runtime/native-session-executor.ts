@@ -10545,7 +10545,7 @@ export async function stageRemoteRunnerFile(input: {
   }
   const remoteUpload = `${input.targetPath}.upload-${randomUUID()}`;
   try {
-    await uploadRemoteRunnerFileChunks({ sourcePath: input.sourcePath, remotePath: remoteUpload, run });
+    await uploadRemoteRunnerFileChunks({ sourcePath: input.sourcePath, remotePath: remoteUpload, run, runner });
     await run(`chmod ${input.mode.toString(8)} ${quote(remoteUpload)} && mv -f ${quote(remoteUpload)} ${quote(input.targetPath)}`);
   } finally {
     await run(`rm -f ${quote(remoteUpload)}`).catch(() => undefined);
@@ -10572,6 +10572,7 @@ async function withRemoteArtifactUploadSlot(operation: () => Promise<void>): Pro
 }
 
 async function uploadRemoteRunnerFileChunks(input: {
+  runner: CommandManagedRuntimeRunner;
   sourcePath: string;
   remotePath: string;
   run: (script: string, stdin?: string) => Promise<void>;
@@ -10597,9 +10598,12 @@ async function uploadRemoteRunnerFileChunks(input: {
       // Disjoint fixed offsets permit bounded parallel upload and idempotent
       // writes. The final digest rejects missing, duplicated, or partial bytes.
       const offset = chunkIndex++;
-      pending.push(withRemoteArtifactUploadSlot(() => run(
+      const upload = () => run(
         `base64 -d | dd of=${quote(remotePath)} bs=4194304 seek=${offset} conv=notrunc 2>/dev/null`,
-        chunk.toString("base64"))).catch((error) => { uploadError ??= error; }));
+        chunk.toString("base64"));
+      pending.push(withRemoteArtifactUploadSlot(() => input.runner.withStdinUploadSlot
+        ? input.runner.withStdinUploadSlot(upload, { timeoutMs: 180_000 })
+        : upload()).catch((error) => { uploadError ??= error; }));
       if (pending.length === REMOTE_ARTIFACT_UPLOAD_CONCURRENCY) {
         await Promise.all(pending);
         pending.length = 0;
@@ -10708,7 +10712,7 @@ export async function stageRemoteRunnerDirectory(input: {
         (error) => error ? reject(error) : resolve());
     });
     await uploadRemoteRunnerFileChunks({
-      sourcePath: archivePath, remotePath: remoteArchive, run, onProgress: input.onProgress,
+      sourcePath: archivePath, remotePath: remoteArchive, run, runner: input.runner, onProgress: input.onProgress,
     });
     await run(`umask 077 && mkdir -p ${quote(input.targetPath)} && ` +
       `tar -xzf ${quote(remoteArchive)} -C ${quote(input.targetPath)} && chmod ${input.mode.toString(8)} ${quote(input.targetPath)}`);
