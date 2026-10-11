@@ -41,6 +41,7 @@ import {
 import { nativeCompletionFeedback } from "./native-completion-feedback.js";
 import { hasAcknowledgedNativeReassignmentStopIntent, hasAcknowledgedNativeStopIntent } from "../acknowledged-native-stop.js";
 import { stoppedCodexTurnIsTextOnly } from "./stopped-codex-turn.js";
+import { verifyProviderPackFileLayout } from "./remote-provider-pack-file-layout.js";
 import { prepareVerifiedRemoteProviderPack } from "./remote-provider-pack.js";
 import { verifyRemoteProviderPackArtifacts, assertRemoteProviderPackVerificationResult, computerProviderPackCachePath, prepareComputerProviderPackCache, pinnedComputerProviderPack, computerAcpxLaunchProfileDigest, readPinnedComputerProviderMetadata, assertPinnedComputerProviderState } from "./remote-provider-pack-cache.js";
 import { selectRemotePiCompanion } from "./remote-pi-companion.js";
@@ -72,6 +73,7 @@ import {
   readSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10191,6 +10193,7 @@ type RemoteProviderPackManifest = {
   schema: typeof REMOTE_PROVIDER_PACK_SCHEMA;
   digest: string;
   payload: {
+    fileLayout?: "independent-regular-files-v1";
     pins: typeof REMOTE_PROVIDER_PACK_PINS;
     target: { platform: string; architecture: string };
     runnerSourceRevision: string;
@@ -10338,6 +10341,7 @@ export function validateRemoteProviderPackIdentity(
       "runner_remote_provider_artifact_incompatible: provider pack pins or source revision do not match",
     );
   }
+  verifyProviderPackFileLayout(null, payload.fileLayout, { lstatSync, statSync, readdirSync }, { join });
   const digest = `sha256:${createHash("sha256")
     .update(canonicalJson(payload))
     .digest("hex")}`;
@@ -10447,6 +10451,9 @@ export function validateRemoteProviderPackIdentity(
     throw new Error(
       "runner_remote_provider_artifact_incompatible: provider bridge digest mismatch",
     );
+  }
+  if (verifyControllerFiles) {
+    verifyProviderPackFileLayout(packRoot, payload.fileLayout, { lstatSync, statSync, readdirSync }, { join });
   }
   return structuredClone(manifest);
 }
@@ -12382,6 +12389,7 @@ async function createRunnerdBackendWithinSessionClaim(
       "const packageVersion=(pkg)=>JSON.parse(fs.readFileSync(path.join(root,'node_modules',...pkg.split('/'),'package.json'),'utf8')).version",
       "const expectedPackages={acpx:manifest.payload.pins.acpx,'@agentclientprotocol/claude-agent-acp':manifest.payload.pins.claudeAcp,'@agentclientprotocol/codex-acp':manifest.payload.pins.codexAcp,'opencode-ai':manifest.payload.pins.opencode}",
       "for(const [pkg,version] of Object.entries(expectedPackages))if(packageVersion(pkg)!==version)fail('package_version_mismatch')",
+      `(${verifyProviderPackFileLayout.toString()})(root,manifest.payload.fileLayout,fs,path)`,
     ].join(";");
     await verifyRemoteProviderPackArtifacts({
       runner: remoteCommandRunner,

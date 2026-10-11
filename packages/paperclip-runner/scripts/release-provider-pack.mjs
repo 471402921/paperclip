@@ -12,6 +12,9 @@ export function verifyReleaseProviderPack(identity, sourceRevision) {
   if (identity?.schema !== "paperclip-runner/remote-provider-pack/v1" || !payload
     || payload.target?.platform !== "linux" || payload.target?.architecture !== "x64"
     || payload.runnerSourceRevision !== sourceRevision) throw new Error("Remote provider pack must match the release source and Linux x64 target");
+  if (payload.fileLayout !== undefined && payload.fileLayout !== "independent-regular-files-v1") {
+    throw new Error("Remote provider-pack file layout is unsupported");
+  }
   if (identity.digest !== `sha256:${createHash("sha256").update(canonical(payload)).digest("hex")}`) {
     throw new Error("Remote provider-pack payload digest mismatch");
   }
