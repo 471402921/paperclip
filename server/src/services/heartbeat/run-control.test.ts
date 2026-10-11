@@ -148,6 +148,43 @@ describe("heartbeat run-control module boundary", () => {
     expect(database.access).not.toHaveBeenCalled();
   });
 
+  it.each(["stop_and_retain", undefined] as const)("closes the exact warm run before stopping its lease: %s", async (disposition) => {
+    const database = guardedDatabase();
+    const deps = callbacks(database.db);
+    deps.getRun.mockResolvedValue({ status: "succeeded", runtimeMode: "legacy" } as Run);
+    let finishClose!: () => void;
+    deps.options.closeWarmNativeSessionsForRun.mockImplementation(() => new Promise(resolve => {
+      finishClose = () => resolve({ closed: 1, busy: 0, failed: 0 });
+    }));
+    const release = createHeartbeatRunControl(database.db, deps).releaseEnvironmentLeasesForRun({
+      runId: "stopping", companyId: "company", agentId: "agent", status: "succeeded", providerResourceDisposition: disposition,
+    });
+    await vi.waitFor(() => expect(deps.options.closeWarmNativeSessionsForRun).toHaveBeenCalledWith(expect.objectContaining({ runId: "stopping" })));
+    expect(deps.envOrchestrator.releaseForRun).not.toHaveBeenCalled();
+    finishClose();
+    await release;
+    expect(deps.envOrchestrator.releaseForRun).toHaveBeenCalledOnce();
+  });
+
+  it.each(["busy", "failed"] as const)("defers stop-and-retain while exact warm cleanup is %s", async (outcome) => {
+    const database = guardedDatabase();
+    const deps = callbacks(database.db);
+    deps.getRun.mockResolvedValue({ status: "succeeded", runtimeMode: "legacy" } as Run);
+    deps.options.closeWarmNativeSessionsForRun.mockResolvedValue({ closed: 0, busy: outcome === "busy" ? 1 : 0, failed: outcome === "failed" ? 1 : 0 });
+    await createHeartbeatRunControl(database.db, deps).releaseEnvironmentLeasesForRun({ runId: "stopping", companyId: "company", agentId: "agent", status: "succeeded", providerResourceDisposition: "stop_and_retain" });
+    expect(deps.envOrchestrator.releaseForRun).not.toHaveBeenCalled();
+    expect(database.access).not.toHaveBeenCalled();
+  });
+
+  it("leaves successful keep-running ownership warm", async () => {
+    const database = guardedDatabase();
+    const deps = callbacks(database.db);
+    deps.getRun.mockResolvedValue({ status: "succeeded", runtimeMode: "legacy" } as Run);
+    await createHeartbeatRunControl(database.db, deps).releaseEnvironmentLeasesForRun({ runId: "warm", companyId: "company", agentId: "agent", status: "succeeded", providerResourceDisposition: "keep_running" });
+    expect(deps.options.closeWarmNativeSessionsForRun).not.toHaveBeenCalled();
+    expect(deps.envOrchestrator.releaseForRun).toHaveBeenCalledWith(expect.objectContaining({ providerResourceDisposition: "keep_running" }));
+  });
+
   it("defers destruction when a warm session remains busy", async () => {
     const database = guardedDatabase();
     const deps = callbacks(database.db);

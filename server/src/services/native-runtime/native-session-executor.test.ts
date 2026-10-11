@@ -7876,6 +7876,116 @@ describe("native warm session supervision", () => {
     await closeWarmNativeSessionsForRun({ runId: owners[1]!.runId, reason: "fixture cleanup" });
   });
 
+  it.each(["provider active", "retaining"])("settles a requested computer Stop before physical retirement when %s", async (when) => {
+    const name = `computer-stop-${when}`;
+    const current = { ...execution, binding: { ...execution.binding, runId: name, agentId: name, executionWorkspaceId: name },
+      session: { ...execution.session, normalizedSessionId: name, lifecyclePolicy: { mode: "warm" as const, idleTimeoutMs: 60_000 } } } as NativeExecutionInputV1;
+    const order: string[] = [];
+    const close = vi.fn(async () => { order.push("checkpoint settled"); });
+    const stop = async () => {
+      expect(await closeWarmNativeSessionsForRun({ runId: name, reason: "stop exact run" })).toMatchObject({ busy: 1, closed: 0 });
+      expect(close).not.toHaveBeenCalled();
+    };
+    const retainWarm = vi.fn(async () => { if (when === "retaining") await stop(); });
+    const retire = vi.fn(async (options?: { beforeStop?: () => Promise<void> }) => {
+      await options?.beforeStop?.(); order.push("physical retirement"); return true;
+    });
+    const target = { kind: "remote", transport: "computer", environmentId: name, leaseId: name,
+      remoteCwd: `/home/user/${name}`, listenerPort: 45111,
+      resourceAuthority: { kind: "computer-owner", computerId: name, ownerId: name, generation: 1 },
+      fileAuthority: { kind: "remote-persistent", placementId: name, root: `/home/user/${name}`, agentHome: `/home/user/${name}/home` },
+      retainWarm, retire, inspectProcess: async () => ({ running: true, claim: {} }), launch: async () => ({}),
+      computerTool: { command: "cua-driver", args: ["mcp"] } };
+    state.execute.mockReset().mockImplementationOnce(async options => {
+      await options.onSession?.({ close });
+      if (when === "provider active") await stop();
+      return { result: { summary: "completed" }, terminal: { runTerminalState: "succeeded" }, turnId: name,
+        normalizedSessionId: name, providerSessionId: name, driverKind: "test", driverVersion: "1",
+        nativeEventCount: 1, highestContiguousSourceSeq: 1, usage: null };
+    });
+    try {
+      await executePaperclipNativeSession({ db: leaseDb(current, {}, {}, [], {}, "running", [], { provider: "boat", providerLeaseId: name }),
+        execution: current, runnerInstanceId: name, runnerExecutionTarget: target as never });
+      expect(order).toEqual(["checkpoint settled", "physical retirement"]);
+      expect(close).toHaveBeenCalledOnce();
+      expect(await closeWarmNativeSessionsForRun({ runId: name, reason: "repeat stop" })).toEqual({ closed: 0, busy: 0, failed: 0 });
+    } finally { await closeWarmNativeSessionsForRun({ runId: name, reason: "fixture cleanup" }); }
+  });
+
+  it.each([false, true])("drains a Stop after warm release before clearing execution scope; close fails=%s", async (fails) => {
+    const name = `late-warm-stop-${fails}`;
+    const current = { ...execution, binding: { ...execution.binding, runId: name, executionWorkspaceId: name },
+      session: { ...execution.session, normalizedSessionId: name, lifecyclePolicy: { mode: "warm" as const, idleTimeoutMs: 60_000 } } } as NativeExecutionInputV1;
+    const close = vi.fn(async () => { if (fails) throw new Error("checkpoint not settled"); });
+    state.execute.mockReset().mockImplementationOnce(async options => {
+      await options.onSession?.({ close });
+      return { result: { summary: "completed" }, terminal: { runTerminalState: "succeeded" }, turnId: name,
+        normalizedSessionId: name, providerSessionId: name, driverKind: "test", driverVersion: "1",
+        nativeEventCount: 1, highestContiguousSourceSeq: 1, usage: null };
+    });
+    let requested = false;
+    let stopResult: Awaited<ReturnType<typeof closeWarmNativeSessionsForRun>> | undefined;
+    let closedBeforeScopeExit = false;
+    try {
+      const result = await executePaperclipNativeSession({ db: leaseDb(current), execution: current, runnerInstanceId: name, useRunnerd: true,
+        onEvent: async event => {
+          if (event.eventType === "run.performance.span" && event.payload?.span === "task.run.measured" && !requested) {
+            requested = true;
+            stopResult = await closeWarmNativeSessionsForRun({ runId: name, reason: "late exact stop" });
+            closedBeforeScopeExit = close.mock.calls.length > 0;
+          }
+        } });
+      expect(requested).toBe(true);
+      expect(stopResult).toMatchObject({ busy: 1 });
+      expect(closedBeforeScopeExit).toBe(false);
+      expect(result.exitCode).toBe(0);
+      expect(close).toHaveBeenCalledOnce();
+      expect(await closeWarmNativeSessionsForRun({ runId: name, reason: "repeat exact stop" }))
+        .toEqual({ closed: 0, busy: 0, failed: fails ? 1 : 0 });
+    } finally {
+      close.mockResolvedValue(undefined);
+      await closeWarmNativeSessionsForRun({ runId: name, reason: "fixture cleanup" });
+    }
+  });
+
+  it.each(["failed turn", "environment", "idle timeout"])("keeps a late explicit Stop fenced when an implicit %s close fails", async (kind) => {
+    const name = `explicit-during-close-${kind}`;
+    const current = { ...execution, binding: { ...execution.binding, runId: name, executionWorkspaceId: name },
+      session: { ...execution.session, normalizedSessionId: name, lifecyclePolicy: { mode: "warm" as const, idleTimeoutMs: 60_000 } } } as NativeExecutionInputV1;
+    let entered!: () => void, rejectClose!: (error: Error) => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const pendingClose = new Promise<void>((_resolve, reject) => { rejectClose = reject; });
+    const failure = new Error("implicit checkpoint failed");
+    const close = vi.fn(async () => { entered(); await pendingClose; });
+    state.execute.mockReset().mockImplementationOnce(async options => {
+      await options.onSession?.({ close });
+      return { result: { summary: "settled" }, terminal: { runTerminalState: kind === "failed turn" ? "failed" : "succeeded" }, turnId: name,
+        normalizedSessionId: name, providerSessionId: name, driverKind: "test", driverVersion: "1",
+        nativeEventCount: 1, highestContiguousSourceSeq: 1, usage: null };
+    });
+    if (kind === "idle timeout") vi.useFakeTimers();
+    const running = executePaperclipNativeSession({ db: leaseDb(current), execution: current, runnerInstanceId: name,
+      runnerExecutionTarget: { kind: "local", environmentId: name } }).catch(error => error);
+    const closing = kind === "environment"
+      ? running.then(() => closeWarmNativeSessionsForEnvironment({ environmentId: name, reason: "implicit environment cleanup" }))
+      : running;
+    try {
+      if (kind === "idle timeout") { await running; await vi.advanceTimersByTimeAsync(60_000); }
+      await started;
+      expect(await closeWarmNativeSessionsForRun({ runId: name, reason: "explicit Stop during close" })).toMatchObject({ busy: 1 });
+      rejectClose(failure);
+      await closing;
+      if (kind === "idle timeout") await vi.advanceTimersByTimeAsync(0);
+      expect(await closeWarmNativeSessionsForRun({ runId: name, reason: "repeat explicit Stop" })).toEqual({ closed: 0, busy: 0, failed: 1 });
+    } finally {
+      rejectClose(failure);
+      await closing;
+      close.mockResolvedValue(undefined);
+      await closeWarmNativeSessionsForRun({ runId: name, reason: "fixture cleanup" });
+      if (kind === "idle timeout") vi.useRealTimers();
+    }
+  });
+
   it.each(["model", "credential", "tools", "read-only"])("replaces a computer warm runner after %s configuration admits a fresh owner", async (change) => {
     const name = `computer-config-change-${change}`;
     const current = { ...execution, binding: { ...execution.binding, runId: `${name}-one`, agentId: name, executionWorkspaceId: name },
@@ -8513,12 +8623,12 @@ describe("native warm session supervision", () => {
       ...execution,
       binding: {
         ...execution.binding,
-        runId: "run-warm-restart-release",
-        executionWorkspaceId: "workspace-warm-restart-release",
+        runId: `run-warm-restart-release-${checkpointFails}`,
+        executionWorkspaceId: `workspace-warm-restart-release-${checkpointFails}`,
       },
       session: {
         ...execution.session,
-        normalizedSessionId: "session-warm-restart-release",
+        normalizedSessionId: `session-warm-restart-release-${checkpointFails}`,
         lifecyclePolicy: { mode: "warm" as const, idleTimeoutMs: 60_000 },
       },
     } as NativeExecutionInputV1;
@@ -8544,7 +8654,8 @@ describe("native warm session supervision", () => {
     const running = executePaperclipNativeSession({
       db: leaseDb(warmExecution),
       execution: warmExecution,
-      runnerInstanceId: "runner-warm-restart-release",
+      runnerInstanceId: `runner-warm-restart-release-${checkpointFails}`,
+      useRunnerd: true,
     }).then((result) => { settled = true; return result; });
     try {
       await vi.waitFor(() => expect(close).toHaveBeenCalledExactlyOnceWith({ reason: "controller restart" }));
@@ -8554,7 +8665,12 @@ describe("native warm session supervision", () => {
       if (checkpointFails) await expect(running).rejects.toBe(checkpointError);
       else await running;
     }
-    await expect(closeIdleWarmNativeSessionsForRestart()).resolves.toEqual({ closed: 0, busy: 0, failed: 0 });
+    expect(close).toHaveBeenCalledOnce();
+    await expect(closeIdleWarmNativeSessionsForRestart()).resolves.toEqual({ closed: 0, busy: 0, failed: checkpointFails ? 1 : 0 });
+    if (checkpointFails) {
+      close.mockResolvedValue(undefined);
+      await expect(closeIdleWarmNativeSessionsForRestart()).resolves.toMatchObject({ closed: 1 });
+    }
   });
 
   it("preserves the active turn when a warm checkpoint resumes the same run", async () => {
