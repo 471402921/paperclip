@@ -519,6 +519,8 @@ export async function closeWarmNativeSession(entry: WarmNativeSession, reason: s
             ? "native_session_close_unrecoverable" : nativeSessionFailureSourceCode(error) });
     } catch { /* Diagnostics never own retirement or alter its result. */ }
   };
+  const isReportedCloseFailure = (error: unknown) =>
+    phase === "session_close" && closeState === "failed" && error === closeFailure;
   const close = async () => {
     closeState = "pending";
     try { await entry.session.close({ reason }); closeCompleted = true; closeState = "completed"; }
@@ -562,7 +564,9 @@ export async function closeWarmNativeSession(entry: WarmNativeSession, reason: s
       catch (error) { phase = "access_cleanup"; throw error; }
     }
   } catch (error) {
-    report(error);
+    // The close callback already reports its own rejection, including one
+    // arriving after the retirement deadline. Preserve distinct cleanup failures.
+    if (!isReportedCloseFailure(error)) report(error);
     throw error;
   }
 }
