@@ -1,0 +1,32 @@
+{
+  "observedAt": "2026-10-11T14:12:35.019483+00:00",
+  "combinedSource": "e077c3fbb717520f107068d450587eddacf3c1c8",
+  "fullWorkspaceTypecheck": {
+    "command": "pnpm -r typecheck",
+    "exitCode": 0,
+    "logSha256": "84a8567ebc1b9e1ea517c2bbc46fc6acecccf3f8cd8926669997b11a0e1b0d0b"
+  },
+  "fullBuild": {
+    "command": "pnpm build",
+    "exitCode": 0,
+    "logSha256": "906eb42b0c6df32e141bbc535b6b7b173cefaa7dfb6acc388480a9387c91a504"
+  },
+  "stagingSource": "c2861407ff2e2171df0f7c79ad2a92f8c2c21c6b",
+  "stagingRecoveryTests": {
+    "passed": 31,
+    "skipped": 0,
+    "logSha256": "33d0ed0062851492e5b59c61d1175b87ba3c683752e502575ee5548ba2349a34"
+  },
+  "stagingServerTypecheck": {
+    "exitCode": 0,
+    "logSha256": "e855cc9c6f45b0a21965a89b6a14605d032575bb82f4482b99d49ac25ec0d5d0",
+    "initialAttempt": "Sandbox registry access prevented pnpm signature verification; original failure retained. Normal authorized network rerun passed with no bypass or source change."
+  },
+  "migrationHistory": {
+    "candidate": "c2861407ff2e2171df0f7c79ad2a92f8c2c21c6b",
+    "baseline": "05f3725af838b5a074707df1d6ed1e193bdfe49e",
+    "migrationBlobsUnchanged": 338,
+    "workingTreeClean": true
+  },
+  "limit": "Historical full local test command not rerun. Fresh exact-head CI remains pending for new core/UI; no full live package acceptance follows from these build checks."
+}

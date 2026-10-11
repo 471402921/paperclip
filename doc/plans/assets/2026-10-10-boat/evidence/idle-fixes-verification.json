@@ -1,0 +1,179 @@
+{
+  "schema": "paperclip/boat-reviewed-idle-fixes/v1",
+  "combinedSource": "e077c3fbb717520f107068d450587eddacf3c1c8",
+  "shutdown": {
+    "schema": "paperclip.boat.warm-stop-ordering-verification.v1",
+    "baseCommit": "3223e57b747844834d57d3915d8e7c60b119c723",
+    "scope": "Explicit heartbeat stopping dispositions close the exact warm native session before computer retirement; no reaper or recovery-policy changes.",
+    "evidence": {
+      "observed": "Same lease retained at13:10:04.489 then stop_and_retain released at13:10:06.365; owner subsequently retired before idle close.",
+      "unproven": "The activity log does not identify the second release caller; recovery missing-sync-reference fallback is a source hypothesis, not a live stack trace."
+    },
+    "validation": {
+      "baselineFailingRegressions": 11,
+      "baselineLogs": [
+        "warm-stop-order-red.log",
+        "warm-stop-races-red.log",
+        "warm-stop-retention-red.log",
+        "warm-stop-inflight-red.log",
+        "warm-stop-idle-red.log"
+      ],
+      "fullAffectedSuites": {
+        "files": 3,
+        "passed": 1053,
+        "skipped": 0,
+        "log": "warm-stop-final-suites.log",
+        "boundary": "Before final once-only pending-close flag; final delta separately qualified."
+      },
+      "finalDelta": {
+        "passed": 9,
+        "filtered": 833,
+        "log": "warm-stop-final-delta.log",
+        "boundary": "Final source including idle-timeout late request and all three failure fences."
+      },
+      "serverTypecheck": {
+        "exitCode": 0,
+        "log": "warm-stop-final-tsc.log"
+      },
+      "diffCheck": "passed",
+      "database": "Disposable boat_wait_test_UUID databases on task-owned PostgreSQL; product database untouched.",
+      "priorAttemptLimits": [
+        "Initial sandbox DB attempt blocked by EPERM; authorized isolated-DB rerun reproduced two real failures.",
+        "Intermediate new useRunnerd fixture reused an on-disk identity; fixed test IDs, no product fence changed."
+      ],
+      "finalExecutorSuite": {
+        "passed": 841,
+        "skipped": 0,
+        "log": "warm-stop-executor-final.log",
+        "boundary": "After first two late-explicit-request cases, before final one-line idle catch guard."
+      },
+      "coreChangedFileCount": 98,
+      "workingTree": "clean; commit not pushed"
+    },
+    "invariants": [
+      "keep_running does not request close",
+      "Every stopping disposition defers physical release while exact closure is busy or failed; existing failed remote destroy exception remains destroy-only",
+      "Exact run and owner-generation retirement fences remain",
+      "Stop during retention or after retention drains once at ownership release",
+      "Explicit close failure stays registered even without instruction working copy",
+      "Late warm bookkeeping cannot overwrite released or rebound lease metadata/termination receipt",
+      "Pending controller command and checkpoint guards unchanged"
+    ],
+    "liveQualification": "Not deployed or tested live",
+    "review": "Independent peer approved final source and regression coverage; no remaining findings.",
+    "commit": "e5b70f39c42f0f5cb8e374f751074f4245724fa3"
+  },
+  "recovery": {
+    "schema": "paperclip.boat.recovery-warm-policy-verification.v1",
+    "sourceCommit": "249097811f95d4578e6dd2457035ebae46c9a0b8",
+    "parentCommit": "fb92e12c226b9ae2d80a1518832334e52dec6dd0",
+    "scope": [
+      "server/src/services/heartbeat/recovery.ts",
+      "server/src/services/heartbeat/recovery.test.ts"
+    ],
+    "coreChangedFiles": 99,
+    "baseline": {
+      "testsFailed": 2,
+      "testsPassed": 1,
+      "log": "recovery-warm-policy-red.log",
+      "failures": [
+        "Active computer executor cleanup received a competing stop_and_retain request",
+        "Inactive frozen warm computer policy defaulted to stop_and_retain"
+      ],
+      "historicalCallerAttribution": "The staging keep_running then stop_and_retain receipt proves conflicting release dispositions, but does not identify the original callback caller. The recovery path was independently reproduced."
+    },
+    "verification": {
+      "recoverySuite": {
+        "passed": 31,
+        "failed": 0,
+        "skipped": 0,
+        "log": "recovery-warm-policy-green.log"
+      },
+      "serverTypecheck": {
+        "exitCode": 0,
+        "log": "recovery-warm-policy-tsc.log"
+      },
+      "moduleBoundaryGate": {
+        "exitCode": 0,
+        "log": "recovery-warm-policy-boundaries.log"
+      },
+      "diffCheck": "passed",
+      "independentReview": "approved by live_state_probe; no remaining actionable findings"
+    },
+    "invariants": [
+      "Active guard requires native runtime, exact run/company/agent/task binding in fully parsed frozen execution input, valid persisted computer descriptor, and no copy-back/export handoff",
+      "Inactive successful frozen warm policy keeps the existing disposition without invoking retainWarm or changing a computer-owner deadline",
+      "Per-turn, malformed, missing, mismatched, failed, cancelled, noncomputer and export-retry cases remain conservative",
+      "Sandbox copy-back callbacks still release and finalize while an executor remains active",
+      "Existing exact-owner shutdown ordering, pending controller command checks, checkpoint fencing and lease retention CAS remain unchanged"
+    ],
+    "testBoundary": "Actual startup and periodic recovery entrypoints invoke the production callback via a mocked native reconciler. The active test uses a real isolated database lease and the real main-path active-to-retained operation; 60s orphan-sweep backoff isolates the callback from unrelated ownerless fixture orphan cleanup.",
+    "runtimeChanges": "No provider, guest, product database, staging deployment or owner deadline changes were made during verification.",
+    "liveAcceptance": "Not yet exercised on deployed source; this receipt makes no saved-session recovery claim."
+  },
+  "integration": {
+    "capturedAt": "2026-10-11T14:03:48.343035+00:00",
+    "core": {
+      "commit": "fb92e12c226b9ae2d80a1518832334e52dec6dd0",
+      "shutdownParent": "e5b70f39c42f0f5cb8e374f751074f4245724fa3",
+      "prerequisiteParent": "b64d6309693e7c10ee783dbd3313ae3a007cf5c1",
+      "pathsAgainstPrerequisite": 98,
+      "tests": {
+        "passed": 165,
+        "filtered": 903,
+        "log": "core-layout-shutdown-integration-tests.log"
+      },
+      "serverTypecheck": {
+        "exitCode": 0,
+        "log": "core-layout-shutdown-integration-tsc.log"
+      }
+    },
+    "staging": {
+      "commit": "46cbfc67a3bd317ba2844a557b26c8b8fda080b9",
+      "packagingParent": "a68163746139b91d54750b104254fe40da527f12",
+      "shutdownCherryPick": "e5b70f39c42f0f5cb8e374f751074f4245724fa3",
+      "migrationHistoryPreserved": true,
+      "initialAttempt": {
+        "passed": 148,
+        "failed": 15,
+        "cause": "Embedded PostgreSQL bootstrap failed before database assertions",
+        "log": "staging-layout-shutdown-integration-tests.log"
+      },
+      "isolatedRerun": {
+        "passed": 165,
+        "filtered": 900,
+        "log": "staging-layout-shutdown-isolated-tests.log",
+        "databasePolicy": "Only uniquely named disposable boat_wait_test_UUID databases on task-owned PostgreSQL; product database untouched"
+      },
+      "serverTypecheck": {
+        "exitCode": 0,
+        "log": "staging-layout-shutdown-integration-tsc.log"
+      }
+    },
+    "resolution": "Preserved package_version_mismatch verifier before serialized file-layout validation; retained-aware manifest, root-alias, active-provider compatibility, exact digest, and shutdown fences unchanged.",
+    "review": {
+      "reviewer": "live_state_probe",
+      "verdict": "approved, no actionable findings",
+      "sourceReviewedCommit": "f647f2101c80795005d7a55f95f03f669a26538f",
+      "finalCommitHasIdenticalTree": true
+    },
+    "publication": {
+      "runtimePrerequisitePushed": "b64d6309693e7c10ee783dbd3313ae3a007cf5c1",
+      "corePushed": false,
+      "stagingPushed": false,
+      "deployed": false
+    },
+    "limits": "Focused source integration proof only; new production pack and shutdown lifecycle remain for live qualification. Old immutable packs and saved sessions were not changed."
+  },
+  "stagingMigrationCheck": {
+    "candidate": "c2861407ff2e2171df0f7c79ad2a92f8c2c21c6b",
+    "baseline": "05f3725af838b5a074707df1d6ed1e193bdfe49e",
+    "migrationBlobsUnchanged": 338,
+    "workingTreeClean": true
+  },
+  "limits": [
+    "The historical second-stop caller is inferred from source; the dangerous callback behavior is independently reproduced, not attributed by a live stack trace.",
+    "Historical quarantined sessions remain unchanged. Healthy-session prevention does not prove recovery of old failures.",
+    "Full new-package live acceptance is pending."
+  ]
+}
