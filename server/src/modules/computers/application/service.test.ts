@@ -116,6 +116,19 @@ function fixture() {
   };
 }
 describe("computer ownership", () => {
+  it("forwards opt-in phases through the existing owner guard without serializing the observer", async () => {
+    const f = fixture();
+    const phases: string[] = [];
+    vi.mocked(f.backend.runner).mockResolvedValue({ execute: async input => {
+      expect(input.stdin).not.toContain("onPhase");
+      await input.onPhase?.("ssh_spawned");
+      return { exitCode: 0, signal: null, timedOut: false, stdout: "", stderr: "", pid: null, startedAt: "" };
+    } });
+    await f.attach();
+    const binding = await f.admit();
+    await binding.process.runner.execute({ command: "fixture", onPhase: phase => { phases.push(phase); } });
+    expect(phases).toEqual(["owner_guard_start", "owner_guard_complete", "ssh_spawned"]);
+  });
   it("rechecks owner authority after a shared upload slot wait before SSH dispatch", async () => {
     const f = fixture();
     const admission = createBoatTransportAdmission();

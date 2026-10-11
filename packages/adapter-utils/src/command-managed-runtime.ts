@@ -1,3 +1,4 @@
+import type { CommandDiagnosticObserver } from "./command-diagnostics.js";
 import { promises as fs } from "node:fs";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
@@ -66,7 +67,7 @@ export interface CommandManagedRuntimeRunner {
    */
   withStdinUploadSlot?<T>(
     operation: () => Promise<T>,
-    options: { timeoutMs: number; signal?: AbortSignal },
+    options: { timeoutMs: number; signal?: AbortSignal; onPhase?: CommandDiagnosticObserver },
   ): Promise<T>;
   /**
    * True when the provider verified the concurrent-sync opt-in. A native runner
@@ -93,6 +94,8 @@ export interface CommandManagedRuntimeRunner {
     timeoutMs?: number;
     onLog?: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
     onSpawn?: (meta: { pid: number; startedAt: string }) => Promise<void>;
+    /** Opt-in closed transport stages, separate from raw command output. */
+    onPhase?: CommandDiagnosticObserver;
     /**
      * Run this command through the lease's persistent session even when no run
      * step is active. A sandbox provider opens the session on the first

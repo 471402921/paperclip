@@ -1,3 +1,4 @@
+import { reportCommandPhase } from "@paperclipai/adapter-utils/command-diagnostics";
 import { randomUUID } from "node:crypto";
 import type { ComputerRepository, ComputerBackend } from "./ports.js";
 import {
@@ -229,12 +230,14 @@ export function createComputerService(
     ): CommandManagedRuntimeRunner => ({
       withStdinUploadSlot: (processScoped ? control : raw).withStdinUploadSlot,
       execute: async (input) => {
+        reportCommandPhase(input.onPhase, "owner_guard_start");
         const current = await (processScoped
           ? processScope()
           : scoped({ ...record, owner: ownerRef }));
         if ((!["active", "starting", "warm"].includes(current.owner.phase) || expired(current.owner, now())) &&
             !(processScoped && pinnedProcess && processControlAllowed(current.owner)))
           throw new ComputerError("conflict", "Computer owner is retired");
+        reportCommandPhase(input.onPhase, "owner_guard_complete");
         // Start a command unit under the same owner slice while holding the remote tombstone lock.
         // The lock is released only after systemd knows the unit, so retirement cannot miss a delayed launch.
         return (processScoped ? control : raw).execute({
@@ -320,6 +323,7 @@ finally:
           timeoutMs: input.timeoutMs,
           onLog: input.onLog,
           onSpawn: input.onSpawn,
+          onPhase: input.onPhase,
         });
       },
     });

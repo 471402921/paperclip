@@ -1,3 +1,4 @@
+import { reportCommandPhase } from "@paperclipai/adapter-utils/command-diagnostics";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import {
   createSshCommandManagedRuntimeRunner,
@@ -85,6 +86,7 @@ export function createBoatTransportAdmission() {
   }
   const withStdinUploadSlot: NonNullable<CommandManagedRuntimeRunner["withStdinUploadSlot"]> = (operation, options) => {
     if (uploadQueue.length >= 128) return Promise.reject(new ComputerError("conflict", "Computer upload admission is busy"));
+    reportCommandPhase(options.onPhase, "upload_queued");
     return new Promise((resolve, reject) => {
       const cleanup = () => { clearTimeout(timer); options.signal?.removeEventListener("abort", aborted); };
       const remove = (message: string) => {
@@ -98,8 +100,10 @@ export function createBoatTransportAdmission() {
       const entry = { start: () => {
         cleanup();
         uploads++;
+        reportCommandPhase(options.onPhase, "upload_admitted");
         void Promise.resolve().then(operation).then(resolve, reject).finally(() => {
           uploads--;
+          reportCommandPhase(options.onPhase, "upload_released");
           drainUploads();
         });
       } };
