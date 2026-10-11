@@ -1,3 +1,4 @@
+import type { AdapterComputerExecutionTarget } from "@paperclipai/adapter-utils/execution-target";
 import { createBoatTransportAdmission } from "../../modules/computers/adapters/boat.js";
 import { closeWarmNativeSession, compareAndSealRetiredComputerCheckpoint, retiredComputerCheckpointIsSettled, retiredComputerCheckpointUnsettledReason, retireUnlaunchedComputerAttempt, nativeSessionBootstrapTimeoutMs } from "./native-session-executor.js";
 import { prepareHeartbeatGitHubLaunchers } from "../heartbeat-github-launchers.js";
@@ -7978,6 +7979,56 @@ describe("native warm session supervision", () => {
       expect(f.close).toHaveBeenCalledOnce();
       expect(f.copy.collectStopped).not.toHaveBeenCalled();
       expect(secondCopy.collectStopped).toHaveBeenCalledOnce();
+    });
+
+    it.each(["same", "generation", "owner", "computer"])("preserves command-transport directory identity across %s changes", async change => {
+      const name = `managed-computer-identity-${change}`;
+      const current = { ...execution, binding: { ...execution.binding, runId: `${name}-one`, executionWorkspaceId: name },
+        session: { ...execution.session, normalizedSessionId: name, lifecyclePolicy: { mode: "warm", idleTimeoutMs: 60_000 } } } as NativeExecutionInputV1;
+      const close = vi.fn(async () => undefined);
+      const collectStopped = vi.fn(async () => undefined);
+      const retainWarm = vi.fn<AdapterComputerExecutionTarget["retainWarm"]>(async () => undefined);
+      const retire = vi.fn<AdapterComputerExecutionTarget["retire"]>(async options => {
+        await options?.beforeStop?.();
+        return true;
+      });
+      const unexpectedProcessOperation = async (): Promise<never> => { throw new Error("Identity fixture must not operate on a process"); };
+      const target: AdapterComputerExecutionTarget = { kind: "remote", transport: "computer", environmentId: name,
+        remoteCwd: `/tmp/${name}`, listenerPort: 45001,
+        resourceAuthority: { kind: "computer-owner", computerId: name, ownerId: name, generation: 1 },
+        fileAuthority: { kind: "remote-persistent", placementId: name, root: `/tmp/${name}`, agentHome: `/tmp/${name}/home` },
+        processRunner: { execute: unexpectedProcessOperation }, launch: unexpectedProcessOperation,
+        inspectProcess: unexpectedProcessOperation, retainWarm, retire,
+        computerTool: { command: "cua-driver", args: ["mcp"] } };
+      state.execute.mockReset().mockImplementationOnce(async options => { await options.onSession?.({ close }); return result; });
+      await executePaperclipNativeSession({ db: leaseDb(current), execution: current, runnerInstanceId: name,
+        runnerExecutionTarget: target,
+        instructionWorkingCopy: { runId: current.binding.runId, root: `/tmp/${name}/home`, collectStopped,
+          checkpointWarm: async () => true, hasChanges: async () => false } });
+      expect(retainWarm).toHaveBeenCalledWith(60_000);
+      const canReuse = vi.fn(async () => true);
+      const nextAuthority = { ...target.resourceAuthority,
+        ...(change === "generation" ? { generation: 2 } : {}),
+        ...(change === "owner" ? { ownerId: "different-owner" } : {}),
+        ...(change === "computer" ? { computerId: "different-computer" } : {}),
+      };
+      const reservation = await reserveWarmNativeInstructionDirectory({ companyId: current.binding.companyId,
+        agentId: current.binding.agentId, previousRunId: current.binding.runId, runId: `${name}-two`, canReuse,
+        target: { ...target, resourceAuthority: nextAuthority } });
+      if (change === "same" || change === "generation") {
+        expect(reservation?.reuseRunId).toBe(current.binding.runId);
+        expect(canReuse).toHaveBeenCalledOnce();
+        expect(close).not.toHaveBeenCalled();
+        expect(retire).not.toHaveBeenCalled();
+        await reservation!.release();
+      } else {
+        expect(reservation).toBeNull();
+        expect(canReuse).not.toHaveBeenCalled();
+        expect(retire).toHaveBeenCalledOnce();
+        expect(close).toHaveBeenCalledOnce();
+        expect(retire.mock.invocationCallOrder[0]).toBeLessThan(close.mock.invocationCallOrder[0]!);
+        expect(collectStopped).toHaveBeenCalledOnce();
+      }
     });
 
     it("stops before collecting when a checkpoint cannot stabilize", async () => {
