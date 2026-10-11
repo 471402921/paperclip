@@ -1,0 +1,287 @@
+{
+  "recordedAt": "2026-10-11T06:38:14.597216+00:00",
+  "scope": "Local44 BOA20 natural archive continuation and bounded read-only installation diagnosis",
+  "controllerSource": "441e88c09a4b16fd4f1403e6c4e813d00653edf5",
+  "providerPackDigest": "sha256:d7275d9204e60a0a5dcb8dc536da95e945e6b90b7bdfda964d82084895ec5952",
+  "runnerSha256": "8f90f35f94f2266b0a441a0013b73c3a7ba1f736de6a21b541c96da0f8de5f05",
+  "coldAndWarmRuns": [
+    {
+      "id": "9c6e6129-7334-4ff3-9806-dfd6f62ebe7a",
+      "status": "succeeded",
+      "created_at": "2026-10-11T06:06:27.373Z",
+      "started_at": "2026-10-11T06:06:27.408Z",
+      "finished_at": "2026-10-11T06:18:48.433Z",
+      "error_code": null,
+      "error": null,
+      "native_session_id": "840002e9-636c-4467-8807-4f539b20532e",
+      "runner_instance_id": "7305da06-73ee-45d6-91ff-e97331c0c8cb",
+      "session_id_before": null,
+      "session_id_after": "27e34901-7792-4d23-9189-e2c2ead86f64",
+      "execution_stage": "preparing"
+    },
+    {
+      "id": "cee9d644-ee75-4fc3-8675-305e7c43ad0d",
+      "status": "succeeded",
+      "created_at": "2026-10-11T06:19:23.179Z",
+      "started_at": "2026-10-11T06:19:23.228Z",
+      "finished_at": "2026-10-11T06:21:16.372Z",
+      "error_code": null,
+      "error": null,
+      "native_session_id": "840002e9-636c-4467-8807-4f539b20532e",
+      "runner_instance_id": "7305da06-73ee-45d6-91ff-e97331c0c8cb",
+      "session_id_before": "27e34901-7792-4d23-9189-e2c2ead86f64",
+      "session_id_after": "27e34901-7792-4d23-9189-e2c2ead86f64",
+      "execution_stage": "preparing"
+    }
+  ],
+  "warmOwner": {
+    "id": "d5e181b2-0f13-477c-a467-f7ba6178efa6",
+    "kind": "runner",
+    "phase": "warm",
+    "runId": "cee9d644-ee75-4fc3-8675-305e7c43ad0d",
+    "deadline": "2026-10-11T06:26:16.327Z",
+    "generation": 2,
+    "process": {
+      "nonce": "b695c043-2e2a-4aaf-87b4-bf4e67b046f4",
+      "bootId": "16f7855c-bb8d-47ad-9c8c-73b4b5859fc2",
+      "unitName": "paperclip-d5e181b2-0f13-477c-a467-f7ba6178efa6.service",
+      "launchGeneration": 1
+    }
+  },
+  "naturalArchive": {
+    "ownerObservation": {
+      "checkedAt": "2026-10-11T06:26:38.488Z",
+      "owners": [
+        {
+          "id": "d5e181b2-0f13-477c-a467-f7ba6178efa6",
+          "kind": "runner",
+          "phase": "retired",
+          "runId": "cee9d644-ee75-4fc3-8675-305e7c43ad0d",
+          "deadline": null,
+          "generation": 2,
+          "process": {
+            "nonce": "b695c043-2e2a-4aaf-87b4-bf4e67b046f4",
+            "bootId": "16f7855c-bb8d-47ad-9c8c-73b4b5859fc2",
+            "unitName": "paperclip-d5e181b2-0f13-477c-a467-f7ba6178efa6.service",
+            "launchGeneration": 1
+          }
+        }
+      ]
+    },
+    "providerObservation": {
+      "checkedAt": "2026-10-11T06:26:39.083Z",
+      "id": "bx_ndnggjad",
+      "state": "archived",
+      "health": "ok",
+      "hydrated": true,
+      "stop": {
+        "id": "stop_c8707baff7f892a5",
+        "status": "completed",
+        "requestedAt": null,
+        "lastAttemptAt": "2026-10-11T06:26:38.799Z",
+        "endedAt": "2026-10-11T06:26:38.799Z",
+        "error": null
+      }
+    }
+  },
+  "postArchiveContinuation": {
+    "status": "failed",
+    "run": {
+      "id": "d15ad748-c235-43d2-9752-c48884ae64f5",
+      "status": "failed",
+      "created_at": "2026-10-11T06:26:57.875Z",
+      "started_at": "2026-10-11T06:26:57.915Z",
+      "finished_at": "2026-10-11T06:31:07.817Z",
+      "error_code": "adapter_failed",
+      "error": "runner_state_identity_mismatch: authority_indeterminate",
+      "native_session_id": "840002e9-636c-4467-8807-4f539b20532e",
+      "runner_instance_id": "7305da06-73ee-45d6-91ff-e97331c0c8cb",
+      "session_id_before": "27e34901-7792-4d23-9189-e2c2ead86f64",
+      "session_id_after": null,
+      "execution_stage": "preparing"
+    },
+    "primaryFailure": "ACPX session.open rejected at installation; classification unclassified; admissionElapsedMs1 is stage-entry timestamp, not duration",
+    "finalRecoveryFailure": "runner_state_identity_mismatch: authority_indeterminate",
+    "selection": {
+      "checkedAt": "2026-10-11T06:29:05.049103+00:00",
+      "controllerIdentity": {
+        "runId": "d15ad748-c235-43d2-9752-c48884ae64f5",
+        "runnerInstanceId": "7305da06-73ee-45d6-91ff-e97331c0c8cb"
+      },
+      "normalizedSessionId": "840002e9-636c-4467-8807-4f539b20532e",
+      "providerPackDigests": [
+        "d7275d9204e60a0a5dcb8dc536da95e945e6b90b7bdfda964d82084895ec5952"
+      ],
+      "connectionCount": 0,
+      "committedEventCount": 0
+    },
+    "physicalOwner": {
+      "id": "0b8213e7-a2b4-41c6-998f-13f74d132195",
+      "kind": "runner",
+      "phase": "active",
+      "runId": "d15ad748-c235-43d2-9752-c48884ae64f5",
+      "deadline": null,
+      "generation": 1,
+      "process": {
+        "nonce": "6a7e1b3b-293c-4fa7-828a-09c7f8d6f1b0",
+        "bootId": "0b4e5377-4b72-4b34-9c18-f8831418ded3",
+        "unitName": "paperclip-0b8213e7-a2b4-41c6-998f-13f74d132195.service",
+        "launchGeneration": 1
+      }
+    },
+    "providerAfterCleanup": {
+      "checkedAt": "2026-10-11T06:32:32.285Z",
+      "id": "bx_ndnggjad",
+      "state": "archived",
+      "health": "ok",
+      "hydrated": false,
+      "stop": {
+        "id": "stop_3e55ba3a77866beb",
+        "status": "completed",
+        "requestedAt": null,
+        "lastAttemptAt": "2026-10-11T06:32:03.557Z",
+        "endedAt": "2026-10-11T06:32:03.557Z",
+        "error": null
+      }
+    },
+    "prewarmProbePerformed": false
+  },
+  "diagnosticViewer": {
+    "connectedViaNormalUI": true,
+    "noProviderLaunch": true,
+    "openCommandInvoked": false,
+    "closedNormallyAt": "2026-10-11T06:35:53Z"
+  },
+  "diagnosis": {
+    "firstRejection": "executable_changed",
+    "function": "inspectCommand",
+    "compiledSourceLine": 811,
+    "distModule": "drivers/acpx/installation-integrity.js",
+    "nativeExecutableUntouchedAtFirstRejection": true,
+    "repeatVerifierResult": "verified",
+    "nativeCtimeBefore": "1791698515000000000",
+    "nativeCtimeAfter": "1791700469000000000",
+    "nativeDigestRemainedQualified": true,
+    "javascriptCommandDigest": "sha256:9d73d1f0f121fb96cc8badb28c22d5bff02d8582eb2e40360a81c189e1b9422a",
+    "javascriptCommandBytes": 4134,
+    "javascriptCommandCtimeMatchesFirstRead": "1791700441000000000",
+    "conclusion": "Native executable bounded verification works on first-read ctime transition; separate JavaScript command inspectCommand still rejects. Local archive/resume acceptance failed.",
+    "limitation": "Exact first-before JavaScript command stat was not captured; rejection source is directly observed, and post-read ctime matches first verifier timestamp."
+  },
+  "diagnosticReceipts": [
+    {
+      "name": "retry-local44-installation-readonly-first.json",
+      "sha256": "db3e6da2d809c176dccf0123a5879cc7aa8b14a77d0dddb45ce3c193cc2523b7",
+      "data": {
+        "checkedAt": "2026-10-11T06:34:01.353Z",
+        "elapsedMs": 274,
+        "result": "rejected",
+        "category": "executable_changed",
+        "code": "other",
+        "messageSha256": "d67a007258a29ab33413b90cdf588b2e95e679138cf51ff2b32c47aa03c95161",
+        "sourceFunctions": [
+          "verifyQualifiedAcpxInstallation",
+          "inspectCommand"
+        ],
+        "sourceLines": [
+          {
+            "line": 811,
+            "column": 19
+          },
+          {
+            "line": 511,
+            "column": 21
+          }
+        ],
+        "before": {
+          "dev": "78",
+          "ino": "12942",
+          "size": "241667256",
+          "mode": "33216",
+          "mtimeNs": "1791698515000000000",
+          "ctimeNs": "1791698515000000000"
+        },
+        "after": {
+          "dev": "78",
+          "ino": "12942",
+          "size": "241667256",
+          "mode": "33216",
+          "mtimeNs": "1791698515000000000",
+          "ctimeNs": "1791698515000000000"
+        },
+        "openCommandInvoked": false
+      }
+    },
+    {
+      "name": "retry-local44-installation-readonly-repeat.json",
+      "sha256": "0d78e390f83a78f6a4f30483ae0cff2353cff6b8b38ffb898fd632e02e8ec62f",
+      "data": {
+        "checkedAt": "2026-10-11T06:34:29.607Z",
+        "elapsedMs": 1851,
+        "result": "verified",
+        "commandDigest": "sha256:9d73d1f0f121fb96cc8badb28c22d5bff02d8582eb2e40360a81c189e1b9422a",
+        "before": {
+          "dev": "78",
+          "ino": "12942",
+          "size": "241667256",
+          "mode": "33216",
+          "mtimeNs": "1791698515000000000",
+          "ctimeNs": "1791698515000000000"
+        },
+        "after": {
+          "dev": "78",
+          "ino": "12942",
+          "size": "241667256",
+          "mode": "33216",
+          "mtimeNs": "1791698515000000000",
+          "ctimeNs": "1791700469000000000"
+        },
+        "openCommandInvoked": false
+      }
+    },
+    {
+      "name": "retry-local44-command-stat-readonly.json",
+      "sha256": "f6c37a1af5f99da66746d508f4d7eb01c4ff9c054ee506fc9bbd4dbe9937f759",
+      "data": {
+        "checkedAt": "2026-10-11T06:35:16.950Z",
+        "elapsedMs": 10,
+        "lexicalBefore": {
+          "dev": "78",
+          "ino": "12944",
+          "size": "4134",
+          "mode": "33216",
+          "mtimeNs": "1791698514000000000",
+          "ctimeNs": "1791700441000000000"
+        },
+        "before": {
+          "dev": "78",
+          "ino": "12944",
+          "size": "4134",
+          "mode": "33216",
+          "mtimeNs": "1791698514000000000",
+          "ctimeNs": "1791700441000000000"
+        },
+        "after": {
+          "dev": "78",
+          "ino": "12944",
+          "size": "4134",
+          "mode": "33216",
+          "mtimeNs": "1791698514000000000",
+          "ctimeNs": "1791700441000000000"
+        },
+        "lexicalAfter": {
+          "dev": "78",
+          "ino": "12944",
+          "size": "4134",
+          "mode": "33216",
+          "mtimeNs": "1791698514000000000",
+          "ctimeNs": "1791700441000000000"
+        },
+        "position": 4134,
+        "reads": 1,
+        "lastRead": 4134,
+        "digest": "9d73d1f0f121fb96cc8badb28c22d5bff02d8582eb2e40360a81c189e1b9422a"
+      }
+    }
+  ]
+}
