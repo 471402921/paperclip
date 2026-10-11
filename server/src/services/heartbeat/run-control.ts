@@ -289,24 +289,26 @@ export function createHeartbeatRunControl(db: Db, dependencies: HeartbeatRunCont
       input.providerResourceDisposition,
       status,
     );
-    if (providerResourceDisposition === "destroy") {
+    if (providerResourceDisposition !== "keep_running") {
       const closeResult = await (
         options.closeWarmNativeSessionsForRun ??
         closeWarmNativeSessionsForRun
       )({
         runId: input.runId,
-        reason: "terminal heartbeat run destroyed its environment lease",
+        reason: providerResourceDisposition === "destroy"
+          ? "terminal heartbeat run destroyed its environment lease"
+          : "terminal heartbeat run stopped its environment lease",
       }).catch((err) => {
         logger.warn(
           { err, runId: input.runId },
-          "failed to close warm native sessions before environment lease destruction",
+          "failed to close warm native sessions before environment lease stop",
         );
         return { closed: 0, busy: 0, failed: 1 };
       });
       // A failed remote checkpoint cannot veto destruction of the isolated
       // sandbox after the run stopped. Provider destruction supplies the exit
       // proof; it does not turn the interrupted checkpoint into a success.
-      const remoteLeases = closeResult.failed > 0 && leaseOwnerRun &&
+      const remoteLeases = providerResourceDisposition === "destroy" && closeResult.failed > 0 && leaseOwnerRun &&
           ["cancelled", "failed", "timed_out", "interrupted"].includes(leaseOwnerRun.status)
         ? await db.select({ provider: environmentLeases.provider }).from(environmentLeases).where(and(
             eq(environmentLeases.companyId, input.companyId),
@@ -318,7 +320,7 @@ export function createHeartbeatRunControl(db: Db, dependencies: HeartbeatRunCont
       if (closeResult.busy > 0 || (closeResult.failed > 0 && !canDestroyRemote)) {
         logger.warn(
           { runId: input.runId, warmNativeSessions: closeResult },
-          "deferred environment lease destruction until warm native sessions close",
+          "deferred environment lease stop until warm native sessions close",
         );
         return;
       }

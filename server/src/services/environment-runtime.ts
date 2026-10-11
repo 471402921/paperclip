@@ -4121,11 +4121,23 @@ export function environmentRuntimeService(
             providerResourceDisposition === "keep_running" &&
             leaseSnapshot.leasePolicy === "reuse_by_environment"
           ) {
-            const lease = await environmentsSvc.releaseLease(
-              leaseRow.id,
-              "retained",
-              { cleanupStatus: "success" },
-            );
+            // A concurrent stop or owner replacement outranks this stale warm
+            // return. Never erase its termination receipt or restore retention.
+            const now = new Date();
+            const [retained] = await db.update(environmentLeases).set({
+              status: "retained", cleanupStatus: "success", releasedAt: null,
+              lastUsedAt: now, updatedAt: now,
+              metadata: sql`${environmentLeases.metadata} - 'remoteExecutionTermination'`,
+            }).where(and(
+              eq(environmentLeases.id, leaseRow.id),
+              eq(environmentLeases.companyId, leaseRow.companyId),
+              eq(environmentLeases.heartbeatRunId, heartbeatRunId),
+              eq(environmentLeases.status, "active"),
+              sql`${environmentLeases.environmentId} is not distinct from ${leaseRow.environmentId}`,
+              sql`${environmentLeases.providerLeaseId} is not distinct from ${leaseRow.providerLeaseId}`,
+              sql`${environmentLeases.metadata} is not distinct from ${leaseRow.metadata === null ? null : JSON.stringify(leaseRow.metadata)}::jsonb`,
+            )).returning();
+            const lease = retained ? toEnvironmentLeaseSnapshot(retained) : null;
             if (lease) {
               released.push({
                 environment,

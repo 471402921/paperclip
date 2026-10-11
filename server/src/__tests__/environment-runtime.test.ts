@@ -671,6 +671,34 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     expect(workerManager.call).not.toHaveBeenCalled();
   });
 
+  it.each(["released", "rebound"])("does not publish stale warm retention after the lease was %s", async (change) => {
+    const { runId, reusableLease } = await seedReusablePluginSandboxLease();
+    const realFactory = environmentsModule.environmentService;
+    const receipt = { proof: "exact-owner-stopped" };
+    let changed = false;
+    const factory = vi.spyOn(environmentsModule, "environmentService").mockImplementation(database => {
+      const real = realFactory(database);
+      return { ...real, getById: async (id: string) => {
+        const result = await real.getById(id);
+        if (!changed) {
+          changed = true;
+          if (change === "released") await real.releaseLease(reusableLease.id, "released", { cleanupStatus: "success", remoteExecutionTermination: receipt });
+          else await database.update(environmentLeases).set({ providerLeaseId: "new-owner", metadata: { computerOwner: { ownerId: "new-owner", generation: 2 } } }).where(eq(environmentLeases.id, reusableLease.id));
+        }
+        return result;
+      } };
+    });
+    try {
+      const released = await environmentRuntimeService(db).releaseRunLeases(runId, "released", undefined, "keep_running");
+      expect(released).toEqual([]);
+      const actual = await realFactory(db).getLeaseById(reusableLease.id);
+      if (change === "released") {
+        expect(actual).toMatchObject({ status: "released", metadata: { remoteExecutionTermination: receipt } });
+        expect(actual?.releasedAt).not.toBeNull();
+      } else expect(actual).toMatchObject({ status: "active", providerLeaseId: "new-owner", metadata: { computerOwner: { generation: 2 } } });
+    } finally { factory.mockRestore(); }
+  });
+
   it("stops a reusable sandbox and keeps its lease resumable", async () => {
     const { pluginId, runId, reusableLease } = await seedReusablePluginSandboxLease();
     const workerManager = {
