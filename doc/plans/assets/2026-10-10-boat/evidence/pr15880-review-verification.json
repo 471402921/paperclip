@@ -1,0 +1,70 @@
+{
+  "pr": 15880,
+  "branch": "codex/boat-runtime-prerequisite",
+  "base": "1525c4ef2794d5a914232adfaccdcd4cbe12826e",
+  "findings": [
+    {
+      "thread": "PRRT_kwDORclPyM6rNln8",
+      "valid": true,
+      "fix": "Separate controller-registered persistent home and instruction-copy grants; preserve restricted planning profile and ambient-home rejection."
+    },
+    {
+      "thread": "PRRT_kwDORclPyM6rNln9",
+      "valid": true,
+      "fix": "Create controller source cwd for copied remote workspaces; skip only in-place realization."
+    },
+    {
+      "thread": "PRRT_kwDORclPyM6rNloF",
+      "valid": true,
+      "fix": "Compare uid, gid and nlink at lexical/descriptor boundaries and across descriptor reads; keep two-read ctime-only bound."
+    },
+    {
+      "thread": "PRRT_kwDORclPyM6rNloJ",
+      "valid": true,
+      "fix": "Retain runtime-unverified warning after computer Claude CLI probe; preserve failed status."
+    }
+  ],
+  "red": {
+    "runner": {
+      "failed": 7,
+      "passed": 16,
+      "filtered": 114,
+      "log": "pr15880-runner-red.log"
+    },
+    "adapter_and_registry": {
+      "failed": 3,
+      "passed": 1,
+      "filtered": 38,
+      "log": "pr15880-review-red.log"
+    }
+  },
+  "green": {
+    "runner": {
+      "passed": 146,
+      "existing_platform_skips": 6,
+      "files": 3,
+      "log": "pr15880-runner-green.log"
+    },
+    "adapter_and_registry": {
+      "passed": 42,
+      "skipped": 0,
+      "files": 2,
+      "log": "pr15880-review-green.log"
+    }
+  },
+  "checks": {
+    "runner_typescript_and_rust": "pass",
+    "claude_adapter_typecheck": "pass",
+    "server_typecheck": "pass",
+    "diff_check": "pass"
+  },
+  "scope": "No live calls, deployment, push, or Boat-core changes. Full repository suite/build not rerun for this focused correction; parent owns final stack verification.",
+  "independent_review": {
+    "reviewer": "quarantine_root_cause",
+    "verdict": "approved",
+    "actionable_findings": 0
+  },
+  "commit": "96db0624874f484be1fd8c38b15c8e46cfa9edef",
+  "working_tree": "clean",
+  "pushed": false
+}

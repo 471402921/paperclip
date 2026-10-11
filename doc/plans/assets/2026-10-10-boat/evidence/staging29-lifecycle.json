@@ -1,5 +1,5 @@
 {
-  "status": "cold_passed_warm_in_progress_post_idle_unverified",
+  "status": "post_idle_failed_specific_link_count_rejection",
   "deployment": {
     "version": 1,
     "requestId": "076bf489-963d-4c36-aa86-261e0995c2f3",
@@ -168,5 +168,380 @@
     "hostname": "box-node-8fb1e7496568573d",
     "utc": "2026-10-11T12:39:34Z",
     "source": "expanded actual command output in ordinary task BOA11"
+  },
+  "warm": {
+    "observedAt": "2026-10-11T12:42:20.667Z",
+    "phase": "warm_complete",
+    "guestReads": false,
+    "runs": [
+      {
+        "id": "c1f126ed-9e41-4cb0-a5f8-e7230dd55241",
+        "providerBefore": null,
+        "providerAfter": "8ea7d6cb-8a13-4dd0-a38e-82fedf3f23c7",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T12:25:01.606Z",
+        "finishedAt": "2026-10-11T12:39:57.782Z",
+        "nativeSessionId": "22eaa9ff-691f-40a3-89e9-6d8b7e54aaa6",
+        "runnerInstanceId": "4484e99a-25d5-4b20-af44-63d3fa89c9dd",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      },
+      {
+        "id": "00ef1455-f071-46e3-9f96-35bfda72d8ff",
+        "providerBefore": "8ea7d6cb-8a13-4dd0-a38e-82fedf3f23c7",
+        "providerAfter": "8ea7d6cb-8a13-4dd0-a38e-82fedf3f23c7",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T12:40:35.912Z",
+        "finishedAt": "2026-10-11T12:42:09.943Z",
+        "nativeSessionId": "22eaa9ff-691f-40a3-89e9-6d8b7e54aaa6",
+        "runnerInstanceId": "4484e99a-25d5-4b20-af44-63d3fa89c9dd",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      }
+    ],
+    "taskSessions": [
+      {
+        "lastRunId": "00ef1455-f071-46e3-9f96-35bfda72d8ff",
+        "displayId": "8ea7d6cb-8a13-4dd0-a38e-82fedf3f23c7",
+        "ids": {
+          "sessionId": "22eaa9ff-691f-40a3-89e9-6d8b7e54aaa6"
+        },
+        "updatedAt": "2026-10-11T12:42:12.609Z"
+      }
+    ],
+    "owners": [
+      {
+        "id": "4c38a6c2-00c2-4b00-8032-69e99990417b",
+        "phase": "warm",
+        "deadline": "2026-10-11T12:47:08.707Z",
+        "boot": "b0463ce3-25e0-4c2a-8c35-b09388e5c2fe",
+        "launch": 1
+      }
+    ],
+    "controller": [
+      {
+        "stateKey": "2e2e0ed6fabec5a50ca1534a2e830a406521e6945903d44c26c2b3daf73b472b",
+        "pack": "sha256:eee8609e9377e24a4588f27816834f15a665d22e23521edc1cf498f9c35f7fff",
+        "commands": [
+          {
+            "controllerSeq": 1,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T12:41:45.853Z",
+            "status": "completed",
+            "type": "turn.start"
+          },
+          {
+            "controllerSeq": 2,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T12:42:02.949Z",
+            "status": "completed",
+            "type": "semantic_tool.result"
+          }
+        ],
+        "runnerPresent": false,
+        "lifecycle": null
+      }
+    ]
+  },
+  "warmProof": {
+    "sha256": "e646d151756f1efdb9e19d99a2a0971810468087c457fa458f1311c42ef07424",
+    "hostname": "box-node-8fb1e7496568573d",
+    "utc": "2026-10-11T12:41:52Z",
+    "source": "expanded actual warm command output in ordinary task BOA11"
+  },
+  "idleOwner": {
+    "observedAt": "2026-10-11T12:47:32.871Z",
+    "phase": "warm_complete",
+    "guestReads": false,
+    "runs": [
+      {
+        "id": "c1f126ed-9e41-4cb0-a5f8-e7230dd55241",
+        "providerBefore": null,
+        "providerAfter": "8ea7d6cb-8a13-4dd0-a38e-82fedf3f23c7",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T12:25:01.606Z",
+        "finishedAt": "2026-10-11T12:39:57.782Z",
+        "nativeSessionId": "22eaa9ff-691f-40a3-89e9-6d8b7e54aaa6",
+        "runnerInstanceId": "4484e99a-25d5-4b20-af44-63d3fa89c9dd",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      },
+      {
+        "id": "00ef1455-f071-46e3-9f96-35bfda72d8ff",
+        "providerBefore": "8ea7d6cb-8a13-4dd0-a38e-82fedf3f23c7",
+        "providerAfter": "8ea7d6cb-8a13-4dd0-a38e-82fedf3f23c7",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T12:40:35.912Z",
+        "finishedAt": "2026-10-11T12:42:09.943Z",
+        "nativeSessionId": "22eaa9ff-691f-40a3-89e9-6d8b7e54aaa6",
+        "runnerInstanceId": "4484e99a-25d5-4b20-af44-63d3fa89c9dd",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      }
+    ],
+    "taskSessions": [
+      {
+        "lastRunId": "00ef1455-f071-46e3-9f96-35bfda72d8ff",
+        "displayId": "8ea7d6cb-8a13-4dd0-a38e-82fedf3f23c7",
+        "ids": {
+          "sessionId": "22eaa9ff-691f-40a3-89e9-6d8b7e54aaa6"
+        },
+        "updatedAt": "2026-10-11T12:42:12.609Z"
+      }
+    ],
+    "owners": [
+      {
+        "id": "4c38a6c2-00c2-4b00-8032-69e99990417b",
+        "phase": "retired",
+        "deadline": null,
+        "boot": "b0463ce3-25e0-4c2a-8c35-b09388e5c2fe",
+        "launch": 1
+      }
+    ],
+    "controller": [
+      {
+        "stateKey": "2e2e0ed6fabec5a50ca1534a2e830a406521e6945903d44c26c2b3daf73b472b",
+        "pack": "sha256:eee8609e9377e24a4588f27816834f15a665d22e23521edc1cf498f9c35f7fff",
+        "commands": [
+          {
+            "controllerSeq": 1,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T12:41:45.853Z",
+            "status": "completed",
+            "type": "turn.start"
+          },
+          {
+            "controllerSeq": 2,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T12:42:02.949Z",
+            "status": "completed",
+            "type": "semantic_tool.result"
+          },
+          {
+            "controllerSeq": 3,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T12:47:10.102Z",
+            "status": "completed",
+            "type": "runner.drain"
+          },
+          {
+            "controllerSeq": 4,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T12:47:10.243Z",
+            "status": "completed",
+            "type": "runner.suspend"
+          }
+        ],
+        "runnerPresent": false,
+        "lifecycle": null
+      }
+    ]
+  },
+  "naturalArchive": {
+    "observedAt": "2026-10-11T12:47:44.507Z",
+    "providerId": "bx_b8sawfyp",
+    "guestRead": false,
+    "state": "archived",
+    "health": "ok",
+    "stop": {
+      "id": "stop_eb363fae1dac7216",
+      "status": "completed",
+      "timestamps": {
+        "endedAt": "2026-10-11T12:47:35.927Z"
+      },
+      "errorPresent": false
+    }
+  },
+  "primaryRejection": {
+    "observedAt": "2026-10-11T12:51:24.957Z",
+    "phase": "post_idle_observation",
+    "guestReads": false,
+    "runs": [
+      {
+        "id": "0198c906-1546-4aea-840f-4392e524bcf4",
+        "providerBefore": "8ea7d6cb-8a13-4dd0-a38e-82fedf3f23c7",
+        "providerAfter": "8ea7d6cb-8a13-4dd0-a38e-82fedf3f23c7",
+        "recoveryPresent": false,
+        "status": "running",
+        "startedAt": "2026-10-11T12:47:55.308Z",
+        "finishedAt": null,
+        "nativeSessionId": "22eaa9ff-691f-40a3-89e9-6d8b7e54aaa6",
+        "runnerInstanceId": "4484e99a-25d5-4b20-af44-63d3fa89c9dd",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      }
+    ],
+    "taskSessions": [
+      {
+        "lastRunId": "00ef1455-f071-46e3-9f96-35bfda72d8ff",
+        "displayId": "8ea7d6cb-8a13-4dd0-a38e-82fedf3f23c7",
+        "ids": {
+          "sessionId": "22eaa9ff-691f-40a3-89e9-6d8b7e54aaa6"
+        },
+        "updatedAt": "2026-10-11T12:50:28.693Z"
+      }
+    ],
+    "owners": [
+      {
+        "id": "50561257-3b9f-4e10-bd38-317c503932be",
+        "phase": "retired",
+        "deadline": null,
+        "boot": "e9556132-0111-4924-86df-51595527844f",
+        "launch": 1
+      }
+    ],
+    "controller": [
+      {
+        "stateKey": "2e2e0ed6fabec5a50ca1534a2e830a406521e6945903d44c26c2b3daf73b472b",
+        "pack": "sha256:eee8609e9377e24a4588f27816834f15a665d22e23521edc1cf498f9c35f7fff",
+        "commands": [
+          {
+            "controllerSeq": 3,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T12:50:28.222Z",
+            "status": "completed",
+            "type": "session.snapshot"
+          },
+          {
+            "controllerSeq": 4,
+            "moduleFences": [
+              "link_count"
+            ],
+            "failureCodes": [
+              "agent_startup_unverified_module"
+            ],
+            "admissionStage": "turn_ownership_verified",
+            "admissionElapsedMs": 3711,
+            "issuedAt": "2026-10-11T12:50:28.492Z",
+            "status": "failed",
+            "type": "turn.start"
+          },
+          {
+            "controllerSeq": 5,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T12:50:28.923Z",
+            "status": "completed",
+            "type": "runner.drain"
+          },
+          {
+            "controllerSeq": 6,
+            "moduleFences": [],
+            "failureCodes": [],
+            "admissionStage": null,
+            "admissionElapsedMs": null,
+            "issuedAt": "2026-10-11T12:50:29.057Z",
+            "status": "completed",
+            "type": "runner.suspend"
+          }
+        ],
+        "runnerPresent": false,
+        "lifecycle": null
+      }
+    ]
+  },
+  "postIdleOutcome": {
+    "observedAt": "2026-10-11T12:53:00.093Z",
+    "phase": "post_idle_observation",
+    "guestReads": false,
+    "runs": [
+      {
+        "id": "0198c906-1546-4aea-840f-4392e524bcf4",
+        "providerBefore": "8ea7d6cb-8a13-4dd0-a38e-82fedf3f23c7",
+        "providerAfter": "8ea7d6cb-8a13-4dd0-a38e-82fedf3f23c7",
+        "recoveryPresent": false,
+        "status": "failed",
+        "startedAt": "2026-10-11T12:47:55.308Z",
+        "finishedAt": "2026-10-11T12:52:09.477Z",
+        "nativeSessionId": "22eaa9ff-691f-40a3-89e9-6d8b7e54aaa6",
+        "runnerInstanceId": "4484e99a-25d5-4b20-af44-63d3fa89c9dd",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": [
+          "runner_state_identity_mismatch",
+          "authority_indeterminate"
+        ]
+      }
+    ],
+    "taskSessions": [
+      {
+        "lastRunId": "0198c906-1546-4aea-840f-4392e524bcf4",
+        "displayId": "8ea7d6cb-8a13-4dd0-a38e-82fedf3f23c7",
+        "ids": {
+          "sessionId": "22eaa9ff-691f-40a3-89e9-6d8b7e54aaa6"
+        },
+        "updatedAt": "2026-10-11T12:52:10.655Z"
+      }
+    ],
+    "owners": [
+      {
+        "id": "50561257-3b9f-4e10-bd38-317c503932be",
+        "phase": "retired",
+        "deadline": null,
+        "boot": "e9556132-0111-4924-86df-51595527844f",
+        "launch": 1
+      },
+      {
+        "id": "69cfc7c5-7b14-4060-8e86-a57c82ae02af",
+        "phase": "retired",
+        "deadline": null,
+        "boot": null,
+        "launch": null
+      }
+    ],
+    "controller": []
+  },
+  "finalNaturalArchive": {
+    "observedAt": "2026-10-11T12:54:12.267Z",
+    "providerId": "bx_b8sawfyp",
+    "guestRead": false,
+    "state": "archived",
+    "health": "ok",
+    "stop": {
+      "id": "stop_7d0defd6b9b16a2e",
+      "status": "completed",
+      "timestamps": {
+        "endedAt": "2026-10-11T12:52:21.706Z"
+      },
+      "errorPresent": false
+    }
   }
 }

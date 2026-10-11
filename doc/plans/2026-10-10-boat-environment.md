@@ -242,6 +242,8 @@ statement alone does not prove the complete journey. Staging hot reload subseque
 passed on deployment 14 with unchanged browser and process state; final-source
 qualification and the remaining conditions are tracked in the validation report.
 
-Implementation is split into [Core #15813](https://github.com/paperclipai/paperclip/pull/15813)
-and dependent [UI and acceptance #15804](https://github.com/paperclipai/paperclip/pull/15804).
-Both remain unmerged.
+Implementation is split into [test fixtures #15878](https://github.com/paperclipai/paperclip/pull/15878),
+[shared runtime #15880](https://github.com/paperclipai/paperclip/pull/15880),
+[Boat core #15813](https://github.com/paperclipai/paperclip/pull/15813), and
+[UI and acceptance #15804](https://github.com/paperclipai/paperclip/pull/15804),
+in that dependency order. All remain drafts and unmerged.
