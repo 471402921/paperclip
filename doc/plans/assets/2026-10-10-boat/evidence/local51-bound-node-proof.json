@@ -1,0 +1,13 @@
+{
+  "capturedAt": "2026-10-11T11:22:47.164644+00:00",
+  "runId": "6f0e1d13-8a3f-424c-91b2-99cff411cd83",
+  "nativeSessionId": "fb8d0432-f85e-4533-bb14-4461d8e65920",
+  "packDigest": "sha256:8567c47c5da670735643e47e45abbafeb2626098b3a30d4c86dbf7c40c1d100c",
+  "boundSidecarCommandMatchesManifestNodePath": true,
+  "manifestNodeSha256": "sha256:7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c",
+  "actualSelectedLocalNodeSha256": "sha256:7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c",
+  "qualifiedNodeVersion": "24.21.0",
+  "guestExecutableHashProbe": false,
+  "guardedImportRuntimeSource": "verifiedRuntimeExecutableHandoff inherits the runner-authenticated Node descriptor into the guardian and provider; it does not resolve shell PATH.",
+  "shellNodeVersionEvidence": "Parent browser command reported24.18.1; this is distinct from the controller-bound sidecar runtime."
+}

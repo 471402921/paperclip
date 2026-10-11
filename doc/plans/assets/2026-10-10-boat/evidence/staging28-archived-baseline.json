@@ -1,0 +1,15 @@
+{
+  "observedAt": "2026-10-11T11:26:59.499Z",
+  "providerId": "bx_b8sawfyp",
+  "guestRead": false,
+  "state": "archived",
+  "health": "ok",
+  "stop": {
+    "id": "stop_21187fe0821d8731",
+    "status": "completed",
+    "timestamps": {
+      "endedAt": "2026-10-11T10:51:02.840Z"
+    },
+    "errorPresent": false
+  }
+}

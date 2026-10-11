@@ -1,0 +1,26 @@
+{
+  "observedAt": "2026-10-11T11:30:47.071623+00:00",
+  "localDigest": "sha256:8567c47c5da670735643e47e45abbafeb2626098b3a30d4c86dbf7c40c1d100c",
+  "stagingDigest": "sha256:9f153a9abdf9af51ae2e988d4079b3c6405723397a167ef6707a740f3074be3a",
+  "guestReads": false,
+  "comparisons": {
+    "nodeCommand": {
+      "localExpected": "sha256:7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c",
+      "localActual": "sha256:7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c",
+      "stagingActual": "sha256:7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c",
+      "equal": true
+    },
+    "productionLock": {
+      "localExpected": "sha256:df5143e56269823c040be51a5e45bd53cadb60fecb50fb09ba2848f23e621b67",
+      "localActual": "sha256:df5143e56269823c040be51a5e45bd53cadb60fecb50fb09ba2848f23e621b67",
+      "stagingActual": "sha256:df5143e56269823c040be51a5e45bd53cadb60fecb50fb09ba2848f23e621b67",
+      "equal": true
+    },
+    "acpxSidecar": {
+      "localExpected": "sha256:c6955c81954a515e768d5dd98216b6d9087f825356d21f83c4fecbef4ff4b414",
+      "localActual": "sha256:c6955c81954a515e768d5dd98216b6d9087f825356d21f83c4fecbef4ff4b414",
+      "stagingActual": "sha256:c6955c81954a515e768d5dd98216b6d9087f825356d21f83c4fecbef4ff4b414",
+      "equal": true
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "requestId": "d28faf91-db3f-4a80-a28a-5a0a1c45ac2e",
+  "sha": "70fb0988c0aa760f9c84818aaf3fabbc339854b7",
+  "stage": "deploy",
+  "hostname": "boat.staging.paperclip.app",
+  "environment": "staging",
+  "status": "succeeded",
+  "verification": "verified",
+  "appVersion": "sha-70fb0988c0aa760f9c84818aaf3fabbc339854b7-cloud",
+  "targetStackId": "stack-pool-474c42a4b545",
+  "campaignUrl": "https://admin-staging.paperclip.app/admin/fleet/campaigns/fleet-campaign-1791706429574",
+  "checkedAt": "2026-10-11T11:26:28.642Z"
+}

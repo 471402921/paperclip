@@ -1,0 +1,72 @@
+{
+  "observedAt": "2026-10-11T11:38:35.471Z",
+  "phase": "warm_complete",
+  "guestReads": false,
+  "runs": [
+    {
+      "id": "d74c8766-1361-4cf2-b08f-1ebf5c5dba7a",
+      "status": "succeeded",
+      "startedAt": "2026-10-11T11:36:29.715Z",
+      "finishedAt": "2026-10-11T11:38:00.342Z",
+      "nativeSessionId": "5d865ee5-21bd-4566-bc47-0e29a8c3bda5",
+      "runnerInstanceId": "2ef31e15-7486-4ea5-a721-bbc00d8e7051",
+      "matchesOriginalNativeSession": true,
+      "matchesOriginalLogicalRunner": true,
+      "moduleFences": [],
+      "knownErrorCodes": []
+    },
+    {
+      "id": "1d103c90-4ceb-4ba9-9a10-60f61a2947b6",
+      "status": "succeeded",
+      "startedAt": "2026-10-11T11:27:14.807Z",
+      "finishedAt": "2026-10-11T11:35:25.146Z",
+      "nativeSessionId": "5d865ee5-21bd-4566-bc47-0e29a8c3bda5",
+      "runnerInstanceId": "2ef31e15-7486-4ea5-a721-bbc00d8e7051",
+      "matchesOriginalNativeSession": true,
+      "matchesOriginalLogicalRunner": true,
+      "moduleFences": [],
+      "knownErrorCodes": []
+    }
+  ],
+  "taskSessions": [
+    {
+      "lastRunId": "d74c8766-1361-4cf2-b08f-1ebf5c5dba7a",
+      "displayId": "27eb5608-f9cd-4cb5-87a1-6d56a0a6ae3c",
+      "ids": {
+        "sessionId": "5d865ee5-21bd-4566-bc47-0e29a8c3bda5"
+      },
+      "updatedAt": "2026-10-11T11:38:02.428Z"
+    }
+  ],
+  "owners": [
+    {
+      "id": "c0a3782c-e5dc-452f-a8c8-0a496747d80e",
+      "phase": "warm",
+      "deadline": "2026-10-11T11:42:59.271Z",
+      "boot": "8598895f-5a2c-4962-925b-b5d1776e52d4",
+      "launch": 1
+    }
+  ],
+  "controller": [
+    {
+      "stateKey": "078f065734698e80f04582c216b2eece5739cbcda27e6c04e565f17c175972db",
+      "pack": "sha256:9f153a9abdf9af51ae2e988d4079b3c6405723397a167ef6707a740f3074be3a",
+      "commands": [
+        {
+          "controllerSeq": 1,
+          "issuedAt": "2026-10-11T11:37:36.503Z",
+          "status": "completed",
+          "type": "turn.start"
+        },
+        {
+          "controllerSeq": 2,
+          "issuedAt": "2026-10-11T11:37:53.565Z",
+          "status": "completed",
+          "type": "semantic_tool.result"
+        }
+      ],
+      "runnerPresent": false,
+      "lifecycle": null
+    }
+  ]
+}

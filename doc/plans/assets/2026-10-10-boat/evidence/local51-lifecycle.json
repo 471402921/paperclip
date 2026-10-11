@@ -1,0 +1,253 @@
+{
+  "schema": "boat-local-lifecycle-proof/v1",
+  "proofFiles": [
+    {
+      "name": "boat-final-claude.txt",
+      "sha256": "14fa23911a1a95ede22a93f43fc027934b20a1ba497f8e6120abc8769498e124"
+    },
+    {
+      "name": "boat-claude-framing-proof.txt",
+      "sha256": "afaf525f4bf0c38614c5df0cf97140e7d1bf9cad96faa293e2317dc82116af4a"
+    }
+  ],
+  "observerPolicy": "Controller logs, local database and provider status only. No guest reads, manual wake, or executable prewarming during this lifecycle.",
+  "manualReset": false,
+  "oldImmutablePacksChanged": false,
+  "capturedAt": "2026-10-11T11:39:16.800965+00:00",
+  "fixture": "local51 / BOA-25",
+  "controllerSource": "4d8b1cb179681d2bbfb16b42b4def81cb95107ac",
+  "providerPack": {
+    "source": "8f62eef8f13e199f7a98d8a9ec27d617385e6fde",
+    "digest": "sha256:8567c47c5da670735643e47e45abbafeb2626098b3a30d4c86dbf7c40c1d100c",
+    "hasClosedModuleFenceDiagnostics": true,
+    "hasDependencyCtimeRereadFix": true
+  },
+  "runnerArtifact": {
+    "source": "8f62eef8f13e199f7a98d8a9ec27d617385e6fde",
+    "sha256": "52fad9d1a6548d7fca3e009c3a87e063ec19c9619229ea3568a40a14fcf68c06",
+    "proof": "Selected immutable artifact; no guest executable hash probe."
+  },
+  "nodeRuntime": {
+    "capturedAt": "2026-10-11T11:22:47.164644+00:00",
+    "runId": "6f0e1d13-8a3f-424c-91b2-99cff411cd83",
+    "nativeSessionId": "fb8d0432-f85e-4533-bb14-4461d8e65920",
+    "packDigest": "sha256:8567c47c5da670735643e47e45abbafeb2626098b3a30d4c86dbf7c40c1d100c",
+    "boundSidecarCommandMatchesManifestNodePath": true,
+    "manifestNodeSha256": "sha256:7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c",
+    "actualSelectedLocalNodeSha256": "sha256:7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c",
+    "qualifiedNodeVersion": "24.21.0",
+    "guestExecutableHashProbe": false,
+    "guardedImportRuntimeSource": "verifiedRuntimeExecutableHandoff inherits the runner-authenticated Node descriptor into the guardian and provider; it does not resolve shell PATH.",
+    "shellNodeVersionEvidence": "Parent browser command reported24.18.1; this is distinct from the controller-bound sidecar runtime."
+  },
+  "upload": {
+    "diagnosticsEnabled": true,
+    "phaseCounts": {
+      "chunk_queued": 301,
+      "upload_admitted": 301,
+      "ssh_spawned": 301,
+      "chunk_completed": 301
+    },
+    "packMiB": 1167,
+    "startedAt": "2026-10-11T11:11:33.452Z",
+    "completedAt": "2026-10-11T11:19:05.742Z",
+    "maxQueuedAndActiveMs": 107094
+  },
+  "nativeSessionId": "fb8d0432-f85e-4533-bb14-4461d8e65920",
+  "logicalRunnerId": "e0d157dc-4816-4314-ab01-2e71b92fbe46",
+  "providerSessionId": "1dfe4ace-a703-40ba-99fb-0bb7c059cbeb",
+  "warmOwner": {
+    "id": "8c126cce-f2e7-4c20-92a0-cd93204f2601",
+    "kind": "runner",
+    "phase": "warm",
+    "runId": "7c09cbc4-04a6-4cc8-9673-64716742dee1",
+    "deadline": "2026-10-11T11:28:17.491Z",
+    "generation": 2,
+    "process": {
+      "nonce": "fe875706-ddb6-4652-b702-d6c4af40c4a0",
+      "bootId": "96680642-5598-42f4-a057-63c1a6c84809",
+      "unitName": "paperclip-8c126cce-f2e7-4c20-92a0-cd93204f2601.service",
+      "launchGeneration": 1
+    }
+  },
+  "proofEvidence": "Parent observed both original hashes in actual browser tool output: cold host box-node-123acd24eda11a17 UTC11:20:34; warm same host UTC11:22:59; post-idle new host box-node-b24a7a5a2a0aebba UTC11:32:19. All hashes exactly match proofFiles.",
+  "naturalArchive": {
+    "status": "completed",
+    "warmDeadline": "2026-10-11T11:28:17.491Z",
+    "noLiveOwnersObservedAt": "2026-10-11T11:29:01.268Z",
+    "providerObservedAt": "2026-10-11T11:29:01.886Z",
+    "providerState": "archived",
+    "providerHealth": "ok",
+    "stopId": "stop_e3ce2575e3599273",
+    "stopCompletedAt": "2026-10-11T11:28:47.697Z",
+    "guestReads": false
+  },
+  "postIdle": {
+    "id": "cc7ecb89-1406-446b-820f-2ac1f355bb13",
+    "status": "succeeded",
+    "started_at": "2026-10-11T11:29:21.616Z",
+    "finished_at": "2026-10-11T11:32:48.617Z",
+    "native_session_id": "fb8d0432-f85e-4533-bb14-4461d8e65920",
+    "runner_instance_id": "e0d157dc-4816-4314-ab01-2e71b92fbe46",
+    "session_id_before": "1dfe4ace-a703-40ba-99fb-0bb7c059cbeb",
+    "session_id_after": "1dfe4ace-a703-40ba-99fb-0bb7c059cbeb",
+    "error_code": null,
+    "executionRecovery": null,
+    "firstAttemptSucceeded": true,
+    "retainedNativeSession": true,
+    "retainedProviderSession": true,
+    "retainedLogicalRunner": true,
+    "physicalOwnerChanged": true,
+    "bootChanged": true,
+    "owner": {
+      "id": "f40ee221-2f0f-4884-8bed-10ce2b93b8f2",
+      "kind": "runner",
+      "phase": "warm",
+      "runId": "cc7ecb89-1406-446b-820f-2ac1f355bb13",
+      "deadline": "2026-10-11T11:37:48.456Z",
+      "generation": 1,
+      "process": {
+        "nonce": "336ffbaf-c189-4f0c-b629-604fbfbf6954",
+        "bootId": "6cec8d5a-0085-4ef1-b82b-e8cba5d3152b",
+        "unitName": "paperclip-f40ee221-2f0f-4884-8bed-10ce2b93b8f2.service",
+        "launchGeneration": 1
+      }
+    },
+    "stages": [
+      {
+        "code": "admission_binding",
+        "elapsedMs": 0
+      },
+      {
+        "code": "admission_installation",
+        "elapsedMs": 1
+      },
+      {
+        "code": "admission_sandbox",
+        "elapsedMs": 1768
+      },
+      {
+        "code": "admission_lifetime",
+        "elapsedMs": 1815
+      },
+      {
+        "code": "admission_agent_files",
+        "elapsedMs": 1820
+      },
+      {
+        "code": "admission_skills",
+        "elapsedMs": 1820
+      },
+      {
+        "code": "admission_command",
+        "elapsedMs": 1830
+      },
+      {
+        "code": "admission_tool_bridge",
+        "elapsedMs": 1953
+      },
+      {
+        "code": "admission_handshake",
+        "elapsedMs": 2020
+      },
+      {
+        "code": "admission_verification",
+        "elapsedMs": 2028
+      },
+      {
+        "code": "admission_ready",
+        "elapsedMs": 2029
+      },
+      {
+        "code": "admission_turn_prepare",
+        "elapsedMs": 3194
+      },
+      {
+        "code": "admission_turn_spawn",
+        "elapsedMs": 3199
+      },
+      {
+        "code": "admission_turn_spawned",
+        "elapsedMs": 3202
+      },
+      {
+        "code": "admission_turn_initialize",
+        "elapsedMs": 3206
+      },
+      {
+        "code": "admission_turn_initialized",
+        "elapsedMs": 3478
+      },
+      {
+        "code": "admission_turn_session_resume",
+        "elapsedMs": 3479
+      },
+      {
+        "code": "admission_turn_session_resumed",
+        "elapsedMs": 4583
+      },
+      {
+        "code": "admission_turn_prompt_submitted",
+        "elapsedMs": 4626
+      },
+      {
+        "code": "admission_turn_ownership",
+        "elapsedMs": 4626
+      },
+      {
+        "code": "admission_turn_ownership_verified",
+        "elapsedMs": 4626
+      }
+    ],
+    "closedModuleFences": [],
+    "connectionCount": 1,
+    "browserProof": {
+      "host": "box-node-b24a7a5a2a0aebba",
+      "hostUtc": "2026-10-11T11:32:19Z",
+      "originalHashesMatch": true,
+      "screenshot": "local51-claude-post-idle.png"
+    }
+  },
+  "cold": {
+    "id": "6f0e1d13-8a3f-424c-91b2-99cff411cd83",
+    "status": "succeeded",
+    "started_at": "2026-10-11T11:07:40.320Z",
+    "finished_at": "2026-10-11T11:20:54.857Z",
+    "native_session_id": "fb8d0432-f85e-4533-bb14-4461d8e65920",
+    "runner_instance_id": "e0d157dc-4816-4314-ab01-2e71b92fbe46",
+    "session_id_before": null,
+    "session_id_after": "1dfe4ace-a703-40ba-99fb-0bb7c059cbeb",
+    "error_code": null
+  },
+  "warm": {
+    "id": "7c09cbc4-04a6-4cc8-9673-64716742dee1",
+    "status": "succeeded",
+    "started_at": "2026-10-11T11:21:43.665Z",
+    "finished_at": "2026-10-11T11:23:17.562Z",
+    "native_session_id": "fb8d0432-f85e-4533-bb14-4461d8e65920",
+    "runner_instance_id": "e0d157dc-4816-4314-ab01-2e71b92fbe46",
+    "session_id_before": "1dfe4ace-a703-40ba-99fb-0bb7c059cbeb",
+    "session_id_after": "1dfe4ace-a703-40ba-99fb-0bb7c059cbeb",
+    "error_code": null
+  },
+  "finalArchive": {
+    "status": "completed",
+    "warmDeadline": "2026-10-11T11:37:48.456Z",
+    "retiringObservedAt": "2026-10-11T11:37:52.293Z",
+    "noLiveOwnersObservedAt": "2026-10-11T11:39:04.109Z",
+    "providerObservedAt": "2026-10-11T11:39:08.377Z",
+    "providerState": "archived",
+    "providerHealth": "ok",
+    "stopId": "stop_19831ed1d52375ae",
+    "stopCompletedAt": "2026-10-11T11:38:23.197Z",
+    "guestReads": false
+  },
+  "outcome": "passed_cold_warm_natural_archive_saved_session_restore_and_final_archive",
+  "stagingComparison": {
+    "nodeBytesEqual": true,
+    "productionLockBytesEqual": true,
+    "sidecarBytesEqual": true,
+    "overallPackDigestsDiffer": true,
+    "stagingLifecyclePassClaimed": false
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "observedAt": "2026-10-11T11:29:54.202Z",
+  "schema": "paperclip-runner/remote-provider-pack/v1",
+  "digest": "sha256:9f153a9abdf9af51ae2e988d4079b3c6405723397a167ef6707a740f3074be3a",
+  "sourceRevision": "70fb0988c0aa760f9c84818aaf3fabbc339854b7",
+  "target": {
+    "platform": "linux",
+    "architecture": "x64"
+  },
+  "pins": {
+    "nodeMinimum": "24.11.0",
+    "codex": "0.160.0",
+    "opencode": "1.18.34",
+    "acpx": "0.13.1",
+    "grok": "1.0.13",
+    "claudeAcp": "0.73.0",
+    "codexAcp": "1.6.2"
+  },
+  "distDigest": "sha256:b21d5793a177edd72d46446e21d82a9cbb209fe1b8ca911bae4f4f0c66bf639a",
+  "bridgeDigest": "sha256:9cf3ab7716a4ca0333a56952f85f374a679fafe415f6e8fb632eede15386177f",
+  "claudeProfileDigest": "sha256:9d73d1f0f121fb96cc8badb28c22d5bff02d8582eb2e40360a81c189e1b9422a",
+  "artifacts": {
+    "nodeCommand": {
+      "expectedSha256": "sha256:7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c",
+      "actualSha256": "sha256:7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c"
+    },
+    "productionLock": {
+      "expectedSha256": "sha256:df5143e56269823c040be51a5e45bd53cadb60fecb50fb09ba2848f23e621b67",
+      "actualSha256": "sha256:df5143e56269823c040be51a5e45bd53cadb60fecb50fb09ba2848f23e621b67"
+    },
+    "acpxSidecar": {
+      "expectedSha256": "sha256:c6955c81954a515e768d5dd98216b6d9087f825356d21f83c4fecbef4ff4b414",
+      "actualSha256": "sha256:c6955c81954a515e768d5dd98216b6d9087f825356d21f83c4fecbef4ff4b414"
+    }
+  },
+  "packages": {
+    "node": {
+      "available": false
+    },
+    "acpx": {
+      "version": "0.13.1"
+    },
+    "@agentclientprotocol/claude-agent-acp": {
+      "version": "0.73.0"
+    },
+    "@anthropic-ai/claude-agent-sdk": {
+      "available": false
+    }
+  },
+  "loaderFeatures": {
+    "closedModuleFence": true,
+    "boundedReread": true,
+    "readContinuity": true,
+    "uidGidLinkCount": true,
+    "fatalImportMarker": true
+  },
+  "featureObservedAt": "2026-10-11T11:30:22.901Z",
+  "featureProbeCorrection": "Original probe searched the absent formatted moduleFence= string; corrected probe checks the actual bundled error.moduleFence and fixed REPEATED_CTIME enum."
+}
