@@ -51,6 +51,7 @@ export async function seedPersistentAgentHome(files: NonNullable<Awaited<ReturnT
   try { await files.listPage("", { limit: 1 }); return; }
   catch (error) { if (!isMissingRemoteFile(error)) throw error; }
   const initialFiles: Array<{ name: string; size: number; dev: number; ino: number }> = [];
+  const initialDirectories: string[] = [];
   let total = 0, count = 0;
   async function walk(relative: string) {
     const entries = await fs.readdir(path.join(localRoot, relative), { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
@@ -63,7 +64,10 @@ export async function seedPersistentAgentHome(files: NonNullable<Awaited<ReturnT
       instructionPath(name);
       if (++count > 100_000) throw new Error("Initial agent folder exceeds its entry limit");
       const stat = await fs.lstat(path.join(localRoot, name));
-      if (stat.isDirectory()) await walk(name);
+      if (stat.isDirectory()) {
+        initialDirectories.push(name);
+        await walk(name);
+      }
       else if (stat.isFile() && stat.nlink === 1) {
         total += stat.size;
         if (stat.size > 256 * 1024 * 1024 || total > 2 * 1024 * 1024 * 1024) throw new Error("Initial agent folder exceeds its storage limit");
@@ -88,7 +92,7 @@ export async function seedPersistentAgentHome(files: NonNullable<Awaited<ReturnT
         } while (offset < file.size);
       } finally { await handle.close(); }
     }
-  })());
+  })(), initialDirectories);
 }
 
 /** Translate the domain's transport-neutral errors at the HTTP service edge. */

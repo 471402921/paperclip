@@ -797,11 +797,13 @@ finally:
         base64: bytes.toString("base64"),
         expectedSha256,
       });
-    const seedFiles = async (chunks: AsyncIterable<{ path: string; offset: number; bytes: Buffer }>): Promise<{ seeded: boolean }> => {
+    const seedFiles = async (chunks: AsyncIterable<{ path: string; offset: number; bytes: Buffer }>, directories: readonly string[] = []): Promise<{ seeded: boolean }> => {
       const seedId = randomUUID();
       const started = await remote({ action: "seed-begin", seedId });
       if (!started.started) return { seeded: false };
       try {
+        if (directories.length > 100_000) throw new ComputerError("invalid", "Initial home exceeds its entry limit");
+        for (const path of directories) await remote({ action: "seed-directory", seedId, path });
         for await (const chunk of chunks) {
           if (chunk.bytes.length > 1024 * 1024) throw new ComputerError("invalid", "Initial home chunk exceeds its size limit");
           await remote({ action: "seed-chunk", seedId, path: chunk.path, offset: chunk.offset, base64: chunk.bytes.toString("base64") });

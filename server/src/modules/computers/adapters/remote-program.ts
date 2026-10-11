@@ -124,7 +124,7 @@ def directory(parts,create=False,start=None):
  except BaseException:os.close(fd);raise
 # Initial uploads stay in a private sibling until a no-replace rename publishes them.
 # Each request carries at most one bounded chunk, never the whole home.
-seed_actions=('seed-begin','seed-chunk','seed-commit','seed-abort')
+seed_actions=('seed-begin','seed-directory','seed-chunk','seed-commit','seed-abort')
 # The durable receipt names one exact upload. Root listings (including home
 # admission) reclaim expired uploads even after a controller crash or publish.
 if act in seed_actions or (act=='list' and not p.get('path') and os.path.lexists(os.path.join(os.path.dirname(root),'.paperclip-seed-'+os.path.basename(root)+'.json'))):
@@ -209,7 +209,14 @@ if act in seed_actions or (act=='list' and not p.get('path') and os.path.lexists
     if receipt is None or receipt['seedId']!=token:fail('conflict')
     stagefd=os.open(staging,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=parentfd)
     if read_metadata(stagefd,'owner.json')!=identity(token):fail('invalid')
-    if act=='seed-chunk':
+    if act=='seed-directory':
+     relative=p.get('path','');safe(relative)
+     parts=[part for part in relative.split('/') if part not in ('','.')]
+     if not parts:fail('invalid')
+     fd=directory(['tree']+parts,create=True,start=stagefd);os.close(fd)
+     receipt['updatedAt']=time.time();save_receipt(receipt)
+     print('{}')
+    elif act=='seed-chunk':
      relative=p.get('path','');safe(relative)
      parts=[part for part in relative.split('/') if part not in ('','.')]
      if not parts:fail('invalid')

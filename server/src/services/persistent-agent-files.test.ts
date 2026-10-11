@@ -54,6 +54,17 @@ describe("persistent home initialization", () => {
     expect(paths).not.toContain(".paperclip-runtime/private");
     expect(paths).toContain("memory/.paperclip-runtime/user.txt");
   });
+  it("preserves empty and nested directories in the first seed", async () => {
+    const root = await local();
+    await fs.mkdir(path.join(root, "empty", "nested"), { recursive: true });
+    await fs.mkdir(path.join(root, ".paperclip-runtime"));
+    const seedFiles = vi.fn(async (stream: AsyncIterable<unknown>) => {
+      for await (const _chunk of stream) { /* consume the source */ }
+      return { seeded: true };
+    });
+    await seedPersistentAgentHome({ listPage: async () => { throw { code: "not_found" }; }, seedFiles } as never, root);
+    expect(seedFiles.mock.calls[0]).toEqual([expect.anything(), ["empty", "empty/nested", "memory"]]);
+  });
   it("does not interpret provider outages as an absent directory", async () => {
     const seedFiles = vi.fn();
     await expect(seedPersistentAgentHome({ listPage: async () => { throw new Error("offline"); }, seedFiles } as never, await local())).rejects.toThrow("offline");
