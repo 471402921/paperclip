@@ -7,7 +7,7 @@ import {
   type ChildProcess,
   type SpawnOptionsWithoutStdio,
 } from "node:child_process";
-import { closeSync, constants, existsSync, fstatSync, openSync, readFileSync, realpathSync } from "node:fs";
+import { type BigIntStats, closeSync, constants, existsSync, fstatSync, openSync, readFileSync, realpathSync } from "node:fs";
 import {
   lstat,
   open,
@@ -1848,6 +1848,55 @@ export function sanitizedNodeEnvironment(
   return sanitized;
 }
 
+/**
+ * Read continuity for descriptor-pinned dependency modules. Linux has no separate
+ * per-module expected digest here; equal reads do not create new provenance.
+ * Darwin's existing private-snapshot digest verifier still runs on every pass.
+ * This function is serialized into the child, so it must remain self-contained.
+ */
+export function readStableSnapshotModuleSource(input: {
+  before: Pick<BigIntStats, "dev" | "ino" | "mode" | "uid" | "gid" | "nlink" | "size" | "mtimeNs" | "ctimeNs" | "isFile">;
+  stat: () => Pick<BigIntStats, "dev" | "ino" | "mode" | "uid" | "gid" | "nlink" | "size" | "mtimeNs" | "ctimeNs" | "isFile">;
+  read: (buffer: Buffer, offset: number, length: number, position: number) => number;
+  verify: (bytes: Buffer) => void;
+  maxBytes: number;
+}): Buffer {
+  const reject = (): never => {
+    throw Object.assign(new Error("ACPX provider module changed while it was read"), {
+      code: "ERR_ACPX_UNVERIFIED_MODULE",
+    });
+  };
+  let before = input.before;
+  let first: Buffer | null = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (!before.isFile() || before.size < 0n || before.size > BigInt(input.maxBytes)) reject();
+    const size = Number(before.size);
+    const buffer = Buffer.alloc(size + 1);
+    let offset = 0;
+    while (offset < buffer.length) {
+      const count = input.read(buffer, offset, buffer.length - offset, offset);
+      if (!Number.isSafeInteger(count) || count < 0 || count > buffer.length - offset) reject();
+      if (count === 0) break;
+      offset += count;
+    }
+    const bytes = buffer.subarray(0, offset);
+    const after = input.stat();
+    input.verify(bytes);
+    if (!after.isFile() || bytes.length !== size || BigInt(bytes.length) !== after.size
+      || before.dev !== after.dev || before.ino !== after.ino || before.mode !== after.mode
+      || before.uid !== after.uid || before.gid !== after.gid || before.nlink !== after.nlink
+      || before.size !== after.size || before.mtimeNs !== after.mtimeNs) reject();
+    if (first !== null && !first.equals(bytes)) reject();
+    if (before.ctimeNs === after.ctimeNs) return bytes;
+    if (attempt !== 0) reject();
+    first = bytes;
+    // Continue from the full final metadata, including ctime. A further drift
+    // between passes is therefore rejected, not granted another transition.
+    before = after;
+  }
+  return reject();
+}
+
 function snapshotBootstrap(format: AcpxCommandFormat, guarded = false): string {
   return [
     'const fs = require("node:fs");',
@@ -1916,6 +1965,7 @@ function snapshotBootstrap(format: AcpxCommandFormat, guarded = false): string {
     `const source = fs.readFileSync(${COMMAND_SOURCE_FD});`,
     "let resolvingDescriptorBare = false;",
     "const resolveBareFromDescriptor = (specifier, dependencyDirectoryUrl) => { resolvingDescriptorBare = true; try { return require.resolve(specifier, { paths: [fileURLToPath(dependencyDirectoryUrl)] }); } finally { resolvingDescriptorBare = false; } };",
+    `const readStableSnapshotModuleSource = ${readStableSnapshotModuleSource.toString()};`,
     "registerHooks({ resolve(specifier, context, nextResolve) {",
     "if (resolvingDescriptorBare) return nextResolve(specifier, context);",
     "if (specifier === target) return { url: target, shortCircuit: true };",
@@ -1978,14 +2028,11 @@ function snapshotBootstrap(format: AcpxCommandFormat, guarded = false): string {
     "const extension = extname(fileURLToPath(url));",
     'const moduleFormat = extension === ".mjs" ? "module" : extension === ".cjs" ? "commonjs" : extension === ".json" ? "json" : extension === ".node" ? "addon" : extension === ".js" ? (hintedFormat === "module" || hintedFormat === "commonjs" ? hintedFormat : packageFormat) : hintedFormat;',
     'if (moduleFormat !== "module" && moduleFormat !== "commonjs" && moduleFormat !== "json") { const error = new Error("ACPX provider module format is not supported by descriptor-pinned loading"); error.code = "ERR_ACPX_UNVERIFIED_MODULE"; throw error; }',
-    "const admittedModuleBytes = Number(metadataBefore.size);",
-    "const moduleBuffer = Buffer.alloc(admittedModuleBytes + 1);",
-    "let moduleBytesRead = 0;",
-    "while (moduleBytesRead < moduleBuffer.length) { const bytesRead = fs.readSync(moduleFd, moduleBuffer, moduleBytesRead, moduleBuffer.length - moduleBytesRead, moduleBytesRead); if (bytesRead === 0) break; moduleBytesRead += bytesRead; }",
-    "const moduleSource = moduleBuffer.subarray(0, moduleBytesRead);",
-    "const metadataAfter = fs.fstatSync(moduleFd, { bigint: true });",
-    "verifySnapshotBytes(fileURLToPath(url), moduleSource);",
-    `if (moduleSource.length > ${MAX_AGENT_COMMAND_BYTES} || moduleSource.length !== admittedModuleBytes || BigInt(moduleSource.length) !== metadataAfter.size || metadataBefore.dev !== metadataAfter.dev || metadataBefore.ino !== metadataAfter.ino || metadataBefore.size !== metadataAfter.size || metadataBefore.mtimeNs !== metadataAfter.mtimeNs || metadataBefore.ctimeNs !== metadataAfter.ctimeNs) { const error = new Error("ACPX provider module changed while it was read"); error.code = "ERR_ACPX_UNVERIFIED_MODULE"; throw error; }`,
+    // Re-check both the retained descriptor's canonical path and its named
+    // inode after each pass; a rename is not harmless hydration just because
+    // its already-open descriptor still returns identical bytes.
+    'const statModule = () => { const currentUrl = pathToFileURL(fs.realpathSync(privateSnapshot ? fileURLToPath(url) : "/proc/self/fd/" + moduleFd)).href; const named = fs.lstatSync(fileURLToPath(url), { bigint: true }); const metadata = fs.fstatSync(moduleFd, { bigint: true }); if (currentUrl !== openedUrl || !named.isFile() || named.dev !== metadata.dev || named.ino !== metadata.ino) { const error = new Error("ACPX provider module path changed while it was read"); error.code = "ERR_ACPX_UNVERIFIED_MODULE"; throw error; } return metadata; };',
+    `const moduleSource = readStableSnapshotModuleSource({ before: metadataBefore, stat: statModule, read: (buffer, offset, length, position) => fs.readSync(moduleFd, buffer, offset, length, position), verify: (bytes) => verifySnapshotBytes(fileURLToPath(url), bytes), maxBytes: ${MAX_AGENT_COMMAND_BYTES} });`,
     "return { format: moduleFormat, source: moduleSource, shortCircuit: true };",
     "} finally { fs.closeSync(moduleFd); }",
     "});",
