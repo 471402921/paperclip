@@ -458,11 +458,12 @@ impl AcpxSidecarTransport {
                     let error = response.error.expect("failed response has validated error");
                     return Ok(CommandOutcome::Rejected(LocalRunnerError::invalid(
                         format!(
-                            "ACPX sidecar command {} was rejected (retryable={}, classification={}){}{}",
+                            "ACPX sidecar command {} was rejected (retryable={}, classification={}){}{}{}",
                             command.as_str(),
                             error.retryable,
                             response_error_classification(&error),
                             response_error_module_fence(&error).map(|fence| format!(" moduleFence={fence}")).unwrap_or_default(),
+                            response_error_module_read(&error).unwrap_or_default(),
                             self.diagnostic_suffix(),
                         ),
                     )));
@@ -926,6 +927,9 @@ fn stderr_diagnostic_categories(value: &str) -> BTreeSet<&'static str> {
 
 // Only fixed loader fence codes may cross the private provider-stderr boundary.
 fn response_error_module_fence(error: &ResponseError) -> Option<&'static str> {
+    if response_error_module_read(error).is_some() {
+        return Some("link_count");
+    }
     match error.code.as_str() {
         "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.RESOLUTION" => Some("resolution"),
         "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.OPEN" => Some("open"),
@@ -946,6 +950,59 @@ fn response_error_module_fence(error: &ResponseError) -> Option<&'static str> {
         "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.REPEATED_CTIME" => Some("repeated_ctime"),
         _ => None,
     }
+}
+
+// Independently validate the compact failure-only metadata from the sidecar.
+fn response_error_module_read(error: &ResponseError) -> Option<String> {
+    let suffix = error
+        .code
+        .strip_prefix("AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.LINK_COUNT.READ.")?;
+    let fields: Vec<&str> = suffix.split('.').collect();
+    if fields.len() != 5 || !matches!(fields[0], "1" | "2") {
+        return None;
+    }
+    let number = |text: &str| -> Option<u64> {
+        if text.is_empty()
+            || text.len() > 20
+            || !text.bytes().all(|b| b.is_ascii_digit())
+            || (text.len() > 1 && text.starts_with('0'))
+        {
+            return None;
+        }
+        text.parse().ok()
+    };
+    let before = number(fields[1])?;
+    let after = number(fields[2])?;
+    if before == after || fields[3] != if after > before { "I" } else { "D" } {
+        return None;
+    }
+    let flags = fields[4];
+    if flags.len() != 8
+        || !flags.starts_with("111111")
+        || !flags.bytes().all(|b| matches!(b, b'0' | b'1'))
+    {
+        return None;
+    }
+    let mut diagnostic = format!(
+        " moduleReadAttempt={} moduleNlinkBefore={} moduleNlinkAfter={} moduleNlinkDirection={}",
+        fields[0],
+        before,
+        after,
+        if after > before {
+            "increase"
+        } else {
+            "decrease"
+        }
+    );
+    for (field, equal) in [
+        "Dev", "Inode", "Mode", "Uid", "Gid", "Size", "Mtime", "Ctime",
+    ]
+    .into_iter()
+    .zip(flags.bytes())
+    {
+        diagnostic.push_str(&format!(" module{field}Equal={}", equal == b'1'));
+    }
+    Some(diagnostic)
 }
 
 fn response_error_classification(error: &ResponseError) -> &'static str {
@@ -1207,7 +1264,7 @@ mod tests {
             })
             .collect();
         let response = json!({ "protocolVersion": GENERATED_ACPX_SIDECAR_PROTOCOL_VERSION,
-            "id": 1, "ok": false, "error": { "code": "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.REPEATED_CTIME",
+            "id": 1, "ok": false, "error": { "code": "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.LINK_COUNT.READ.1.2.1.D.11111110",
             "message": "/private/token-canary", "retryable": false } });
         let lines = frames
             .iter()
@@ -1236,7 +1293,12 @@ mod tests {
             ),
             "{error}"
         );
-        assert!(error.contains("moduleFence=repeated_ctime"), "{error}");
+        assert!(error.contains("moduleFence=link_count"), "{error}");
+        assert!(error.contains("moduleReadAttempt=1 moduleNlinkBefore=2 moduleNlinkAfter=1 moduleNlinkDirection=decrease"), "{error}");
+        assert!(
+            error.contains("moduleMtimeEqual=true moduleCtimeEqual=false"),
+            "{error}"
+        );
         assert!(
             error.contains("admissionStage=handshake admissionElapsedMs=24"),
             "{error}"
@@ -1431,6 +1493,48 @@ mod tests {
                     "unclassified"
                 }
             );
+        }
+    }
+
+    #[test]
+    fn link_count_failure_details_are_bounded_and_keep_the_fence() {
+        for (suffix, valid) in [
+            ("1.1.2.I.11111110", true),
+            ("2.2.1.D.11111101", true),
+            ("1.0.18446744073709551615.I.11111111", true),
+            ("0.1.2.I.11111110", false),
+            ("3.1.2.I.11111110", false),
+            ("1.-1.2.I.11111110", false),
+            ("1.01.2.I.11111110", false),
+            ("1.1.18446744073709551616.I.11111110", false),
+            ("1.1.2.D.11111110", false),
+            ("1.1.1.I.11111110", false),
+            ("1.1.2.I.01111110", false),
+            ("1.1.2.I.111111100", false),
+            ("1.1.2.I.11111110.PRIVATE_CANARY", false),
+        ] {
+            let error = ResponseError {
+                code: format!("AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.LINK_COUNT.READ.{suffix}"),
+                message: "/private/token-canary".to_owned(),
+                retryable: false,
+            };
+            let detail = response_error_module_read(&error);
+            assert_eq!(detail.is_some(), valid, "{suffix}");
+            assert_eq!(
+                response_error_module_fence(&error),
+                if valid { Some("link_count") } else { None }
+            );
+            assert_eq!(
+                response_error_classification(&error),
+                if valid {
+                    "agent_startup_unverified_module"
+                } else {
+                    "unclassified"
+                }
+            );
+            if let Some(detail) = detail {
+                assert!(!detail.contains("private") && !detail.contains("CANARY"));
+            }
         }
     }
 

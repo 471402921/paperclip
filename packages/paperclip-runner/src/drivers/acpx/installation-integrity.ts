@@ -1870,9 +1870,9 @@ export function readStableSnapshotModuleSource(input: {
   verify: (bytes: Buffer) => void;
   maxBytes: number;
 }): Buffer {
-  const reject = (moduleFence: string): never => {
+  const reject = (moduleFence: string, moduleReadDiagnostic?: string): never => {
     throw Object.assign(new Error("ACPX provider module changed while it was read"), {
-      code: "ERR_ACPX_UNVERIFIED_MODULE", moduleFence,
+      code: "ERR_ACPX_UNVERIFIED_MODULE", moduleFence, ...(moduleReadDiagnostic ? { moduleReadDiagnostic } : {}),
     });
   };
   let before = input.before;
@@ -1898,7 +1898,17 @@ export function readStableSnapshotModuleSource(input: {
     if (before.mode !== after.mode) reject("MODE");
     if (before.uid !== after.uid) reject("UID");
     if (before.gid !== after.gid) reject("GID");
-    if (before.nlink !== after.nlink) reject("LINK_COUNT");
+    if (before.nlink !== after.nlink) {
+      // Failure-only data: never admit a link topology change as hydration.
+      const bounded = before.nlink >= 0n && after.nlink >= 0n
+        && before.nlink <= 18446744073709551615n && after.nlink <= 18446744073709551615n;
+      const equal = [before.dev === after.dev, before.ino === after.ino, before.mode === after.mode,
+        before.uid === after.uid, before.gid === after.gid, before.size === after.size,
+        before.mtimeNs === after.mtimeNs, before.ctimeNs === after.ctimeNs].map(value => value ? "1" : "0").join("");
+      reject("LINK_COUNT", bounded
+        ? `${attempt + 1}:${before.nlink}:${after.nlink}:${after.nlink > before.nlink ? "I" : "D"}:${equal}`
+        : undefined);
+    }
     if (before.mtimeNs !== after.mtimeNs) reject("MTIME");
     if (first !== null && !first.equals(bytes)) reject("BYTE_CONTINUITY");
     if (before.ctimeNs === after.ctimeNs) return bytes;
@@ -2060,7 +2070,7 @@ function snapshotBootstrap(format: AcpxCommandFormat, guarded = false): string {
     guarded
       ? "const exitOnImportFailure = reapOnGuardianLoss;"
       : "const exitOnImportFailure = process.exit.bind(process);",
-    'import(target).catch((error) => { let category = "OTHER"; try { if (error?.code === "ERR_ACPX_UNVERIFIED_MODULE") { category = "UNVERIFIED_MODULE"; const fence = error.moduleFence; if (["RESOLUTION", "OPEN", "BOUNDS", "ANCESTRY", "FORMAT", "PATH_IDENTITY", "READ_RESULT", "SIZE", "DEVICE", "INODE", "MODE", "UID", "GID", "LINK_COUNT", "MTIME", "BYTE_CONTINUITY", "REPEATED_CTIME"].includes(fence)) category += ":" + fence; } } catch {} try { writeImportFailure(2, "PAPERCLIP_ACPX_IMPORT_FAILURE:" + category + ":END\\n"); console.error(error); } finally { exitOnImportFailure(1); } });',
+    'import(target).catch((error) => { let category = "OTHER"; try { if (error?.code === "ERR_ACPX_UNVERIFIED_MODULE") { category = "UNVERIFIED_MODULE"; const fence = error.moduleFence; if (["RESOLUTION", "OPEN", "BOUNDS", "ANCESTRY", "FORMAT", "PATH_IDENTITY", "READ_RESULT", "SIZE", "DEVICE", "INODE", "MODE", "UID", "GID", "LINK_COUNT", "MTIME", "BYTE_CONTINUITY", "REPEATED_CTIME"].includes(fence)) category += ":" + fence; } } catch {} try { writeImportFailure(2, "PAPERCLIP_ACPX_IMPORT_FAILURE:" + category + ":END\\n"); const detail = error?.moduleReadDiagnostic; if (category === "UNVERIFIED_MODULE:LINK_COUNT" && typeof detail === "string" && /^[12]:(0|[1-9][0-9]{0,19}):(0|[1-9][0-9]{0,19}):[ID]:111111[01]{2}$/.test(detail)) writeImportFailure(2, "PAPERCLIP_ACPX_LINK_COUNT:" + detail + ":END\\n"); console.error(error); } finally { exitOnImportFailure(1); } });',
   ].join("");
 }
 
