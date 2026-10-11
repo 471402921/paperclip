@@ -103,21 +103,33 @@ describe("server package build script", () => {
     );
   });
 
-  it("compiles the vendored Runner's TypeScript surface once per build", () => {
+  it("compiles the vendored Runner's TypeScript surface once per build", async () => {
     // prepare:runner-vendor runs the Runner's full build, and `pnpm -r build`
     // has already run it once by the time the server builds. Each extra
-    // build:typescript inside that chain (two tsc projects plus the eval-kernel
+    // build:typescript inside that build (two tsc projects plus the eval-kernel
     // rebuild) costs about 7s on the CI Build job's critical path, twice.
     // Checks that read dist/ must call their script directly, the way
     // generate-replay-goldens.mjs already does, not through a `check:*`
     // wrapper that rebuilds first for standalone use.
-    const runner = JSON.parse(readFileSync(new URL(
-      "../../../packages/paperclip-runner/package.json", import.meta.url,
-    ), "utf8")) as { scripts: Record<string, string> };
-    const steps = runner.scripts.build.split(" && ");
-    const wrapped = steps
-      .filter((step) => step.startsWith("pnpm run "))
-      .map((step) => step.slice("pnpm run ".length));
+    //
+    // The Runner's build is scripts/build-runner-package.mjs, which runs the
+    // TypeScript steps while cargo compiles and exports the step plan, so the
+    // plan is read from the module rather than parsed out of a shell chain.
+    const runnerRoot = new URL("../../../packages/paperclip-runner/", import.meta.url);
+    const runner = JSON.parse(readFileSync(
+      new URL("package.json", runnerRoot), "utf8",
+    )) as { scripts: Record<string, string> };
+    expect(runner.scripts.build).toBe("node scripts/build-runner-package.mjs");
+
+    const plan = await import(new URL("scripts/build-runner-package.mjs", runnerRoot).href) as {
+      STEPS_DURING_CARGO: ReadonlyArray<{ run?: string; node?: string[] }>;
+      STAGE_BINARY_STEP: { node: string[] };
+      STEPS_AFTER_BINARY: ReadonlyArray<{ run?: string; node?: string[] }>;
+      describeStep: (step: { run?: string; node?: string[] }) => string;
+    };
+    const wrapped = plan.STEPS_DURING_CARGO
+      .filter((step) => step.run)
+      .map((step) => step.run as string);
     for (const name of wrapped) {
       expect(runner.scripts[name], `build step ${name}`).toBeDefined();
     }
@@ -125,12 +137,22 @@ describe("server package build script", () => {
       step === "build:typescript" || (runner.scripts[step] ?? "").includes("build:typescript");
 
     expect(wrapped.filter(compiles)).toEqual(["build:typescript"]);
+    const steps = plan.STEPS_DURING_CARGO.map(plan.describeStep);
     expect(steps).toContain("node scripts/generate-semantic-contracts.mjs --check");
     expect(steps).toContain("node scripts/check-runner-workflow-traceability.mjs");
     expect(steps.indexOf("node scripts/generate-semantic-contracts.mjs --check"))
       .toBeGreaterThan(steps.indexOf("pnpm run build:typescript"));
     expect(steps.indexOf("node scripts/check-runner-workflow-traceability.mjs"))
       .toBeGreaterThan(steps.indexOf("pnpm run build:typescript"));
+    // The binary the server vendors is staged by the build itself, after
+    // cargo, and the steps that read it stay behind the staging step.
+    expect(plan.describeStep(plan.STAGE_BINARY_STEP)).toBe("node scripts/stage-runner-binary.mjs");
+    expect(plan.STEPS_AFTER_BINARY.map(plan.describeStep)).toEqual([
+      "node scripts/generate-replay-goldens.mjs --check",
+      "node scripts/generate-semantic-action-catalog.mjs --check",
+    ]);
+    expect([...plan.STEPS_DURING_CARGO, ...plan.STEPS_AFTER_BINARY].map(plan.describeStep))
+      .not.toContain("pnpm run build:binary");
   });
 
   it("ships the pinned OpenCode dependency resolved by the vendored Runner", () => {
