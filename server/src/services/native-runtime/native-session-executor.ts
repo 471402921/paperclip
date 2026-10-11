@@ -42,6 +42,7 @@ import {
 import { nativeCompletionFeedback } from "./native-completion-feedback.js";
 import { hasAcknowledgedNativeReassignmentStopIntent, hasAcknowledgedNativeStopIntent } from "../acknowledged-native-stop.js";
 import { stoppedCodexTurnIsTextOnly } from "./stopped-codex-turn.js";
+import { verifyProviderPackFileLayout } from "./remote-provider-pack-file-layout.js";
 import { prepareVerifiedRemoteProviderPack } from "./remote-provider-pack.js";
 import { verifyRemoteProviderPackArtifacts, assertRemoteProviderPackVerificationResult, computerProviderPackCachePath, prepareComputerProviderPackCache, pinnedComputerProviderPack, computerAcpxLaunchProfileDigest, readPinnedComputerProviderMetadata, assertPinnedComputerProviderState } from "./remote-provider-pack-cache.js";
 import { selectRemotePiCompanion } from "./remote-pi-companion.js";
@@ -73,6 +74,7 @@ import {
   readSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -482,6 +484,8 @@ type WarmNativeSession = {
   environmentId: string | null;
   busy: boolean;
   closeOnReleaseReason?: string;
+  closeAfterExecution?: boolean;
+  explicitCloseRequested?: boolean;
   idleTimer: ReturnType<typeof setTimeout> | null;
   lastActivityAt: string;
 };
@@ -503,6 +507,7 @@ class ComputerOwnerSupersededError extends Error {
 }
 
 export async function closeWarmNativeSession(entry: WarmNativeSession, reason: string, preserveInstructionsForRunId?: string) {
+  entry.closeAfterExecution = false;
   let closeFailure: unknown;
   let closeCompleted = false;
   let closeState: WarmRetirementDiagnostic["closeState"] = "not_started";
@@ -708,7 +713,7 @@ export async function closeWarmNativeSessionsForEnvironment(input: {
 
 /** Cancel one attempt without closing other agents on its computer. */
 export async function closeWarmNativeSessionsForRun(input: { runId: string; reason: string }) {
-  return closeIdleWarmNativeSessions(input);
+  return closeIdleWarmNativeSessions({ ...input, closeBusyOnRelease: true });
 }
 
 /** Suspend idle owners and persist their remote backup before a controller
@@ -736,11 +741,15 @@ async function closeIdleWarmNativeSessions(input: {
     if (input.environmentId !== undefined && entry.environmentId !== input.environmentId) {
       continue;
     }
+    if (input.closeBusyOnRelease) entry.explicitCloseRequested = true;
     if (entry.busy || entry.preparingRunId || executingRunnerdSessionScopes.has(sessionId)) {
       // A busy turn can complete while another idle session is checkpointing.
       // Fence that entry now so its eventual release cannot leave a new idle
       // owner behind after the shutdown sweep has already passed it.
-      if (input.closeBusyOnRelease) entry.closeOnReleaseReason = input.reason;
+      if (input.closeBusyOnRelease) {
+        entry.closeOnReleaseReason = input.reason;
+        if (executingRunnerdSessionScopes.has(sessionId)) entry.closeAfterExecution = true;
+      }
       busy += 1;
       continue;
     }
@@ -758,7 +767,8 @@ async function closeIdleWarmNativeSessions(input: {
       if (warmNativeSessions.get(sessionId) === entry) warmNativeSessions.delete(sessionId);
       closed += 1;
     } catch {
-      if (!entry.instructionWorkingCopy?.runId) warmNativeSessions.delete(sessionId);
+      // A later requested Stop must not mistake failed cleanup for no owner.
+      if (!entry.explicitCloseRequested && !entry.instructionWorkingCopy?.runId) warmNativeSessions.delete(sessionId);
       failed += 1;
     } finally {
       entry.busy = false;
@@ -6361,10 +6371,10 @@ async function releaseWarmNativeSession(
   // A late completion or cleanup callback from an older execution must never
   // release a replacement that has since claimed the same logical session.
   if (!entry || entry.ownerToken !== ownerToken) return;
-  entry.busy = false;
+  entry.busy = true;
   entry.lastActivityAt = new Date().toISOString();
   if (entry.idleTimer !== null) clearTimeout(entry.idleTimer);
-  if (failed || entry.closeOnReleaseReason !== undefined) {
+  const closeRequested = async () => {
     const requireCleanClose = entry.closeOnReleaseReason !== undefined;
     entry.closeOnReleaseReason ??= "warm native session failed";
     entry.busy = true;
@@ -6372,13 +6382,25 @@ async function releaseWarmNativeSession(
       await closeWarmNativeSession(entry, entry.closeOnReleaseReason);
       if (warmNativeSessions.get(sessionId) === entry) warmNativeSessions.delete(sessionId);
     } catch (error) {
-      if (!entry.instructionWorkingCopy?.runId) warmNativeSessions.delete(sessionId);
-      if (requireCleanClose) throw error;
+      // An explicit Stop can arrive while an implicit close is pending.
+      // Consult the current request, not only the pre-await close reason.
+      if (!requireCleanClose && !entry.explicitCloseRequested && !entry.instructionWorkingCopy?.runId) warmNativeSessions.delete(sessionId);
+      if (requireCleanClose || entry.explicitCloseRequested) throw error;
     } finally { entry.busy = false; }
+  };
+  if (failed || entry.closeOnReleaseReason !== undefined) {
+    await closeRequested();
     return;
   }
   // Durable shared-computer ownership must be retained before completion is acknowledged.
-  await entry.computerTarget?.retainWarm(idleTimeoutMs);
+  try { await entry.computerTarget?.retainWarm(idleTimeoutMs); }
+  finally { entry.busy = false; }
+  // Stop may arrive while durable retention is being written. It still owns
+  // protocol close before any physical retirement, even after a successful turn.
+  if (entry.closeOnReleaseReason !== undefined) {
+    await closeRequested();
+    return;
+  }
   entry.idleTimer = setTimeout(() => {
     const current = warmNativeSessions.get(sessionId);
     if (current !== entry || current.busy) return;
@@ -6394,7 +6416,7 @@ async function releaseWarmNativeSession(
           current.idleTimer = null;
           return;
         }
-        if (!current.instructionWorkingCopy?.runId && warmNativeSessions.get(sessionId) === current) warmNativeSessions.delete(sessionId);
+        if (!current.explicitCloseRequested && !current.instructionWorkingCopy?.runId && warmNativeSessions.get(sessionId) === current) warmNativeSessions.delete(sessionId);
       })
       .finally(() => { current.busy = false; });
   }, idleTimeoutMs);
@@ -7876,6 +7898,13 @@ export async function executePaperclipNativeSession(input: {
         input.execution.binding.runId
     ) {
       executingRunnerdSessionScopes.delete(sessionScopeId);
+      const entry = warmNativeSessions.get(sessionScopeId);
+      // A stop arriving after warm release but before this scope clears cannot
+      // close in parallel with execution. Drain that exact request now, retaining
+      // failed cleanup without reclassifying the committed provider result.
+      if (entry?.runId === runId && entry.closeAfterExecution && entry.closeOnReleaseReason !== undefined) {
+        await closeWarmNativeSessionsForRun({ runId, reason: entry.closeOnReleaseReason });
+      }
     }
     try {
       await cleanupStagedAttachments();
@@ -10192,6 +10221,7 @@ type RemoteProviderPackManifest = {
   schema: typeof REMOTE_PROVIDER_PACK_SCHEMA;
   digest: string;
   payload: {
+    fileLayout?: "independent-regular-files-v1";
     pins: typeof REMOTE_PROVIDER_PACK_PINS;
     target: { platform: string; architecture: string };
     runnerSourceRevision: string;
@@ -10339,6 +10369,7 @@ export function validateRemoteProviderPackIdentity(
       "runner_remote_provider_artifact_incompatible: provider pack pins or source revision do not match",
     );
   }
+  verifyProviderPackFileLayout(null, payload.fileLayout, { lstatSync, statSync, readdirSync }, { join });
   const digest = `sha256:${createHash("sha256")
     .update(canonicalJson(payload))
     .digest("hex")}`;
@@ -10448,6 +10479,9 @@ export function validateRemoteProviderPackIdentity(
     throw new Error(
       "runner_remote_provider_artifact_incompatible: provider bridge digest mismatch",
     );
+  }
+  if (verifyControllerFiles) {
+    verifyProviderPackFileLayout(packRoot, payload.fileLayout, { lstatSync, statSync, readdirSync }, { join });
   }
   return structuredClone(manifest);
 }
@@ -12422,6 +12456,7 @@ async function createRunnerdBackendWithinSessionClaim(
       "const packageVersion=(pkg)=>JSON.parse(fs.readFileSync(path.join(root,'node_modules',...pkg.split('/'),'package.json'),'utf8')).version",
       "const expectedPackages={acpx:manifest.payload.pins.acpx,'@agentclientprotocol/claude-agent-acp':manifest.payload.pins.claudeAcp,'@agentclientprotocol/codex-acp':manifest.payload.pins.codexAcp,'opencode-ai':manifest.payload.pins.opencode}",
       "for(const [pkg,version] of Object.entries(expectedPackages))if(packageVersion(pkg)!==version)fail('package_version_mismatch')",
+      `(${verifyProviderPackFileLayout.toString()})(root,manifest.payload.fileLayout,fs,path)`,
     ].join(";");
     await verifyRemoteProviderPackArtifacts({
       runner: remoteCommandRunner,

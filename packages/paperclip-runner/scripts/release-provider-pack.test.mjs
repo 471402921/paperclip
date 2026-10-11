@@ -77,3 +77,14 @@ test("release assembly rejects rehashed stale or missing packs before staging an
     }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test("file layout is a closed, digest-bound policy with legacy compatibility", () => {
+  const legacy = seal(fixture());
+  const independent = seal({ ...fixture(), fileLayout: "independent-regular-files-v1" });
+  assert.notEqual(independent.digest, legacy.digest);
+  assert.equal(verifyReleaseProviderPack(independent, revision), independent);
+  assert.equal(verifyReleaseProviderPack(legacy, revision), legacy);
+  for (const fileLayout of [null, {}, "unknown-policy"]) {
+    assert.throws(() => verifyReleaseProviderPack(seal({ ...fixture(), fileLayout }), revision), /file layout/);
+  }
+});

@@ -1766,6 +1766,10 @@ describe("ACPX installation integrity", () => {
           if (reasons[transition]) {
             pass = 0;
             expect(read).toThrow(expect.objectContaining({ code: "ERR_ACPX_UNVERIFIED_MODULE", moduleFence: reasons[transition] }));
+            if (transition === "nlink") {
+              pass = 0;
+              expect(read).toThrow(expect.objectContaining({ moduleReadDiagnostic: "1:1:2:I:11111110" }));
+            }
           }
           expect(pass).toBeLessThanOrEqual(2);
           if (transition === "snapshot_second") expect(verify).toHaveBeenCalledTimes(2);
@@ -1774,7 +1778,19 @@ describe("ACPX installation integrity", () => {
     );
   });
 
-  it.runIf(process.platform !== "win32").each(["once", "recurring", "bytes", "mode", "rename", "replacement", "symlink"] as const)("loads dependency bytes only after stable ctime-only continuity (%s)", async (transition) => {
+  it("reports the second read attempt without accepting link drift", () => {
+    const bytes = Buffer.from("stable bytes");
+    const before = { dev: 1n, ino: 2n, mode: 0o100444n, uid: 1n, gid: 1n, nlink: 1n,
+      size: BigInt(bytes.length), mtimeNs: 10n, ctimeNs: 20n, isFile: () => true };
+    let passes = 0;
+    expect(() => readStableSnapshotModuleSource({ before, maxBytes: 64, verify: () => {},
+      read: (buffer, offset, length, position) => { if (position === 0) passes++; return bytes.copy(buffer, offset, position, position + length); },
+      stat: () => ({ ...before, ctimeNs: 21n, nlink: passes === 2 ? 0n : 1n }),
+    })).toThrow(expect.objectContaining({ code: "ERR_ACPX_UNVERIFIED_MODULE", moduleFence: "LINK_COUNT", moduleReadDiagnostic: "2:1:0:D:11111111" }));
+    expect(passes).toBe(2);
+  });
+
+  it.runIf(process.platform !== "win32").each(["once", "recurring", "bytes", "mode", "rename", "replacement", "symlink", "link"] as const)("loads dependency bytes only after stable ctime-only continuity (%s)", async (transition) => {
     const fixture = await installationFixture();
     await writeFile(join(fixture.commandDirectory, "dependency.mjs"), 'export const value = "dependency-success";');
     const command = `import fs from 'node:fs';
@@ -1785,6 +1801,7 @@ describe("ACPX installation integrity", () => {
         if (buffer.subarray(offset, offset + count).includes(Buffer.from('dependency-success'))) {
           moduleFd = fd; passes += 1;
           if (${JSON.stringify(transition)} === 'bytes' && passes === 2) buffer[offset] = 0;
+          if (process.platform === 'linux' && passes === 1 && ${JSON.stringify(transition)} === 'link') fs.linkSync(new URL('./dependency.mjs', import.meta.url), new URL('./dependency-link.mjs', import.meta.url));
           if (passes === 1 && ['rename','replacement','symlink'].includes(${JSON.stringify(transition)})) {
             const named = new URL('./dependency.mjs', import.meta.url);
             fs.renameSync(named, new URL('./moved.mjs', import.meta.url));
@@ -1799,6 +1816,7 @@ describe("ACPX installation integrity", () => {
         if (fd === moduleFd && options?.bigint) {
           metadata.ctimeNs += ${JSON.stringify(transition)} === 'recurring' ? BigInt(passes) : 1n;
           if (${JSON.stringify(transition)} === 'mode') metadata.mode ^= 0o100n;
+          if (process.platform !== 'linux' && ${JSON.stringify(transition)} === 'link') metadata.nlink += 1n;
         }
         return metadata;
       };
@@ -1821,7 +1839,12 @@ describe("ACPX installation integrity", () => {
       const [code] = await closed;
       expect(code).toBe(transition === "once" ? 0 : 1);
       expect(stdout).toBe(transition === "once" ? "dependency-success" : "");
-      const fences: Record<string, string> = { recurring: "REPEATED_CTIME", bytes: "BYTE_CONTINUITY", mode: "MODE" };
+      const fences: Record<string, string> = { recurring: "REPEATED_CTIME", bytes: "BYTE_CONTINUITY", mode: "MODE", link: "LINK_COUNT" };
+      if (transition === "link") {
+        expect(stderr).toContain("PAPERCLIP_ACPX_LINK_COUNT:1:1:2:I:11111110:END");
+        expect(acpxSidecarErrorCode(Object.assign(new Error("private-canary"), { detailCode: "AGENT_STARTUP_FAILED", stderrSummary: stderr.replace(/\s+/gu, " ") })))
+          .toBe("AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.LINK_COUNT.READ.1.1.2.I.11111110");
+      }
       const fence = fences[transition];
       if (fence && !(transition === "bytes" && process.platform === "darwin")) {
         expect(stderr).toContain(`PAPERCLIP_ACPX_IMPORT_FAILURE:UNVERIFIED_MODULE:${fence}:END\n`);
