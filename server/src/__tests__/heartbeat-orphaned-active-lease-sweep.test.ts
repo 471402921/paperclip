@@ -5,6 +5,7 @@ import {
   costEvents,
   agents,
   companies,
+  computers,
   createDb,
   environmentLeases,
   environments,
@@ -65,6 +66,7 @@ describeEmbeddedPostgres("heartbeat sweepOrphanedActiveLeases", () => {
     await db.delete(environmentLeases);
     await db.delete(costEvents);
     await db.delete(heartbeatRuns);
+    await db.delete(computers);
     await db.delete(environments);
     await db.delete(agents);
     await db.delete(companies);
@@ -98,7 +100,7 @@ describeEmbeddedPostgres("heartbeat sweepOrphanedActiveLeases", () => {
     await db.insert(environments).values({
       id: environmentId,
       companyId,
-      name: "Fake Sandbox",
+      name: `Fake Sandbox ${environmentId}`,
       driver: "sandbox",
       status: "active",
       config: { provider: "fake", image: "ubuntu:24.04" },
@@ -159,6 +161,104 @@ describeEmbeddedPostgres("heartbeat sweepOrphanedActiveLeases", () => {
   }
 
   const oldEnough = () => new Date(Date.now() - 60 * 60 * 1000);
+
+  async function seedWarmComputerLease() {
+    const scope = await seedCompanyAgentAndEnvironment();
+    await db.update(environments).set({ driver: "computer" }).where(eq(environments.id, scope.environmentId));
+    const runId = await insertHeartbeatRun({ ...scope, status: "succeeded" });
+    const computerId = randomUUID(), ownerId = randomUUID();
+    const owner = { id: ownerId, generation: 1, kind: "runner", phase: "warm", agentId: scope.agentId,
+      runId, admittedAt: oldEnough().toISOString(), deadline: new Date(Date.now() + 300_000).toISOString(),
+      absoluteDeadline: null, retirementDeadline: null, process: { bootId: randomUUID(), unitName: "test", nonce: "test", launchGeneration: 1 } };
+    await db.insert(computers).values({ id: computerId, companyId: scope.companyId, environmentId: scope.environmentId,
+      provider: "boat", providerId: randomUUID(), ledger: { status: "attached", owners: [owner], placements: {}, action: null } });
+    const leaseId = await insertActiveLease({ ...scope, heartbeatRunId: runId, updatedAt: oldEnough(),
+      provider: "boat", providerLeaseId: ownerId });
+    await db.update(environmentLeases).set({ metadata: { driver: "computer", agentId: scope.agentId,
+      computerOwner: { computerId, ownerId, generation: 1 } } }).where(eq(environmentLeases.id, leaseId));
+    return { ...scope, runId, computerId, ownerId, leaseId, owner };
+  }
+
+  it("preserves an authoritative warm computer while successful-run instruction cleanup delays lease retention", async () => {
+    const fixture = await seedWarmComputerLease();
+    const destroyRunLease = vi.fn();
+    const heartbeat = heartbeatService(db, { environmentRuntime: { destroyRunLease } as unknown as HeartbeatEnvironmentRuntime });
+    expect(await heartbeat.sweepOrphanedActiveLeases({ backoffMs: 300_000 })).toEqual({ recovered: 0 });
+    await heartbeat.sweepPendingCleanupLeases({ backoffMs: 0 });
+    expect(destroyRunLease).not.toHaveBeenCalled();
+    expect(await leaseRow(fixture.leaseId)).toMatchObject({ status: "active", failureReason: null });
+    // The normal heartbeat can finish its delayed cleanup and retain the lease.
+    await db.update(environmentLeases).set({ status: "retained" }).where(eq(environmentLeases.id, fixture.leaseId));
+    expect(await heartbeat.sweepOrphanedActiveLeases({ backoffMs: 0 })).toEqual({ recovered: 0 });
+  });
+
+  it.each(["expired", "retired", "foreign_run", "foreign_agent", "generation", "computer", "environment", "company", "provider_lease", "invalid_deadline", "missing_process", "invalid_process", "invalid_launch_generation"])(
+    "still recovers a computer lease without exact bounded warm authority: %s", async (kind) => {
+      const fixture = await seedWarmComputerLease();
+      const owner = { ...fixture.owner };
+      if (kind === "expired") owner.deadline = new Date(Date.now() - 60_000).toISOString();
+      if (kind === "retired") owner.phase = "retired";
+      if (kind === "foreign_run") owner.runId = randomUUID();
+      if (kind === "foreign_agent") owner.agentId = randomUUID();
+      if (kind === "generation") owner.generation += 1;
+      if (kind === "invalid_deadline") owner.deadline = "invalid";
+      if (kind === "missing_process") Object.assign(owner, { process: null });
+      if (kind === "invalid_process") owner.process = { ...owner.process, nonce: "" };
+      if (kind === "invalid_launch_generation") owner.process = { ...owner.process, launchGeneration: 0 };
+      await db.update(computers).set({ ledger: { status: "attached", owners: [owner] } }).where(eq(computers.id, fixture.computerId));
+      if (kind === "computer") await db.update(environmentLeases).set({ metadata: { driver: "computer", agentId: fixture.agentId,
+        computerOwner: { computerId: randomUUID(), ownerId: fixture.ownerId, generation: 1 } } }).where(eq(environmentLeases.id, fixture.leaseId));
+      if (kind === "provider_lease") await db.update(environmentLeases).set({ providerLeaseId: randomUUID() }).where(eq(environmentLeases.id, fixture.leaseId));
+      if (kind === "environment" || kind === "company") {
+        const foreign = await seedCompanyAgentAndEnvironment();
+        await db.update(computers).set(kind === "company" ? { companyId: foreign.companyId } : { environmentId: foreign.environmentId })
+          .where(eq(computers.id, fixture.computerId));
+      }
+      expect(await heartbeatService(db).sweepOrphanedActiveLeases({ backoffMs: 300_000 })).toEqual({ recovered: 1 });
+      expect(await leaseRow(fixture.leaseId)).toMatchObject({ status: "pending_cleanup", failureReason: "orphaned_active_lease_recovered" });
+    });
+
+  it("preserves a warm owner whose stopped process was relaunched within the same owner generation", async () => {
+    const fixture = await seedWarmComputerLease();
+    await db.update(computers).set({ ledger: { owners: [{ ...fixture.owner,
+      process: { ...fixture.owner.process, launchGeneration: 2 } }] } })
+      .where(eq(computers.id, fixture.computerId));
+    // Process launch generation is an independent counter, not an owner epoch.
+    expect(await heartbeatService(db).sweepOrphanedActiveLeases({ backoffMs: 300_000 })).toEqual({ recovered: 0 });
+  });
+
+  it("honors only the existing bounded warm shutdown grace", async () => {
+    const fixture = await seedWarmComputerLease();
+    await db.update(computers).set({ ledger: { owners: [{ ...fixture.owner, deadline: new Date(Date.now() - 10_000).toISOString() }] } })
+      .where(eq(computers.id, fixture.computerId));
+    expect(await heartbeatService(db).sweepOrphanedActiveLeases({ backoffMs: 300_000 })).toEqual({ recovered: 0 });
+  });
+
+  it("allows cleanup after the same warm reservation and shutdown grace expire", async () => {
+    const fixture = await seedWarmComputerLease();
+    const heartbeat = heartbeatService(db);
+    expect(await heartbeat.sweepOrphanedActiveLeases({ backoffMs: 0 })).toEqual({ recovered: 0 });
+    await db.update(computers).set({ ledger: { owners: [{ ...fixture.owner, deadline: new Date(Date.now() - 60_000).toISOString() }] } })
+      .where(eq(computers.id, fixture.computerId));
+    expect(await heartbeat.sweepOrphanedActiveLeases({ backoffMs: 0 })).toEqual({ recovered: 1 });
+  });
+
+  it("does not overwrite lease retention completed after the sweep selected its stale snapshot", async () => {
+    const fixture = await seedWarmComputerLease();
+    await db.update(computers).set({ ledger: { owners: [{ ...fixture.owner, phase: "retired" }] } })
+      .where(eq(computers.id, fixture.computerId));
+    const transaction = db.transaction.bind(db);
+    const intercept = vi.spyOn(db, "transaction").mockImplementationOnce(async (callback, config) => {
+      // Sweep has selected the old active row, but heartbeat finishes retention
+      // before the computer-row lock/cleanup claim. The status CAS must lose.
+      await db.update(environmentLeases).set({ status: "retained" }).where(eq(environmentLeases.id, fixture.leaseId));
+      return transaction(callback, config);
+    });
+    try {
+      expect(await heartbeatService(db).sweepOrphanedActiveLeases({ backoffMs: 0 })).toEqual({ recovered: 0 });
+      expect(await leaseRow(fixture.leaseId)).toMatchObject({ status: "retained", failureReason: null });
+    } finally { intercept.mockRestore(); }
+  });
 
   it.each([false, true])("releases an interrupted local run's bookkeeping lease (deleted environment: %s)", async (deletedEnvironment) => {
     const { companyId, agentId, environmentId } = await seedCompanyAgentAndEnvironment();
