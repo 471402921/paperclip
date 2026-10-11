@@ -15,10 +15,17 @@
 // This build sits on the critical path of `pnpm -r build`: every adapter,
 // plugin package and the server wait for it.
 //
+// cargo saturates the four cores of the CI runner, so the TypeScript steps
+// run at a lower scheduling priority: cargo keeps the cores it would have
+// had alone and the steps fill whatever it leaves (the single-threaded tail
+// of codegen and linking). Without that, the first measured run had cargo
+// slow from 36s to 55s under the competition and the overlap saved nothing.
+//
 // PAPERCLIP_RUNNER_BUILD_SERIAL=1 runs cargo after the TypeScript steps
 // instead, for a machine that cannot afford both at once.
 
 import { spawn } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -61,6 +68,11 @@ export const STEPS_AFTER_BINARY = Object.freeze([
 
 export const TIMING_LINE_PREFIX = "paperclip.runner-build.timing.v1";
 
+// Scheduling priority for the TypeScript steps while cargo runs. On POSIX
+// this is the nice value; children of a step (the nested pnpm, tsc, node)
+// inherit it. Raising a process's own nice value needs no privilege.
+export const STEP_PRIORITY_DURING_CARGO = os.constants.priority.PRIORITY_BELOW_NORMAL;
+
 const STOP_GRACE_MS = 5_000;
 
 export function describeStep(step) {
@@ -83,11 +95,17 @@ export class RunnerBuildError extends Error {
 
 function pnpmCommand(env) {
   // pnpm sets npm_execpath to its own entry point while it runs this script,
-  // so a nested `pnpm run` uses the same pnpm. Outside pnpm, use the one on
-  // PATH; Windows needs a shell to resolve the .cmd shim.
+  // so a nested `pnpm run` uses the same pnpm. That entry point is a
+  // JavaScript file under corepack or an npm install, and a native
+  // executable under the standalone pnpm build: only the former goes
+  // through Node (same rule as the CLI's resolvePnpmInstallInvocation).
+  // Outside pnpm, use the one on PATH; Windows needs a shell to resolve the
+  // .cmd shim.
   const execPath = env.npm_execpath;
-  if (execPath && /pnpm/.test(path.basename(execPath))) {
-    return { command: process.execPath, args: [execPath] };
+  if (execPath && /pnpm/i.test(path.basename(execPath))) {
+    return /\.(cjs|mjs|js)$/i.test(execPath)
+      ? { command: process.execPath, args: [execPath] }
+      : { command: execPath, args: [] };
   }
   return process.platform === "win32"
     ? { command: "pnpm", args: [], shell: true }
@@ -106,8 +124,20 @@ export function defaultCargoCommand() {
   return { command: "cargo", args: [...CARGO_BUILD_ARGS] };
 }
 
-function launch({ command, args, shell }, { cwd, env }) {
+function launch({ command, args, shell }, { cwd, env, priority }) {
   const child = spawn(command, args, { cwd, env, stdio: "inherit", shell: shell === true });
+  let priorityApplied = false;
+  if (priority !== undefined && child.pid) {
+    try {
+      // Never raise the child above the parent: a parent already running
+      // at a lower priority would need privilege to do that.
+      os.setPriority(child.pid, Math.max(os.getPriority(), priority));
+      priorityApplied = true;
+    } catch {
+      // The child is already gone or the platform refused; it runs at the
+      // parent's priority, which is what happened before this script.
+    }
+  }
   let settled = null;
   const exit = new Promise((resolve) => {
     const settle = (result) => {
@@ -119,7 +149,7 @@ function launch({ command, args, shell }, { cwd, env }) {
     child.once("error", (error) => settle({ error }));
     child.once("exit", (code, signal) => settle({ code, signal }));
   });
-  return { child, exit, result: () => settled };
+  return { child, exit, result: () => settled, priorityApplied };
 }
 
 const succeeded = (result) => !result.error && result.code === 0 && !result.signal;
@@ -131,13 +161,22 @@ async function stop(running) {
   } catch {
     // Already gone.
   }
-  const timer = new Promise((resolve) => setTimeout(resolve, STOP_GRACE_MS, "timeout"));
-  if ((await Promise.race([running.exit, timer])) === "timeout" && !running.result()) {
-    try {
-      running.child.kill("SIGKILL");
-    } catch {
-      // Already gone.
+  // The grace timer is cleared once the child exits so a build that failed
+  // early does not keep the process alive for the full grace period.
+  let handle = null;
+  const timer = new Promise((resolve) => {
+    handle = setTimeout(resolve, STOP_GRACE_MS, "timeout");
+  });
+  try {
+    if ((await Promise.race([running.exit, timer])) === "timeout" && !running.result()) {
+      try {
+        running.child.kill("SIGKILL");
+      } catch {
+        // Already gone.
+      }
     }
+  } finally {
+    clearTimeout(handle);
   }
   return running.exit;
 }
@@ -157,6 +196,9 @@ export async function runRunnerBuild({
   const startedAt = Date.now();
   const timing = { cargoStartedAt: null, cargoEndedAt: null, stepsEndedAt: null };
   let cargo = null;
+  // Steps that overlap cargo yield the cores to it; everything else runs at
+  // the parent's priority. Set from the first overlapped step that starts.
+  let stepsPriority = "normal";
 
   const startCargo = () => {
     const spec = cargoCommand();
@@ -168,10 +210,16 @@ export async function runRunnerBuild({
     });
   };
 
-  const runStep = async (step) => {
+  const runStep = async (step, { duringCargo = false } = {}) => {
     const name = describeStep(step);
     log(`[runner build] ${name}`);
-    const result = await launch(commandFor(step), { cwd, env }).exit;
+    const running = launch(commandFor(step), {
+      cwd,
+      env,
+      priority: duringCargo ? STEP_PRIORITY_DURING_CARGO : undefined,
+    });
+    if (duringCargo && running.priorityApplied) stepsPriority = "below_normal";
+    const result = await running.exit;
     if (!succeeded(result)) throw new RunnerBuildError(name, result);
   };
 
@@ -187,7 +235,7 @@ export async function runRunnerBuild({
       // next step, instead of after the whole TypeScript chain.
       const failure = cargoFailure();
       if (failure) throw failure;
-      await runStep(step);
+      await runStep(step, { duringCargo: !serial });
     }
   } catch (error) {
     if (cargo) await stop(cargo);
@@ -205,6 +253,7 @@ export async function runRunnerBuild({
   const endedAt = Date.now();
   const summary = {
     mode: serial ? "serial" : "overlap",
+    steps_priority: stepsPriority,
     cargo_ms: timing.cargoEndedAt - timing.cargoStartedAt,
     steps_ms: timing.stepsEndedAt - startedAt,
     // How long the build waited on cargo alone after the TypeScript steps.

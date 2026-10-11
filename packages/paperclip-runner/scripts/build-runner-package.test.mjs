@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import {
@@ -9,6 +9,7 @@ import {
   STAGE_BINARY_STEP,
   STEPS_AFTER_BINARY,
   STEPS_DURING_CARGO,
+  STEP_PRIORITY_DURING_CARGO,
   TIMING_LINE_PREFIX,
   defaultCargoCommand,
   defaultCommandFor,
@@ -16,23 +17,32 @@ import {
   runRunnerBuild,
 } from "./build-runner-package.mjs";
 
-// Every stand-in appends "<name> start" and "<name> end" to a shared event
-// log, so a test can assert what ran before what. Its arguments:
-//   log, name, exit code, marker to write at start, file to wait for before
-//   ending, marker to write at the end. The cargo stand-in also records its
-//   pid so a test can check that the build stopped it.
+// Every stand-in appends "<name> start", "<name> priority <nice>" and
+// "<name> end" to a shared event log, so a test can assert what ran before
+// what and at which scheduling priority. Its arguments, after the log and
+// the name: exit code, marker to write at start, file to wait for before
+// logging its start, file to wait for before ending, marker to write at the
+// end. Waiting before the start line is what makes the order between two
+// processes launched back to back deterministic. The cargo stand-in also
+// records its pid so a test can check that the build stopped it.
 const STAND_IN = `
 const fs = require("node:fs");
-const [log, name, exitCode, startMarker, waitFor, endMarker] = process.argv.slice(1);
+const os = require("node:os");
+const [log, name, exitCode, startMarker, waitBeforeStart, waitBeforeEnd, endMarker] = process.argv.slice(1);
 const append = (line) => fs.appendFileSync(log, line + "\\n");
+const waitFor = (file) => {
+  const deadline = Date.now() + 15000;
+  while (file && !fs.existsSync(file)) {
+    if (Date.now() > deadline) { append(name + " timeout"); process.exit(3); }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+  }
+};
 if (name === "cargo") fs.writeFileSync(log + ".cargo.pid", String(process.pid));
-append(name + " start");
 if (startMarker) fs.writeFileSync(startMarker, "");
-const deadline = Date.now() + 15000;
-while (waitFor && !fs.existsSync(waitFor)) {
-  if (Date.now() > deadline) { append(name + " timeout"); process.exit(3); }
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
-}
+waitFor(waitBeforeStart);
+append(name + " start");
+append(name + " priority " + os.getPriority());
+waitFor(waitBeforeEnd);
 if (endMarker) fs.writeFileSync(endMarker, "");
 append(name + " end");
 process.exit(Number(exitCode));
@@ -41,37 +51,49 @@ process.exit(Number(exitCode));
 const FIRST_STEP = describeStep(STEPS_DURING_CARGO[0]);
 const RELEASE_STEP = describeStep(STEPS_DURING_CARGO[STEPS_DURING_CARGO.length - 1]);
 
-function harness({ exitCodes = {}, cargoExit = 0, cargoWaitsForRelease = true } = {}) {
-  const root = mkdtempSync(path.join(tmpdir(), "runner-build-"));
+function harness({ exitCodes = {}, cargoExit = 0, cargoWaitsForRelease = true, cargoEndMarker = "", firstStepWaitsFor } = {}) {
+  const root = mkdtempSync(path.join(os.tmpdir(), "runner-build-"));
   const log = path.join(root, "events.log");
   const cargoStarted = path.join(root, "cargo.started");
   const release = path.join(root, "release");
-  const standIn = (name, exitCode, startMarker = "", waitFor = "", endMarker = "") => ({
+  const launches = [];
+  const standIn = (name, exitCode, { startMarker = "", waitBeforeStart = "", waitBeforeEnd = "", endMarker = "" } = {}) => ({
     command: process.execPath,
-    args: ["-e", STAND_IN, log, name, String(exitCode), startMarker, waitFor, endMarker],
+    args: ["-e", STAND_IN, log, name, String(exitCode), startMarker, waitBeforeStart, waitBeforeEnd, endMarker],
   });
   return {
     root,
     log,
+    launches,
     events: () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []),
+    priorityOf(name) {
+      const line = this.events().find((entry) => entry.startsWith(`${name} priority `));
+      assert.ok(line, `missing priority line for ${name}`);
+      return Number(line.slice(`${name} priority `.length));
+    },
     cargoPid: () => Number(readFileSync(`${log}.cargo.pid`, "utf8")),
     options: {
       cwd: root,
       env: { ...process.env, PAPERCLIP_RUNNER_BUILD_SERIAL: "" },
       log: () => {},
-      cargoCommand: () => standIn("cargo", cargoExit, cargoStarted, cargoWaitsForRelease ? release : ""),
+      cargoCommand: () => {
+        launches.push("cargo");
+        return standIn("cargo", cargoExit, {
+          startMarker: cargoStarted,
+          waitBeforeEnd: cargoWaitsForRelease ? release : "",
+          endMarker: cargoEndMarker,
+        });
+      },
       commandFor: (step) => {
         const name = describeStep(step);
-        // The first step waits for cargo's start marker so the event order
-        // between two processes started back to back is not left to chance.
-        // The last step during cargo releases the cargo stand-in.
-        return standIn(
-          name,
-          exitCodes[name] ?? 0,
-          "",
-          name === FIRST_STEP && cargoWaitsForRelease ? cargoStarted : "",
-          name === RELEASE_STEP ? release : "",
-        );
+        launches.push(name);
+        // The first step logs its start only once cargo's start marker
+        // exists; the last step during cargo releases the cargo stand-in.
+        return standIn(name, exitCodes[name] ?? 0, {
+          waitBeforeStart:
+            name === FIRST_STEP ? (firstStepWaitsFor ?? (cargoWaitsForRelease ? cargoStarted : "")) : "",
+          endMarker: name === RELEASE_STEP ? release : "",
+        });
       },
     },
     cleanup: () => rmSync(root, { recursive: true, force: true }),
@@ -95,10 +117,14 @@ async function waitUntilGone(pid) {
   return !alive(pid);
 }
 
+const activeTimeouts = () => process.getActiveResourcesInfo().filter((kind) => kind === "Timeout").length;
+
 test("cargo starts before the first TypeScript step and is joined before the binary is staged", async () => {
   const h = harness();
   try {
     const summary = await runRunnerBuild(h.options);
+    // What the build controls: it launched cargo before it launched any step.
+    assert.deepEqual(h.launches.slice(0, 2), ["cargo", FIRST_STEP]);
     const events = h.events();
     const at = (line) => {
       const index = events.indexOf(line);
@@ -128,9 +154,30 @@ test("cargo starts before the first TypeScript step and is joined before the bin
   }
 });
 
+test("the TypeScript steps yield the cores to cargo while it runs", async () => {
+  const h = harness();
+  try {
+    const summary = await runRunnerBuild(h.options);
+    const parent = os.getPriority();
+    const expectedStepPriority = Math.max(parent, STEP_PRIORITY_DURING_CARGO);
+    assert.equal(h.priorityOf("cargo"), parent, "cargo must keep the parent's priority");
+    for (const step of STEPS_DURING_CARGO) {
+      assert.equal(h.priorityOf(describeStep(step)), expectedStepPriority, `${describeStep(step)} priority`);
+    }
+    // Nothing competes with the steps after cargo: they run at the parent's priority.
+    for (const step of [STAGE_BINARY_STEP, ...STEPS_AFTER_BINARY]) {
+      assert.equal(h.priorityOf(describeStep(step)), parent, `${describeStep(step)} priority`);
+    }
+    assert.equal(summary.steps_priority, "below_normal");
+  } finally {
+    h.cleanup();
+  }
+});
+
 test("a failing TypeScript step stops cargo and names the step", async () => {
   const failing = describeStep(STEPS_DURING_CARGO[1]);
   const h = harness({ exitCodes: { [failing]: 7 } });
+  const timeoutsBefore = activeTimeouts();
   try {
     await assert.rejects(runRunnerBuild(h.options), (error) => {
       assert.ok(error instanceof RunnerBuildError);
@@ -139,6 +186,9 @@ test("a failing TypeScript step stops cargo and names the step", async () => {
       return true;
     });
     assert.ok(await waitUntilGone(h.cargoPid()), "cargo stand-in outlived the failed build");
+    // The stop grace timer is cleared once cargo is gone, so a failed build
+    // does not keep the process alive for the grace period.
+    assert.equal(activeTimeouts(), timeoutsBefore, "the stop grace timer is still pending");
     const events = h.events();
     assert.ok(!events.includes("cargo end"), "cargo ran to completion after the failure");
     assert.ok(!events.some((line) => line.startsWith(describeStep(STEPS_DURING_CARGO[2]))), "a later step ran after the failure");
@@ -167,23 +217,11 @@ test("a failing cargo build fails the build before the binary is staged", async 
 });
 
 test("a cargo failure that surfaces early ends the TypeScript chain at the next step", async () => {
-  const h = harness({ cargoExit: 2, cargoWaitsForRelease: false });
   // The cargo stand-in fails at once and leaves a marker; the first step
   // holds until that marker exists, so cargo's failure is known before the
   // second step would start.
-  const cargoDone = path.join(h.root, "cargo.done");
-  const innerCargo = h.options.cargoCommand;
-  h.options.cargoCommand = () => {
-    const spec = innerCargo();
-    spec.args[spec.args.length - 1] = cargoDone;
-    return spec;
-  };
-  const innerStep = h.options.commandFor;
-  h.options.commandFor = (step) => {
-    const spec = innerStep(step);
-    if (describeStep(step) === FIRST_STEP) spec.args[spec.args.length - 2] = cargoDone;
-    return spec;
-  };
+  const cargoDone = path.join(os.tmpdir(), `runner-build-cargo-done-${process.pid}-${Date.now()}`);
+  const h = harness({ cargoExit: 2, cargoWaitsForRelease: false, cargoEndMarker: cargoDone, firstStepWaitsFor: cargoDone });
   try {
     await assert.rejects(runRunnerBuild(h.options), (error) => {
       assert.equal(error.step, "cargo build");
@@ -193,11 +231,12 @@ test("a cargo failure that surfaces early ends the TypeScript chain at the next 
     assert.ok(events.includes(`${FIRST_STEP} end`), `first step should have run to its end: ${events.join(" | ")}`);
     assert.ok(!events.some((line) => line.startsWith(describeStep(STEPS_DURING_CARGO[1]))), "the second step ran after cargo had failed");
   } finally {
+    rmSync(cargoDone, { force: true });
     h.cleanup();
   }
 });
 
-test("PAPERCLIP_RUNNER_BUILD_SERIAL=1 runs cargo after the TypeScript steps", async () => {
+test("PAPERCLIP_RUNNER_BUILD_SERIAL=1 runs cargo after the TypeScript steps at one priority", async () => {
   const h = harness({ cargoWaitsForRelease: false });
   h.options.env = { ...process.env, PAPERCLIP_RUNNER_BUILD_SERIAL: "1" };
   try {
@@ -205,7 +244,13 @@ test("PAPERCLIP_RUNNER_BUILD_SERIAL=1 runs cargo after the TypeScript steps", as
     const events = h.events();
     assert.ok(events.indexOf(`${RELEASE_STEP} end`) < events.indexOf("cargo start"));
     assert.ok(events.indexOf("cargo end") < events.indexOf(`${describeStep(STAGE_BINARY_STEP)} start`));
+    assert.equal(h.launches[0], FIRST_STEP);
+    const parent = os.getPriority();
+    for (const step of STEPS_DURING_CARGO) {
+      assert.equal(h.priorityOf(describeStep(step)), parent, `${describeStep(step)} priority`);
+    }
     assert.equal(summary.mode, "serial");
+    assert.equal(summary.steps_priority, "normal");
   } finally {
     h.cleanup();
   }
@@ -232,11 +277,18 @@ test("the plan compiles the TypeScript surface once and keeps the binary readers
     "node scripts/generate-semantic-action-catalog.mjs --check",
   ]);
   assert.equal(typeof TIMING_LINE_PREFIX, "string");
+  assert.equal(STEP_PRIORITY_DURING_CARGO, os.constants.priority.PRIORITY_BELOW_NORMAL);
 });
 
 test("nested pnpm runs use the pnpm that started the build", () => {
-  const viaPnpm = defaultCommandFor({ run: "build:typescript" }, { npm_execpath: "/opt/pnpm/bin/pnpm.cjs" });
-  assert.deepEqual(viaPnpm, { command: process.execPath, args: ["/opt/pnpm/bin/pnpm.cjs", "run", "build:typescript"], shell: undefined });
+  // corepack and an npm-installed pnpm point npm_execpath at a JavaScript entry.
+  const viaScript = defaultCommandFor({ run: "build:typescript" }, { npm_execpath: "/opt/pnpm/bin/pnpm.cjs" });
+  assert.deepEqual(viaScript, { command: process.execPath, args: ["/opt/pnpm/bin/pnpm.cjs", "run", "build:typescript"], shell: undefined });
+  // The standalone pnpm build points it at a native executable, which Node cannot run.
+  const viaExecutable = defaultCommandFor({ run: "build:typescript" }, { npm_execpath: "/home/ci/.local/share/pnpm/pnpm" });
+  assert.deepEqual(viaExecutable, { command: "/home/ci/.local/share/pnpm/pnpm", args: ["run", "build:typescript"], shell: undefined });
+  const viaWindowsExecutable = defaultCommandFor({ run: "build:typescript" }, { npm_execpath: "C:\\pnpm\\pnpm.exe" });
+  assert.deepEqual(viaWindowsExecutable, { command: "C:\\pnpm\\pnpm.exe", args: ["run", "build:typescript"], shell: undefined });
   const viaPath = defaultCommandFor({ run: "build:typescript" }, {});
   assert.equal(viaPath.command, "pnpm");
   assert.deepEqual(viaPath.args, ["run", "build:typescript"]);
