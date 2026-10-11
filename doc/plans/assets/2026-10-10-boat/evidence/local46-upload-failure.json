@@ -1,0 +1,97 @@
+{
+  "recordedAt": "2026-10-11T07:45:33.625875Z",
+  "taskId": "0ce8247c-b59d-48c3-aa8c-d5a6ae23e96b",
+  "identifier": "BOA-22",
+  "controllerSource": "ad4b3d18983f71b1fadc3fb8f861d780b0daddb8",
+  "diagnosticSource": "86c1aa2b0c53b1b41888cea6b8e04e42e28dd05c",
+  "providerPackDigest": "sha256:4ef25756f766016da224f37f68c138c0c4a9ef9d128e6c2fc415f5c57ce38573",
+  "configuredRunnerSha256": "b47ed0f4f29e4c945d12fa4f351c01ee5f03685974bf03591689969bb3b85b73",
+  "coldRunId": "56196b7d-3a87-4877-b27f-787e1be86227",
+  "nativeSessionId": "2b031719-1b4b-4fc4-a602-43034c76f4b9",
+  "runnerInstanceId": "f3fcd722-3064-463e-b666-06b2e13afc70",
+  "status": "cold_upload_failed",
+  "observerPolicy": "Local controller/DB reads only. No guest prewarming.",
+  "acceptance": "failed_before_provider_work",
+  "terminal": {
+    "checkedAt": "2026-10-11T07:45:33.602Z",
+    "issues": [
+      {
+        "id": "0ce8247c-b59d-48c3-aa8c-d5a6ae23e96b",
+        "identifier": "BOA-22",
+        "title": "Qualify Boat Claude restore lifecycle with startup diagnostics. Read the existing $AGENT_HOME/boat-final-claude.txt and ",
+        "status": "blocked"
+      }
+    ],
+    "runs": [
+      {
+        "id": "56196b7d-3a87-4877-b27f-787e1be86227",
+        "status": "failed",
+        "created_at": "2026-10-11T07:33:18.236Z",
+        "started_at": "2026-10-11T07:33:18.269Z",
+        "finished_at": "2026-10-11T07:43:55.690Z",
+        "error_code": "native_session_interrupted",
+        "error": "runner_remote_directory_staging_failed: exit=null timedOut=true Computer command timed out waiting for SSH admission",
+        "native_session_id": "2b031719-1b4b-4fc4-a602-43034c76f4b9",
+        "runner_instance_id": "f3fcd722-3064-463e-b666-06b2e13afc70",
+        "session_id_before": null,
+        "session_id_after": null,
+        "execution_stage": "preparing",
+        "resultKeys": [],
+        "executionRecovery": null
+      }
+    ]
+  },
+  "observation": {
+    "checkedAt": "2026-10-11T07:45:33.625875+00:00",
+    "runId": "56196b7d-3a87-4877-b27f-787e1be86227",
+    "progress": [
+      {
+        "timestamp": "2026-10-11T07:35:11.637Z",
+        "message": "[paperclip-runner] Preparing the provider pack for first use.\n"
+      },
+      {
+        "timestamp": "2026-10-11T07:36:33.640Z",
+        "message": "[paperclip-runner] Uploading provider pack: 0 / 1166 MiB.\n"
+      },
+      {
+        "timestamp": "2026-10-11T07:39:25.242Z",
+        "message": "[paperclip-runner] Uploading provider pack: 32 / 1166 MiB.\n"
+      },
+      {
+        "timestamp": "2026-10-11T07:40:00.138Z",
+        "message": "[paperclip-runner] Uploading provider pack: 64 / 1166 MiB.\n"
+      },
+      {
+        "timestamp": "2026-10-11T07:40:33.453Z",
+        "message": "[paperclip-runner] Uploading provider pack: 96 / 1166 MiB.\n"
+      }
+    ],
+    "controller": {
+      "identity": {
+        "runId": "56196b7d-3a87-4877-b27f-787e1be86227",
+        "runnerInstanceId": "f3fcd722-3064-463e-b666-06b2e13afc70"
+      },
+      "normalizedSessionId": "2b031719-1b4b-4fc4-a602-43034c76f4b9",
+      "packDigests": [
+        "4ef25756f766016da224f37f68c138c0c4a9ef9d128e6c2fc415f5c57ce38573"
+      ],
+      "connections": 0,
+      "committedEvents": 0,
+      "commands": [
+        {
+          "type": "run.prepare",
+          "status": "pending"
+        },
+        {
+          "type": "session.open",
+          "status": "pending"
+        }
+      ]
+    }
+  },
+  "cleanup": {
+    "providerStop": "stop_f37402c7ed7a822d",
+    "completedAt": "2026-10-11T07:43:58.300Z",
+    "classification": "completed after run failure; not evidence of premature archive"
+  }
+}
