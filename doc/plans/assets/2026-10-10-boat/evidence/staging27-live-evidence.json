@@ -1,0 +1,1254 @@
+{
+  "observedAt": "2026-10-11T10:54:58.172257+00:00",
+  "source": "2605a03f00bc3d7decc8b8d5549ee06f8d77ae85",
+  "deployment": {
+    "version": 1,
+    "requestId": "b40e35f8-5769-48c6-a8cc-24eecca4ed14",
+    "sha": "2605a03f00bc3d7decc8b8d5549ee06f8d77ae85",
+    "stage": "deploy",
+    "hostname": "boat.staging.paperclip.app",
+    "environment": "staging",
+    "status": "succeeded",
+    "verification": "verified",
+    "appVersion": "sha-2605a03f00bc3d7decc8b8d5549ee06f8d77ae85-cloud",
+    "targetStackId": "stack-pool-474c42a4b545",
+    "campaignUrl": "https://admin-staging.paperclip.app/admin/fleet/campaigns/fleet-campaign-1791706429524",
+    "checkedAt": "2026-10-11T10:19:12.318Z"
+  },
+  "initialProvider": {
+    "observedAt": "2026-10-11T10:20:02.306Z",
+    "providerId": "bx_b8sawfyp",
+    "guestRead": false,
+    "state": "archived",
+    "health": "ok",
+    "stop": {
+      "id": "stop_d2a44f9dc5cd34b0",
+      "status": "completed",
+      "timestamps": {
+        "endedAt": "2026-10-11T09:45:31.444Z"
+      },
+      "errorPresent": false
+    }
+  },
+  "nativeCodex": {
+    "taskId": "7d3472d4-461f-44ce-90ed-139e878df200",
+    "computerRunId": "92cab4f0-4ffa-435f-ad03-ecc64b85cfec",
+    "warmRunId": "70d43826-f4cd-497d-9416-f55b8dd5f868",
+    "status": "Passed saved continuation, computer navigation, generated preview, state-preserving warm HMR, and natural idle cleanup.",
+    "nativeSessionId": "06496696-b312-4268-ac40-66770aaa6f1a",
+    "logicalRunnerId": "0005a613-101d-475f-9409-8b8e8b87e9ce",
+    "providerThreadId": "01a12881-5d3b-72a0-b4c3-d993f5b089e1",
+    "beforeHmr": {
+      "sandboxId": "bx_b8sawfyp",
+      "exitCode": 0,
+      "timedOut": false,
+      "providerObserved": {
+        "state": "idle",
+        "health": "ok",
+        "stopStatus": "completed"
+      },
+      "data": {
+        "listeners": [
+          {
+            "port": 16128,
+            "pids": [
+              34656
+            ]
+          },
+          {
+            "port": 5173,
+            "pids": [
+              47561
+            ]
+          }
+        ],
+        "at": "2026-10-11T10:28:19.616911+00:00",
+        "bootId": "96db0e84-8c34-4a79-ba67-7fc35589c95a",
+        "processes": [
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+            "pid": 34656,
+            "ppid": 1322,
+            "startTicks": 37790,
+            "name": "paperclip-runne",
+            "role": "runner",
+            "runnerInstanceId": "0005a613-101d-475f-9409-8b8e8b87e9ce"
+          },
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+            "pid": 35000,
+            "ppid": 34656,
+            "startTicks": 38021,
+            "name": "MainThread",
+            "role": "other"
+          },
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+            "pid": 35009,
+            "ppid": 35000,
+            "startTicks": 38023,
+            "name": "codex",
+            "role": "codex"
+          },
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+            "pid": 35084,
+            "ppid": 35009,
+            "startTicks": 38035,
+            "name": "cua-driver",
+            "role": "other"
+          },
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+            "pid": 47544,
+            "ppid": 1322,
+            "startTicks": 48144,
+            "name": "npm run dev",
+            "role": "other"
+          },
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+            "pid": 47560,
+            "ppid": 47544,
+            "startTicks": 48188,
+            "name": "sh",
+            "role": "other"
+          },
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+            "pid": 47561,
+            "ppid": 47560,
+            "startTicks": 48188,
+            "name": "MainThread",
+            "role": "vite"
+          },
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+            "pid": 47569,
+            "ppid": 47561,
+            "startTicks": 48214,
+            "name": "esbuild",
+            "role": "other"
+          }
+        ],
+        "agents": [
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownedProcessCount": 8,
+            "checkpoints": [
+              {
+                "sessionDirectory": "0cde904493e0fc88dd1a6d75bf64f68a9fe5a800a1636273861bb7c13bfcd0e4",
+                "runnerMtime": 1791714498.8500388,
+                "runner": {
+                  "schema": "paperclip.runner.durable.state.v1",
+                  "lifecycle": "ready",
+                  "runId": "92cab4f0-4ffa-435f-ad03-ecc64b85cfec",
+                  "normalizedSessionId": "06496696-b312-4268-ac40-66770aaa6f1a",
+                  "runnerInstanceId": "0005a613-101d-475f-9409-8b8e8b87e9ce",
+                  "environmentLeaseId": "5957cc86-4533-49e5-a2af-0edbc79a472f",
+                  "outboxCount": 0,
+                  "pendingTerminalDeliveryIsNull": true
+                },
+                "provider": {
+                  "schema": "paperclip.runner.codex-provider-state.v1",
+                  "lifecycle": "session_open",
+                  "threadId": "01a12881-5d3b-72a0-b4c3-d993f5b089e1",
+                  "providerSessionId": "01a12881-5d3b-72a0-b4c3-d993f5b089e1",
+                  "activeProviderTurnId": null,
+                  "completedTurnAuthoritative": true
+                },
+                "providerIdentity": {},
+                "providerMtime": 1791714346.6127908
+              }
+            ],
+            "proof": {
+              "bytes": 24,
+              "sha256": "f9253e57dadaefe9276e99a9cd0cb9fad68d2704dd820b61e026edf6e6527c46"
+            }
+          }
+        ],
+        "providerPackOrExecutableReads": false
+      },
+      "error": null
+    },
+    "afterHmr": {
+      "sandboxId": "bx_b8sawfyp",
+      "exitCode": 0,
+      "timedOut": false,
+      "providerObserved": {
+        "state": "idle",
+        "health": "ok",
+        "stopStatus": "completed"
+      },
+      "data": {
+        "listeners": [
+          {
+            "port": 16128,
+            "pids": [
+              34656
+            ]
+          },
+          {
+            "port": 5173,
+            "pids": [
+              47561
+            ]
+          }
+        ],
+        "at": "2026-10-11T10:29:02.296731+00:00",
+        "bootId": "96db0e84-8c34-4a79-ba67-7fc35589c95a",
+        "processes": [
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+            "pid": 34656,
+            "ppid": 1322,
+            "startTicks": 37790,
+            "name": "paperclip-runne",
+            "role": "runner",
+            "runnerInstanceId": "0005a613-101d-475f-9409-8b8e8b87e9ce"
+          },
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+            "pid": 35000,
+            "ppid": 34656,
+            "startTicks": 38021,
+            "name": "MainThread",
+            "role": "other"
+          },
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+            "pid": 35009,
+            "ppid": 35000,
+            "startTicks": 38023,
+            "name": "codex",
+            "role": "codex"
+          },
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+            "pid": 35084,
+            "ppid": 35009,
+            "startTicks": 38035,
+            "name": "cua-driver",
+            "role": "other"
+          },
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+            "pid": 47544,
+            "ppid": 1322,
+            "startTicks": 48144,
+            "name": "npm run dev",
+            "role": "other"
+          },
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+            "pid": 47560,
+            "ppid": 47544,
+            "startTicks": 48188,
+            "name": "sh",
+            "role": "other"
+          },
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+            "pid": 47561,
+            "ppid": 47560,
+            "startTicks": 48188,
+            "name": "MainThread",
+            "role": "vite"
+          },
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+            "pid": 47569,
+            "ppid": 47561,
+            "startTicks": 48214,
+            "name": "esbuild",
+            "role": "other"
+          }
+        ],
+        "agents": [
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownedProcessCount": 8,
+            "checkpoints": [
+              {
+                "sessionDirectory": "0cde904493e0fc88dd1a6d75bf64f68a9fe5a800a1636273861bb7c13bfcd0e4",
+                "runnerMtime": 1791714535.167075,
+                "runner": {
+                  "schema": "paperclip.runner.durable.state.v1",
+                  "lifecycle": "ready",
+                  "runId": "70d43826-f4cd-497d-9416-f55b8dd5f868",
+                  "normalizedSessionId": "06496696-b312-4268-ac40-66770aaa6f1a",
+                  "runnerInstanceId": "0005a613-101d-475f-9409-8b8e8b87e9ce",
+                  "environmentLeaseId": "5957cc86-4533-49e5-a2af-0edbc79a472f",
+                  "outboxCount": 0,
+                  "pendingTerminalDeliveryIsNull": true
+                },
+                "provider": {
+                  "schema": "paperclip.runner.codex-provider-state.v1",
+                  "lifecycle": "session_open",
+                  "threadId": "01a12881-5d3b-72a0-b4c3-d993f5b089e1",
+                  "providerSessionId": "01a12881-5d3b-72a0-b4c3-d993f5b089e1",
+                  "activeProviderTurnId": null,
+                  "completedTurnAuthoritative": true
+                },
+                "providerIdentity": {},
+                "providerMtime": 1791714533.9950433
+              }
+            ],
+            "proof": {
+              "bytes": 24,
+              "sha256": "f9253e57dadaefe9276e99a9cd0cb9fad68d2704dd820b61e026edf6e6527c46"
+            }
+          }
+        ],
+        "providerPackOrExecutableReads": false
+      },
+      "error": null
+    },
+    "browser": {
+      "headingBefore": "Boat staging warm HMR confirmed 0733",
+      "headingAfter": "Boat staging warm HMR confirmed 1027",
+      "unsavedInputBeforeAndAfter": "staging27 unsaved draft 1026",
+      "pageSessionBeforeAndAfter": "1791714392234",
+      "reloadRequested": false,
+      "previewRoute": "https://box-node-452473bc273028a4-5173.on.boat.dev/",
+      "normalProductOpenPreviewUsed": true,
+      "initialAgentDerivedUrl": "https://box-node-68b81224cde1ff95-5173.on.boat.dev/",
+      "initialDerivedUrlOutcome": "ERR_BLOCKED_BY_CLIENT; guest hostname was not the provider-generated preview hostname",
+      "desktopObserved": "Normal Computer Connect independently displayed example.org and Example Domain page after agent navigation, with no intervening human input. Viewer closed normally before the idle interval.",
+      "screenshots": [
+        "staging27-hmr-before.png",
+        "staging27-hmr-after.png",
+        "staging27-native-computer-example-org.png"
+      ]
+    },
+    "finalIdle": {
+      "sandboxId": "bx_b8sawfyp",
+      "exitCode": 0,
+      "timedOut": false,
+      "providerObserved": {
+        "state": "idle",
+        "health": "ok",
+        "stopStatus": "completed"
+      },
+      "data": {
+        "listeners": [],
+        "at": "2026-10-11T10:34:44.149076+00:00",
+        "bootId": "96db0e84-8c34-4a79-ba67-7fc35589c95a",
+        "processes": [],
+        "agents": [
+          {
+            "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+            "ownedProcessCount": 0,
+            "checkpoints": [],
+            "skipped": "no live owner process"
+          }
+        ],
+        "providerPackOrExecutableReads": false
+      },
+      "error": null
+    },
+    "runs": [
+      {
+        "runId": "70d43826-f4cd-497d-9416-f55b8dd5f868",
+        "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+        "taskId": "7d3472d4-461f-44ce-90ed-139e878df200",
+        "runtime": "native_codex",
+        "status": "succeeded",
+        "startedAt": "2026-10-11T10:27:03.239Z",
+        "finishedAt": "2026-10-11T10:29:10.436Z",
+        "errorCode": null,
+        "categories": [],
+        "nativeSessionId": "06496696-b312-4268-ac40-66770aaa6f1a",
+        "runnerInstanceId": "0005a613-101d-475f-9409-8b8e8b87e9ce"
+      },
+      {
+        "runId": "92cab4f0-4ffa-435f-ad03-ecc64b85cfec",
+        "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+        "taskId": "7d3472d4-461f-44ce-90ed-139e878df200",
+        "runtime": "native_codex",
+        "status": "succeeded",
+        "startedAt": "2026-10-11T10:21:22.364Z",
+        "finishedAt": "2026-10-11T10:26:21.538Z",
+        "errorCode": null,
+        "categories": [],
+        "nativeSessionId": "06496696-b312-4268-ac40-66770aaa6f1a",
+        "runnerInstanceId": "0005a613-101d-475f-9409-8b8e8b87e9ce"
+      }
+    ]
+  },
+  "controllerAfterHmr": {
+    "observedAt": "2026-10-11T10:30:17.187Z",
+    "source": "staging27_native_qualification_read_only",
+    "companyId": "76e38a59-75e7-5ff8-a4bf-ebb78a7b8ebe",
+    "runs": [
+      {
+        "runId": "70d43826-f4cd-497d-9416-f55b8dd5f868",
+        "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+        "taskId": "7d3472d4-461f-44ce-90ed-139e878df200",
+        "runtime": "native_codex",
+        "status": "succeeded",
+        "startedAt": "2026-10-11T10:27:03.239Z",
+        "finishedAt": "2026-10-11T10:29:10.436Z",
+        "errorCode": null,
+        "categories": [],
+        "nativeSessionId": "06496696-b312-4268-ac40-66770aaa6f1a",
+        "runnerInstanceId": "0005a613-101d-475f-9409-8b8e8b87e9ce"
+      },
+      {
+        "runId": "2744ccb4-93d8-4d3a-94bd-499754cfac60",
+        "agentId": "0df967f2-cdaa-4344-b4f7-1797e112ff34",
+        "taskId": "f4194c31-6d93-4ff2-8431-9df4de6186e4",
+        "runtime": "native_claude",
+        "status": "running",
+        "startedAt": "2026-10-11T10:20:38.225Z",
+        "finishedAt": null,
+        "errorCode": null,
+        "categories": [],
+        "nativeSessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4",
+        "runnerInstanceId": "39f6ecc5-0ac4-49b2-8514-255c3bb2f1ec"
+      }
+    ],
+    "leases": [
+      {
+        "id": "52481975-04b2-4030-851b-9b72340b1477",
+        "runId": "2744ccb4-93d8-4d3a-94bd-499754cfac60",
+        "status": "active",
+        "cleanupStatus": null,
+        "acquiredAt": "2026-10-11T10:21:04.299Z",
+        "releasedAt": null,
+        "expiresAt": null,
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "ownerId": "8385184e-a670-46fc-ad16-be56d021b533",
+        "generation": 1
+      },
+      {
+        "id": "f08d1e12-9d92-450d-aafd-5858d937aa71",
+        "runId": "70d43826-f4cd-497d-9416-f55b8dd5f868",
+        "status": null,
+        "cleanupStatus": "success",
+        "acquiredAt": "2026-10-11T10:27:13.689Z",
+        "releasedAt": null,
+        "expiresAt": null,
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+        "generation": 2
+      }
+    ],
+    "owners": [
+      {
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "ledgerStatus": "attached",
+        "actionPresent": false,
+        "ownerId": "8385184e-a670-46fc-ad16-be56d021b533",
+        "runId": "2744ccb4-93d8-4d3a-94bd-499754cfac60",
+        "agentId": "0df967f2-cdaa-4344-b4f7-1797e112ff34",
+        "generation": 1,
+        "phase": "active",
+        "admittedAt": "2026-10-11T10:20:41.676Z",
+        "deadline": null,
+        "retirementDeadline": null,
+        "processBindingPresent": false
+      },
+      {
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "ledgerStatus": "attached",
+        "actionPresent": false,
+        "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+        "runId": "70d43826-f4cd-497d-9416-f55b8dd5f868",
+        "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+        "generation": 2,
+        "phase": "warm",
+        "admittedAt": "2026-10-11T10:27:07.214Z",
+        "deadline": "2026-10-11T10:34:08.518Z",
+        "retirementDeadline": null,
+        "processBindingPresent": true
+      }
+    ]
+  },
+  "nativeClaude": {
+    "taskId": "f4194c31-6d93-4ff2-8431-9df4de6186e4",
+    "coldRunId": "2744ccb4-93d8-4d3a-94bd-499754cfac60",
+    "status": "Cold and warm passed; saved post-idle continuation FAILED after same-run recovery. Final cleanup and natural archive passed.",
+    "cold": {
+      "observedAt": "2026-10-11T10:39:01.686Z",
+      "phase": "cold_complete",
+      "guestReads": false,
+      "providerCalls": false,
+      "expectedIdentity": {
+        "normalizedSessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4",
+        "runnerInstanceId": "39f6ecc5-0ac4-49b2-8514-255c3bb2f1ec"
+      },
+      "finalizations": [
+        {
+          "runId": "2744ccb4-93d8-4d3a-94bd-499754cfac60",
+          "committed": true,
+          "createdAt": "2026-10-11T10:22:01.151Z",
+          "updatedAt": "2026-10-11T10:38:55.210Z"
+        }
+      ],
+      "taskSessions": [
+        {
+          "lastRunId": "2744ccb4-93d8-4d3a-94bd-499754cfac60",
+          "displayId": "d6a6d920-a889-400b-845f-a208c972ed51",
+          "ids": {
+            "sessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4"
+          },
+          "updatedAt": "2026-10-11T10:37:18.676Z"
+        }
+      ],
+      "runs": [
+        {
+          "id": "2744ccb4-93d8-4d3a-94bd-499754cfac60",
+          "status": "succeeded",
+          "startedAt": "2026-10-11T10:20:38.225Z",
+          "finishedAt": "2026-10-11T10:37:15.713Z",
+          "nativeSessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4",
+          "runnerInstanceId": "39f6ecc5-0ac4-49b2-8514-255c3bb2f1ec",
+          "matchesOriginalNativeSession": true,
+          "matchesOriginalLogicalRunner": true,
+          "knownErrorCodes": []
+        }
+      ],
+      "events": [],
+      "leases": [
+        {
+          "id": "52481975-04b2-4030-851b-9b72340b1477",
+          "status": "released",
+          "cleanupStatus": "success",
+          "runId": "2744ccb4-93d8-4d3a-94bd-499754cfac60",
+          "acquiredAt": "2026-10-11T10:21:04.299Z",
+          "releasedAt": "2026-10-11T10:38:42.262Z",
+          "lastUsedAt": "2026-10-11T10:37:18.915Z",
+          "expiresAt": null,
+          "updatedAt": "2026-10-11T10:38:42.262Z",
+          "failureReason": null,
+          "failureReasonPresent": false,
+          "owner": {
+            "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+            "ownerId": "8385184e-a670-46fc-ad16-be56d021b533"
+          },
+          "ownerGeneration": 1
+        }
+      ],
+      "owners": [
+        {
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "id": "8385184e-a670-46fc-ad16-be56d021b533",
+          "runId": "e3fea4b3-2ef4-4003-b84a-b4af92a011a8",
+          "generation": 2,
+          "phase": "active",
+          "computerUpdatedAt": "2026-10-11T10:39:00.158Z",
+          "admittedAt": "2026-10-11T10:38:36.919Z",
+          "deadline": null,
+          "absoluteDeadline": null,
+          "retirementDeadline": null,
+          "processBindingPresent": true,
+          "processBootId": "96db0e84-8c34-4a79-ba67-7fc35589c95a",
+          "processLaunchGeneration": 1
+        }
+      ],
+      "controller": {
+        "baseExists": true,
+        "matches": [
+          {
+            "stateKey": "0123aa5a8902bc31251c83ee25020ce7c965427a512f54dfa734093032c33b08",
+            "providerPackDigest": "sha256:152fcacb43ccb019b9be3c0ca058c61a5a7275f46a9d429dc4800489b768a105",
+            "identity": {
+              "runId": "2744ccb4-93d8-4d3a-94bd-499754cfac60",
+              "normalizedSessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4",
+              "runnerInstanceId": "39f6ecc5-0ac4-49b2-8514-255c3bb2f1ec",
+              "environmentLeaseId": "2744ccb4-93d8-4d3a-94bd-499754cfac60"
+            },
+            "pendingWarmTransitionPresent": false,
+            "commands": [
+              {
+                "controllerSeq": 1,
+                "issuedAt": "2026-10-11T10:22:06.235Z",
+                "status": "completed",
+                "type": "run.prepare"
+              },
+              {
+                "controllerSeq": 2,
+                "issuedAt": "2026-10-11T10:22:06.243Z",
+                "status": "completed",
+                "type": "session.open"
+              },
+              {
+                "controllerSeq": 3,
+                "issuedAt": "2026-10-11T10:36:45.598Z",
+                "status": "completed",
+                "type": "turn.start"
+              },
+              {
+                "controllerSeq": 4,
+                "issuedAt": "2026-10-11T10:36:59.313Z",
+                "status": "completed",
+                "type": "semantic_tool.result"
+              },
+              {
+                "controllerSeq": 5,
+                "issuedAt": "2026-10-11T10:37:07.677Z",
+                "status": "completed",
+                "type": "semantic_tool.result"
+              }
+            ],
+            "runnerPresent": false,
+            "runnerLifecycle": null,
+            "cleanupActivationRelativePath": "0123aa5a8902bc31251c83ee25020ce7c965427a512f54dfa734093032c33b08/cleanup-activation.json",
+            "cleanupActivationPresent": false
+          }
+        ]
+      }
+    },
+    "warm": {
+      "observedAt": "2026-10-11T10:41:12.980Z",
+      "phase": "warm_complete",
+      "guestReads": false,
+      "providerCalls": false,
+      "expectedIdentity": {
+        "normalizedSessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4",
+        "runnerInstanceId": "39f6ecc5-0ac4-49b2-8514-255c3bb2f1ec"
+      },
+      "finalizations": [
+        {
+          "runId": "e3fea4b3-2ef4-4003-b84a-b4af92a011a8",
+          "committed": true,
+          "createdAt": "2026-10-11T10:39:52.269Z",
+          "updatedAt": "2026-10-11T10:40:27.819Z"
+        },
+        {
+          "runId": "2744ccb4-93d8-4d3a-94bd-499754cfac60",
+          "committed": true,
+          "createdAt": "2026-10-11T10:22:01.151Z",
+          "updatedAt": "2026-10-11T10:38:55.210Z"
+        }
+      ],
+      "taskSessions": [
+        {
+          "lastRunId": "e3fea4b3-2ef4-4003-b84a-b4af92a011a8",
+          "displayId": "d6a6d920-a889-400b-845f-a208c972ed51",
+          "ids": {
+            "sessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4"
+          },
+          "updatedAt": "2026-10-11T10:40:31.770Z"
+        }
+      ],
+      "runs": [
+        {
+          "id": "2744ccb4-93d8-4d3a-94bd-499754cfac60",
+          "status": "succeeded",
+          "startedAt": "2026-10-11T10:20:38.225Z",
+          "finishedAt": "2026-10-11T10:37:15.713Z",
+          "nativeSessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4",
+          "runnerInstanceId": "39f6ecc5-0ac4-49b2-8514-255c3bb2f1ec",
+          "matchesOriginalNativeSession": true,
+          "matchesOriginalLogicalRunner": true,
+          "knownErrorCodes": []
+        },
+        {
+          "id": "e3fea4b3-2ef4-4003-b84a-b4af92a011a8",
+          "status": "succeeded",
+          "startedAt": "2026-10-11T10:38:33.178Z",
+          "finishedAt": "2026-10-11T10:40:28.388Z",
+          "nativeSessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4",
+          "runnerInstanceId": "39f6ecc5-0ac4-49b2-8514-255c3bb2f1ec",
+          "matchesOriginalNativeSession": true,
+          "matchesOriginalLogicalRunner": true,
+          "knownErrorCodes": []
+        }
+      ],
+      "events": [],
+      "leases": [
+        {
+          "id": "52481975-04b2-4030-851b-9b72340b1477",
+          "status": "released",
+          "cleanupStatus": "success",
+          "runId": "2744ccb4-93d8-4d3a-94bd-499754cfac60",
+          "acquiredAt": "2026-10-11T10:21:04.299Z",
+          "releasedAt": "2026-10-11T10:38:42.262Z",
+          "lastUsedAt": "2026-10-11T10:37:18.915Z",
+          "expiresAt": null,
+          "updatedAt": "2026-10-11T10:38:42.262Z",
+          "failureReason": null,
+          "failureReasonPresent": false,
+          "owner": {
+            "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+            "ownerId": "8385184e-a670-46fc-ad16-be56d021b533"
+          },
+          "ownerGeneration": 1
+        },
+        {
+          "id": "071974d3-2b53-4c4a-abcd-3fe2874629a4",
+          "status": "retained",
+          "cleanupStatus": "success",
+          "runId": "e3fea4b3-2ef4-4003-b84a-b4af92a011a8",
+          "acquiredAt": "2026-10-11T10:38:42.272Z",
+          "releasedAt": null,
+          "lastUsedAt": "2026-10-11T10:40:32.210Z",
+          "expiresAt": null,
+          "updatedAt": "2026-10-11T10:40:32.210Z",
+          "failureReason": null,
+          "failureReasonPresent": false,
+          "owner": {
+            "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+            "ownerId": "8385184e-a670-46fc-ad16-be56d021b533"
+          },
+          "ownerGeneration": 2
+        }
+      ],
+      "owners": [
+        {
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "id": "8385184e-a670-46fc-ad16-be56d021b533",
+          "runId": "e3fea4b3-2ef4-4003-b84a-b4af92a011a8",
+          "generation": 2,
+          "phase": "warm",
+          "computerUpdatedAt": "2026-10-11T10:41:00.088Z",
+          "admittedAt": "2026-10-11T10:38:36.919Z",
+          "deadline": "2026-10-11T10:45:26.833Z",
+          "absoluteDeadline": null,
+          "retirementDeadline": null,
+          "processBindingPresent": true,
+          "processBootId": "96db0e84-8c34-4a79-ba67-7fc35589c95a",
+          "processLaunchGeneration": 1
+        }
+      ],
+      "controller": {
+        "baseExists": true,
+        "matches": [
+          {
+            "stateKey": "0123aa5a8902bc31251c83ee25020ce7c965427a512f54dfa734093032c33b08",
+            "providerPackDigest": "sha256:152fcacb43ccb019b9be3c0ca058c61a5a7275f46a9d429dc4800489b768a105",
+            "identity": {
+              "runId": "e3fea4b3-2ef4-4003-b84a-b4af92a011a8",
+              "normalizedSessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4",
+              "runnerInstanceId": "39f6ecc5-0ac4-49b2-8514-255c3bb2f1ec",
+              "environmentLeaseId": "2744ccb4-93d8-4d3a-94bd-499754cfac60"
+            },
+            "pendingWarmTransitionPresent": false,
+            "commands": [
+              {
+                "controllerSeq": 1,
+                "issuedAt": "2026-10-11T10:40:03.328Z",
+                "status": "completed",
+                "type": "turn.start"
+              },
+              {
+                "controllerSeq": 2,
+                "issuedAt": "2026-10-11T10:40:20.042Z",
+                "status": "completed",
+                "type": "semantic_tool.result"
+              }
+            ],
+            "runnerPresent": false,
+            "runnerLifecycle": null,
+            "cleanupActivationRelativePath": "0123aa5a8902bc31251c83ee25020ce7c965427a512f54dfa734093032c33b08/cleanup-activation.json",
+            "cleanupActivationPresent": false
+          }
+        ]
+      }
+    },
+    "proof": {
+      "contents": "Boat Final Native Claude",
+      "sha256": "e646d151756f1efdb9e19d99a2a0971810468087c457fa458f1311c42ef07424",
+      "coldUtc": "2026-10-11T10:36:52Z",
+      "warmUtc": "2026-10-11T10:40:11Z",
+      "coldAndWarmHostname": "box-node-68b81224cde1ff95",
+      "warmActualCommandExpanded": true
+    },
+    "idleController": {
+      "observedAt": "2026-10-11T10:45:59.800Z",
+      "phase": "idle_deadline",
+      "guestReads": false,
+      "providerCalls": false,
+      "expectedIdentity": {
+        "normalizedSessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4",
+        "runnerInstanceId": "39f6ecc5-0ac4-49b2-8514-255c3bb2f1ec"
+      },
+      "finalizations": [
+        {
+          "runId": "e3fea4b3-2ef4-4003-b84a-b4af92a011a8",
+          "committed": true,
+          "createdAt": "2026-10-11T10:39:52.269Z",
+          "updatedAt": "2026-10-11T10:40:27.819Z"
+        },
+        {
+          "runId": "2744ccb4-93d8-4d3a-94bd-499754cfac60",
+          "committed": true,
+          "createdAt": "2026-10-11T10:22:01.151Z",
+          "updatedAt": "2026-10-11T10:38:55.210Z"
+        }
+      ],
+      "taskSessions": [
+        {
+          "lastRunId": "e3fea4b3-2ef4-4003-b84a-b4af92a011a8",
+          "displayId": "d6a6d920-a889-400b-845f-a208c972ed51",
+          "ids": {
+            "sessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4"
+          },
+          "updatedAt": "2026-10-11T10:40:31.770Z"
+        }
+      ],
+      "runs": [
+        {
+          "id": "2744ccb4-93d8-4d3a-94bd-499754cfac60",
+          "status": "succeeded",
+          "startedAt": "2026-10-11T10:20:38.225Z",
+          "finishedAt": "2026-10-11T10:37:15.713Z",
+          "nativeSessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4",
+          "runnerInstanceId": "39f6ecc5-0ac4-49b2-8514-255c3bb2f1ec",
+          "matchesOriginalNativeSession": true,
+          "matchesOriginalLogicalRunner": true,
+          "knownErrorCodes": []
+        },
+        {
+          "id": "e3fea4b3-2ef4-4003-b84a-b4af92a011a8",
+          "status": "succeeded",
+          "startedAt": "2026-10-11T10:38:33.178Z",
+          "finishedAt": "2026-10-11T10:40:28.388Z",
+          "nativeSessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4",
+          "runnerInstanceId": "39f6ecc5-0ac4-49b2-8514-255c3bb2f1ec",
+          "matchesOriginalNativeSession": true,
+          "matchesOriginalLogicalRunner": true,
+          "knownErrorCodes": []
+        }
+      ],
+      "events": [],
+      "leases": [
+        {
+          "id": "52481975-04b2-4030-851b-9b72340b1477",
+          "status": "released",
+          "cleanupStatus": "success",
+          "runId": "2744ccb4-93d8-4d3a-94bd-499754cfac60",
+          "acquiredAt": "2026-10-11T10:21:04.299Z",
+          "releasedAt": "2026-10-11T10:38:42.262Z",
+          "lastUsedAt": "2026-10-11T10:37:18.915Z",
+          "expiresAt": null,
+          "updatedAt": "2026-10-11T10:38:42.262Z",
+          "failureReason": null,
+          "failureReasonPresent": false,
+          "owner": {
+            "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+            "ownerId": "8385184e-a670-46fc-ad16-be56d021b533"
+          },
+          "ownerGeneration": 1
+        },
+        {
+          "id": "071974d3-2b53-4c4a-abcd-3fe2874629a4",
+          "status": "released",
+          "cleanupStatus": "success",
+          "runId": "e3fea4b3-2ef4-4003-b84a-b4af92a011a8",
+          "acquiredAt": "2026-10-11T10:38:42.272Z",
+          "releasedAt": "2026-10-11T10:45:44.317Z",
+          "lastUsedAt": "2026-10-11T10:45:44.317Z",
+          "expiresAt": null,
+          "updatedAt": "2026-10-11T10:45:44.317Z",
+          "failureReason": null,
+          "failureReasonPresent": false,
+          "owner": {
+            "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+            "ownerId": "8385184e-a670-46fc-ad16-be56d021b533"
+          },
+          "ownerGeneration": 2
+        }
+      ],
+      "owners": [
+        {
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "id": "8385184e-a670-46fc-ad16-be56d021b533",
+          "runId": "e3fea4b3-2ef4-4003-b84a-b4af92a011a8",
+          "generation": 2,
+          "phase": "retired",
+          "computerUpdatedAt": "2026-10-11T10:45:45.504Z",
+          "admittedAt": "2026-10-11T10:38:36.919Z",
+          "deadline": null,
+          "absoluteDeadline": null,
+          "retirementDeadline": null,
+          "processBindingPresent": true,
+          "processBootId": "96db0e84-8c34-4a79-ba67-7fc35589c95a",
+          "processLaunchGeneration": 1
+        }
+      ],
+      "controller": {
+        "baseExists": true,
+        "matches": [
+          {
+            "stateKey": "0123aa5a8902bc31251c83ee25020ce7c965427a512f54dfa734093032c33b08",
+            "providerPackDigest": "sha256:152fcacb43ccb019b9be3c0ca058c61a5a7275f46a9d429dc4800489b768a105",
+            "identity": {
+              "runId": "e3fea4b3-2ef4-4003-b84a-b4af92a011a8",
+              "normalizedSessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4",
+              "runnerInstanceId": "39f6ecc5-0ac4-49b2-8514-255c3bb2f1ec",
+              "environmentLeaseId": "2744ccb4-93d8-4d3a-94bd-499754cfac60"
+            },
+            "pendingWarmTransitionPresent": false,
+            "commands": [
+              {
+                "controllerSeq": 1,
+                "issuedAt": "2026-10-11T10:40:03.328Z",
+                "status": "completed",
+                "type": "turn.start"
+              },
+              {
+                "controllerSeq": 2,
+                "issuedAt": "2026-10-11T10:40:20.042Z",
+                "status": "completed",
+                "type": "semantic_tool.result"
+              },
+              {
+                "controllerSeq": 3,
+                "issuedAt": "2026-10-11T10:45:28.501Z",
+                "status": "completed",
+                "type": "runner.drain"
+              },
+              {
+                "controllerSeq": 4,
+                "issuedAt": "2026-10-11T10:45:28.638Z",
+                "status": "completed",
+                "type": "runner.suspend"
+              }
+            ],
+            "runnerPresent": false,
+            "runnerLifecycle": null,
+            "cleanupActivationRelativePath": "0123aa5a8902bc31251c83ee25020ce7c965427a512f54dfa734093032c33b08/cleanup-activation.json",
+            "cleanupActivationPresent": false
+          }
+        ]
+      }
+    },
+    "archiveBeforeContinuation": {
+      "observedAt": "2026-10-11T10:46:11.747Z",
+      "providerId": "bx_b8sawfyp",
+      "guestRead": false,
+      "state": "archived",
+      "health": "ok",
+      "stop": {
+        "id": "stop_e0d32c900935a8c2",
+        "status": "completed",
+        "timestamps": {
+          "endedAt": "2026-10-11T10:45:51.224Z"
+        },
+        "errorPresent": false
+      }
+    },
+    "postIdlePrimary": {
+      "observedAt": "2026-10-11T10:50:20.067Z",
+      "runId": "ab8c460d-811a-4161-9ff3-1c9797d0b549",
+      "source": "2605a03f00bc3d7decc8b8d5549ee06f8d77ae85",
+      "nativeSessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4",
+      "logicalRunnerId": "39f6ecc5-0ac4-49b2-8514-255c3bb2f1ec",
+      "failure": {
+        "classification": "agent_startup_unverified_module",
+        "admissionStage": "turn_ownership_verified",
+        "admissionElapsedMs": 3684,
+        "command": "turn.start",
+        "primaryFailureAt": "2026-10-11T10:49:13Z",
+        "sameRunRecoveryPersisted": true
+      },
+      "finalDisposition": "failed after same-run recovery at 2026-10-11T10:50:44.627Z"
+    },
+    "postIdleFinal": {
+      "observedAt": "2026-10-11T10:51:42.077Z",
+      "phase": "post_idle_complete",
+      "guestReads": false,
+      "providerCalls": false,
+      "expectedIdentity": {
+        "normalizedSessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4",
+        "runnerInstanceId": "39f6ecc5-0ac4-49b2-8514-255c3bb2f1ec"
+      },
+      "finalizations": [
+        {
+          "runId": "ab8c460d-811a-4161-9ff3-1c9797d0b549",
+          "committed": false,
+          "createdAt": "2026-10-11T10:47:33.068Z",
+          "updatedAt": "2026-10-11T10:49:43.239Z"
+        }
+      ],
+      "taskSessions": [
+        {
+          "lastRunId": "ab8c460d-811a-4161-9ff3-1c9797d0b549",
+          "displayId": "d6a6d920-a889-400b-845f-a208c972ed51",
+          "ids": {
+            "sessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4"
+          },
+          "updatedAt": "2026-10-11T10:50:46.221Z"
+        }
+      ],
+      "runs": [
+        {
+          "id": "ab8c460d-811a-4161-9ff3-1c9797d0b549",
+          "status": "failed",
+          "startedAt": "2026-10-11T10:46:25.027Z",
+          "finishedAt": "2026-10-11T10:50:44.627Z",
+          "nativeSessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4",
+          "runnerInstanceId": "39f6ecc5-0ac4-49b2-8514-255c3bb2f1ec",
+          "matchesOriginalNativeSession": true,
+          "matchesOriginalLogicalRunner": true,
+          "knownErrorCodes": []
+        }
+      ],
+      "events": [],
+      "leases": [
+        {
+          "id": "32a31f35-fe57-4bc1-ad09-ffb9522b9a63",
+          "status": "released",
+          "cleanupStatus": "success",
+          "runId": "ab8c460d-811a-4161-9ff3-1c9797d0b549",
+          "acquiredAt": "2026-10-11T10:46:43.653Z",
+          "releasedAt": "2026-10-11T10:50:46.565Z",
+          "lastUsedAt": "2026-10-11T10:50:46.565Z",
+          "expiresAt": null,
+          "updatedAt": "2026-10-11T10:50:46.565Z",
+          "failureReason": null,
+          "failureReasonPresent": false,
+          "owner": {
+            "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+            "ownerId": "e5144dfa-48c4-461f-bbed-6a7696c4486d"
+          },
+          "ownerGeneration": 1
+        },
+        {
+          "id": "e09bfdf0-f760-47da-908a-f7269c6dda54",
+          "status": "released",
+          "cleanupStatus": "success",
+          "runId": "ab8c460d-811a-4161-9ff3-1c9797d0b549",
+          "acquiredAt": "2026-10-11T10:50:03.371Z",
+          "releasedAt": "2026-10-11T10:50:48.225Z",
+          "lastUsedAt": "2026-10-11T10:50:48.225Z",
+          "expiresAt": null,
+          "updatedAt": "2026-10-11T10:50:48.225Z",
+          "failureReason": null,
+          "failureReasonPresent": false,
+          "owner": {
+            "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+            "ownerId": "7deb1500-ce45-4784-8cf8-70d07177570a"
+          },
+          "ownerGeneration": 1
+        }
+      ],
+      "owners": [
+        {
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "id": "e5144dfa-48c4-461f-bbed-6a7696c4486d",
+          "runId": "ab8c460d-811a-4161-9ff3-1c9797d0b549",
+          "generation": 1,
+          "phase": "retired",
+          "computerUpdatedAt": "2026-10-11T10:51:30.092Z",
+          "admittedAt": "2026-10-11T10:46:28.870Z",
+          "deadline": null,
+          "absoluteDeadline": null,
+          "retirementDeadline": null,
+          "processBindingPresent": true,
+          "processBootId": "e5d777de-f95d-473f-911a-bbd303980bc3",
+          "processLaunchGeneration": 1
+        },
+        {
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "id": "7deb1500-ce45-4784-8cf8-70d07177570a",
+          "runId": "ab8c460d-811a-4161-9ff3-1c9797d0b549",
+          "generation": 1,
+          "phase": "retired",
+          "computerUpdatedAt": "2026-10-11T10:51:30.092Z",
+          "admittedAt": "2026-10-11T10:49:45.802Z",
+          "deadline": null,
+          "absoluteDeadline": null,
+          "retirementDeadline": null,
+          "processBindingPresent": false,
+          "processBootId": null,
+          "processLaunchGeneration": null
+        }
+      ],
+      "controller": {
+        "baseExists": true,
+        "matches": []
+      }
+    },
+    "archiveAfterFailure": {
+      "observedAt": "2026-10-11T10:52:13.224Z",
+      "providerId": "bx_b8sawfyp",
+      "guestRead": false,
+      "state": "archived",
+      "health": "ok",
+      "stop": {
+        "id": "stop_21187fe0821d8731",
+        "status": "completed",
+        "timestamps": {
+          "endedAt": "2026-10-11T10:51:02.840Z"
+        },
+        "errorPresent": false
+      }
+    },
+    "controllerPack": {
+      "observedAt": "2026-10-11T10:54:19.874Z",
+      "schema": "paperclip-runner/remote-provider-pack/v1",
+      "digest": "sha256:152fcacb43ccb019b9be3c0ca058c61a5a7275f46a9d429dc4800489b768a105",
+      "sourceRevision": "2605a03f00bc3d7decc8b8d5549ee06f8d77ae85",
+      "target": {
+        "platform": "linux",
+        "architecture": "x64"
+      },
+      "pins": {
+        "nodeMinimum": "24.11.0",
+        "codex": "0.160.0",
+        "opencode": "1.18.34",
+        "acpx": "0.13.1",
+        "grok": "1.0.13",
+        "claudeAcp": "0.73.0",
+        "codexAcp": "1.6.2"
+      },
+      "distDigest": "sha256:ab9b3b4e872c187481618699b3b33a5a1a4e7ba41e032fb6458ff92970ea2c25",
+      "bridgeDigest": "sha256:23f86a4041ec4276ec2b8b7a6ae61421e9121dd41dd9c3d3333a7da8df9c1a59",
+      "claudeProfileDigest": "sha256:9d73d1f0f121fb96cc8badb28c22d5bff02d8582eb2e40360a81c189e1b9422a",
+      "artifacts": {
+        "nodeCommand": {
+          "expectedSha256": "sha256:7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c",
+          "actualSha256": "sha256:7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c"
+        },
+        "productionLock": {
+          "expectedSha256": "sha256:df5143e56269823c040be51a5e45bd53cadb60fecb50fb09ba2848f23e621b67",
+          "actualSha256": "sha256:df5143e56269823c040be51a5e45bd53cadb60fecb50fb09ba2848f23e621b67"
+        },
+        "acpxSidecar": {
+          "expectedSha256": "sha256:498d9027da6d3da9aeb7377b29b8558ef18b6cd2d082f589bf863a80d1df9039",
+          "actualSha256": "sha256:498d9027da6d3da9aeb7377b29b8558ef18b6cd2d082f589bf863a80d1df9039"
+        }
+      },
+      "packages": {
+        "node": {
+          "available": false
+        },
+        "acpx": {
+          "version": "0.13.1"
+        },
+        "@agentclientprotocol/claude-agent-acp": {
+          "version": "0.73.0"
+        },
+        "@anthropic-ai/claude-agent-sdk": {
+          "available": false
+        }
+      },
+      "loaderFeatures": {
+        "boundedReread": true,
+        "readContinuity": true,
+        "uidGidLinkCount": true,
+        "fatalImportMarker": true
+      }
+    },
+    "finalError": {
+      "observedAt": "2026-10-11T10:54:07.652Z",
+      "status": "failed",
+      "finishedAt": "2026-10-11T10:50:44.627Z",
+      "knownErrorCodes": [
+        "authority_indeterminate",
+        "runner_state_identity_mismatch"
+      ]
+    }
+  },
+  "resets": false,
+  "merged": false,
+  "controllerIdle": {
+    "observedAt": "2026-10-11T10:34:45.738Z",
+    "source": "staging27_native_qualification_read_only",
+    "companyId": "76e38a59-75e7-5ff8-a4bf-ebb78a7b8ebe",
+    "runs": [
+      {
+        "runId": "70d43826-f4cd-497d-9416-f55b8dd5f868",
+        "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+        "taskId": "7d3472d4-461f-44ce-90ed-139e878df200",
+        "runtime": "native_codex",
+        "status": "succeeded",
+        "startedAt": "2026-10-11T10:27:03.239Z",
+        "finishedAt": "2026-10-11T10:29:10.436Z",
+        "errorCode": null,
+        "categories": [],
+        "nativeSessionId": "06496696-b312-4268-ac40-66770aaa6f1a",
+        "runnerInstanceId": "0005a613-101d-475f-9409-8b8e8b87e9ce"
+      },
+      {
+        "runId": "2744ccb4-93d8-4d3a-94bd-499754cfac60",
+        "agentId": "0df967f2-cdaa-4344-b4f7-1797e112ff34",
+        "taskId": "f4194c31-6d93-4ff2-8431-9df4de6186e4",
+        "runtime": "native_claude",
+        "status": "running",
+        "startedAt": "2026-10-11T10:20:38.225Z",
+        "finishedAt": null,
+        "errorCode": null,
+        "categories": [],
+        "nativeSessionId": "58c30adb-5206-4d16-a169-2e159d6de7e4",
+        "runnerInstanceId": "39f6ecc5-0ac4-49b2-8514-255c3bb2f1ec"
+      }
+    ],
+    "leases": [
+      {
+        "id": "52481975-04b2-4030-851b-9b72340b1477",
+        "runId": "2744ccb4-93d8-4d3a-94bd-499754cfac60",
+        "status": "active",
+        "cleanupStatus": null,
+        "acquiredAt": "2026-10-11T10:21:04.299Z",
+        "releasedAt": null,
+        "expiresAt": null,
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "ownerId": "8385184e-a670-46fc-ad16-be56d021b533",
+        "generation": 1
+      },
+      {
+        "id": "f08d1e12-9d92-450d-aafd-5858d937aa71",
+        "runId": "70d43826-f4cd-497d-9416-f55b8dd5f868",
+        "status": "released",
+        "cleanupStatus": "success",
+        "acquiredAt": "2026-10-11T10:27:13.689Z",
+        "releasedAt": "2026-10-11T10:34:30.918Z",
+        "expiresAt": null,
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+        "generation": 2
+      }
+    ],
+    "owners": [
+      {
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "ledgerStatus": "attached",
+        "actionPresent": false,
+        "ownerId": "8385184e-a670-46fc-ad16-be56d021b533",
+        "runId": "2744ccb4-93d8-4d3a-94bd-499754cfac60",
+        "agentId": "0df967f2-cdaa-4344-b4f7-1797e112ff34",
+        "generation": 1,
+        "phase": "active",
+        "admittedAt": "2026-10-11T10:20:41.676Z",
+        "deadline": null,
+        "retirementDeadline": null,
+        "processBindingPresent": false
+      },
+      {
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "ledgerStatus": "attached",
+        "actionPresent": false,
+        "ownerId": "fb2aec79-4a3a-4f1e-8549-b88de3311b53",
+        "runId": "70d43826-f4cd-497d-9416-f55b8dd5f868",
+        "agentId": "d7a6fbcf-b0aa-4449-bdc0-875cbdf2a246",
+        "generation": 2,
+        "phase": "retired",
+        "admittedAt": "2026-10-11T10:27:07.214Z",
+        "deadline": null,
+        "retirementDeadline": null,
+        "processBindingPresent": true
+      }
+    ]
+  }
+}

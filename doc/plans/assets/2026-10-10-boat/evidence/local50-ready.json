@@ -1,0 +1,16 @@
+{
+  "capturedAt": "2026-10-11T09:54:09.644915+00:00",
+  "controllerSource": "049c57f64c9addb1ae45132626cf800d1ea41a95",
+  "health": "ok",
+  "startupRecovery": "ready",
+  "providerPackDigest": "sha256:f6fbd13c71cdaf93060a7c240cbce1c8dfce2aefe5669db27d254b3b95dfb0a0",
+  "providerPackSource": "8e8999d681b42a19bfee2540c4345193f29f31ca",
+  "binarySha256": "b47ed0f4f29e4c945d12fa4f351c01ee5f03685974bf03591689969bb3b85b73",
+  "effectiveDiagnosticsAtApplicationListen": true,
+  "listenerPid": 61459,
+  "log": "local-50.log",
+  "previousDrainInterruptedRuns": 0,
+  "databaseReset": false,
+  "oldSessionReset": false,
+  "oldArtifactsMutated": false
+}

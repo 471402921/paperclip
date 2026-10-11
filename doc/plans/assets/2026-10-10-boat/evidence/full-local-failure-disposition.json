@@ -1,0 +1,146 @@
+{
+  "ciHead": "8e8999d681b42a19bfee2540c4345193f29f31ca",
+  "workflow": 38128707028,
+  "attempt": 1,
+  "results": [
+    {
+      "log": "ci _ General tests (server (6_12))/9_Run grouped general test suites.txt",
+      "result": "2026-10-11T09:40:23.3441556Z  \u2713  @paperclipai/server  src/__tests__/native-run-finalizer.test.ts (38 tests) 16178ms"
+    },
+    {
+      "log": "ci _ General tests (server (12_12))/9_Run grouped general test suites.txt",
+      "result": "2026-10-11T09:39:46.2607789Z  \u2713  @paperclipai/server  src/__tests__/agent-persona-persistence.test.ts (2 tests) 6016ms"
+    },
+    {
+      "log": "ci _ General tests (workspaces-c)/9_Run grouped general test suites.txt",
+      "result": "2026-10-11T09:35:41.4940526Z  \u2713  @paperclipai/db  src/agent-instruction-migration.test.ts (1 test) 8464ms"
+    },
+    {
+      "log": "ci _ General tests (server (3_12))/9_Run grouped general test suites.txt",
+      "result": "2026-10-11T09:39:02.5438512Z  \u2713  @paperclipai/server  src/services/workspace-git-snapshot-streaming.test.ts (1 test) 103032ms"
+    },
+    {
+      "log": "ci _ General tests (server (3_12))/9_Run grouped general test suites.txt",
+      "result": "2026-10-11T09:40:04.3798904Z  \u2713  @paperclipai/server  src/__tests__/board-claim.test.ts (1 test) 5583ms"
+    },
+    {
+      "log": "ci _ Verify serialized server suites (6_9)/9_Run serialized server test shard.txt",
+      "result": "2026-10-11T09:38:35.6588878Z  \u2713  @paperclipai/server  src/__tests__/workspace-runtime-routes-authz.test.ts (12 tests) 7054ms"
+    },
+    {
+      "log": "ci _ General tests (workspaces-b)/9_Run grouped general test suites.txt",
+      "result": "2026-10-11T09:34:28.8478079Z  \u2713  @paperclipai/adapter-utils  src/sandbox-callback-bridge.test.ts (68 tests) 11978ms"
+    },
+    {
+      "log": "ci _ General tests (workspaces-b)/9_Run grouped general test suites.txt",
+      "result": "2026-10-11T09:34:34.3929035Z  \u2713  @paperclipai/adapter-utils  src/acpx-engine/execute.test.ts (221 tests) 31274ms"
+    },
+    {
+      "log": "ci _ General tests (workspaces-b)/9_Run grouped general test suites.txt",
+      "result": "2026-10-11T09:34:46.6155387Z  \u2713  @paperclipai/adapter-utils  src/git-workspace-sync.test.ts (62 tests) 10581ms"
+    },
+    {
+      "log": "ci _ General tests (workspaces-b)/9_Run grouped general test suites.txt",
+      "result": "2026-10-11T09:34:56.0162433Z  \u2713  @paperclipai/adapter-utils  src/acpx-engine/startup-characterization.test.ts (17 tests) 3087ms"
+    },
+    {
+      "log": "ci _ General tests (workspaces-b)/9_Run grouped general test suites.txt",
+      "result": "2026-10-11T09:35:20.0481843Z  \u2713  @paperclipai/adapter-utils  src/mcp-isolation.integration.test.ts (3 tests) 1476ms"
+    },
+    {
+      "log": "ci _ General tests (server (4_12))/9_Run grouped general test suites.txt",
+      "result": "2026-10-11T09:40:47.7840639Z  \u2713  @paperclipai/server  src/__tests__/native-runner-phase6.integration.test.ts (34 tests) 17219ms"
+    },
+    {
+      "log": "ci _ Verify serialized server suites (8_9)/9_Run serialized server test shard.txt",
+      "result": "2026-10-11T09:34:30.6128443Z  \u2713  @paperclipai/server  src/__tests__/agent-action-audit-routes.test.ts (11 tests) 17197ms"
+    },
+    {
+      "log": "ci _ General tests (workspaces-a (1_2))/9_Run grouped general test suites.txt",
+      "result": "2026-10-11T09:38:24.3348716Z  \u2713  paperclipai  src/__tests__/worktree.test.ts (64 tests) 71210ms"
+    },
+    {
+      "log": "ci _ General tests (server (2_12))/9_Run grouped general test suites.txt",
+      "result": "2026-10-11T09:35:59.8347561Z  \u2713  @paperclipai/server  src/services/native-runtime/native-session-executor.test.ts (831 tests) 127821ms"
+    },
+    {
+      "log": "ci _ Verify serialized server suites (3_9)/9_Run serialized server test shard.txt",
+      "result": "2026-10-11T09:36:03.8030856Z  \u2713  @paperclipai/server  src/__tests__/issue-stale-execution-lock-routes.test.ts (14 tests) 7519ms"
+    },
+    {
+      "log": "ci _ Verify serialized server suites (5_9)/9_Run serialized server test shard.txt",
+      "result": "2026-10-11T09:35:38.8669259Z  \u2713  @paperclipai/server  src/__tests__/cli-auth-routes.test.ts (19 tests) 19317ms"
+    }
+  ],
+  "baseline": {
+    "sourceSha": "2cbe65e9713152d1b9afd65c1e051474403ed182",
+    "runtime": {
+      "node": "v26.4.0",
+      "pnpm": "9.15.4",
+      "platform": "darwin-arm64"
+    },
+    "startedAt": "2026-10-10T15:21:45.538085+00:00",
+    "completedAt": "2026-10-10T17:32:53.141624+00:00",
+    "firstPassCounts": {
+      "files": {
+        "passed": 2100,
+        "failed": 17,
+        "skipped": 47
+      },
+      "tests": {
+        "passed": 34914,
+        "failed": 24,
+        "skipped": 338,
+        "todo": 0
+      }
+    }
+  },
+  "countedFailureDisposition": [
+    {
+      "originalFailures": 8,
+      "group": "native session executor",
+      "laterPassed": 831
+    },
+    {
+      "originalFailures": 7,
+      "group": "adapter-utils (five suites)",
+      "laterPassed": 371
+    },
+    {
+      "originalFailures": 3,
+      "group": "CLI worktree",
+      "laterPassed": 64
+    },
+    {
+      "originalFailures": 1,
+      "group": "DB instruction migration",
+      "laterPassed": 1
+    },
+    {
+      "originalFailures": 4,
+      "group": "serialized route cases (audit, stale lock, CLI auth, workspace runtime authz)",
+      "laterPassed": 56
+    },
+    {
+      "originalFailures": 1,
+      "group": "Git streaming >32 MiB",
+      "laterPassed": 1,
+      "durationMs": 103032,
+      "unchangedTimeoutMs": 300000
+    }
+  ],
+  "additionalBootstrapFailures": {
+    "agentPersona": 2,
+    "boardClaim": 1,
+    "nativeFinalizer": 38,
+    "nativePhase6": 34,
+    "status": "All four suites executed and passed on the later CI head; original local bootstrap failures remain historical."
+  },
+  "conclusion": "Every suite responsible for the 24 counted historical failures subsequently executed and passed on exact core head 8e8999d681. No member of that old set remains unexplained as a current failure. This is later Linux CI proof, not a successful repeat of the old Darwin full-suite command.",
+  "limits": [
+    "Original 338 skips remain historical skips; not individually reclassified by this audit.",
+    "Original local full-suite command was not rerun.",
+    "Core8e8999 has a separate new invite URL timing failure under one authorized rerun; combined latest head dc6ac92 checks still pending.",
+    "Full original workflow logs retained separately; receipt contains only test-result summaries."
+  ]
+}

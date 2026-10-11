@@ -1,0 +1,144 @@
+{
+  "schema": "boat-local-lifecycle-proof/v1",
+  "runnerArtifact": {
+    "source": "86c1aa2b0c53b1b41888cea6b8e04e42e28dd05c",
+    "sha256": "b47ed0f4f29e4c945d12fa4f351c01ee5f03685974bf03591689969bb3b85b73",
+    "proof": "Selected immutable artifact; no guest executable hash probe in this lifecycle."
+  },
+  "proofFiles": [
+    {
+      "name": "boat-final-claude.txt",
+      "sha256": "14fa23911a1a95ede22a93f43fc027934b20a1ba497f8e6120abc8769498e124"
+    },
+    {
+      "name": "boat-claude-framing-proof.txt",
+      "sha256": "afaf525f4bf0c38614c5df0cf97140e7d1bf9cad96faa293e2317dc82116af4a"
+    }
+  ],
+  "observerPolicy": "Controller logs, local database and provider status only. No guest reads, manual wake, or executable prewarming during this lifecycle.",
+  "manualReset": false,
+  "oldImmutablePacksChanged": false,
+  "capturedAt": "2026-10-11T10:23:47.922059+00:00",
+  "fixture": "local50 / BOA-24",
+  "controllerSource": "049c57f64c9addb1ae45132626cf800d1ea41a95",
+  "providerPack": {
+    "source": "8e8999d681b42a19bfee2540c4345193f29f31ca",
+    "digest": "sha256:f6fbd13c71cdaf93060a7c240cbce1c8dfce2aefe5669db27d254b3b95dfb0a0",
+    "hasFatalImportSettlementFix": true,
+    "hasDependencyCtimeRereadFix": true
+  },
+  "upload": {
+    "diagnosticsEnabled": true,
+    "phaseCounts": {
+      "chunk_queued": 301,
+      "upload_admitted": 301,
+      "ssh_spawned": 301,
+      "chunk_completed": 301
+    },
+    "packMiB": 1166,
+    "startedAt": "2026-10-11T09:57:33.653Z",
+    "completedAt": "2026-10-11T10:04:47.153Z",
+    "maxQueuedAndActiveMs": 113117
+  },
+  "nativeSessionId": "bae6a481-6470-4615-b1b9-15c77664ead1",
+  "logicalRunnerId": "7767de9a-6a1c-462e-bfd1-90ebaebb5efc",
+  "providerSessionId": "ac814c6f-52d5-46fb-afb8-2bc07d534846",
+  "warmOwner": {
+    "id": "dd761593-ff8d-4e58-8e64-6bf09dfceb54",
+    "kind": "runner",
+    "phase": "warm",
+    "runId": "9aa4ea91-f7fa-4ff9-9bf7-12e6f3c525bd",
+    "deadline": "2026-10-11T10:13:09.954Z",
+    "generation": 2,
+    "process": {
+      "nonce": "e79a6423-9dd0-4e62-90bc-c151985e5bbb",
+      "bootId": "d755a0d2-7622-470d-953f-f3a3f33af6d2",
+      "unitName": "paperclip-dd761593-ff8d-4e58-8e64-6bf09dfceb54.service",
+      "launchGeneration": 1
+    }
+  },
+  "proofEvidence": "Parent inspected actual expanded browser command output for all three runs: both original proof-file hashes unchanged in the correct agent home. Cold host UTC10:06:10; warm same host UTC10:07:57; post-idle new host box-node-c6ef21f98f30e504 UTC10:17:47.",
+  "naturalArchive": {
+    "status": "completed",
+    "warmDeadline": "2026-10-11T10:13:09.954Z",
+    "noLiveOwnersObservedAt": "2026-10-11T10:13:38.254Z",
+    "providerObservedAt": "2026-10-11T10:14:21.928Z",
+    "providerState": "archived",
+    "providerHealth": "ok",
+    "stopId": "stop_da8746d54bfc7b15",
+    "stopCompletedAt": "2026-10-11T10:13:39.605Z",
+    "guestReads": false
+  },
+  "postIdle": {
+    "id": "dcd1ac6e-6b48-4f11-9e92-e470dcf95afe",
+    "status": "succeeded",
+    "started_at": "2026-10-11T10:14:33.384Z",
+    "finished_at": "2026-10-11T10:18:05.899Z",
+    "native_session_id": "bae6a481-6470-4615-b1b9-15c77664ead1",
+    "runner_instance_id": "7767de9a-6a1c-462e-bfd1-90ebaebb5efc",
+    "session_id_before": "ac814c6f-52d5-46fb-afb8-2bc07d534846",
+    "session_id_after": "ac814c6f-52d5-46fb-afb8-2bc07d534846",
+    "error_code": null,
+    "error": null,
+    "packDigest": "sha256:f6fbd13c71cdaf93060a7c240cbce1c8dfce2aefe5669db27d254b3b95dfb0a0",
+    "automaticRecovery": false,
+    "physicalOwner": {
+      "id": "96d58d05-c817-4b14-a69f-d89167156f69",
+      "kind": "runner",
+      "phase": "warm",
+      "runId": "dcd1ac6e-6b48-4f11-9e92-e470dcf95afe",
+      "deadline": "2026-10-11T10:23:05.857Z",
+      "generation": 1,
+      "process": {
+        "nonce": "84799f63-fae2-473f-bf26-297c53bc0cba",
+        "bootId": "ba17c383-3529-4a0f-808b-97d084641377",
+        "unitName": "paperclip-96d58d05-c817-4b14-a69f-d89167156f69.service",
+        "launchGeneration": 1
+      }
+    },
+    "admissionElapsedMs": {
+      "ready": 4341,
+      "initializeResponse": 5275,
+      "sessionResumeResponse": 6269,
+      "promptSubmitted": 6307,
+      "ownershipVerified": 6310
+    },
+    "runAttachCompleted": true,
+    "turnStartCompleted": true,
+    "closedFailureClassifications": []
+  },
+  "cold": {
+    "id": "21e23a2f-2872-4556-9b3f-9cecf901fe54",
+    "status": "succeeded",
+    "started_at": "2026-10-11T09:54:42.359Z",
+    "finished_at": "2026-10-11T10:06:25.864Z",
+    "native_session_id": "bae6a481-6470-4615-b1b9-15c77664ead1",
+    "runner_instance_id": "7767de9a-6a1c-462e-bfd1-90ebaebb5efc",
+    "session_id_before": null,
+    "session_id_after": "ac814c6f-52d5-46fb-afb8-2bc07d534846",
+    "error_code": null
+  },
+  "warm": {
+    "id": "9aa4ea91-f7fa-4ff9-9bf7-12e6f3c525bd",
+    "status": "succeeded",
+    "started_at": "2026-10-11T10:06:56.187Z",
+    "finished_at": "2026-10-11T10:08:10.009Z",
+    "native_session_id": "bae6a481-6470-4615-b1b9-15c77664ead1",
+    "runner_instance_id": "7767de9a-6a1c-462e-bfd1-90ebaebb5efc",
+    "session_id_before": "ac814c6f-52d5-46fb-afb8-2bc07d534846",
+    "session_id_after": "ac814c6f-52d5-46fb-afb8-2bc07d534846",
+    "error_code": null
+  },
+  "localLifecycleOutcome": "PASSED cold, warm, natural physical archive, and first-attempt ordinary saved-session post-idle continuation, with unchanged proof hashes observed in the browser. No reset, guest prewarming, or recovery replay.",
+  "finalCleanup": {
+    "status": "completed",
+    "warmDeadline": "2026-10-11T10:23:05.857Z",
+    "noLiveOwnersOrRunsObservedAt": "2026-10-11T10:23:39.727Z",
+    "providerObservedAt": "2026-10-11T10:23:40.184Z",
+    "providerState": "archived",
+    "providerHealth": "ok",
+    "stopId": "stop_e8ffb3d15650a16e",
+    "stopCompletedAt": "2026-10-11T10:23:26.568Z",
+    "guestReads": false
+  }
+}
