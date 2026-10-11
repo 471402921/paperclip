@@ -1,3 +1,6 @@
+/** Shutdown only; ordinary work remains fenced at the warm deadline. */
+export const COMPUTER_RETIREMENT_GRACE_MS = 30_000;
+
 export type OwnerRef = {
   computerId: string;
   ownerId: string;
