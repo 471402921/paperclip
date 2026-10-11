@@ -327,7 +327,7 @@ export function createChatReconciliationCoordinator(input: {
   projectRunMilestones: () => Promise<number>;
   flushPublications: () => Promise<unknown>;
   processPendingSlackFileUploadReceipts?: () => Promise<unknown>;
-  processPendingSlackSessionSyncs: () => Promise<unknown>;
+  processPendingSlackSessionSyncs?: () => Promise<unknown>;
   onError: (lane: ChatReconciliationLane, error: unknown) => void;
 }) {
   let stopped = false;
@@ -374,7 +374,7 @@ export function createChatReconciliationCoordinator(input: {
       milestoneReconciliation.poll();
       publicationReconciliation.poll();
       if (input.processPendingSlackFileUploadReceipts) start("Slack file receipts", input.processPendingSlackFileUploadReceipts);
-      start("Slack session status", input.processPendingSlackSessionSyncs);
+      if (input.processPendingSlackSessionSyncs) start("Slack session status", input.processPendingSlackSessionSyncs);
     },
     notifyPublications() {
       milestoneReconciliation.notify();
@@ -1273,8 +1273,6 @@ export async function createApp(
         publicBaseUrl: opts.authPublicBaseUrl,
       }),
     flushPublications: () => reconcileChatPublicationMaintenance(),
-    processPendingSlackSessionSyncs: () =>
-      chatChannels.processPendingSlackSessionSyncs(),
     onError: (lane, err) => {
       logger.error({ err, lane }, `Failed to reconcile chat ${lane}`);
     },
