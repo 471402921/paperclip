@@ -298,6 +298,7 @@ export async function prepareComputerProviderPackCache(input: {
   }
   const stagingRoot = posix.join(posix.dirname(input.cacheRoot), ".uploads", session, posix.basename(input.cacheRoot), identity.attemptId, "pack");
   const guardedRunner: CommandManagedRuntimeRunner = {
+    withStdinUploadSlot: input.runner.withStdinUploadSlot,
     execute: (command) => input.runner.execute({ ...command, command: "python3", args: [...args("guard"), command.command, ...(command.args ?? [])] }),
   };
   try {

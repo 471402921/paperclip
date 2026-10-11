@@ -59,6 +59,16 @@ export interface CommandManagedDuplexChannel {
 
 export interface CommandManagedRuntimeRunner {
   /**
+   * Optional transport-shared backpressure for stdin artifact chunks. Acquire
+   * before execute starts its command deadline; this grants no execution
+   * authority. The callback must still use the owned execute wrapper. Queue
+   * waiting is bounded separately, and signal cancels only a queued operation.
+   */
+  withStdinUploadSlot?<T>(
+    operation: () => Promise<T>,
+    options: { timeoutMs: number; signal?: AbortSignal },
+  ): Promise<T>;
+  /**
    * True when the provider verified the concurrent-sync opt-in. A native runner
    * carries the value from the effective capability snapshot
    * (`concurrentSyncOperations`). The client copies it onto the prepared sync

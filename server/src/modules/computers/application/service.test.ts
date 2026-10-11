@@ -1,3 +1,4 @@
+import { createBoatTransportAdmission } from "../adapters/boat.js";
 import { describe, it, expect, vi } from "vitest";
 import {
   existsSync,
@@ -115,6 +116,28 @@ function fixture() {
   };
 }
 describe("computer ownership", () => {
+  it("rechecks owner authority after a shared upload slot wait before SSH dispatch", async () => {
+    const f = fixture();
+    const admission = createBoatTransportAdmission();
+    const execute = vi.fn();
+    vi.mocked(f.backend.runner).mockResolvedValue({ execute, withStdinUploadSlot: admission.withStdinUploadSlot });
+    await f.attach();
+    const binding = await f.admit();
+    expect(binding.runner.withStdinUploadSlot).toBe(binding.process.runner.withStdinUploadSlot);
+    const completions: Array<() => void> = [];
+    const occupied = Array.from({ length: 4 }, () => admission.withStdinUploadSlot(
+      () => new Promise<void>(resolve => completions.push(resolve)), { timeoutMs: 180_000 }));
+    await Promise.resolve();
+    const queued = binding.process.runner.withStdinUploadSlot!(
+      () => binding.process.runner.execute({ command: "must-not-launch", stdin: "payload", timeoutMs: 180_000 }),
+      { timeoutMs: 180_000 });
+    const assertion = expect(queued).rejects.toThrow(/expired|retired/);
+    await f.service.retire({ ...f.scope, owner: binding.owner });
+    completions.forEach(resolve => resolve());
+    await Promise.all(occupied);
+    await assertion;
+    expect(execute).not.toHaveBeenCalled();
+  });
   it("allocates outside guest ephemeral and occupied ports while reserving live owners", async () => {
     const f = fixture();
     await f.attach();

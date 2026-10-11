@@ -1,3 +1,4 @@
+import { COMPUTER_RETIREMENT_GRACE_MS } from "../../modules/computers/domain/ledger.js";
 import { preserveWorkspaceRestoreRecoveryMetadataSql } from "../legacy-workspace-restore-recovery.js";
 import { pendingNativeWorkspaceFinalizationCondition } from "../native-runtime/native-workspace-finalization-state.js";
 import { CHAT_COMPLETION_WAKE_REASON } from "../chat-completion-delivery.js";
@@ -30,6 +31,7 @@ import {
 import type { Db } from "@paperclipai/db";
 import {
   agents,
+  computers,
   environmentLeases,
   heartbeatRuns,
   issues,
@@ -1413,7 +1415,7 @@ export function createHeartbeatRecovery(db: Db, dependencies: HeartbeatRecoveryD
     const cutoff = new Date(Date.now() - opts.backoffMs);
 
     const rows = await db
-      .select({ lease: environmentLeases })
+      .select({ lease: environmentLeases, runAgentId: heartbeatRuns.agentId })
       .from(environmentLeases)
       .leftJoin(
         heartbeatRuns,
@@ -1435,7 +1437,7 @@ export function createHeartbeatRecovery(db: Db, dependencies: HeartbeatRecoveryD
       .limit(ORPHANED_ACTIVE_LEASE_SWEEP_PAGE_SIZE);
 
     let recovered = 0;
-    for (const { lease } of rows) {
+    for (const { lease, runAgentId } of rows) {
       // A provider resource id names one physical sandbox. A different lease
       // row can still hold that same resource in a live status, so this sweep
       // must not tear down a sandbox that a different lease still owns.
@@ -1470,19 +1472,59 @@ export function createHeartbeatRecovery(db: Db, dependencies: HeartbeatRecoveryD
       // pending_cleanup sweep can accept the same row in this same tick. A
       // fresh timestamp here would push the row inside that sweep's own
       // backoff window and delay the teardown by one full tick.
-      const flipped = await db
+      const sameLease = and(
+          eq(environmentLeases.id, lease.id),
+          eq(environmentLeases.status, "active"),
+          // A completed heartbeat may retain or replace its bookkeeping while
+          // this sweep waits for the computer serialization boundary.
+          eq(environmentLeases.companyId, lease.companyId),
+          lease.environmentId ? eq(environmentLeases.environmentId, lease.environmentId) : isNull(environmentLeases.environmentId),
+          lease.heartbeatRunId ? eq(environmentLeases.heartbeatRunId, lease.heartbeatRunId) : isNull(environmentLeases.heartbeatRunId),
+          lease.metadata === null ? isNull(environmentLeases.metadata) : eq(environmentLeases.metadata, lease.metadata),
+          lease.provider === null ? isNull(environmentLeases.provider) : eq(environmentLeases.provider, lease.provider),
+          lease.providerLeaseId === null ? isNull(environmentLeases.providerLeaseId) : eq(environmentLeases.providerLeaseId, lease.providerLeaseId),
+        );
+      const claim = (query: Pick<Db, "update">) => query
         .update(environmentLeases)
-        .set({
-          status: "pending_cleanup",
-          failureReason: "orphaned_active_lease_recovered",
-        })
-        .where(
-          and(
-            eq(environmentLeases.id, lease.id),
-            eq(environmentLeases.status, "active"),
-          ),
-        )
+        .set({ status: "pending_cleanup", failureReason: "orphaned_active_lease_recovered" })
+        .where(sameLease)
         .returning({ id: environmentLeases.id });
+      const binding = parseObject(lease.metadata?.computerOwner);
+      const flipped = lease.provider === "boat" && lease.metadata?.driver === "computer"
+        ? await db.transaction(async (tx) => {
+          const [computer] = typeof binding.computerId === "string" && lease.environmentId
+            ? await tx.select().from(computers).where(and(
+              eq(sql`${computers.id}::text`, binding.computerId),
+              eq(computers.companyId, lease.companyId),
+              eq(computers.environmentId, lease.environmentId),
+              eq(computers.provider, "boat"),
+            )).for("update") : [];
+          const owner = Array.isArray(computer?.ledger.owners)
+            ? computer.ledger.owners.map(parseObject).find((value) =>
+              value.id === binding.ownerId && value.id === lease.providerLeaseId &&
+              Number.isSafeInteger(binding.generation) && Number(binding.generation) > 0 &&
+              value.generation === binding.generation && value.kind === "runner" &&
+              value.runId === lease.heartbeatRunId && runAgentId !== null &&
+              value.agentId === runAgentId && value.agentId === lease.metadata?.agentId)
+            : undefined;
+          const process = parseObject(owner?.process);
+          const processBound = [process.bootId, process.unitName, process.nonce]
+            .every((value) => typeof value === "string" && value.length > 0) &&
+            Number.isSafeInteger(process.launchGeneration) && Number(process.launchGeneration) > 0;
+          const deadline = typeof owner?.deadline === "string" ? Date.parse(owner.deadline) : NaN;
+          if (owner?.phase === "warm" && processBound && Number.isFinite(deadline) &&
+              deadline + COMPUTER_RETIREMENT_GRACE_MS > Date.now()) {
+            // Native completion retains the durable owner before heartbeat's
+            // later instruction cleanup can mark the lease retained. A terminal
+            // run is not permission to kill this bounded warm process. Keep it
+            // out of the page until a later sweep; expired/mismatched owners
+            // still follow the ordinary orphan cleanup path.
+            await tx.update(environmentLeases).set({ updatedAt: new Date() })
+              .where(sameLease);
+            return [];
+          }
+          return claim(tx);
+        }) : await claim(db);
       if (flipped.length > 0) recovered += 1;
     }
 

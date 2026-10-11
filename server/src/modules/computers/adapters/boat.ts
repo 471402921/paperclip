@@ -17,6 +17,8 @@ const apiOrigin = "https://boat.dev/api/v1";
 const transportCache = new Map<string, Promise<CommandManagedRuntimeRunner>>();
 type CommandInput = Parameters<CommandManagedRuntimeRunner["execute"]>[0];
 
+const BOAT_BULK_COMMAND_LIMIT = 4;
+
 /** Reserve SSH admission for lifecycle/identity calls while bulk and legacy commands run. */
 export function createBoatTransportAdmission() {
   let active = 0;
@@ -26,14 +28,14 @@ export function createBoatTransportAdmission() {
   function drain() {
     while (active < 8) {
       const eligible = (entry: (typeof queue)[number]) =>
-        entry.control || (ordinary < 6 && (!entry.bulk || bulk < 4));
+        entry.control || (ordinary < 6 && (!entry.bulk || bulk < BOAT_BULK_COMMAND_LIMIT));
       let index = queue.findIndex((entry) => entry.control && eligible(entry));
       if (index < 0) index = queue.findIndex(eligible);
       if (index < 0) break;
       queue.splice(index, 1)[0]!.start();
     }
   }
-  return async function execute(
+  async function execute(
     runner: CommandManagedRuntimeRunner,
     input: CommandInput,
     control: boolean,
@@ -72,7 +74,44 @@ export function createBoatTransportAdmission() {
       queue.push(entry);
       drain();
     });
+  }
+
+  // All runner views for a machine share these slots. Wait outside execute so
+  // one upload cannot consume another upload's SSH command deadline in queue.
+  let uploads = 0;
+  const uploadQueue: Array<{ start: () => void }> = [];
+  function drainUploads() {
+    while (uploads < BOAT_BULK_COMMAND_LIMIT && uploadQueue.length) uploadQueue.shift()!.start();
+  }
+  const withStdinUploadSlot: NonNullable<CommandManagedRuntimeRunner["withStdinUploadSlot"]> = (operation, options) => {
+    if (uploadQueue.length >= 128) return Promise.reject(new ComputerError("conflict", "Computer upload admission is busy"));
+    return new Promise((resolve, reject) => {
+      const cleanup = () => { clearTimeout(timer); options.signal?.removeEventListener("abort", aborted); };
+      const remove = (message: string) => {
+        const index = uploadQueue.indexOf(entry);
+        if (index < 0) return;
+        uploadQueue.splice(index, 1);
+        cleanup();
+        reject(new ComputerError("provider_error", message));
+      };
+      const aborted = () => remove("Computer upload admission was cancelled");
+      const entry = { start: () => {
+        cleanup();
+        uploads++;
+        void Promise.resolve().then(operation).then(resolve, reject).finally(() => {
+          uploads--;
+          drainUploads();
+        });
+      } };
+      const timer = setTimeout(() => remove("Computer upload timed out waiting for capacity"),
+        Math.max(1, Math.min(options.timeoutMs, 180_000)));
+      uploadQueue.push(entry);
+      options.signal?.addEventListener("abort", aborted, { once: true });
+      if (options.signal?.aborted) aborted();
+      else drainUploads();
+    });
   };
+  return Object.assign(execute, { withStdinUploadSlot });
 }
 const transportAdmission = new Map<string, ReturnType<typeof createBoatTransportAdmission>>();
 const desktopCache = new Map<
@@ -358,7 +397,8 @@ export function boatBackend(
         args: ["--signal=KILL", `${input.timeoutMs! / 1000}s`, input.command, ...(input.args ?? [])],
       }),
     } : raw;
-    return { ...raw, execute: (input) => execute(bounded, input, options?.control === true) };
+    return { ...raw, withStdinUploadSlot: admission.withStdinUploadSlot,
+      execute: (input) => execute(bounded, input, options?.control === true) };
   }
   async function fileTransport(
     record: ComputerRecord,

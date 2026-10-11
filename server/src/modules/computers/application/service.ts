@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ComputerRepository, ComputerBackend } from "./ports.js";
 import {
+  COMPUTER_RETIREMENT_GRACE_MS as RETIREMENT_GRACE_MS,
   ComputerError,
   ComputerStopPendingError,
   assertAdmission,
@@ -25,8 +26,6 @@ class ComputerSessionBusyError extends ComputerError {
   }
 }
 
-// This is shutdown time only; admission and ordinary work stop at the warm deadline.
-const RETIREMENT_GRACE_MS = 30_000;
 const FILE_OPERATION_BUDGET_MS = 120_000;
 const FILE_OPERATION_SETTLEMENT_MS = 5000;
 type Scope = { companyId: string; environmentId: string };
@@ -228,6 +227,7 @@ export function createComputerService(
     const runnerFor = (
       processScoped: boolean,
     ): CommandManagedRuntimeRunner => ({
+      withStdinUploadSlot: (processScoped ? control : raw).withStdinUploadSlot,
       execute: async (input) => {
         const current = await (processScoped
           ? processScope()
