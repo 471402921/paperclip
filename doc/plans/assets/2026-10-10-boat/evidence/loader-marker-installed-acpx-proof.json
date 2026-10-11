@@ -1,0 +1,17 @@
+{
+  "observedAt": "2026-10-11T11:56:25.958Z",
+  "dependency": "acpx@0.13.1",
+  "usedInstalledDependencySummarizer": true,
+  "cases": [
+    {
+      "reason": "ANCESTRY",
+      "classification": "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.ANCESTRY",
+      "privateCanaryNotExposed": true
+    },
+    {
+      "reason": "REPEATED_CTIME",
+      "classification": "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.REPEATED_CTIME",
+      "privateCanaryNotExposed": true
+    }
+  ]
+}

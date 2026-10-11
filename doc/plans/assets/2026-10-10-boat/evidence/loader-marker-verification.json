@@ -1,0 +1,33 @@
+{
+  "schema": "boat-diagnostic-verification/v1",
+  "capturedAt": "2026-10-11T11:57:05.581017+00:00",
+  "source": "1f66cac0f83484e01bdd4d4e9dc3375c3e7665c6",
+  "change": "Self-delimiting import failure marker survives ACPX stderr whitespace normalization.",
+  "rootCause": "Installed ACPX 0.13.1 collapses newlines in startup stderr; the former newline-delimited marker parser then falls back to the broad unverified-module classification.",
+  "scope": {
+    "files": 4,
+    "guardBehaviorChanged": false,
+    "authorityChanged": false,
+    "deadlinesChanged": false,
+    "rustChanged": false,
+    "oldPacksChanged": false,
+    "liveStateChanged": false
+  },
+  "verification": {
+    "red": {
+      "classifierFailed": 17,
+      "realGuardedChildFailed": 2
+    },
+    "green": {
+      "passed": 157,
+      "existingPlatformSkipped": 6
+    },
+    "typecheck": "passed",
+    "build": "passed",
+    "diffCheck": "passed",
+    "actualInstalledAcpxSummarizer": "ANCESTRY and REPEATED_CTIME exact closed classifications passed",
+    "independentReview": "live_state_probe approved; no findings",
+    "actualDependencyReceipt": "loader-marker-installed-acpx-proof.json"
+  },
+  "limitation": "Corrects diagnostic loss only. The exact staging28 integrity fence remains unproven; preserved controller state contained no recoverable marker."
+}
