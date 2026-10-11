@@ -6,4 +6,3 @@ export function adapterExecutionTargetIsCommandBacked(
 ): target is AdapterCommandBackedExecutionTarget {
   return target?.kind === "remote" && (target.transport === "sandbox" || target.transport === "computer");
 }
-

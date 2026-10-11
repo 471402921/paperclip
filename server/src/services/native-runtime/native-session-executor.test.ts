@@ -8028,6 +8028,41 @@ describe("native warm session supervision", () => {
       expect(secondCopy.collectStopped).toHaveBeenCalledOnce();
     });
 
+    it.each(["same", "generation", "owner", "computer"])("preserves command-transport directory identity across %s changes", async change => {
+      const name = `managed-computer-identity-${change}`;
+      const current = { ...execution, binding: { ...execution.binding, runId: `${name}-one`, executionWorkspaceId: name },
+        session: { ...execution.session, normalizedSessionId: name, lifecyclePolicy: { mode: "warm", idleTimeoutMs: 60_000 } } } as NativeExecutionInputV1;
+      const close = vi.fn(async () => undefined);
+      const collectStopped = vi.fn(async () => undefined);
+      const target = { kind: "remote", transport: "computer", environmentId: name, remoteCwd: `/tmp/${name}`,
+        resourceAuthority: { kind: "computer-owner", computerId: name, ownerId: name, generation: 1 } };
+      state.execute.mockReset().mockImplementationOnce(async options => { await options.onSession?.({ close }); return result; });
+      await executePaperclipNativeSession({ db: leaseDb(current), execution: current, runnerInstanceId: name,
+        runnerExecutionTarget: target as never,
+        instructionWorkingCopy: { runId: current.binding.runId, root: `/tmp/${name}/home`, collectStopped,
+          checkpointWarm: async () => true, hasChanges: async () => false } });
+      const canReuse = vi.fn(async () => true);
+      const nextAuthority = { ...target.resourceAuthority,
+        ...(change === "generation" ? { generation: 2 } : {}),
+        ...(change === "owner" ? { ownerId: "different-owner" } : {}),
+        ...(change === "computer" ? { computerId: "different-computer" } : {}),
+      };
+      const reservation = await reserveWarmNativeInstructionDirectory({ companyId: current.binding.companyId,
+        agentId: current.binding.agentId, previousRunId: current.binding.runId, runId: `${name}-two`, canReuse,
+        target: { ...target, resourceAuthority: nextAuthority } as never });
+      if (change === "same" || change === "generation") {
+        expect(reservation?.reuseRunId).toBe(current.binding.runId);
+        expect(canReuse).toHaveBeenCalledOnce();
+        expect(close).not.toHaveBeenCalled();
+        await reservation!.release();
+      } else {
+        expect(reservation).toBeNull();
+        expect(canReuse).not.toHaveBeenCalled();
+        expect(close).toHaveBeenCalledOnce();
+        expect(collectStopped).toHaveBeenCalledOnce();
+      }
+    });
+
     it("stops before collecting when a checkpoint cannot stabilize", async () => {
       const f = await start("managed-fallback", false);
       expect(f.close).toHaveBeenCalledOnce();
