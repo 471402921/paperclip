@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ComputerViewer } from "@paperclipai/shared";
 import { LoaderCircle, Monitor } from "lucide-react";
 import { computersApi } from "@/api/computers";
+import { useToastActions } from "@/context/ToastContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -14,6 +15,7 @@ export function TaskComputerPanel(props: ComputerPanelProps) {
 }
 
 function ComputerConnection({ issueId, environmentId, active = true }: ComputerPanelProps) {
+  const { pushToast } = useToastActions();
   const [viewer, setViewer] = useState<ComputerViewer | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +47,18 @@ function ComputerConnection({ issueId, environmentId, active = true }: ComputerP
 
   function release(view: ComputerViewer) {
     void computersApi.disconnect(issueId, environmentId, view.owner).catch(() => {
-      // The server's bounded presence deadline also releases lost viewers.
+      const title = "Computer disconnect could not be confirmed";
+      const body = "The computer may stay awake until this viewer connection expires. You can leave the panel closed.";
+      if (mounted.current) {
+        setError(`${title}. ${body}`);
+        return;
+      }
+      pushToast({
+        dedupeKey: `computer-disconnect:${view.owner.ownerId}:${view.owner.generation}`,
+        tone: "warn",
+        title,
+        body,
+      });
     });
   }
 
