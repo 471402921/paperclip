@@ -1,0 +1,125 @@
+{
+  "schema": "boat-local-lifecycle-proof/v1",
+  "capturedAt": "2026-10-11T09:52:23.813224+00:00",
+  "fixture": "local49 / BOA-23",
+  "controllerSource": "97f9ace67e7e199c2712522ab84095a2ceafa4c2",
+  "providerPack": {
+    "source": "1ab3cb94e036f5de43e4bad9fd4d345054e8763c",
+    "digest": "sha256:640c6c5405003f7d07603694413be14dc6c9601bc71f40b285f6cb247b5d412b",
+    "hasFatalImportSettlementFix": true,
+    "hasDependencyCtimeRereadFix": false
+  },
+  "runnerArtifact": {
+    "source": "86c1aa2b0c53b1b41888cea6b8e04e42e28dd05c",
+    "sha256": "b47ed0f4f29e4c945d12fa4f351c01ee5f03685974bf03591689969bb3b85b73",
+    "proof": "Selected immutable artifact; no guest executable hash probe in this lifecycle."
+  },
+  "upload": {
+    "diagnosticsEnabled": true,
+    "chunksCompleted": 301,
+    "chunkFailures": 0,
+    "chunkTimeouts": 0,
+    "maxQueuedAndActiveMs": 136239,
+    "packMiB": 1166,
+    "startedAt": "2026-10-11T09:18:10.306Z",
+    "completedAt": "2026-10-11T09:37:21.704Z"
+  },
+  "cold": {
+    "id": "6fcda24f-6063-4966-9730-ad2d68ddd7e2",
+    "status": "succeeded",
+    "started_at": "2026-10-11T09:14:32.008Z",
+    "finished_at": "2026-10-11T09:39:01.367Z",
+    "native_session_id": "5c37ce0f-ff2d-443c-a88c-8efaf8291e9a",
+    "runner_instance_id": "ee29038f-82ad-4928-b223-5056179925d8",
+    "session_id_before": null,
+    "session_id_after": "fd2407a7-42d7-4164-b279-2a19fa91948a",
+    "error_code": null
+  },
+  "warm": {
+    "id": "6a07f42f-6e30-4b3d-8924-a15bc9de24f9",
+    "status": "succeeded",
+    "started_at": "2026-10-11T09:39:47.251Z",
+    "finished_at": "2026-10-11T09:41:00.398Z",
+    "native_session_id": "5c37ce0f-ff2d-443c-a88c-8efaf8291e9a",
+    "runner_instance_id": "ee29038f-82ad-4928-b223-5056179925d8",
+    "session_id_before": "fd2407a7-42d7-4164-b279-2a19fa91948a",
+    "session_id_after": "fd2407a7-42d7-4164-b279-2a19fa91948a",
+    "error_code": null
+  },
+  "nativeSessionId": "5c37ce0f-ff2d-443c-a88c-8efaf8291e9a",
+  "logicalRunnerId": "ee29038f-82ad-4928-b223-5056179925d8",
+  "providerSessionId": "fd2407a7-42d7-4164-b279-2a19fa91948a",
+  "warmOwner": {
+    "id": "6e208d55-cc8c-4afd-9cfb-49843a936c02",
+    "kind": "runner",
+    "phase": "warm",
+    "runId": "6a07f42f-6e30-4b3d-8924-a15bc9de24f9",
+    "deadline": "2026-10-11T09:46:00.347Z",
+    "generation": 2,
+    "process": {
+      "nonce": "37f768f4-5719-40c1-87c9-8b3f790c9714",
+      "bootId": "37936b19-7dba-4ec1-a094-1d71cc5f299e",
+      "unitName": "paperclip-6e208d55-cc8c-4afd-9cfb-49843a936c02.service",
+      "launchGeneration": 1
+    }
+  },
+  "proofFiles": [
+    {
+      "name": "boat-final-claude.txt",
+      "sha256": "14fa23911a1a95ede22a93f43fc027934b20a1ba497f8e6120abc8769498e124"
+    },
+    {
+      "name": "boat-claude-framing-proof.txt",
+      "sha256": "afaf525f4bf0c38614c5df0cf97140e7d1bf9cad96faa293e2317dc82116af4a"
+    }
+  ],
+  "proofEvidence": "Parent observed both hashes in actual browser tool output for cold and warm; warm host UTC09:40:48.",
+  "naturalArchive": {
+    "status": "completed",
+    "warmDeadline": "2026-10-11T09:46:00.347Z",
+    "noLiveOwnersObservedAt": "2026-10-11T09:46:21.342Z",
+    "providerObservedAt": "2026-10-11T09:46:29.675Z",
+    "providerState": "archived",
+    "providerHealth": "ok",
+    "stopId": "stop_9dc90636776cb256",
+    "stopCompletedAt": "2026-10-11T09:46:27.243Z",
+    "guestReads": false
+  },
+  "postIdle": {
+    "id": "825e1f90-556e-4e06-9557-b17d4a3d7e99",
+    "status": "failed",
+    "started_at": "2026-10-11T09:46:49.578Z",
+    "finished_at": "2026-10-11T09:51:04.712Z",
+    "native_session_id": "5c37ce0f-ff2d-443c-a88c-8efaf8291e9a",
+    "runner_instance_id": "ee29038f-82ad-4928-b223-5056179925d8",
+    "session_id_before": "fd2407a7-42d7-4164-b279-2a19fa91948a",
+    "session_id_after": "fd2407a7-42d7-4164-b279-2a19fa91948a",
+    "error_code": "adapter_failed",
+    "error": "runner_state_identity_mismatch: authority_indeterminate",
+    "primaryFailure": {
+      "observedAt": "2026-10-11T09:49:35.623Z",
+      "command": "turn.start",
+      "classification": "agent_startup_unverified_module",
+      "lastSafeStage": "turn_ownership_verified",
+      "admissionElapsedMs": 2482,
+      "runAttachCompleted": true,
+      "committedSessionEvents": 4,
+      "drainCompleted": true,
+      "suspendCompleted": true
+    },
+    "sameRunAutomaticRecovery": "Failed with authority_indeterminate; no separate successor or manual reset.",
+    "packDigest": "sha256:640c6c5405003f7d07603694413be14dc6c9601bc71f40b285f6cb247b5d412b",
+    "classificationLimit": "Proves guarded provider startup rejected an unverified module. The exact rejected check/module is not exposed; ctime-only dependency drift remains a tested candidate, not a proven live cause."
+  },
+  "observerPolicy": "Controller logs, local database and provider status only. No guest reads, manual wake, or executable prewarming during this lifecycle.",
+  "manualReset": false,
+  "oldImmutablePacksChanged": false,
+  "finalCleanup": {
+    "noActiveOrQueuedRunsOrOwnersAt": "2026-10-11T09:52:03.054Z",
+    "providerState": "archived",
+    "providerHealth": "ok",
+    "stopId": "stop_6a069a997e1066c2",
+    "completedAt": "2026-10-11T09:51:12.415Z",
+    "observedAt": "2026-10-11T09:52:04.360Z"
+  }
+}

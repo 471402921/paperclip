@@ -1,0 +1,24 @@
+{
+  "observedBeforeUtc": "2026-10-11T09:37:10Z",
+  "source": "ca07557247533531b85045a1dc20c231dc9cd1de",
+  "browser": "Chrome",
+  "surface": "Paperclip task Computer panel embedded Moonlight iframe",
+  "issue": "BOA-2",
+  "result": "passed",
+  "steps": [
+    "Normal Computer Connect from archived Boat",
+    "Native coordinate click on visible remote Chrome dock icon visibly launched Chromium",
+    "typeText had no visible effect; not counted as keyboard proof",
+    "Actual key e appeared in remote omnibox",
+    "Ctrl+A, individual native keys example.net, then Return",
+    "Final screenshot visibly shows example.net and Example Domain content within Paperclip Computer panel",
+    "Normal Close Computer"
+  ],
+  "singleViewer": true,
+  "directViewerUsed": false,
+  "guestInputInjection": false,
+  "limitations": [
+    "In-app-browser input remains inconclusive",
+    "Source-specific pass on staging25; later loader-only changes are separate"
+  ]
+}
