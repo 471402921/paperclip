@@ -1,6 +1,6 @@
 {
   "schema": "boat-local-lifecycle-proof/v1",
-  "capturedAt": "2026-10-11T09:04:36.488308+00:00",
+  "capturedAt": "2026-10-11T09:15:19.386360+00:00",
   "fixture": "local48 BOA22",
   "controllerSource": "9808eae33768f4a8beb31f3955737713a5f737ae",
   "coreDiagnosticsCommit": "4e489a1014ce4d926d1a6eb4b41a4aeb55b28a70",
@@ -114,10 +114,10 @@
   "postIdle": {
     "runId": "702ab960-5987-40c5-bc94-4420c5c73ac0",
     "startedAt": "2026-10-11T08:49:45.801Z",
-    "finishedAt": "2026-10-11T08:53:45.338Z",
+    "finishedAt": "2026-10-11T08:55:27.617Z",
     "status": "failed",
-    "errorCode": "provider_transport_failed",
-    "failure": "PRP command turn.start timed out",
+    "errorCode": "adapter_failed",
+    "failure": "runner_state_identity_mismatch: authority_indeterminate",
     "sameNativeSession": true,
     "sameRunnerInstance": true,
     "sameProviderSession": true,
@@ -146,7 +146,11 @@
     "resets": 0,
     "manualCacheWarming": false,
     "manualPackChanges": false,
-    "acceptance": "failed; cold and warm success do not establish post-idle continuation success"
+    "acceptance": "failed; cold and warm success do not establish post-idle continuation success",
+    "primaryAttemptFailedAt": "2026-10-11T08:53:45.338Z",
+    "primaryAttemptErrorCode": "provider_transport_failed",
+    "primaryAttemptFailure": "PRP command turn.start timed out",
+    "automaticSameRunRecovery": "failed after original turn.start timeout; identities retained, no separate successor or manual reset"
   },
   "naturalIdle": {
     "retiringObservedAt": "2026-10-11T08:47:32.436Z",
