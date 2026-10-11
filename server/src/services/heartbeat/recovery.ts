@@ -1,4 +1,4 @@
-import { COMPUTER_RETIREMENT_GRACE_MS } from "../../modules/computers/domain/ledger.js";
+import { COMPUTER_RETIREMENT_GRACE_MS } from "../../modules/computers/index.js";
 import { preserveWorkspaceRestoreRecoveryMetadataSql } from "../legacy-workspace-restore-recovery.js";
 import { pendingNativeWorkspaceFinalizationCondition } from "../native-runtime/native-workspace-finalization-state.js";
 import { CHAT_COMPLETION_WAKE_REASON } from "../chat-completion-delivery.js";
