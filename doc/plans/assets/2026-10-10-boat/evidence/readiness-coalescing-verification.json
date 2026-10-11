@@ -1,0 +1,82 @@
+{
+  "capturedAt": "2026-10-11T09:04:29.607592+00:00",
+  "commit": "72042f165cbc5bfd10d3b4d3d8bcf9cced2dfcdc",
+  "branch": "codex/boat-environment-core",
+  "scope": [
+    "server/src/modules/computers/adapters/boat.ts",
+    "server/src/modules/computers/adapters/boat.test.ts"
+  ],
+  "behavior": {
+    "sharedReadiness": "Coalesce in-flight readiness only within the same company, environment, computer, provider, controller and secret reference/version.",
+    "callerDeadlines": "Each caller retains its own deadline; expiration does not cancel another waiter. Requests are fenced again after asynchronous secret resolution.",
+    "lifecycle": "Completed and failed entries evict. Every inspection preserves physical identity, snapshots and stop-state guards. No ownership authority change.",
+    "diagnostics": "Closed operation labels accompany HTTP status; no response body, URL, credentials or raw provider error included.",
+    "generic409Retry": false
+  },
+  "validation": {
+    "adapter": {
+      "passed": 67,
+      "failed": 0
+    },
+    "ownershipService": {
+      "passed": 52,
+      "failed": 0
+    },
+    "serverTypecheck": {
+      "exitCode": 0
+    },
+    "moduleBoundary": {
+      "exitCode": 0
+    },
+    "diffCheck": {
+      "exitCode": 0
+    },
+    "preFixConcurrencyRegression": {
+      "failed": 1,
+      "skipped": 49,
+      "finding": "Concurrent archived readiness independently dispatches resume and rejects one caller."
+    },
+    "preFenceSecretResolutionRegression": {
+      "failed": 1,
+      "skipped": 66,
+      "finding": "A sole expired waiter still dispatched resume after held secret resolution; dispatch-time check now prevents it."
+    }
+  },
+  "independentReview": {
+    "reviewer": "quarantine_root_cause",
+    "verdict": "approved",
+    "remainingFindings": 0,
+    "dispatchTimeFenceReReviewed": true
+  },
+  "limitations": [
+    "The historical staging25 c990ff5f HTTP409 endpoint and response semantics remain unproven. The source concurrency defect is independently reproduced.",
+    "No deployment or live provider mutation was performed for this patch. Parent owns integration and subsequent live qualification.",
+    "Validation is scoped to this patch; full repository PR checks remain the parent task responsibility."
+  ],
+  "logs": {
+    "adapter": {
+      "path": "/tmp/boat-architect/boat-readiness-tests-final.log",
+      "sha256": "ff614d985c877578b40b9f566fb7d2492e12c9e25633a9fb58bb22a6d7a569a7"
+    },
+    "ownership": {
+      "path": "/tmp/boat-architect/boat-readiness-ownership-tests.log",
+      "sha256": "dc3bfc9ca5a0d1bda67df55dbb2e7220e0bec23775586aa11059d29e52c657e0"
+    },
+    "typecheck": {
+      "path": "/tmp/boat-architect/boat-readiness-typecheck-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "moduleBoundary": {
+      "path": "/tmp/boat-architect/boat-readiness-boundary.log",
+      "sha256": "24dbde6cfa3a8b0e645bf60455fdd60285b74ec0e5dd7907ec56baa0c7429500"
+    },
+    "concurrencyRed": {
+      "path": "/tmp/boat-architect/boat-readiness-concurrent-red.log",
+      "sha256": "bd862d672921def2d2a3f91af29e5e2178d523da2101856e83067df5ba79a184"
+    },
+    "dispatchFenceRed": {
+      "path": "/tmp/boat-architect/boat-readiness-secret-race-red.log",
+      "sha256": "3ea138b8760891ee7aeb3a6ec6f42fb85dc0034ab2d29c37dfb80b7534a7766f"
+    }
+  }
+}

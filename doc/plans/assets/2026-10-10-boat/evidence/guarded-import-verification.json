@@ -1,0 +1,45 @@
+{
+  "capturedAt": "2026-10-11T09:11:36.782151+00:00",
+  "source": "1ab3cb94e036f5de43e4bad9fd4d345054e8763c",
+  "claim": "Fatal guarded ESM import failure settles owned process lifetime and emits closed failure categories; not proof of the historical live underlying startup cause.",
+  "regression": {
+    "before": "real guarded child remained alive after import rejection",
+    "after": "real process close and lifetime EOF observed"
+  },
+  "tests": {
+    "passed": 100,
+    "skipped": 6,
+    "skipBoundary": "existing platform-specific skips"
+  },
+  "typecheck": "passed",
+  "build": "compiled TypeScript and bundled entrypoints passed",
+  "independentReview": "approved; specific diagnostic categories retain precedence over generic fallback",
+  "unchanged": [
+    "integrity checks",
+    "caller deadlines",
+    "owner authority",
+    "saved session immutable pack authority"
+  ],
+  "logs": [
+    {
+      "name": "guarded-import-red.log",
+      "sha256": "762a26bf875101408fa0b4318b7ea9936b3067f91cff7b8611263f2810b7cb11"
+    },
+    {
+      "name": "guarded-import-green.log",
+      "sha256": "64ed534a330696e50a36f191154867e99b54091fb67dd20f0fc4cfd8a0f11465"
+    },
+    {
+      "name": "guarded-import-suite.log",
+      "sha256": "f9d4c5b9c392bd697b4e49804000972b2b7ca52dbcee4a8ad65f3e69c0b2488c"
+    },
+    {
+      "name": "guarded-import-tsc.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "guarded-import-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}
