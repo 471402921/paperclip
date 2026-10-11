@@ -309,6 +309,9 @@ async function retryAgentPatchWithCurrentLockOnConflict(
     if (issueRunLock.assigneeAgentId !== agent.agentId) return res;
 
     const lockedRunId = issueRunLock.checkoutRunId ?? issueRunLock.executionRunId ?? fallbackRunId;
+    // A new lock can belong to a newly promoted fixture run, not the completed
+    // run we first invoked. Let that exact verified run settle before PATCH.
+    await waitForFixtureRun(board, agent.agentId, issueId, lockedRunId);
     res = await agent.request.patch(`${BASE_URL}/api/issues/${issueId}`, {
       headers: { "X-Paperclip-Run-Id": lockedRunId },
       data: patchData,
@@ -365,6 +368,7 @@ async function agentPatch(
     // run-lock race — leave it for the caller to assert on.
     if (issueRunLock.assigneeAgentId !== agent.agentId) break;
     const retryRunId = issueRunLock.checkoutRunId ?? issueRunLock.executionRunId ?? runId;
+    await waitForFixtureRun(board, agent.agentId, issueId, retryRunId);
     res = await patchWith(retryRunId);
   }
   return res;
