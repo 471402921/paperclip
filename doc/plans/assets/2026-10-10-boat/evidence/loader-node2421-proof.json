@@ -1,0 +1,68 @@
+{
+  "capturedAt": "2026-10-11T10:58:48.462Z",
+  "platform": "linux",
+  "node": "v24.21.0",
+  "sourceRevision": "8e8999d681b42a19bfee2540c4345193f29f31ca",
+  "packDigest": "sha256:f6fbd13c71cdaf93060a7c240cbce1c8dfce2aefe5669db27d254b3b95dfb0a0",
+  "fixtureOnly": true,
+  "liveGuestAccess": false,
+  "results": [
+    {
+      "transition": "stable",
+      "drift": false,
+      "exitCode": 0,
+      "signal": null,
+      "dependencyExecuted": true,
+      "integrityRejected": false,
+      "metadataChanged": {
+        "dev": false,
+        "ino": false,
+        "mode": false,
+        "size": false,
+        "mtimeNs": false,
+        "ctimeNs": false
+      },
+      "sameBytes": true,
+      "sha256": "0ac25ebbcc92d605ac90db175ed44984da2351f3923770605b00a12eaaba0c8a",
+      "metadataHookObserved": false
+    },
+    {
+      "transition": "once",
+      "drift": true,
+      "exitCode": 0,
+      "signal": null,
+      "dependencyExecuted": true,
+      "integrityRejected": false,
+      "metadataChanged": {
+        "dev": false,
+        "ino": false,
+        "mode": false,
+        "size": false,
+        "mtimeNs": false,
+        "ctimeNs": true
+      },
+      "sameBytes": true,
+      "sha256": "0ac25ebbcc92d605ac90db175ed44984da2351f3923770605b00a12eaaba0c8a",
+      "metadataHookObserved": true
+    },
+    {
+      "transition": "rename",
+      "drift": true,
+      "exitCode": 1,
+      "signal": null,
+      "dependencyExecuted": false,
+      "integrityRejected": false,
+      "metadataChanged": {
+        "dev": false,
+        "ino": false,
+        "mode": false,
+        "size": false,
+        "mtimeNs": false,
+        "ctimeNs": true
+      },
+      "sameBytes": true,
+      "sha256": "0ac25ebbcc92d605ac90db175ed44984da2351f3923770605b00a12eaaba0c8a",
+      "metadataHookObserved": true
+    }
+  ]
+}

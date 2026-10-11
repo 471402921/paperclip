@@ -1,5 +1,5 @@
 {
-  "observedAt": "2026-10-11T10:54:58.172257+00:00",
+  "observedAt": "2026-10-11T10:59:56.839327+00:00",
   "source": "2605a03f00bc3d7decc8b8d5549ee06f8d77ae85",
   "deployment": {
     "version": 1,
@@ -1158,6 +1158,18 @@
         "authority_indeterminate",
         "runner_state_identity_mismatch"
       ]
+    },
+    "nodeComparison": {
+      "production": {
+        "observedAt": "2026-10-11T10:57:15.525Z",
+        "packDigest": "sha256:152fcacb43ccb019b9be3c0ca058c61a5a7275f46a9d429dc4800489b768a105",
+        "status": 0,
+        "version": "v24.21.0"
+      },
+      "localVersion": "v24.18.1",
+      "sameAcpxSidecarDigest": true,
+      "sameProductionLockDigest": true,
+      "causeEstablished": false
     }
   },
   "resets": false,

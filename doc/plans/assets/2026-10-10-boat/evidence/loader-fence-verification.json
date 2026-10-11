@@ -1,0 +1,30 @@
+{
+  "sourceRevision": "8f62eef8f13e199f7a98d8a9ec27d617385e6fde",
+  "capturedAt": "2026-10-11T11:00:58.549683+00:00",
+  "scope": "Closed module-fence diagnostics only; existing rejection conditions and authority unchanged.",
+  "red": {
+    "failedAssertions": 29,
+    "passedAssertions": 4
+  },
+  "green": {
+    "testsPassed": 140,
+    "existingPlatformSkips": 6,
+    "rustTransportTestsPassed": 14,
+    "typecheck": "passed",
+    "typescriptAndVerifiedEntrypointBuild": "passed",
+    "rustfmt": "passed",
+    "diffCheck": "passed",
+    "independentReview": "approved by both reviewers"
+  },
+  "productionComparison": {
+    "sameSidecarSha256": "sha256:498d9027da6d3da9aeb7377b29b8558ef18b6cd2d082f589bf863a80d1df9039",
+    "sameProductionLockSha256": "sha256:df5143e56269823c040be51a5e45bd53cadb60fecb50fb09ba2848f23e621b67",
+    "productionNodeVersion": "24.21.0",
+    "localPassedNodeVersion": "24.18.1",
+    "productionNodeSha256": "sha256:7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c",
+    "exactProductionNodeOfflineFixture": "Stable and ctime-only reads pass; moved descriptor rejects without execution."
+  },
+  "liveCause": "UNPROVED: staging27 rejected an unverified module; old diagnostics cannot identify the exact fence. Node version difference alone did not reproduce the failure.",
+  "liveStateChanged": false,
+  "oldImmutablePacksChanged": false
+}
