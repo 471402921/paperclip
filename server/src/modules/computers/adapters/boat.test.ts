@@ -46,6 +46,146 @@ const json = (value: unknown, status = 200, headers?: Record<string, string>) =>
     headers: { "content-type": "application/json", ...headers },
   });
 describe("Boat transport validation", () => {
+  it("shares concurrent readiness without issuing a conflicting second resume", async () => {
+    let resumes = 0;
+    let resumed = false;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const fetcher = vi.fn(async (_url: any, options?: any) => {
+      if (options?.method === "POST") {
+        if (++resumes > 1) return json({ error: { code: "private-conflict-canary" } }, 409);
+        await gate;
+        resumed = true;
+        return json({ ok: true });
+      }
+      return json({ sandbox: { id: record.providerId, state: resumed ? "idle" : "archived", snapshots: true, stop: null } });
+    });
+    const backend = boatBackend(async () => "secret", fetcher);
+    const jobs = Promise.allSettled([backend.ready(record), backend.ready(structuredClone(record))]);
+    try {
+      await vi.waitFor(() => expect(resumes).toBeGreaterThan(0));
+    } finally { release(); }
+    expect((await jobs).map(result => result.status)).toEqual(["fulfilled", "fulfilled"]);
+    expect(resumes).toBe(1);
+  });
+
+  it("expires a short readiness waiter without cancelling its sibling", async () => {
+    vi.useFakeTimers();
+    let resumed = false;
+    let release!: () => void;
+    let signal: AbortSignal | undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const fetcher = vi.fn(async (_url: any, options?: any) => {
+      if (options?.method === "POST") { signal = options.signal; await gate; resumed = true; return json({ ok: true }); }
+      return json({ sandbox: { id: record.providerId, state: resumed ? "idle" : "archived", snapshots: true, stop: null } });
+    });
+    const backend = boatBackend(async () => "secret", fetcher);
+    try {
+      const short = backend.ready(record, { deadlineMs: Date.now() + 20 });
+      const shortResult = expect(short).rejects.toThrow("readiness timed out");
+      const long = backend.ready(record, { deadlineMs: Date.now() + 1000 });
+      await vi.advanceTimersByTimeAsync(21);
+      await shortResult;
+      expect(signal).toBeDefined();
+      expect(signal!.aborted).toBe(false);
+      release();
+      await long;
+      expect(fetcher.mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(1);
+    } finally { release(); vi.useRealTimers(); }
+  });
+  it("does not resume when every waiter expired during inspection", async () => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const fetcher = vi.fn(async () => {
+      await gate;
+      return json({ sandbox: { id: record.providerId, state: "archived", snapshots: true, stop: null } });
+    });
+    const backend = boatBackend(async () => "secret", fetcher);
+    try {
+      const failure = expect(backend.ready(record, { deadlineMs: Date.now() + 20 })).rejects.toThrow("timed out");
+      await vi.advanceTimersByTimeAsync(21);
+      await failure;
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetcher).toHaveBeenCalledOnce();
+      fetcher.mockImplementation(async () => json({ sandbox: { id: record.providerId, state: "idle", snapshots: true } }));
+      await backend.ready(record);
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    } finally { release(); vi.useRealTimers(); }
+  });
+  it("does not dispatch resume after its last caller expires during secret resolution", async () => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    let keyCalls = 0;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const fetcher = vi.fn(async () => json({ sandbox: { id: record.providerId, state: "archived", snapshots: true } }));
+    const backend = boatBackend(async () => { if (++keyCalls === 2) await gate; return "secret"; }, fetcher);
+    try {
+      const failure = expect(backend.ready(record, { deadlineMs: Date.now() + 20 })).rejects.toThrow("timed out");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(keyCalls).toBe(2);
+      await vi.advanceTimersByTimeAsync(21);
+      await failure;
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetcher).toHaveBeenCalledOnce(); // Initial inspection only, no late resume.
+    } finally { release(); vi.useRealTimers(); }
+  });
+  it.each(["company", "environment", "computer", "provider", "controller", "secret", "version"])("does not share readiness across a different %s identity", async field => {
+    const other = structuredClone(record);
+    if (field === "company") other.companyId = "other";
+    if (field === "environment") other.environmentId = "other";
+    if (field === "computer") other.id = "other";
+    if (field === "provider") other.providerId = "bx_other";
+    if (field === "controller") other.ledger.controllerId = "other";
+    if (field === "secret") other.ledger.secretRef.secretId = "other";
+    if (field === "version") other.ledger.secretRef.version = 2;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const fetcher = vi.fn(async (url: any) => {
+      await gate;
+      return json({ sandbox: { id: String(url).split("/").at(-1), state: "idle", snapshots: true } });
+    });
+    const backend = boatBackend(async () => "secret", fetcher);
+    const jobs = Promise.all([backend.ready(record), backend.ready(other)]);
+    release();
+    await jobs;
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+  it("evicts completed readiness and propagates409 without retry or private response data", async () => {
+    let ready = true;
+    const fetcher = vi.fn(async (_url: any, options?: any) => options?.method === "POST"
+      ? json({ message: "private-message-canary", error: { code: "private-code-canary" }, url: "private-url-canary" }, 409)
+      : json({ sandbox: { id: record.providerId, state: ready ? "idle" : "archived", snapshots: true } }));
+    const backend = boatBackend(async () => "private-key-canary", fetcher);
+    await backend.ready(record);
+    ready = false;
+    await expect(backend.ready(record)).rejects.toThrow("Boat request failed (409) [operation=resume]");
+    expect(fetcher.mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(1);
+    ready = true;
+    await backend.ready(record); // A failed attempt is evicted too.
+    expect(fetcher).toHaveBeenCalledTimes(4);
+    const unavailable = boatBackend(async () => "private-key-canary", vi.fn(async () => json({ message: "private-message-canary" }, 409)));
+    await expect(unavailable.inspect(record)).rejects.toThrow("Boat request failed (409) [operation=inspect]");
+  });
+  it.each(["pending", "failing", "snapshots", "identity"])("rejects invalid %s state during resume polling", async invalid => {
+    let resumed = false;
+    const fetcher = vi.fn(async (_url: any, options?: any) => {
+      if (options?.method === "POST") { resumed = true; return json({ ok: true }); }
+      return json({ sandbox: { id: resumed && invalid === "identity" ? "bx_other" : record.providerId,
+        state: resumed ? "idle" : "archived", snapshots: !(resumed && invalid === "snapshots"),
+        stop: resumed && ["pending", "failing"].includes(invalid) ? { id: "stop", status: invalid } : null } });
+    });
+    await expect(boatBackend(async () => "secret", fetcher).ready(record)).rejects.toThrow(
+      invalid === "identity" ? "different computer" : invalid === "snapshots" ? "snapshots must be enabled" : "saving a previous stop");
+    expect(fetcher.mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(1);
+  });
+  it.each(["pending", "failing"])("never resumes a %s previous stop", async status => {
+    const fetcher = vi.fn(async () => json({ sandbox: { id: record.providerId, state: "archived", snapshots: true, stop: { id: "stop", status } } }));
+    await expect(boatBackend(async () => "secret", fetcher).ready(record)).rejects.toThrow("saving a previous stop");
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
   it("uses only the file budget remaining after transport preparation", async () => {
     let clock = 1_000_000;
     const time = vi.spyOn(Date, "now").mockImplementation(() => clock);
