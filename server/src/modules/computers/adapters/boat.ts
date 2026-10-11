@@ -238,6 +238,10 @@ export function boatBackend(
   resolveKey: (record: ComputerRecord) => Promise<string>,
   fetcher: typeof fetch = fetch,
 ): ComputerBackend {
+  // Coalesce provider readiness only; each admitted owner still claims and
+  // validates its own execution authority in the application service.
+  type Readiness = { deadlineMs: number; waiters: Set<{ deadlineMs: number }>; promise: Promise<void> };
+  const readiness = new Map<string, Readiness>();
   function remaining(options: ComputerOperationOptions | undefined, limit: number) {
     const ms = options?.deadlineMs === undefined ? limit : Math.min(limit, options.deadlineMs - Date.now());
     if (ms <= 0) throw new ComputerError("provider_error", "Computer file operation timed out");
@@ -249,31 +253,40 @@ export function boatBackend(
     suffix = "",
     body?: unknown,
     options?: ComputerOperationOptions,
+    checkDispatch?: () => void,
   ): Promise<any> {
+    const key = await resolveKey(record);
+    checkDispatch?.();
     const response = await fetcher(
       `${apiOrigin}/sandboxes/${segment(record.providerId)}${suffix}`,
       {
         method,
         headers: {
-          authorization: `Bearer ${await resolveKey(record)}`,
+          authorization: `Bearer ${key}`,
           "content-type": "application/json",
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: AbortSignal.timeout(remaining(options, 90_000)),
       },
     );
-    if (!response.ok)
-      throw new ComputerError(
-        "provider_error",
-        `Boat request failed (${response.status})`,
-      );
+    if (!response.ok) {
+      // Closed operation labels identify the failing endpoint without exposing
+      // the provider response, sandbox URL, stop ID, or credential material.
+      const operation = ({
+        "GET ": "inspect", "PATCH ": "renew", "POST /resume": "resume",
+        "POST /sshkey": "ssh_key", "POST /host": "host", "POST /stop": "stop",
+        "POST /desktop": "desktop",
+      } as Record<string, string>)[`${method} ${suffix}`]
+        ?? (method === "GET" && suffix.startsWith("/stops/") ? "stop_status" : "unknown");
+      throw new ComputerError("provider_error", `Boat request failed (${response.status}) [operation=${operation}]`);
+    }
     const data = await response.json();
     if (!data || typeof data !== "object")
       throw new ComputerError("provider_error", "Invalid Boat response");
     return data;
   }
-  async function inspect(record: ComputerRecord, options?: ComputerOperationOptions) {
-    const data = await api(record, "GET", "", undefined, options);
+  async function inspect(record: ComputerRecord, options?: ComputerOperationOptions, checkDispatch?: () => void) {
+    const data = await api(record, "GET", "", undefined, options, checkDispatch);
     const sandbox = data.sandbox ?? data;
     if (sandbox.id !== record.providerId || typeof sandbox.state !== "string")
       throw new ComputerError(
@@ -501,26 +514,57 @@ export function boatBackend(
     inspect,
     runner,
     async ready(record, options) {
-      const state = await inspect(record, options);
-      if (!state.snapshots)
-        throw new ComputerError("invalid", "Boat snapshots must be enabled");
-      if (state.stop && ["pending", "failing"].includes(state.stop.status))
-        throw new ComputerError(
-          "conflict",
-          "Boat is still saving a previous stop",
-        );
-      if (!["ready", "idle", "running"].includes(state.state)) {
-        await api(record, "POST", "/resume", { ttlSeconds: 300 }, options);
-        transportCache.delete(
-          `${record.id}:${record.ledger.secretRef.secretId}:${record.ledger.secretRef.version ?? "latest"}`,
-        );
-        for (let i = 0; i < 90; i++) {
-          const status = await inspect(record, options);
-          if (["ready", "idle", "running"].includes(status.state)) return;
-          await new Promise((r) => setTimeout(r, remaining(options, 1000)));
-        }
-        throw new ComputerError("provider_error", "Boat did not become ready");
+      const waiter = { deadlineMs: Date.now() + remaining(options, 120_000) };
+      const key = JSON.stringify([record.companyId, record.environmentId, record.id, record.providerId,
+        record.ledger.controllerId, record.ledger.secretRef.secretId, record.ledger.secretRef.version ?? "latest"]);
+      let pending = readiness.get(key);
+      if (!pending) {
+        const entry: Readiness = { deadlineMs: Date.now() + 120_000, waiters: new Set(), promise: Promise.resolve() };
+        readiness.set(key, entry);
+        pending = entry;
+        const budget = () => {
+          // An in-flight request may finish after its last waiter times out, but
+          // cannot initiate another request without a still-live caller.
+          if (![...entry.waiters].some(value => value.deadlineMs > Date.now()))
+            throw new ComputerError("provider_error", "Computer readiness timed out");
+          remaining({ deadlineMs: entry.deadlineMs }, 120_000);
+          return { deadlineMs: entry.deadlineMs };
+        };
+        entry.promise = Promise.resolve().then(async () => {
+          const checked = async () => {
+            const state = await inspect(record, budget(), budget);
+            if (!state.snapshots) throw new ComputerError("invalid", "Boat snapshots must be enabled");
+            if (state.stop && ["pending", "failing"].includes(state.stop.status))
+              throw new ComputerError("conflict", "Boat is still saving a previous stop");
+            return ["ready", "idle", "running"].includes(state.state);
+          };
+          if (await checked()) return;
+          await api(record, "POST", "/resume", { ttlSeconds: 300 }, budget(), budget);
+          transportCache.delete(
+            `${record.id}:${record.ledger.secretRef.secretId}:${record.ledger.secretRef.version ?? "latest"}`,
+          );
+          for (let i = 0; i < 90; i++) {
+            if (await checked()) return;
+            await new Promise(resolve => setTimeout(resolve, remaining(budget(), 1000)));
+          }
+          throw new ComputerError("provider_error", "Boat did not become ready");
+        });
+        const clear = () => { if (readiness.get(key) === entry) readiness.delete(key); };
+        void entry.promise.then(clear, clear);
       }
+      waiter.deadlineMs = Math.min(waiter.deadlineMs, pending.deadlineMs);
+      pending.waiters.add(waiter);
+      const entry = pending;
+      await new Promise<void>((resolve, reject) => {
+        const cleanup = () => { clearTimeout(timer); entry.waiters.delete(waiter); };
+        const expired = () => new ComputerError("provider_error", "Computer readiness timed out");
+        const timer = setTimeout(() => { cleanup(); reject(expired()); }, Math.max(1, waiter.deadlineMs - Date.now()));
+        entry.promise.then(() => {
+          cleanup();
+          if (Date.now() >= waiter.deadlineMs) reject(expired());
+          else resolve();
+        }, error => { cleanup(); reject(error); });
+      });
     },
     async claim(record, options) {
       await execute(
