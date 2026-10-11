@@ -1093,7 +1093,7 @@ async function readBoundedRegularFile(
   return bytes;
 }
 
-async function inspectCommand(
+export async function inspectCommand(
   commandPath: string,
   expectedDigest: string,
   agent: string,
@@ -1102,67 +1102,20 @@ async function inspectCommand(
   digest: string;
   identity: VerifiedAcpxCommandIdentity;
 }> {
-  const lexicalBefore = await lstat(commandPath, { bigint: true }).catch(
-    () => null,
+  const verified = await openVerifiedExecutable(
+    commandPath,
+    expectedDigest,
+    `ACPX ${agent} executable`,
+    { maxBytes: MAX_AGENT_COMMAND_BYTES, requireExecutable: false, captureBytes: true },
   );
-  if (
-    lexicalBefore === null ||
-    lexicalBefore.isSymbolicLink() ||
-    !lexicalBefore.isFile()
-  ) {
-    throw new Error(`ACPX ${agent} executable must be a real regular file`);
-  }
-  let handle: Awaited<ReturnType<typeof open>>;
   try {
-    handle = await open(
-      commandPath,
-      verifiedExecutableOpenFlags(process.platform, constants.O_NOFOLLOW),
-    );
-  } catch {
-    throw new Error(
-      `ACPX ${agent} executable could not be opened as a no-follow regular file`,
-    );
-  }
-  try {
-    const before = await handle.stat({ bigint: true });
-    if (
-      !before.isFile() ||
-      before.size < 1n ||
-      before.size > BigInt(MAX_AGENT_COMMAND_BYTES)
-    ) {
-      throw new Error(
-        `ACPX ${agent} executable must be a bounded regular file`,
-      );
-    }
-    const bytes = await readHandleAtStart(handle, Number(before.size));
-    const after = await handle.stat({ bigint: true });
-    const lexicalAfter = await lstat(commandPath, { bigint: true }).catch(
-      () => null,
-    );
-    const beforeIdentity = fileIdentity(before);
-    const afterIdentity = fileIdentity(after);
-    if (
-      bytes.length < 1 ||
-      bytes.length > MAX_AGENT_COMMAND_BYTES ||
-      lexicalAfter === null ||
-      lexicalAfter.isSymbolicLink() ||
-      !lexicalAfter.isFile() ||
-      !sameIdentity(fileIdentity(lexicalBefore), fileIdentity(lexicalAfter)) ||
-      !sameIdentity(fileIdentity(lexicalAfter), afterIdentity) ||
-      !sameIdentity(beforeIdentity, afterIdentity) ||
-      after.size !== BigInt(bytes.length)
-    ) {
-      throw new Error(`ACPX ${agent} executable changed while it was verified`);
-    }
-    const digest = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-    if (digest !== expectedDigest) {
-      throw new Error(`ACPX ${agent} executable digest mismatch`);
-    }
-    return { bytes, digest, identity: afterIdentity };
-  } catch (error) {
-    throw error;
+    return {
+      bytes: verified.bytes,
+      digest: verified.digest,
+      identity: verified.identity,
+    };
   } finally {
-    await handle.close();
+    await verified.handle.close();
   }
 }
 
@@ -1171,6 +1124,28 @@ export async function openVerifiedRuntimeExecutable(
   expectedDigest: string,
   agent: string,
 ): Promise<{ handle: FileHandle; identity: VerifiedAcpxCommandIdentity }> {
+  const verified = await openVerifiedExecutable(
+    executablePath,
+    expectedDigest,
+    `ACPX ${agent} runtime executable`,
+    { maxBytes: MAX_ACPX_RUNTIME_EXECUTABLE_BYTES, requireExecutable: true, captureBytes: false },
+  );
+  return { handle: verified.handle, identity: verified.identity };
+}
+
+/** Verify command snapshots and native executables under the same identity fence. */
+async function openVerifiedExecutable(
+  executablePath: string,
+  expectedDigest: string,
+  label: string,
+  options: { maxBytes: number; requireExecutable: boolean; captureBytes: boolean },
+): Promise<{
+  handle: FileHandle;
+  identity: VerifiedAcpxCommandIdentity;
+  digest: string;
+  bytes: Buffer;
+}> {
+  const { maxBytes, requireExecutable, captureBytes } = options;
   const lexicalBefore = await lstat(executablePath, { bigint: true }).catch(
     () => null,
   );
@@ -1180,7 +1155,7 @@ export async function openVerifiedRuntimeExecutable(
     !lexicalBefore.isFile()
   ) {
     throw new Error(
-      `ACPX ${agent} runtime executable must be a real regular file`,
+      `${label} must be a real regular file`,
     );
   }
 
@@ -1192,7 +1167,7 @@ export async function openVerifiedRuntimeExecutable(
     );
   } catch {
     throw new Error(
-      `ACPX ${agent} runtime executable could not be opened as a no-follow regular file`,
+      `${label} could not be opened as a no-follow regular file`,
     );
   }
 
@@ -1203,11 +1178,11 @@ export async function openVerifiedRuntimeExecutable(
       if (
         !before.isFile() ||
         before.size < 1n ||
-        before.size > BigInt(MAX_ACPX_RUNTIME_EXECUTABLE_BYTES) ||
-        (before.mode & 0o111n) === 0n
+        before.size > BigInt(maxBytes) ||
+        (requireExecutable && (before.mode & 0o111n) === 0n)
       ) {
         throw new Error(
-          `ACPX ${agent} runtime executable must be a bounded executable file`,
+          `${label} must be a bounded ${requireExecutable ? "executable file" : "regular file"}`,
         );
       }
       const beforeIdentity = fileIdentity(before);
@@ -1216,11 +1191,12 @@ export async function openVerifiedRuntimeExecutable(
         lexicalBaseline.mode !== before.mode
       ) {
         throw new Error(
-          `ACPX ${agent} runtime executable changed while it was verified`,
+          `${label} changed while it was verified`,
         );
       }
       const hash = createHash("sha256");
       const buffer = Buffer.alloc(1024 * 1024);
+      const chunks: Buffer[] = [];
       let position = 0;
       try {
         while (position < Number(before.size)) {
@@ -1232,6 +1208,7 @@ export async function openVerifiedRuntimeExecutable(
           );
           if (bytesRead === 0) break;
           hash.update(buffer.subarray(0, bytesRead));
+          if (captureBytes) chunks.push(Buffer.from(buffer.subarray(0, bytesRead)));
           position += bytesRead;
         }
       } finally {
@@ -1256,15 +1233,15 @@ export async function openVerifiedRuntimeExecutable(
         )
       ) {
         throw new Error(
-          `ACPX ${agent} runtime executable changed while it was verified`,
+          `${label} changed while it was verified`,
         );
       }
       const digest = `sha256:${hash.digest("hex")}`;
       if (digest !== expectedDigest) {
-        throw new Error(`ACPX ${agent} runtime executable digest mismatch`);
+        throw new Error(`${label} digest mismatch`);
       }
       if (sameIdentity(beforeIdentity, afterIdentity)) {
-        return { handle, identity: afterIdentity };
+        return { handle, identity: afterIdentity, digest, bytes: Buffer.concat(chunks, captureBytes ? position : 0) };
       }
       // A lazy filesystem restore can change ctime on the first read. Only
       // already-qualified bytes with otherwise identical metadata may receive
@@ -1273,7 +1250,7 @@ export async function openVerifiedRuntimeExecutable(
       lexicalBaseline = lexicalAfter;
     }
     throw new Error(
-      `ACPX ${agent} runtime executable changed while it was verified`,
+      `${label} changed while it was verified`,
     );
   } catch (error) {
     await handle.close();
@@ -1434,23 +1411,6 @@ function verifiedDirectoryOpenFlags(
     );
   }
   return constants.O_RDONLY | noFollowFlag | directoryFlag;
-}
-
-async function readHandleAtStart(
-  handle: FileHandle,
-  size: number,
-): Promise<Buffer> {
-  const bytes = Buffer.alloc(size);
-  let offset = 0;
-  while (offset < size) {
-    const read = await handle.read(bytes, offset, size - offset, offset);
-    if (read.bytesRead === 0) break;
-    offset += read.bytesRead;
-  }
-  if (offset !== size) {
-    throw new Error("ACPX provider executable ended during verification");
-  }
-  return bytes;
 }
 
 function commandLease(

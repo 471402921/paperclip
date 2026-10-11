@@ -29,6 +29,7 @@ import { resolveQualifiedAcpxProfile } from "./qualified-profiles.js";
 import {
   verifyProvisionedGrokExecutable,
   openVerifiedRuntimeExecutable,
+  inspectCommand,
   builtinGrokLauncherPath,
   awaitVerifiedAcpxProviderExit,
   awaitVerifiedAcpxProviderOwnership,
@@ -58,6 +59,8 @@ afterEach(async () => {
 });
 
 describe("ACPX installation integrity", () => {
+  describe.each(["runtime", "command"] as const)("%s executable hydration", (kind) => {
+  const verify = kind === "runtime" ? openVerifiedRuntimeExecutable : inspectCommand;
   it.each(["once", "every_read", "wrong_digest", "mode", "mtime", "replacement", "symlink", "second_content"] as const)("requires stable full re-verification after a ctime-only transition (%s)", async (transition) => {
     const directory = await mkdtemp(join(tmpdir(), "paperclip-runtime-hydration-"));
     temporaryDirectories.push(directory);
@@ -100,17 +103,20 @@ describe("ACPX installation integrity", () => {
     });
     try {
       if (transition === "once") {
-        const verified = await openVerifiedRuntimeExecutable(executable, digest, "fixture");
+        const verified = await verify(executable, digest, "fixture");
         try {
-          const stable = await verified.handle.stat({ bigint: true });
+          const stable = await stat(executable, { bigint: true });
+          if ("bytes" in verified) expect(verified.bytes).toEqual(bytes);
           expect(verified.identity.changedNanoseconds).toBe(stable.ctimeNs.toString());
           expect(verified.identity.modifiedNanoseconds).toBe(stable.mtimeNs.toString());
-        } finally { await verified.handle.close(); }
+        } finally { if ("handle" in verified) await verified.handle.close(); }
       } else {
-        await expect(openVerifiedRuntimeExecutable(executable, digest, "fixture")).rejects.toThrow(transition === "wrong_digest" ? "digest mismatch" : "changed while it was verified");
+        await expect(verify(executable, digest, "fixture")).rejects.toThrow(transition === "wrong_digest" ? "digest mismatch" : "changed while it was verified");
       }
       expect(reads).toBe(["once", "every_read", "second_content"].includes(transition) ? 2 : 1);
     } finally { readSpy.mockRestore(); }
+  });
+
   });
 
   it.each([false, true])("admits only the declared qualified Codex platform in its npm-hoisted slot (published platform declaration: %s)", async (publishedDeclaration) => {
