@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computersApi } from "@/api/computers";
+import { ToastProvider, useToastState } from "@/context/ToastContext";
 import { TaskComputerPanel } from "./TaskComputerPanel";
 
 vi.mock("@/api/computers", () => ({ computersApi: {
@@ -14,12 +15,17 @@ const now = new Date("2026-10-10T12:00:00Z");
 const viewer = () => ({ viewerUrl: "https://viewer.example/#private-token", expiresAt: new Date(now.getTime() + 120_000).toISOString(), owner });
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>(done => { resolve = done; });
-  return { promise, resolve };
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
 }
 let root: Root, host: HTMLDivElement, hidden = false, paneVisible = true, unmounted = false;
+function ToastProbe() {
+  const toasts = useToastState();
+  return <output>{toasts.map(toast => `${toast.title}: ${toast.body}`).join("\n")}</output>;
+}
 async function render(props: { issueId?: string; environmentId?: string; active?: boolean } = {}) {
-  await act(async () => root.render(<TaskComputerPanel issueId={props.issueId ?? "task-a"} environmentId={props.environmentId ?? "environment-a"} active={props.active ?? true} />));
+  await act(async () => root.render(<ToastProvider><TaskComputerPanel issueId={props.issueId ?? "task-a"} environmentId={props.environmentId ?? "environment-a"} active={props.active ?? true} /><ToastProbe /></ToastProvider>));
 }
 async function connect() {
   const button = Array.from(host.querySelectorAll("button")).find(item => item.textContent === "Connect");
@@ -135,6 +141,31 @@ describe("Computer connection lifetime", () => {
     await render(); await connect(); await unmount();
     await act(async () => pending.resolve(viewer()));
     expect(computersApi.disconnect).toHaveBeenCalledWith("task-a", "environment-a", owner);
+  });
+
+  it("shows a disconnect failure inline while the computer panel remains open", async () => {
+    vi.mocked(computersApi.disconnect).mockRejectedValue(new Error("private-token"));
+    await render(); await connect();
+    await render({ active: false });
+    await tick(120_000);
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("Computer disconnect could not be confirmed");
+    expect(host.querySelector("output")?.textContent).toBe("");
+    expect(host.textContent).not.toContain("private-token");
+  });
+
+  it("keeps a safe disconnect failure notice visible after the computer panel closes", async () => {
+    const pending = deferred<void>();
+    vi.mocked(computersApi.disconnect).mockReturnValue(pending.promise);
+    await render(); await connect();
+    await act(async () => root.render(<ToastProvider><ToastProbe /></ToastProvider>));
+    expect(host.querySelector("iframe")).toBeNull();
+    expect(computersApi.disconnect).toHaveBeenCalledWith("task-a", "environment-a", owner);
+    await act(async () => pending.reject(new Error("private-token https://viewer.example/secret")));
+    expect(host.textContent).toContain("Computer disconnect could not be confirmed");
+    expect(host.textContent).toContain("may stay awake until this viewer connection expires");
+    expect(host.textContent).not.toContain("private-token");
+    expect(host.textContent).not.toContain("https://viewer.example");
+    expect(computersApi.connect).toHaveBeenCalledTimes(1);
   });
 
   it("retires a connected owner on unmount even when its presence response is pending", async () => {
