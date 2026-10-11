@@ -56,11 +56,11 @@ export interface ComputerBackend {
     record: ComputerRecord,
     id: string,
   ): Promise<{ id: string; status: string }>;
-  renew(record: ComputerRecord): Promise<void>;
+  renew(record: ComputerRecord, options?: ComputerOperationOptions): Promise<void>;
   computerTool(): { command: string; args: string[] };
   desktop(
     record: ComputerRecord,
-    options?: { checkInput?: boolean },
+    options?: ComputerOperationOptions & { checkInput?: boolean },
   ): Promise<{ viewerUrl: string; expiresAt: string }>;
   ingress(
     record: ComputerRecord,

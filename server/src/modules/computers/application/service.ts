@@ -27,6 +27,7 @@ class ComputerSessionBusyError extends ComputerError {
   }
 }
 
+const VIEWER_PREPARATION_BUDGET_MS = 120_000;
 const FILE_OPERATION_BUDGET_MS = 120_000;
 const FILE_OPERATION_SETTLEMENT_MS = 5000;
 type Scope = { companyId: string; environmentId: string };
@@ -618,36 +619,66 @@ finally:
     input: Scope & { userId: string; idleTimeoutMs: number },
   ) {
     timeout(input.idleTimeoutMs);
-    const deadline = new Date(
-      now().getTime() + input.idleTimeoutMs,
-    ).toISOString();
     const data = await admitRecord(input, (record) => {
+      const deadlineMs = now().getTime() + VIEWER_PREPARATION_BUDGET_MS;
       const owner: Owner = {
         id: randomUUID(),
         generation: 1,
         kind: "viewer",
-        phase: "active",
+        phase: "starting",
         userId: input.userId,
         port: 0,
-        deadline,
-        absoluteDeadline: deadline,
+        deadline: new Date(deadlineMs).toISOString(),
+        absoluteDeadline: null,
         process: null,
       };
       record.ledger.owners.push(owner);
-      return { record: structuredClone(record), owner };
+      return { record: structuredClone(record), owner, deadlineMs };
     });
-    await backend.ready(data.record);
-    await backend.claim(data.record);
-    await backend.renew(data.record);
-    const viewer = await backend.desktop(data.record);
-    return {
-      ...viewer,
-      expiresAt: new Date(
-        Math.min(Date.parse(viewer.expiresAt), Date.parse(deadline)),
-      ).toISOString(),
-      owner: ref(data.record, data.owner),
-    };
+    const ownerRef = ref(data.record, data.owner);
+    const operation = { deadlineMs: data.deadlineMs };
+    function preparing(record: ComputerRecord) {
+      const owner = exactOwner(record, ownerRef);
+      assertAdmission(record.ledger);
+      if (owner.kind !== "viewer" || owner.userId !== input.userId || owner.phase !== "starting")
+        throw new ComputerError("conflict", "Computer connection is no longer active");
+      if (now().getTime() >= data.deadlineMs || expired(owner, now()))
+        throw new ComputerError("provider_error", "Computer connection preparation timed out");
+      return owner;
+    }
+    const assertPreparing = async () => preparing(await repository.get(input));
+    try {
+      await assertPreparing();
+      await backend.ready(data.record, operation);
+      await assertPreparing();
+      await backend.claim(data.record, operation);
+      await assertPreparing();
+      await backend.renew(data.record, operation);
+      await assertPreparing();
+      const viewer = await backend.desktop(data.record, operation);
+      const deadline = await repository.update(input, (record) => {
+        const owner = preparing(record);
+        const expiresAt = Math.min(Date.parse(viewer.expiresAt), now().getTime() + input.idleTimeoutMs);
+        if (!Number.isFinite(expiresAt) || expiresAt <= now().getTime())
+          throw new ComputerError("provider_error", "Computer viewer credentials expired during preparation");
+        owner.phase = "active";
+        owner.deadline = new Date(expiresAt).toISOString();
+        owner.absoluteDeadline = owner.deadline;
+        return owner.deadline;
+      });
+      return { ...viewer, expiresAt: deadline, owner: ownerRef };
+    } catch (error) {
+      // Retire only this still-preparing reservation; never revive or change a
+      // concurrently disconnected/replaced owner when preparation completes late.
+      await repository.update(input, (record) => {
+        if (record.id !== ownerRef.computerId) return;
+        const owner = record.ledger.owners.find(owner => owner.id === ownerRef.ownerId && owner.generation === ownerRef.generation);
+        if (owner?.phase === "starting") { owner.phase = "retired"; owner.deadline = null; }
+      });
+      throw error;
+    }
   }
+
   async function renewViewer(
     input: Scope & { owner: OwnerRef; userId: string },
   ) {
