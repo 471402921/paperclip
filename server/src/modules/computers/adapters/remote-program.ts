@@ -75,19 +75,46 @@ if act=='workspace':
   if existing_branch and (p.get('mode')!='worktree' or existing_branch!=branch):fail('invalid')
   if base_ref and (base_ref.startswith('-') or '\n' in base_ref):fail('invalid')
   checkout=os.path.join(root,'checkout')
+  # Only network Git children receive operation-scoped credentials. Never
+  # persist helper configuration in the checkout or the shared agent home.
+  auth=p.get('gitAuth') or {};git_env=dict(os.environ)
+  git_env.update({'GIT_TERMINAL_PROMPT':'0','GIT_CONFIG_GLOBAL':'/dev/null','GIT_CONFIG_NOSYSTEM':'1'})
+  git_env.update(auth.get('env',{}))
   if repo:
    if not (repo.startswith('https://') or repo.startswith('ssh://') or repo.startswith('git@')) or '\n' in repo:fail('invalid')
    if not os.path.exists(checkout):
-    # Resolve credentials on the controller for this operation. Only the clone
-    # child receives the helper environment; no credential file or Git config persists.
-    auth=p.get('gitAuth') or {};git_env=dict(os.environ)
-    git_env.update({'GIT_TERMINAL_PROMPT':'0','GIT_CONFIG_GLOBAL':'/dev/null','GIT_CONFIG_NOSYSTEM':'1'})
-    git_env.update(auth.get('env',{}))
     run(['git']+auth.get('configArgs',[])+['clone','--',repo,checkout],env=git_env)
    elif run(['git','remote','get-url','origin'],checkout)!=repo:fail('conflict')
   else:
    os.makedirs(checkout,exist_ok=True)
    if not os.path.isdir(os.path.join(checkout,'.git')):run(['git','init',checkout])
+  def commit_ref(value):
+   result=subprocess.run(['git','rev-parse','--verify','--end-of-options',value+'^{commit}'],cwd=checkout,capture_output=True,text=True)
+   return result.stdout.strip() if result.returncode==0 else None
+  def worktree_base(value):
+   if not value or value=='HEAD':return 'HEAD'
+   remotes=run(['git','remote'],checkout).splitlines()
+   remote=None;remote_branch=None
+   candidate=value[len('refs/remotes/'):] if value.startswith('refs/remotes/') else value
+   parts=candidate.split('/',1)
+   if len(parts)==2 and parts[0] in remotes:
+    remote,remote_branch=parts
+   else:
+    local=value[len('refs/heads/'):] if value.startswith('refs/heads/') else value
+    local_branch=subprocess.run(['git','show-ref','--verify','--quiet','refs/heads/'+local],cwd=checkout,capture_output=True).returncode==0
+    # Tags and commit expressions retain their exact meaning. A local branch
+    # with origin uses the remote counterpart rather than unpushed divergence.
+    if not local_branch:
+     resolved=commit_ref(value)
+     if resolved:return resolved
+    if 'origin' in remotes:remote,remote_branch='origin',local
+    else:return commit_ref(value) or fail('command_failed')
+   if remote_branch=='HEAD':return commit_ref(value) or fail('command_failed')
+   if subprocess.run(['git','check-ref-format','refs/heads/'+remote_branch],cwd=checkout,capture_output=True).returncode:
+    return commit_ref(value) or fail('command_failed')
+   target_ref='refs/remotes/'+remote+'/'+remote_branch
+   run(['git']+auth.get('configArgs',[])+['fetch','--no-tags','--',remote,'+refs/heads/'+remote_branch+':'+target_ref],checkout,git_env)
+   return commit_ref(target_ref) or fail('command_failed')
   if branch:
    if branch.startswith('-') or '\n' in branch:fail('invalid')
    run(['git','check-ref-format','--branch',branch])
@@ -98,7 +125,7 @@ if act=='workspace':
    if existing_branch:run(['git','show-ref','--verify','refs/heads/'+existing_branch],checkout)
    if not os.path.exists(target):
     if existing_branch:run(['git','worktree','add',target,existing_branch],checkout)
-    else:run(['git','worktree','add','-b',task_branch,target,base_ref or 'HEAD'],checkout)
+    else:run(['git','worktree','add','-b',task_branch,target,worktree_base(base_ref)],checkout)
    run(['git','rev-parse','--show-toplevel'],target)
    if run(['git','symbolic-ref','--quiet','--short','HEAD'],target)!=task_branch:fail('conflict')
   else:
