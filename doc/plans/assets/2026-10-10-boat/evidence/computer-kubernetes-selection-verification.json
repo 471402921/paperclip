@@ -1,0 +1,35 @@
+{
+  "baseHead": "51db2ab62f365642e3d8476dc7ff7d41d138471e",
+  "scope": [
+    "server/src/routes/computers.ts",
+    "server/src/__tests__/computer-routes.test.ts"
+  ],
+  "regression": {
+    "failedBefore": 4,
+    "passedBaseline": 8,
+    "log": "computer-kubernetes-selection-red.log"
+  },
+  "verification": {
+    "passed": 27,
+    "skipped": 0,
+    "files": 2,
+    "log": "computer-kubernetes-selection-green.log",
+    "serverTypecheckExit": 0,
+    "typecheckLog": "computer-kubernetes-selection-tsc.log",
+    "diffCheck": "passed"
+  },
+  "authority": "Same execution-policy helper as heartbeat; rejects Boat GET/connect/preview/presence under forced Kubernetes before provider access; keeps scoped former-viewer disconnect. No provisioning, remote calls, or product database access.",
+  "database": "Disposable UUID database on existing task-owned PostgreSQL, exact database dropped by harness.",
+  "prPathsAgainstPushedRuntimeAb1": 97,
+  "commit": "3223e57b747844834d57d3915d8e7c60b119c723",
+  "independentReview": "Approved by claude_bootstrap_root_cause; no actionable findings.",
+  "workingTree": "clean",
+  "combinedMerge": "869a304c62835e0143864fed012d10cf0751818e",
+  "combinedVerification": {
+    "passed": 28,
+    "skipped": 0,
+    "files": 2,
+    "logSha256": "b2049be88ba6cd588f90be9ddc69c86f6e8b5558d0abd3c2d33c0523e2642ae7",
+    "testMapping": "Preserve existing mocked computer-routes suite; map core selection suite to existing computer-route-selection path."
+  }
+}

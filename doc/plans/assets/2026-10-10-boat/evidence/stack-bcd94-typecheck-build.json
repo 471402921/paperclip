@@ -1,0 +1,21 @@
+{
+  "schema": "paperclip/boat-stack-build-verification/v1",
+  "source": "bcd94e340ada5e62145b9a2bee26745d60dc3d99",
+  "checks": [
+    {
+      "command": "pnpm -r typecheck",
+      "result": "passed",
+      "exitCode": 0,
+      "logSha256": "a51d076b8f194b281b2272cecca50e1471d804bed194e1df83457db0e9aeab52"
+    },
+    {
+      "command": "pnpm build",
+      "result": "passed",
+      "exitCode": 0,
+      "logSha256": "c4156d5022133055f8b3166a6507ef523e4914b79a5e8857e7320b521ba4ea43"
+    }
+  ],
+  "initialAttempt": "Initial sandbox typecheck attempt failed on package-manager registry access; the authorized network-enabled attempt passed. Original failure retained.",
+  "scope": "These full checks precede the two-file Kubernetes route correction. That correction has focused checks and server typecheck; combined merge has both route suites passing.",
+  "fullLocalSuite": "Not rerun; historical Darwin 34914 passed/24 failed/338 skipped and later Linux disposition remain separately recorded."
+}

@@ -1,0 +1,177 @@
+{
+  "schema": "paperclip/boat-link-count-evidence/v1",
+  "source": "05f3725af838b5a074707df1d6ed1e193bdfe49e",
+  "status": "positive diagnostic reproduction; package correction not yet qualified",
+  "rawToolEvidence": {
+    "observedAt": "2026-10-11T13:13:23.059Z",
+    "runId": "b492651b-f616-4b43-aa9d-f35a2ccdeb24",
+    "eventType": "tool.execution.completed",
+    "eventSeq": 97,
+    "probeSha256": "b78c70e4cdc6818dc1dd000c4b0a592a401eb396a735ecb6c2cda1e21f765463",
+    "probe": {
+      "schema": "paperclip/boat-module-link-probe/v1",
+      "startedAt": "2026-10-11T13:09:09.933Z",
+      "packDigest": "eee8609e9377e24a4588f27816834f15a665d22e23521edc1cf498f9c35f7fff",
+      "files": 81,
+      "entries": 256,
+      "bytes": 3394381,
+      "skipped": 164,
+      "readPasses": 160,
+      "complete": false,
+      "stop": "LINK_COUNT",
+      "firstFailure": {
+        "package": "@agentclientprotocol/sdk",
+        "relativePathSha256": "0116f85e60a1150012e83ebc56420360b586e0d10ac23611c222c158d3680f1a",
+        "moduleFence": "LINK_COUNT",
+        "probeCode": null,
+        "initialDescriptor": {
+          "nlink": "1",
+          "dev": "100",
+          "ino": "6589",
+          "mode": "33152",
+          "uid": "1000",
+          "gid": "1000",
+          "size": "102",
+          "mtimeNs": "1791720469000000000",
+          "ctimeNs": "1791720469000000000"
+        },
+        "lastDescriptor": {
+          "nlink": "2",
+          "dev": "100",
+          "ino": "6589",
+          "mode": "33152",
+          "uid": "1000",
+          "gid": "1000",
+          "size": "102",
+          "mtimeNs": "1791720469000000000",
+          "ctimeNs": "1791724150000000000"
+        },
+        "failingRead": {
+          "attempt": 1,
+          "nlinkBefore": "1",
+          "nlinkAfter": "2",
+          "direction": "increase",
+          "equal": {
+            "dev": true,
+            "ino": true,
+            "mode": true,
+            "uid": true,
+            "gid": true,
+            "size": true,
+            "mtime": true,
+            "ctime": false
+          }
+        },
+        "pathEqual": true,
+        "namedEqual": true,
+        "readHashes": [
+          "42ce37809e7b25a8a04da912f303e3e2991a8d525ccb62d1008ed05172b24e5f"
+        ]
+      },
+      "finishedAt": "2026-10-11T13:09:10.008Z",
+      "elapsedMs": 75
+    }
+  },
+  "controllerProjection": {
+    "observedAt": "2026-10-11T13:13:52.323Z",
+    "guestReads": false,
+    "package": "@agentclientprotocol/sdk@1.4.0",
+    "files": [
+      {
+        "relativePathSha256": "eb0848fa83c746c9a1ee9db2470b2bd56187e30a58e260581b1815502f07f06a",
+        "sha256": "42ce37809e7b25a8a04da912f303e3e2991a8d525ccb62d1008ed05172b24e5f",
+        "metadata": {
+          "dev": "197",
+          "ino": "144460094",
+          "nlink": "2",
+          "mode": "33188",
+          "uid": "0",
+          "gid": "0",
+          "size": "102",
+          "mtimeNs": "1791720469000000000",
+          "ctimeNs": "1791721327370129733"
+        }
+      },
+      {
+        "relativePathSha256": "0116f85e60a1150012e83ebc56420360b586e0d10ac23611c222c158d3680f1a",
+        "sha256": "42ce37809e7b25a8a04da912f303e3e2991a8d525ccb62d1008ed05172b24e5f",
+        "metadata": {
+          "dev": "197",
+          "ino": "144460094",
+          "nlink": "2",
+          "mode": "33188",
+          "uid": "0",
+          "gid": "0",
+          "size": "102",
+          "mtimeNs": "1791720469000000000",
+          "ctimeNs": "1791721327370129733"
+        }
+      }
+    ],
+    "sameDeviceAndInode": true
+  },
+  "probeRunFinalState": {
+    "observedAt": "2026-10-11T13:20:25.957Z",
+    "guestReads": false,
+    "runs": [
+      {
+        "id": "b492651b-f616-4b43-aa9d-f35a2ccdeb24",
+        "providerBefore": "01a12881-5d3b-72a0-b4c3-d993f5b089e1",
+        "providerAfter": "01a12881-5d3b-72a0-b4c3-d993f5b089e1",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T13:06:30.450Z",
+        "finishedAt": "2026-10-11T13:10:01.821Z",
+        "nativeSessionId": "06496696-b312-4268-ac40-66770aaa6f1a",
+        "runnerInstanceId": "0005a613-101d-475f-9409-8b8e8b87e9ce",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      }
+    ],
+    "owners": [
+      {
+        "id": "227d3de1-3004-4e61-a480-a112fc9a3115",
+        "phase": "retired",
+        "deadline": null,
+        "boot": "8e9dc331-2f03-48cb-8a82-6be19ef26776",
+        "launch": 1
+      }
+    ]
+  },
+  "providerAfterProbe": {
+    "observedAt": "2026-10-11T13:20:33.693Z",
+    "guestRead": false,
+    "state": "archived",
+    "health": "ok",
+    "stop": {
+      "id": "stop_e8a59be259342af9",
+      "status": "completed",
+      "timestamps": {
+        "endedAt": "2026-10-11T13:10:28.588Z"
+      },
+      "errorPresent": false
+    }
+  },
+  "interpretation": {
+    "proven": [
+      "The probe reproduced a first-pass link-count increase from 1 to 2 on the same 102-byte descriptor, with matching device/inode/mode/uid/gid/size/mtime and retained canonical/named identity.",
+      "The read SHA-256 equals both projected controller SDK twins; those two controller files share one device/inode with link count 2.",
+      "The ordinary Codex probe run succeeded with its saved session, its owner retired, and a later provider-only read found archive complete."
+    ],
+    "limits": [
+      "This later probe does not recover numeric before/after values for the original failed Claude read. It reproduces the same closed fence in that pinned production package.",
+      "The exact guard rejected before later continuity checks; one read digest is not proof of two-pass byte continuity.",
+      "The evidence does not yet prove that independently materialized equal-byte files survive Boat archive/resume without a link transition.",
+      "Packaging normalization and a digest-bound layout policy remain proposed; no guard, existing immutable pack, saved session, or deployment was changed for this probe."
+    ]
+  },
+  "provenance": {
+    "staging29-probe-raw-tool-output.json": "cf196eaec73a1753b703eb136cd01e4743b8e5246b7a05baae52568c2c043722",
+    "staging29-link-count-probe.mjs": "b78c70e4cdc6818dc1dd000c4b0a592a401eb396a735ecb6c2cda1e21f765463",
+    "staging29-controller-sdk-twins.json": "4b84fb0c9e129f0b711b4ea24dc2364bdd7fe9d80ccc6edb8c79f37113d0f545",
+    "staging29-codex-probe-final-state.json": "f21eea8da36007b885efcfa0bf74067f6a78a41f5c7a3977ed3487e339743ef1",
+    "retry-staging-25-provider-after-link-probe.json": "2aa60ec26f876902c54ff0075df1f6d97a9df2b4be340b96d07263c8ab123852"
+  }
+}
