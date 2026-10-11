@@ -1,0 +1,63 @@
+{
+  "schema": "boat-loader-continuity-verification/v1",
+  "capturedAt": "2026-10-11T09:33:30.188527+00:00",
+  "sourceRevision": "8e8999d681b42a19bfee2540c4345193f29f31ca",
+  "scope": [
+    "installation-integrity.ts",
+    "installation-integrity.test.ts"
+  ],
+  "red": {
+    "actualChildDependencyImportExit": 1,
+    "expectedExit": 0,
+    "linuxFixture": {
+      "baselineExit": 0,
+      "ctimeOnlyExit": 1,
+      "identicalBytes": true,
+      "unchangedDevInodeModeSizeMtime": true,
+      "dependencyExecutedAfterDrift": false
+    }
+  },
+  "green": {
+    "actualChildDependencyImportExit": 0,
+    "linuxFixture": {
+      "baselineExit": 0,
+      "ctimeOnlyExit": 0,
+      "identicalBytes": true,
+      "movedDescriptorExit": 1,
+      "movedDescriptorExecuted": false
+    },
+    "testsPassed": 123,
+    "existingPlatformSkips": 6,
+    "testFiles": 2,
+    "typecheck": "passed",
+    "typescriptAndVerifiedEntrypointBuild": "passed",
+    "diffCheck": "passed",
+    "independentReview": "approved"
+  },
+  "contract": {
+    "sameDescriptor": true,
+    "maximumCompleteReads": 2,
+    "completeByteEqualityRequired": true,
+    "stableFinalMetadataRequired": true,
+    "unchangedFields": [
+      "device",
+      "inode",
+      "mode",
+      "uid",
+      "gid",
+      "linkCount",
+      "size",
+      "mtime"
+    ],
+    "retainedCanonicalPathAndNamedRegularInodeRechecked": true,
+    "existingNoFollowAncestryAndFormatChecksPreserved": true,
+    "darwinExpectedDigestCheckedEveryPass": true,
+    "linuxAuthority": "Read continuity under existing descriptor-pinned ancestry; no new per-module expected-digest provenance is claimed."
+  },
+  "movedDescriptorCategory": "Fail-closed path rejection; no assertion that this filesystem failure uses the UNVERIFIED_MODULE marker.",
+  "liveCause": "UNPROVED: offline ctime reproduction establishes the loader defect, not that it caused the historical live initialize timeout.",
+  "liveFixtureChanged": false,
+  "oldImmutablePacksChanged": false,
+  "currentLocal49SelectedPack": "sha256:640c6c5405003f7d07603694413be14dc6c9601bc71f40b285f6cb247b5d412b",
+  "currentLocal49HasLoaderCorrection": false
+}
