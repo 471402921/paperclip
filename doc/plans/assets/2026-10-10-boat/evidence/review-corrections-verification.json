@@ -111,5 +111,308 @@
     "command": "pnpm build",
     "exitCode": 0,
     "log": "combined-795f-build.log"
+  },
+  "finalP1s": {
+    "baseRef": {
+      "capturedAt": "2026-10-11T14:57:53.796845+00:00",
+      "commit": "5858c4db2fadc8ccaf4cc06bdcc58032870db433",
+      "reviewComment": "https://github.com/paperclipai/paperclip/pull/15813#discussion_r4241981450",
+      "scope": [
+        "server/src/modules/computers/adapters/remote-program.ts",
+        "server/src/modules/computers/adapters/boat.test.ts"
+      ],
+      "cause": "Fresh clones expose nondefault branches as remote-tracking refs, while worktree creation passed the unqualified name directly; qualified refs were not refreshed for subsequent tasks.",
+      "behavior": "For a new worktree only, resolve branch names to an actual remote, fetch the exact branch with transient operation credentials, then use its resolved commit. Missing/failed refresh stops creation with no stale/default fallback. Tags, commit expressions, HEAD aliases, exact existingBranch attachment and already-created worktrees retain prior semantics.",
+      "verification": {
+        "baseline": {
+          "failed": 4,
+          "log": "boat-base-ref-red.log"
+        },
+        "compatibilityRed": [
+          "boat-base-ref-expression-red.log",
+          "boat-base-ref-symbolic-red.log"
+        ],
+        "finalAdapterSuite": {
+          "passed": 75,
+          "failed": 0,
+          "skipped": 0,
+          "log": "boat-base-ref-final-green.log"
+        },
+        "serverTypecheck": {
+          "exitCode": 0,
+          "log": "reconcile-base-ref-final-tsc.log",
+          "boundary": "Shared final working tree including separately owned reconciliation scheduler changes; peer executed tsc."
+        },
+        "independentReview": {
+          "reviewer": "live_state_probe",
+          "verdict": "approved, no actionable findings"
+        },
+        "diffCheck": "passed"
+      },
+      "testBoundary": "Actual offline Git clone/fetch uses a per-child local URL rewrite. No provider or live guest operations. Verifies fresh and stale remote refs, denied fetch, immutable tag/expression bases, exact existing branch and dirty worktree preservation.",
+      "publication": {
+        "pushed": false,
+        "deployed": false
+      },
+      "parallelWork": "Only owned two paths committed. Separate service.ts/service.test.ts scheduler edits remain with their author."
+    },
+    "renewal": {
+      "capturedAt": "2026-10-11T15:02:39.477410+00:00",
+      "baseCommit": "5858c4db2fadc8ccaf4cc06bdcc58032870db433",
+      "commit": null,
+      "status": "reviewed-uncommitted-parent-owns-commit",
+      "paths": [
+        "server/src/index.ts",
+        "server/src/modules/computers/application/service.ts",
+        "server/src/modules/computers/application/service.test.ts"
+      ],
+      "reviewComment": "https://github.com/paperclipai/paperclip/pull/15813#discussion_r4241981454",
+      "rootCause": "Serial per-computer renewal waits four90s failures before healthy fifth; aggregate cleanup also blocks next scheduler renewal.",
+      "change": {
+        "lanes": [
+          "renewal",
+          "cleanup"
+        ],
+        "workersPerLane": 4,
+        "totalWorkers": 8,
+        "schedulerKeysIndependent": true,
+        "sameRecordSingleFlightPreserved": true,
+        "defaultReconcileAwaitsBoth": true,
+        "lifecycleAuthorityChanged": false,
+        "ttlChanged": false
+      },
+      "regression": {
+        "initialRed": {
+          "failed": 2,
+          "log": "/tmp/boat-architect/reconcile-concurrency-red.log"
+        },
+        "nextRenewalRed": {
+          "failed": 1,
+          "log": "/tmp/boat-architect/reconcile-lanes-red.log"
+        },
+        "decisiveOutcomes": [
+          "Healthy fifth renewed90s after four90s failure starts",
+          "Healthy record renewed at0s and240s while20stop checks remain busy through450s",
+          "Cross-lane record transition shares original in-flight operation before later cleanup",
+          "Concurrent callers bounded to4workers per lane and8total without duplicate records",
+          "Failure aggregates after all workers and next sweep retries"
+        ]
+      },
+      "verification": {
+        "serviceTests": {
+          "passed": 61,
+          "skipped": 0,
+          "log": "/tmp/boat-architect/reconcile-lanes-final.log"
+        },
+        "serverDirectTypecheck": {
+          "exitCode": 0,
+          "log": "/tmp/boat-architect/reconcile-lanes-final-tsc.log"
+        },
+        "normalServerTypecheck": {
+          "exitCode": 0,
+          "includesRunnerVendorBuild": true,
+          "packageManager": "cachedpnpm9.15.4",
+          "log": "/tmp/boat-architect/reconcile-lanes-normal-typecheck-3.log"
+        },
+        "moduleBoundary": {
+          "exitCode": 0,
+          "log": "/tmp/boat-architect/reconcile-lanes-boundaries.log"
+        },
+        "diffCheck": 0
+      },
+      "independentReview": {
+        "reviewer": "quarantine_root_cause",
+        "verdict": "approved",
+        "findings": []
+      },
+      "limits": [
+        "Finite all-live capacity: an arbitrary number of unavailable live providers can still exceed a renewal deadline. No arbitrary-fleet guarantee.",
+        "No live provider or staging qualification performed for this patch."
+      ],
+      "abandonedValidation": [
+        "Two hostpnpm11 auto-switch launches stalled before typecheck and were interrupted; cachedrepositoryversion9.15.4 completed normal script."
+      ]
+    },
+    "staging": {
+      "capturedAt": "2026-10-11T15:04:32.789212+00:00",
+      "sourceCommit": "6d0993a6f6a9c56085d3e0443650db55cb474cac",
+      "validation": {
+        "focusedSuites": [
+          "server/src/modules/computers/adapters/boat.test.ts",
+          "server/src/modules/computers/application/service.test.ts"
+        ],
+        "tests": {
+          "passed": 135,
+          "failed": 0,
+          "skipped": 0,
+          "log": "staging-final-baseref-reconcile-tests.log",
+          "config": "staging-reviewed-port-vitest.config.mjs"
+        },
+        "normalServerTypecheck": {
+          "exitCode": 0,
+          "log": "staging-final-baseref-reconcile-tsc.log",
+          "command": "pnpm --filter @paperclipai/server typecheck"
+        },
+        "diffCheck": "passed"
+      },
+      "migrationHistory": {
+        "capturedAt": "2026-10-11T15:03:53.331144+00:00",
+        "sourceCommit": "6d0993a6f6a9c56085d3e0443650db55cb474cac",
+        "baselineCommit": "05f3725af838b5a074707df1d6ed1e193bdfe49e",
+        "migrationBlobCount": 338,
+        "samePathsModesAndBlobIds": true,
+        "treeListingSha256": "58006545ca33ced32094c671c95d2a3be3230bdbfdd69fe92141181713d9a285",
+        "databaseApplied": false
+      },
+      "worktree": "clean",
+      "operations": {
+        "sourceEdits": false,
+        "indexChanges": false,
+        "push": false,
+        "deploy": false,
+        "liveProviderCalls": false,
+        "databaseMigrationApplied": false
+      },
+      "boundary": "Source qualification only; no new live Claude acceptance claim."
+    },
+    "countDifference": {
+      "capturedAt": "2026-10-11T15:07:59.851794+00:00",
+      "coreCommit": "e72f29cd85ace0a4425bb57837ecd1d3faf4fec4",
+      "stagingCommit": "6d0993a6f6a9c56085d3e0443650db55cb474cac",
+      "coreCounts": {
+        "boatAdapter": 75,
+        "computerService": 61,
+        "total": 136
+      },
+      "stagingTotal": 135,
+      "adapterTestFilesByteIdentical": true,
+      "adapterTestsSha256": "f35413a5ce26f60a8990be71f55606ac74cf946e413e902c01f77abe068c94c5",
+      "onlyServiceTestDelta": "forwards opt-in phases through the existing owner guard without serializing the observer",
+      "deltaAlreadyAbsentFromStagingBaseline": "05f3725af838b5a074707df1d6ed1e193bdfe49e",
+      "baseRefAndRenewalRegressionsMissing": false,
+      "sourceEdits": false
+    }
+  },
+  "latestCombinedChecks": {
+    "source": "0cf5e9ebf758241c28cec76a5a923d294e28d6ce",
+    "typecheck": {
+      "command": "pnpm -r typecheck",
+      "exitCode": 0,
+      "log": "combined-0cf5-typecheck.log"
+    },
+    "build": {
+      "command": "pnpm build",
+      "exitCode": 0,
+      "log": "combined-0cf5-build.log"
+    }
+  },
+  "signoffCiDiagnosis": {
+    "observedAt": "2026-10-11T14:52:57.161324+00:00",
+    "coreHead": "f527d43a68ed111d7e8a846d2b4de90f85d61556",
+    "uiHead": "731a9fa624e67900e07d9028ec63a83a67838995",
+    "ciFailure": {
+      "run": 38147890335,
+      "job": 114495009966,
+      "case": "Signoff execution policy / review-only policy: reviewer approval completes execution",
+      "runId": "5d0bc970-9e0e-4b94-8d93-5c6ea85bae47",
+      "status": "cancelled",
+      "cause": "unknown: API projection and artifacts omit errorCode/reason; cancellation precedes teardown"
+    },
+    "isolatedReproduction": {
+      "exactCase": {
+        "passed": 1,
+        "durationSeconds": 11.9
+      },
+      "fullFile": {
+        "passed": 5,
+        "failed": 0,
+        "skipped": 0,
+        "durationSeconds": 33.0
+      },
+      "diagnosticChangesOnly": "Temporary copied spec logs terminal error/recovery fields; original assertions and timeout budgets unchanged. Separate temp config imports normal Playwright config, changes test/output paths, omits rebuild of already-built UI. Onboard uses fresh UUID database on task-owned PostgreSQL; cleanup completed in finally. No product DB/source mutations.",
+      "harnessInitialFailure": "Temp module format missing type=module; no tests ran. Preserved first.log, corrected only temp package.json."
+    },
+    "sourceComparison": [
+      {
+        "path": "tests/e2e/signoff-policy.spec.ts",
+        "coreBlob": "da005094f2de86f5b939253f8cc5882f5ece37b7",
+        "uiBlob": "da005094f2de86f5b939253f8cc5882f5ece37b7",
+        "identical": true
+      },
+      {
+        "path": "tests/e2e/playwright.config.ts",
+        "coreBlob": "079c9166df9a0cdd9de55ed69b4e53da40293448",
+        "uiBlob": "079c9166df9a0cdd9de55ed69b4e53da40293448",
+        "identical": true
+      },
+      {
+        "path": "server/src/services/heartbeat.ts",
+        "coreBlob": "5932426d2afed2bd9278703c572ea14acd1e2361",
+        "uiBlob": "5932426d2afed2bd9278703c572ea14acd1e2361",
+        "identical": true
+      },
+      {
+        "path": "server/src/services/heartbeat/recovery.ts",
+        "coreBlob": "6b9abb2eb567b9657181c2a97f089fa014f72577",
+        "uiBlob": "6b9abb2eb567b9657181c2a97f089fa014f72577",
+        "identical": true
+      },
+      {
+        "path": "server/src/services/recovery/service.ts",
+        "coreBlob": "daaeeee7c4faef5d3a32992e5ebc43f7df70f865",
+        "uiBlob": "daaeeee7c4faef5d3a32992e5ebc43f7df70f865",
+        "identical": true
+      },
+      {
+        "path": "server/src/services/heartbeat/run-control.ts",
+        "coreBlob": "8bef5e55cd73e58d25b22bf8dbbc7494ed2adf85",
+        "uiBlob": "8bef5e55cd73e58d25b22bf8dbbc7494ed2adf85",
+        "identical": true
+      },
+      {
+        "path": "server/src/services/cancelled-native-startup.ts",
+        "coreBlob": "9a26fa249a9e06acc57cae150fb0663c1985cdae",
+        "uiBlob": "9a26fa249a9e06acc57cae150fb0663c1985cdae",
+        "identical": true
+      },
+      {
+        "path": "server/src/services/explicit-native-continuation.ts",
+        "coreBlob": "02a62ee6a1afddd6bab06c5f4745309a213347d7",
+        "uiBlob": "02a62ee6a1afddd6bab06c5f4745309a213347d7",
+        "identical": true
+      },
+      {
+        "path": "server/src/routes/issues.ts",
+        "coreBlob": "bce1dd0274245929f6db8268fd683eede7deb92c",
+        "uiBlob": "bce1dd0274245929f6db8268fd683eede7deb92c",
+        "identical": true
+      },
+      {
+        "path": "server/src/services/issues.ts",
+        "coreBlob": "70af50054488fc5efb87f14e1beba32bc3a1c80b",
+        "uiBlob": "70af50054488fc5efb87f14e1beba32bc3a1c80b",
+        "identical": true
+      }
+    ],
+    "onlyProductionServerDifference": "Combined run-completion.ts adds a closed diagnostic payload only for native succeeded terminal overridden by cancellation; signoff process adapter never has nativeFinalization. No selection/status/ownership precedence changed. All other production server/shared/db/adapter blobs identical.",
+    "causalAssessment": "No reproduction and no proven connection to Boat recovery patch. isComputerAdmissionWaitBeforeProvider exits at typed wait predicate for ordinary process fixture. UI exact-head corresponding browser lane passes. Do not label harmless flake or alter assertions; allow new-head CI after independently required P1 fixes.",
+    "logs": [
+      {
+        "path": "/tmp/boat-architect/core-f527-e2e5-original.log",
+        "sha256": "629bdd20c0a3ce550074c884008029b08797dd83acd7a57eb4121c33e8843057"
+      },
+      {
+        "path": "/tmp/boat-architect/signoff-f527-repro/first.log",
+        "sha256": "7bc740868727c2215309e02057be9300df3ac3988d2ca9c68e5a353a40cdf05c"
+      },
+      {
+        "path": "/tmp/boat-architect/signoff-f527-repro/second.log",
+        "sha256": "e80557150edb565c34e3f04485ff96907c358f44b8eee615eda9d861ef7eb451"
+      },
+      {
+        "path": "/tmp/boat-architect/signoff-f527-repro/full.log",
+        "sha256": "2182464a2623abfbdc17d19cfdb9544c50e6948811b567b7e3dc1f944f61774f"
+      }
+    ]
   }
 }

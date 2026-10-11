@@ -1,0 +1,1192 @@
+{
+  "source": "c2861407ff2e2171df0f7c79ad2a92f8c2c21c6b",
+  "taskId": "8b15b756-5679-4cc3-a52c-d59809f9bb3f",
+  "deployment": {
+    "version": 1,
+    "requestId": "585519f0-3cd4-44c4-83c1-67710865109f",
+    "sha": "c2861407ff2e2171df0f7c79ad2a92f8c2c21c6b",
+    "stage": "deploy",
+    "hostname": "boat.staging.paperclip.app",
+    "environment": "staging",
+    "status": "succeeded",
+    "verification": "verified",
+    "appVersion": "sha-c2861407ff2e2171df0f7c79ad2a92f8c2c21c6b-cloud",
+    "targetStackId": "stack-pool-474c42a4b545",
+    "campaignUrl": "https://admin-staging.paperclip.app/admin/fleet/campaigns/fleet-campaign-1791706430145",
+    "checkedAt": "2026-10-11T14:38:38.649Z"
+  },
+  "pack": {
+    "observedAt": "2026-10-11T14:40:05.178Z",
+    "schema": "paperclip-runner/remote-provider-pack/v1",
+    "digest": "sha256:fee61458bdd1070aaff21343f974699bdd72fd828f49e04414c5ca93c7073bf3",
+    "sourceRevision": "c2861407ff2e2171df0f7c79ad2a92f8c2c21c6b",
+    "target": {
+      "platform": "linux",
+      "architecture": "x64"
+    },
+    "layout": {
+      "policy": "independent-regular-files-v1",
+      "regularFiles": 21885,
+      "multiplyLinkedFiles": 0,
+      "symlinks": 528
+    },
+    "pins": {
+      "nodeMinimum": "24.11.0",
+      "codex": "0.160.0",
+      "opencode": "1.18.34",
+      "acpx": "0.13.1",
+      "grok": "1.0.13",
+      "claudeAcp": "0.73.0",
+      "codexAcp": "1.6.2"
+    },
+    "distDigest": "sha256:45404fc6da00ce3c22ce8b2d62f80f75029157bf8408f99c471beee8c1d8e18d",
+    "bridgeDigest": "sha256:a51f2dc8e055cb15e53099ff43a42e030bd3d506aed225b5caed2d24a77ce6e7",
+    "claudeProfileDigest": "sha256:9d73d1f0f121fb96cc8badb28c22d5bff02d8582eb2e40360a81c189e1b9422a",
+    "artifacts": {
+      "nodeCommand": {
+        "expectedSha256": "sha256:7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c",
+        "actualSha256": "sha256:7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c"
+      },
+      "productionLock": {
+        "expectedSha256": "sha256:df5143e56269823c040be51a5e45bd53cadb60fecb50fb09ba2848f23e621b67",
+        "actualSha256": "sha256:df5143e56269823c040be51a5e45bd53cadb60fecb50fb09ba2848f23e621b67"
+      },
+      "acpxSidecar": {
+        "expectedSha256": "sha256:8dff5260ecd1380d9acdae32373854d7fdd1d96120fb057d0432e5c14a1d7ef4",
+        "actualSha256": "sha256:8dff5260ecd1380d9acdae32373854d7fdd1d96120fb057d0432e5c14a1d7ef4"
+      }
+    },
+    "packages": {
+      "node": {
+        "available": false
+      },
+      "acpx": {
+        "version": "0.13.1"
+      },
+      "@agentclientprotocol/claude-agent-acp": {
+        "version": "0.73.0"
+      },
+      "@anthropic-ai/claude-agent-sdk": {
+        "available": false
+      }
+    },
+    "loaderFeatures": {
+      "closedModuleFence": true,
+      "boundedReread": true,
+      "readContinuity": true,
+      "uidGidLinkCount": true,
+      "fatalImportMarker": true,
+      "explicitTerminator": true
+    }
+  },
+  "archivedBaseline": {
+    "observedAt": "2026-10-11T14:38:51.300Z",
+    "providerId": "bx_b8sawfyp",
+    "guestRead": false,
+    "state": "archived",
+    "health": "ok",
+    "stop": {
+      "id": "stop_af5a0f632cf1677a",
+      "status": "completed",
+      "timestamps": {
+        "endedAt": "2026-10-11T13:56:40.667Z"
+      },
+      "errorPresent": false
+    }
+  },
+  "cold": {
+    "observedAt": "2026-10-11T14:53:28.932Z",
+    "phase": "cold_observation",
+    "guestReads": false,
+    "providerCalls": false,
+    "expectedIdentity": {
+      "normalizedSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+      "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837"
+    },
+    "finalizations": [
+      {
+        "runId": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+        "committed": true,
+        "createdAt": "2026-10-11T14:40:27.770Z",
+        "updatedAt": "2026-10-11T14:52:44.245Z"
+      }
+    ],
+    "taskSessions": [
+      {
+        "lastRunId": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+        "displayId": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "ids": {
+          "sessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b"
+        },
+        "updatedAt": "2026-10-11T14:52:47.992Z"
+      }
+    ],
+    "runs": [
+      {
+        "id": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+        "providerBefore": null,
+        "providerAfter": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T14:39:15.386Z",
+        "finishedAt": "2026-10-11T14:52:44.842Z",
+        "nativeSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+        "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      }
+    ],
+    "events": [],
+    "leases": [
+      {
+        "id": "0c81b96e-24a6-4b1b-b1cc-5204abd62dd8",
+        "status": "retained",
+        "cleanupStatus": "success",
+        "runId": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+        "acquiredAt": "2026-10-11T14:39:37.680Z",
+        "releasedAt": null,
+        "lastUsedAt": "2026-10-11T14:52:48.254Z",
+        "expiresAt": null,
+        "updatedAt": "2026-10-11T14:52:48.254Z",
+        "failureReason": null,
+        "failureReasonPresent": false,
+        "owner": {
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "ownerId": "c3e7e1c7-0368-4f0d-9fe9-7a210ec22809"
+        },
+        "ownerGeneration": 1
+      }
+    ],
+    "owners": [
+      {
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "id": "c3e7e1c7-0368-4f0d-9fe9-7a210ec22809",
+        "runId": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+        "generation": 1,
+        "phase": "warm",
+        "computerUpdatedAt": "2026-10-11T14:53:25.224Z",
+        "admittedAt": "2026-10-11T14:39:18.692Z",
+        "deadline": "2026-10-11T14:57:43.506Z",
+        "absoluteDeadline": null,
+        "retirementDeadline": null,
+        "processBindingPresent": true,
+        "processBootId": "704430cd-7c5b-4eb7-b710-770d906230f6",
+        "processLaunchGeneration": 1
+      }
+    ],
+    "controller": {
+      "baseExists": true,
+      "matches": [
+        {
+          "stateKey": "db6266ec9885f98e516b86cb624eab61cc89ce4c47aede7a3d0495361593b2cf",
+          "providerPackDigest": "sha256:fee61458bdd1070aaff21343f974699bdd72fd828f49e04414c5ca93c7073bf3",
+          "identity": {
+            "runId": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+            "normalizedSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+            "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837",
+            "environmentLeaseId": "5623e5ad-7680-46c0-ad29-2670e58124e0"
+          },
+          "pendingWarmTransitionPresent": false,
+          "commands": [
+            {
+              "controllerSeq": 1,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T14:40:34.247Z",
+              "status": "completed",
+              "type": "run.prepare"
+            },
+            {
+              "controllerSeq": 2,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T14:40:34.257Z",
+              "status": "completed",
+              "type": "session.open"
+            },
+            {
+              "controllerSeq": 3,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T14:52:17.402Z",
+              "status": "completed",
+              "type": "turn.start"
+            },
+            {
+              "controllerSeq": 4,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T14:52:28.260Z",
+              "status": "completed",
+              "type": "semantic_tool.result"
+            },
+            {
+              "controllerSeq": 5,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T14:52:38.239Z",
+              "status": "completed",
+              "type": "semantic_tool.result"
+            }
+          ],
+          "runnerPresent": false,
+          "runnerLifecycle": null,
+          "cleanupActivationRelativePath": "db6266ec9885f98e516b86cb624eab61cc89ce4c47aede7a3d0495361593b2cf/cleanup-activation.json",
+          "cleanupActivationPresent": false
+        }
+      ]
+    }
+  },
+  "warm": {
+    "observedAt": "2026-10-11T14:56:15.334Z",
+    "phase": "warm_complete",
+    "guestReads": false,
+    "providerCalls": false,
+    "expectedIdentity": {
+      "normalizedSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+      "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837"
+    },
+    "finalizations": [
+      {
+        "runId": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "committed": true,
+        "createdAt": "2026-10-11T14:54:42.754Z",
+        "updatedAt": "2026-10-11T14:55:11.775Z"
+      },
+      {
+        "runId": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+        "committed": true,
+        "createdAt": "2026-10-11T14:40:27.770Z",
+        "updatedAt": "2026-10-11T14:53:59.870Z"
+      }
+    ],
+    "taskSessions": [
+      {
+        "lastRunId": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "displayId": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "ids": {
+          "sessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b"
+        },
+        "updatedAt": "2026-10-11T14:55:15.623Z"
+      }
+    ],
+    "runs": [
+      {
+        "id": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "providerBefore": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "providerAfter": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T14:53:41.445Z",
+        "finishedAt": "2026-10-11T14:55:12.405Z",
+        "nativeSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+        "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      },
+      {
+        "id": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+        "providerBefore": null,
+        "providerAfter": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T14:39:15.386Z",
+        "finishedAt": "2026-10-11T14:52:44.842Z",
+        "nativeSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+        "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      }
+    ],
+    "events": [],
+    "leases": [
+      {
+        "id": "0c81b96e-24a6-4b1b-b1cc-5204abd62dd8",
+        "status": "released",
+        "cleanupStatus": "success",
+        "runId": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+        "acquiredAt": "2026-10-11T14:39:37.680Z",
+        "releasedAt": "2026-10-11T14:53:49.383Z",
+        "lastUsedAt": "2026-10-11T14:52:48.254Z",
+        "expiresAt": null,
+        "updatedAt": "2026-10-11T14:53:49.383Z",
+        "failureReason": null,
+        "failureReasonPresent": false,
+        "owner": {
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "ownerId": "c3e7e1c7-0368-4f0d-9fe9-7a210ec22809"
+        },
+        "ownerGeneration": 1
+      },
+      {
+        "id": "7378f60f-759c-4bad-8bac-bea78db246f8",
+        "status": "retained",
+        "cleanupStatus": "success",
+        "runId": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "acquiredAt": "2026-10-11T14:53:49.392Z",
+        "releasedAt": null,
+        "lastUsedAt": "2026-10-11T14:55:15.778Z",
+        "expiresAt": null,
+        "updatedAt": "2026-10-11T14:55:15.778Z",
+        "failureReason": null,
+        "failureReasonPresent": false,
+        "owner": {
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "ownerId": "c3e7e1c7-0368-4f0d-9fe9-7a210ec22809"
+        },
+        "ownerGeneration": 2
+      }
+    ],
+    "owners": [
+      {
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "id": "c3e7e1c7-0368-4f0d-9fe9-7a210ec22809",
+        "runId": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "generation": 2,
+        "phase": "warm",
+        "computerUpdatedAt": "2026-10-11T14:56:10.249Z",
+        "admittedAt": "2026-10-11T14:53:44.799Z",
+        "deadline": "2026-10-11T15:00:10.864Z",
+        "absoluteDeadline": null,
+        "retirementDeadline": null,
+        "processBindingPresent": true,
+        "processBootId": "704430cd-7c5b-4eb7-b710-770d906230f6",
+        "processLaunchGeneration": 1
+      }
+    ],
+    "controller": {
+      "baseExists": true,
+      "matches": [
+        {
+          "stateKey": "db6266ec9885f98e516b86cb624eab61cc89ce4c47aede7a3d0495361593b2cf",
+          "providerPackDigest": "sha256:fee61458bdd1070aaff21343f974699bdd72fd828f49e04414c5ca93c7073bf3",
+          "identity": {
+            "runId": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+            "normalizedSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+            "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837",
+            "environmentLeaseId": "5623e5ad-7680-46c0-ad29-2670e58124e0"
+          },
+          "pendingWarmTransitionPresent": false,
+          "commands": [
+            {
+              "controllerSeq": 1,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T14:54:50.549Z",
+              "status": "completed",
+              "type": "turn.start"
+            },
+            {
+              "controllerSeq": 2,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T14:55:05.181Z",
+              "status": "completed",
+              "type": "semantic_tool.result"
+            }
+          ],
+          "runnerPresent": false,
+          "runnerLifecycle": null,
+          "cleanupActivationRelativePath": "db6266ec9885f98e516b86cb624eab61cc89ce4c47aede7a3d0495361593b2cf/cleanup-activation.json",
+          "cleanupActivationPresent": false
+        }
+      ]
+    }
+  },
+  "idleController": {
+    "observedAt": "2026-10-11T15:00:58.719Z",
+    "phase": "warm_complete",
+    "guestReads": false,
+    "providerCalls": false,
+    "expectedIdentity": {
+      "normalizedSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+      "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837"
+    },
+    "finalizations": [
+      {
+        "runId": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "committed": true,
+        "createdAt": "2026-10-11T14:54:42.754Z",
+        "updatedAt": "2026-10-11T14:55:11.775Z"
+      },
+      {
+        "runId": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+        "committed": true,
+        "createdAt": "2026-10-11T14:40:27.770Z",
+        "updatedAt": "2026-10-11T14:53:59.870Z"
+      }
+    ],
+    "taskSessions": [
+      {
+        "lastRunId": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "displayId": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "ids": {
+          "sessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b"
+        },
+        "updatedAt": "2026-10-11T14:55:15.623Z"
+      }
+    ],
+    "runs": [
+      {
+        "id": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "providerBefore": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "providerAfter": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T14:53:41.445Z",
+        "finishedAt": "2026-10-11T14:55:12.405Z",
+        "nativeSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+        "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      },
+      {
+        "id": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+        "providerBefore": null,
+        "providerAfter": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T14:39:15.386Z",
+        "finishedAt": "2026-10-11T14:52:44.842Z",
+        "nativeSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+        "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      }
+    ],
+    "events": [],
+    "leases": [
+      {
+        "id": "7378f60f-759c-4bad-8bac-bea78db246f8",
+        "status": "released",
+        "cleanupStatus": "success",
+        "runId": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "acquiredAt": "2026-10-11T14:53:49.392Z",
+        "releasedAt": "2026-10-11T15:00:23.797Z",
+        "lastUsedAt": "2026-10-11T15:00:23.797Z",
+        "expiresAt": null,
+        "updatedAt": "2026-10-11T15:00:23.797Z",
+        "failureReason": null,
+        "failureReasonPresent": false,
+        "owner": {
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "ownerId": "c3e7e1c7-0368-4f0d-9fe9-7a210ec22809"
+        },
+        "ownerGeneration": 2
+      },
+      {
+        "id": "0c81b96e-24a6-4b1b-b1cc-5204abd62dd8",
+        "status": "released",
+        "cleanupStatus": "success",
+        "runId": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+        "acquiredAt": "2026-10-11T14:39:37.680Z",
+        "releasedAt": "2026-10-11T14:53:49.383Z",
+        "lastUsedAt": "2026-10-11T14:52:48.254Z",
+        "expiresAt": null,
+        "updatedAt": "2026-10-11T14:53:49.383Z",
+        "failureReason": null,
+        "failureReasonPresent": false,
+        "owner": {
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "ownerId": "c3e7e1c7-0368-4f0d-9fe9-7a210ec22809"
+        },
+        "ownerGeneration": 1
+      }
+    ],
+    "owners": [
+      {
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "id": "c3e7e1c7-0368-4f0d-9fe9-7a210ec22809",
+        "runId": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "generation": 2,
+        "phase": "retired",
+        "computerUpdatedAt": "2026-10-11T15:00:55.233Z",
+        "admittedAt": "2026-10-11T14:53:44.799Z",
+        "deadline": null,
+        "absoluteDeadline": null,
+        "retirementDeadline": null,
+        "processBindingPresent": true,
+        "processBootId": "704430cd-7c5b-4eb7-b710-770d906230f6",
+        "processLaunchGeneration": 1
+      }
+    ],
+    "controller": {
+      "baseExists": true,
+      "matches": [
+        {
+          "stateKey": "db6266ec9885f98e516b86cb624eab61cc89ce4c47aede7a3d0495361593b2cf",
+          "providerPackDigest": "sha256:fee61458bdd1070aaff21343f974699bdd72fd828f49e04414c5ca93c7073bf3",
+          "identity": {
+            "runId": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+            "normalizedSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+            "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837",
+            "environmentLeaseId": "5623e5ad-7680-46c0-ad29-2670e58124e0"
+          },
+          "pendingWarmTransitionPresent": false,
+          "commands": [
+            {
+              "controllerSeq": 1,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T14:54:50.549Z",
+              "status": "completed",
+              "type": "turn.start"
+            },
+            {
+              "controllerSeq": 2,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T14:55:05.181Z",
+              "status": "completed",
+              "type": "semantic_tool.result"
+            },
+            {
+              "controllerSeq": 3,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T15:00:12.308Z",
+              "status": "completed",
+              "type": "runner.drain"
+            },
+            {
+              "controllerSeq": 4,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T15:00:12.455Z",
+              "status": "completed",
+              "type": "runner.suspend"
+            }
+          ],
+          "runnerPresent": false,
+          "runnerLifecycle": null,
+          "cleanupActivationRelativePath": "db6266ec9885f98e516b86cb624eab61cc89ce4c47aede7a3d0495361593b2cf/cleanup-activation.json",
+          "cleanupActivationPresent": false
+        }
+      ]
+    }
+  },
+  "naturalArchive": {
+    "observedAt": "2026-10-11T15:00:44.429Z",
+    "providerId": "bx_b8sawfyp",
+    "guestRead": false,
+    "state": "archived",
+    "health": "ok",
+    "stop": {
+      "id": "stop_19bdfb6c004d69c8",
+      "status": "completed",
+      "timestamps": {
+        "endedAt": "2026-10-11T15:00:29.932Z"
+      },
+      "errorPresent": false
+    }
+  },
+  "postIdleAdmission": {
+    "observedAt": "2026-10-11T15:01:21.792Z",
+    "guestReads": false,
+    "runs": [
+      {
+        "id": "6cd5a910-1c8f-4692-978c-34d294d5abb1",
+        "status": "running",
+        "started_at": "2026-10-11T15:01:12.126Z",
+        "finished_at": null,
+        "native_session_id": null,
+        "runner_instance_id": null
+      },
+      {
+        "id": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "status": "succeeded",
+        "started_at": "2026-10-11T14:53:41.445Z",
+        "finished_at": "2026-10-11T14:55:12.405Z",
+        "native_session_id": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+        "runner_instance_id": "f2217054-ac72-44f1-ba8c-fa0962af4837"
+      },
+      {
+        "id": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+        "status": "succeeded",
+        "started_at": "2026-10-11T14:39:15.386Z",
+        "finished_at": "2026-10-11T14:52:44.842Z",
+        "native_session_id": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+        "runner_instance_id": "f2217054-ac72-44f1-ba8c-fa0962af4837"
+      }
+    ]
+  },
+  "postIdlePassed": true,
+  "finalArchiveConfirmed": true,
+  "originalProof": {
+    "contents": "Boat Final Native Claude",
+    "sha256": "e646d151756f1efdb9e19d99a2a0971810468087c457fa458f1311c42ef07424"
+  },
+  "idleConditions": "No guest reads, desktop viewer, prewarming, forced stop, deployment, package rewrite or session reset.",
+  "postIdle": {
+    "observedAt": "2026-10-11T15:05:56.982Z",
+    "phase": "post_idle_observation",
+    "guestReads": false,
+    "providerCalls": false,
+    "expectedIdentity": {
+      "normalizedSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+      "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837"
+    },
+    "finalizations": [
+      {
+        "runId": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "committed": true,
+        "createdAt": "2026-10-11T14:54:42.754Z",
+        "updatedAt": "2026-10-11T15:01:27.278Z"
+      },
+      {
+        "runId": "6cd5a910-1c8f-4692-978c-34d294d5abb1",
+        "committed": true,
+        "createdAt": "2026-10-11T15:02:24.428Z",
+        "updatedAt": "2026-10-11T15:04:51.523Z"
+      },
+      {
+        "runId": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+        "committed": true,
+        "createdAt": "2026-10-11T14:40:27.770Z",
+        "updatedAt": "2026-10-11T14:53:59.870Z"
+      }
+    ],
+    "taskSessions": [
+      {
+        "lastRunId": "6cd5a910-1c8f-4692-978c-34d294d5abb1",
+        "displayId": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "ids": {
+          "sessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b"
+        },
+        "updatedAt": "2026-10-11T15:04:55.220Z"
+      }
+    ],
+    "runs": [
+      {
+        "id": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "providerBefore": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "providerAfter": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T14:53:41.445Z",
+        "finishedAt": "2026-10-11T14:55:12.405Z",
+        "nativeSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+        "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      },
+      {
+        "id": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+        "providerBefore": null,
+        "providerAfter": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T14:39:15.386Z",
+        "finishedAt": "2026-10-11T14:52:44.842Z",
+        "nativeSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+        "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      },
+      {
+        "id": "6cd5a910-1c8f-4692-978c-34d294d5abb1",
+        "providerBefore": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "providerAfter": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T15:01:12.126Z",
+        "finishedAt": "2026-10-11T15:04:52.106Z",
+        "nativeSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+        "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      }
+    ],
+    "events": [],
+    "leases": [
+      {
+        "id": "7378f60f-759c-4bad-8bac-bea78db246f8",
+        "status": "released",
+        "cleanupStatus": "success",
+        "runId": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "acquiredAt": "2026-10-11T14:53:49.392Z",
+        "releasedAt": "2026-10-11T15:00:23.797Z",
+        "lastUsedAt": "2026-10-11T15:00:23.797Z",
+        "expiresAt": null,
+        "updatedAt": "2026-10-11T15:00:23.797Z",
+        "failureReason": null,
+        "failureReasonPresent": false,
+        "owner": {
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "ownerId": "c3e7e1c7-0368-4f0d-9fe9-7a210ec22809"
+        },
+        "ownerGeneration": 2
+      },
+      {
+        "id": "0c81b96e-24a6-4b1b-b1cc-5204abd62dd8",
+        "status": "released",
+        "cleanupStatus": "success",
+        "runId": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+        "acquiredAt": "2026-10-11T14:39:37.680Z",
+        "releasedAt": "2026-10-11T14:53:49.383Z",
+        "lastUsedAt": "2026-10-11T14:52:48.254Z",
+        "expiresAt": null,
+        "updatedAt": "2026-10-11T14:53:49.383Z",
+        "failureReason": null,
+        "failureReasonPresent": false,
+        "owner": {
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "ownerId": "c3e7e1c7-0368-4f0d-9fe9-7a210ec22809"
+        },
+        "ownerGeneration": 1
+      },
+      {
+        "id": "4da61b70-f4f1-4ee0-9565-d9e925afec33",
+        "status": "retained",
+        "cleanupStatus": "success",
+        "runId": "6cd5a910-1c8f-4692-978c-34d294d5abb1",
+        "acquiredAt": "2026-10-11T15:01:34.540Z",
+        "releasedAt": null,
+        "lastUsedAt": "2026-10-11T15:04:55.627Z",
+        "expiresAt": null,
+        "updatedAt": "2026-10-11T15:04:55.627Z",
+        "failureReason": null,
+        "failureReasonPresent": false,
+        "owner": {
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "ownerId": "4991cb93-ddcd-450d-a539-4f644d1102d6"
+        },
+        "ownerGeneration": 1
+      }
+    ],
+    "owners": [
+      {
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "id": "c3e7e1c7-0368-4f0d-9fe9-7a210ec22809",
+        "runId": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "generation": 2,
+        "phase": "retired",
+        "computerUpdatedAt": "2026-10-11T15:05:55.237Z",
+        "admittedAt": "2026-10-11T14:53:44.799Z",
+        "deadline": null,
+        "absoluteDeadline": null,
+        "retirementDeadline": null,
+        "processBindingPresent": true,
+        "processBootId": "704430cd-7c5b-4eb7-b710-770d906230f6",
+        "processLaunchGeneration": 1
+      },
+      {
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "id": "4991cb93-ddcd-450d-a539-4f644d1102d6",
+        "runId": "6cd5a910-1c8f-4692-978c-34d294d5abb1",
+        "generation": 1,
+        "phase": "warm",
+        "computerUpdatedAt": "2026-10-11T15:05:55.237Z",
+        "admittedAt": "2026-10-11T15:01:15.577Z",
+        "deadline": "2026-10-11T15:09:50.863Z",
+        "absoluteDeadline": null,
+        "retirementDeadline": null,
+        "processBindingPresent": true,
+        "processBootId": "5ba62da1-e230-4b93-aa4a-d053355f0f3d",
+        "processLaunchGeneration": 1
+      }
+    ],
+    "controller": {
+      "baseExists": true,
+      "matches": [
+        {
+          "stateKey": "db6266ec9885f98e516b86cb624eab61cc89ce4c47aede7a3d0495361593b2cf",
+          "providerPackDigest": "sha256:fee61458bdd1070aaff21343f974699bdd72fd828f49e04414c5ca93c7073bf3",
+          "identity": {
+            "runId": "6cd5a910-1c8f-4692-978c-34d294d5abb1",
+            "normalizedSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+            "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837",
+            "environmentLeaseId": "5623e5ad-7680-46c0-ad29-2670e58124e0"
+          },
+          "pendingWarmTransitionPresent": false,
+          "commands": [
+            {
+              "controllerSeq": 1,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T15:03:45.022Z",
+              "status": "completed",
+              "type": "run.attach"
+            },
+            {
+              "controllerSeq": 2,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T15:04:14.646Z",
+              "status": "completed",
+              "type": "session.snapshot"
+            },
+            {
+              "controllerSeq": 3,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T15:04:16.016Z",
+              "status": "completed",
+              "type": "session.snapshot"
+            },
+            {
+              "controllerSeq": 4,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T15:04:16.627Z",
+              "status": "completed",
+              "type": "turn.start"
+            },
+            {
+              "controllerSeq": 5,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T15:04:34.532Z",
+              "status": "completed",
+              "type": "semantic_tool.result"
+            }
+          ],
+          "runnerPresent": false,
+          "runnerLifecycle": null,
+          "cleanupActivationRelativePath": "db6266ec9885f98e516b86cb624eab61cc89ce4c47aede7a3d0495361593b2cf/cleanup-activation.json",
+          "cleanupActivationPresent": false
+        }
+      ]
+    }
+  },
+  "postIdleCommandEvidence": {
+    "source": "Expanded actual command output in the task UI",
+    "contents": "Boat Final Native Claude",
+    "sha256": "e646d151756f1efdb9e19d99a2a0971810468087c457fa458f1311c42ef07424",
+    "hostname": "box-node-b86208384532f6a7",
+    "utc": "2026-10-11T15:04:24Z",
+    "screenshot": "staging30-claude-post-idle.png"
+  },
+  "finalCleanup": {
+    "observedAt": "2026-10-11T15:10:50.265Z",
+    "phase": "post_idle_observation",
+    "guestReads": false,
+    "providerCalls": false,
+    "expectedIdentity": {
+      "normalizedSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+      "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837"
+    },
+    "finalizations": [
+      {
+        "runId": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "committed": true,
+        "createdAt": "2026-10-11T14:54:42.754Z",
+        "updatedAt": "2026-10-11T15:01:27.278Z"
+      },
+      {
+        "runId": "6cd5a910-1c8f-4692-978c-34d294d5abb1",
+        "committed": true,
+        "createdAt": "2026-10-11T15:02:24.428Z",
+        "updatedAt": "2026-10-11T15:04:51.523Z"
+      },
+      {
+        "runId": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+        "committed": true,
+        "createdAt": "2026-10-11T14:40:27.770Z",
+        "updatedAt": "2026-10-11T14:53:59.870Z"
+      }
+    ],
+    "taskSessions": [
+      {
+        "lastRunId": "6cd5a910-1c8f-4692-978c-34d294d5abb1",
+        "displayId": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "ids": {
+          "sessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b"
+        },
+        "updatedAt": "2026-10-11T15:04:55.220Z"
+      }
+    ],
+    "runs": [
+      {
+        "id": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "providerBefore": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "providerAfter": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T14:53:41.445Z",
+        "finishedAt": "2026-10-11T14:55:12.405Z",
+        "nativeSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+        "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      },
+      {
+        "id": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+        "providerBefore": null,
+        "providerAfter": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T14:39:15.386Z",
+        "finishedAt": "2026-10-11T14:52:44.842Z",
+        "nativeSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+        "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      },
+      {
+        "id": "6cd5a910-1c8f-4692-978c-34d294d5abb1",
+        "providerBefore": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "providerAfter": "c69cf3f9-a01e-4e03-9647-a81567570c7f",
+        "recoveryPresent": false,
+        "status": "succeeded",
+        "startedAt": "2026-10-11T15:01:12.126Z",
+        "finishedAt": "2026-10-11T15:04:52.106Z",
+        "nativeSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+        "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837",
+        "matchesOriginalNativeSession": true,
+        "matchesOriginalLogicalRunner": true,
+        "moduleFences": [],
+        "knownErrorCodes": []
+      }
+    ],
+    "events": [],
+    "leases": [
+      {
+        "id": "7378f60f-759c-4bad-8bac-bea78db246f8",
+        "status": "released",
+        "cleanupStatus": "success",
+        "runId": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "acquiredAt": "2026-10-11T14:53:49.392Z",
+        "releasedAt": "2026-10-11T15:00:23.797Z",
+        "lastUsedAt": "2026-10-11T15:00:23.797Z",
+        "expiresAt": null,
+        "updatedAt": "2026-10-11T15:00:23.797Z",
+        "failureReason": null,
+        "failureReasonPresent": false,
+        "owner": {
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "ownerId": "c3e7e1c7-0368-4f0d-9fe9-7a210ec22809"
+        },
+        "ownerGeneration": 2
+      },
+      {
+        "id": "0c81b96e-24a6-4b1b-b1cc-5204abd62dd8",
+        "status": "released",
+        "cleanupStatus": "success",
+        "runId": "5623e5ad-7680-46c0-ad29-2670e58124e0",
+        "acquiredAt": "2026-10-11T14:39:37.680Z",
+        "releasedAt": "2026-10-11T14:53:49.383Z",
+        "lastUsedAt": "2026-10-11T14:52:48.254Z",
+        "expiresAt": null,
+        "updatedAt": "2026-10-11T14:53:49.383Z",
+        "failureReason": null,
+        "failureReasonPresent": false,
+        "owner": {
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "ownerId": "c3e7e1c7-0368-4f0d-9fe9-7a210ec22809"
+        },
+        "ownerGeneration": 1
+      },
+      {
+        "id": "4da61b70-f4f1-4ee0-9565-d9e925afec33",
+        "status": "released",
+        "cleanupStatus": "success",
+        "runId": "6cd5a910-1c8f-4692-978c-34d294d5abb1",
+        "acquiredAt": "2026-10-11T15:01:34.540Z",
+        "releasedAt": "2026-10-11T15:10:05.548Z",
+        "lastUsedAt": "2026-10-11T15:10:05.548Z",
+        "expiresAt": null,
+        "updatedAt": "2026-10-11T15:10:05.548Z",
+        "failureReason": null,
+        "failureReasonPresent": false,
+        "owner": {
+          "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+          "ownerId": "4991cb93-ddcd-450d-a539-4f644d1102d6"
+        },
+        "ownerGeneration": 1
+      }
+    ],
+    "owners": [
+      {
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "id": "c3e7e1c7-0368-4f0d-9fe9-7a210ec22809",
+        "runId": "6b192ad7-f6f3-4a0e-b0fc-3e541e6cd93a",
+        "generation": 2,
+        "phase": "retired",
+        "computerUpdatedAt": "2026-10-11T15:10:40.268Z",
+        "admittedAt": "2026-10-11T14:53:44.799Z",
+        "deadline": null,
+        "absoluteDeadline": null,
+        "retirementDeadline": null,
+        "processBindingPresent": true,
+        "processBootId": "704430cd-7c5b-4eb7-b710-770d906230f6",
+        "processLaunchGeneration": 1
+      },
+      {
+        "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+        "id": "4991cb93-ddcd-450d-a539-4f644d1102d6",
+        "runId": "6cd5a910-1c8f-4692-978c-34d294d5abb1",
+        "generation": 1,
+        "phase": "retired",
+        "computerUpdatedAt": "2026-10-11T15:10:40.268Z",
+        "admittedAt": "2026-10-11T15:01:15.577Z",
+        "deadline": null,
+        "absoluteDeadline": null,
+        "retirementDeadline": null,
+        "processBindingPresent": true,
+        "processBootId": "5ba62da1-e230-4b93-aa4a-d053355f0f3d",
+        "processLaunchGeneration": 1
+      }
+    ],
+    "controller": {
+      "baseExists": true,
+      "matches": [
+        {
+          "stateKey": "db6266ec9885f98e516b86cb624eab61cc89ce4c47aede7a3d0495361593b2cf",
+          "providerPackDigest": "sha256:fee61458bdd1070aaff21343f974699bdd72fd828f49e04414c5ca93c7073bf3",
+          "identity": {
+            "runId": "6cd5a910-1c8f-4692-978c-34d294d5abb1",
+            "normalizedSessionId": "3b2e8674-211c-4934-8c12-c0eed12bc98b",
+            "runnerInstanceId": "f2217054-ac72-44f1-ba8c-fa0962af4837",
+            "environmentLeaseId": "5623e5ad-7680-46c0-ad29-2670e58124e0"
+          },
+          "pendingWarmTransitionPresent": false,
+          "commands": [
+            {
+              "controllerSeq": 1,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T15:03:45.022Z",
+              "status": "completed",
+              "type": "run.attach"
+            },
+            {
+              "controllerSeq": 2,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T15:04:14.646Z",
+              "status": "completed",
+              "type": "session.snapshot"
+            },
+            {
+              "controllerSeq": 3,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T15:04:16.016Z",
+              "status": "completed",
+              "type": "session.snapshot"
+            },
+            {
+              "controllerSeq": 4,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T15:04:16.627Z",
+              "status": "completed",
+              "type": "turn.start"
+            },
+            {
+              "controllerSeq": 5,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T15:04:34.532Z",
+              "status": "completed",
+              "type": "semantic_tool.result"
+            },
+            {
+              "controllerSeq": 6,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T15:09:52.370Z",
+              "status": "completed",
+              "type": "runner.drain"
+            },
+            {
+              "controllerSeq": 7,
+              "moduleFences": [],
+              "failureCodes": [],
+              "admissionStage": null,
+              "admissionElapsedMs": null,
+              "issuedAt": "2026-10-11T15:09:52.545Z",
+              "status": "completed",
+              "type": "runner.suspend"
+            }
+          ],
+          "runnerPresent": false,
+          "runnerLifecycle": null,
+          "cleanupActivationRelativePath": "db6266ec9885f98e516b86cb624eab61cc89ce4c47aede7a3d0495361593b2cf/cleanup-activation.json",
+          "cleanupActivationPresent": false
+        }
+      ]
+    }
+  },
+  "finalProviderArchive": {
+    "observedAt": "2026-10-11T15:10:37.678Z",
+    "providerId": "bx_b8sawfyp",
+    "guestRead": false,
+    "state": "archived",
+    "health": "ok",
+    "stop": {
+      "id": "stop_796f8000ef819491",
+      "status": "completed",
+      "timestamps": {
+        "endedAt": "2026-10-11T15:10:12.933Z"
+      },
+      "errorPresent": false
+    }
+  },
+  "complete": true
+}
