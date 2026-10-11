@@ -78,13 +78,14 @@ export function createComputerEnvironmentDriver(db: Db): EnvironmentRuntimeDrive
       return { providerLeaseId: lease.providerLeaseId, state: "stopped" };
     },
     async realizeWorkspace({ lease, workspace, gitAuth }) {
-      const request = workspace.metadata?.workspaceRealizationRequest as { source?: { projectId?: string; repoUrl?: string; repoRef?: string; branchName?: string; strategy?: string }; issueId?: string } | undefined;
+      const request = workspace.metadata?.workspaceRealizationRequest as { source?: { projectId?: string; repoUrl?: string; repoRef?: string; branchName?: string; existingBranch?: string; strategy?: string }; issueId?: string } | undefined;
       const result = await computers.realizeWorkspace({ ...scope(lease), owner: computerOwnerFromLease(lease),
         projectId: request?.source?.projectId ?? undefined, taskId: request?.issueId ?? undefined,
         repositoryUrl: request?.source?.repoUrl ?? undefined,
         gitAuth,
         branch: request?.source?.branchName ?? request?.source?.repoRef ?? undefined,
         baseRef: request?.source?.repoRef ?? undefined,
+        existingBranch: request?.source?.existingBranch,
         mode: request?.source?.strategy === "git_worktree" ? "worktree" : "shared" });
       await leases.updateLeaseMetadata(lease.id, { ...lease.metadata, remoteCwd: result.remoteCwd,
         fileAuthority: { kind: "remote-persistent", placementId: result.placementId, root: result.remoteCwd, agentHome: result.agentHome } });

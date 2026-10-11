@@ -1252,7 +1252,7 @@ export function environmentRoutes(
     // ref that fails validation (e.g. a deleted secret) must roll the whole
     // save back instead of leaving the config re-pointed with stale bindings.
     let environment = await db.transaction(async (tx) => {
-      const updated = await svc.update(existing.id, patch, { db: tx });
+      let updated = await svc.update(existing.id, patch, { db: tx });
       if (!updated) return null;
       if (patch.config !== undefined || patch.driver !== undefined) {
         await secrets.replaceSecretRefsForInstanceTarget(
@@ -1269,19 +1269,21 @@ export function environmentRoutes(
           { db: tx },
         );
       }
+      // The candidate binding must be visible to provider verification without
+      // retiring the old committed credential when attachment fails. Use this
+      // same transaction for the computer ledger and activation as well.
+      if (updated.driver === "computer" && (req.body.config !== undefined || req.body.status === "active")) {
+        const parsed = parseEnvironmentDriverConfig(updated);
+        if (parsed.driver !== "computer") throw unprocessable("Invalid Boat configuration.");
+        await computerService(tx).attach({ companyId: String(updated.metadata?.computerCompanyId),
+          environmentId: updated.id, sandboxId: parsed.config.sandboxId, apiKeySecretRef: parsed.config.apiKeySecretRef });
+        if (req.body.status !== "archived") updated = (await svc.update(updated.id, { status: "active" }, { db: tx }))!;
+      }
       return updated;
     });
     if (!environment) {
       res.status(404).json({ error: "Environment not found" });
       return;
-    }
-    if (environment.driver === "computer" && (req.body.config !== undefined || req.body.status === "active")) {
-      const computerCompanyId = String(environment.metadata?.computerCompanyId);
-      const parsed = parseEnvironmentDriverConfig(environment);
-      if (parsed.driver !== "computer") throw unprocessable("Invalid Boat configuration.");
-      await computerService(db).attach({ companyId: computerCompanyId, environmentId: environment.id,
-        sandboxId: parsed.config.sandboxId, apiKeySecretRef: parsed.config.apiKeySecretRef });
-      if (req.body.status !== "archived") environment = (await svc.update(environment.id, { status: "active" }))!;
     }
     let customImageReconciliation: Awaited<
       ReturnType<typeof customImages.reconcileActiveTemplateForConfigChange>

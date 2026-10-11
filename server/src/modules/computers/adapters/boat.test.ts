@@ -771,6 +771,33 @@ process.stdout.write(result.stdout||"");process.stderr.write(result.stderr||"");
     expect(f.call({ ...input, branch: "another-branch" })).toEqual({ error: "conflict" });
     expect(git("-C", result.remoteCwd, "status", "--short")).toContain("preserved");
   });
+  it.each([false, true])("attaches only the exact existing worktree branch (present: %s)", present => {
+    const f = fixture(), checkout = join(f.root, "checkout");
+    mkdirSync(checkout, { recursive: true });
+    const git = (...args: string[]) => {
+      const result = spawnSync("git", args, { cwd: checkout, encoding: "utf8" });
+      if (result.status !== 0) throw new Error(result.stderr);
+      return result.stdout.trim();
+    };
+    git("init");
+    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "base");
+    const expectedHead = git("rev-parse", "HEAD"), branch = "operator/retained";
+    if (present) git("branch", branch);
+    git("-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "newer base");
+    const input = { action: "workspace", mode: "worktree", taskId: "existing-task", branch, existingBranch: branch, baseRef: "HEAD" };
+    const result = f.call(input);
+    if (present) {
+      expect(result.remoteCwd).toBe(join(f.root, "tasks", "existing-task"));
+      expect(git("-C", result.remoteCwd, "rev-parse", "HEAD")).toBe(expectedHead);
+      writeFileSync(join(result.remoteCwd, "retained-work"), "keep");
+      expect(f.call(input).remoteCwd).toBe(result.remoteCwd);
+      expect(git("-C", result.remoteCwd, "status", "--short")).toContain("retained-work");
+    } else {
+      expect(result).toEqual({ error: "command_failed" });
+      expect(spawnSync("git", ["show-ref", "--verify", `refs/heads/${branch}`], { cwd: checkout }).status).not.toBe(0);
+      expect(existsSync(join(f.root, "tasks", "existing-task"))).toBe(false);
+    }
+  });
   it("roundtrips binary bytes without interpreting text", () => {
     const f = fixture();
     const bytes = Buffer.from([0, 255, 254, 13, 10, 128]);
