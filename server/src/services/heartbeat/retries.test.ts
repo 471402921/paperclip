@@ -1,8 +1,9 @@
+import { recoveryService } from "../recovery/service.js";
 import { canRetryComputerAdmissionWait } from "../cancelled-native-startup.js";
 import { ComputerStopPendingError } from "../../modules/computers/index.js";
 import { randomUUID } from "node:crypto";
 import type { Db } from "@paperclipai/db";
-import { computers, environments, environmentLeases, agents, agentWakeupRequests, companies, createDb, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS, heartbeatRunEvents, heartbeatRuns, issues } from "@paperclipai/db";
+import { activityLog, computers, environments, environmentLeases, agents, agentWakeupRequests, companies, createDb, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS, heartbeatRunEvents, heartbeatRuns, issues } from "@paperclipai/db";
 import { and, eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { HttpError } from "../../errors.js";
@@ -189,6 +190,7 @@ describePostgres("heartbeat retry module database wiring", () => {
   afterAll(async () => { await database?.cleanup(); });
 
   afterEach(async () => {
+    await db.delete(activityLog);
     await db.delete(environmentLeases);
     await db.delete(computers);
     await db.delete(environments);
@@ -267,6 +269,65 @@ describePostgres("heartbeat retry module database wiring", () => {
     const [queued] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, successors[0].id));
     expect(queued.status).toBe("queued");
   });
+
+  it.each([false, true])("preserves a crashed computer wait through stale-lock recovery before scheduling one successor (cleanup receipt %s)", async settled => {
+    const f = await computerWaitFixture(settled);
+    const liveDeadline = new Date(Date.now() + 60_000);
+    const [waiting] = await db.update(heartbeatRuns).set({ controllerLeaseExpiresAt: liveDeadline })
+      .where(eq(heartbeatRuns.id, f.run.id)).returning();
+    // Crash after expected cancellation, before the successor transaction. A
+    // live old controller deadline intentionally delays preparation recovery.
+    expect(await canRetryComputerAdmissionWait(db, waiting)).toBe(settled);
+    const sweep = await recoveryService(db, { enqueueWakeup: vi.fn() }).sweepStaleIssueLocks();
+    expect(sweep.issueIds).not.toContain(f.issue.id);
+    expect((await db.select().from(issues).where(eq(issues.id, f.issue.id)))[0]).toMatchObject({
+      executionRunId: waiting.id, checkoutRunId: waiting.id,
+    });
+    expect((await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, waiting.id)))[0].controllerLeaseExpiresAt)
+      .toEqual(liveDeadline);
+    if (!settled) {
+      await boundRetries().retries.promoteDueScheduledRetries(new Date());
+      expect(await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.retryOfRunId, waiting.id))).toHaveLength(0);
+      await db.update(heartbeatRuns).set({ controllerLeaseExpiresAt: new Date(Date.now() - 1) })
+        .where(eq(heartbeatRuns.id, waiting.id));
+    }
+    await boundRetries().retries.promoteDueScheduledRetries(new Date());
+    await boundRetries().retries.promoteDueScheduledRetries(new Date());
+    const successors = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.retryOfRunId, waiting.id));
+    expect(successors).toHaveLength(1);
+    expect(successors[0]).toMatchObject({ status: "scheduled_retry", scheduledRetryReason: "computer_admission_wait",
+      contextSnapshot: { preserved: "original context", executionRetryAccounting: { failureRetries: 0 } } });
+    expect((await db.select().from(issues).where(eq(issues.id, f.issue.id)))[0].executionRunId).toBe(successors[0].id);
+    await boundRetries().retries.promoteDueScheduledRetries(new Date(Date.now() + 31_000));
+    expect((await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, successors[0].id)))[0].status).toBe("queued");
+  });
+
+  it.each(["malformed", "foreign-computer", "foreign-task", "foreign-company", "provider-event", "lease", "acknowledged-stop", "done", "cancelled"])(
+    "does not preserve stale task ownership from invalid or completed computer wait: %s", async kind => {
+      const f = await computerWaitFixture(false);
+      const result = structuredClone(f.run.resultJson!);
+      if (kind === "malformed") delete result.computerAdmission;
+      if (kind === "foreign-computer") (result.computerAdmission as Record<string, unknown>).computerId = randomUUID();
+      if (kind === "acknowledged-stop") {
+        result.computerAdmissionRetryOutcome = "aborted";
+        result.executionCancellation = { state: "acknowledged", acknowledgedAt: new Date().toISOString() };
+      }
+      await db.update(heartbeatRuns).set({ resultJson: result,
+        ...(kind === "foreign-task" ? { contextSnapshot: { ...f.run.contextSnapshot, issueId: randomUUID() } } : {}),
+      }).where(eq(heartbeatRuns.id, f.run.id));
+      if (kind === "provider-event") await db.insert(heartbeatRunEvents).values({ companyId: f.companyId,
+        runId: f.run.id, agentId: f.agent.id, seq: 1, eventType: "adapter.invoke", stream: "system" });
+      if (kind === "lease") await db.insert(environmentLeases).values({ companyId: f.companyId,
+        environmentId: f.environment.id, heartbeatRunId: f.run.id, provider: "boat", status: "released", releasedAt: now });
+      if (kind === "foreign-company") {
+        const other = await fixture();
+        await db.update(issues).set({ companyId: other.companyId, assigneeAgentId: other.agent.id }).where(eq(issues.id, f.issue.id));
+      }
+      if (kind === "done" || kind === "cancelled") await db.update(issues).set({ status: kind }).where(eq(issues.id, f.issue.id));
+      expect((await recoveryService(db, { enqueueWakeup: vi.fn() }).sweepStaleIssueLocks()).issueIds).toContain(f.issue.id);
+      expect((await db.select().from(issues).where(eq(issues.id, f.issue.id)))[0]).toMatchObject({ executionRunId: null, checkoutRunId: null });
+    },
+  );
 
   it("rotates proof-ineligible waits so later recoverable waits are not starved", async () => {
     const f = await computerWaitFixture();

@@ -7,6 +7,7 @@ import { externalConversationStateSql } from "../slack-conversation-state.js";
 import { isIssueReviewPathRecoveryRun } from "./review-path-recovery.js";
 import { escalateExhaustedIssueReviewPathRecovery } from "./review-path-recovery-escalation.js";
 import { executionRetryAccounting } from "../execution-recovery-attempt.js";
+import { isComputerAdmissionWaitBeforeProvider } from "../cancelled-native-startup.js";
 import { isExplicitContinuationRetryClaim } from "../explicit-continuation-retry-claim.js";
 import {
   decideLegacyContinuation, legacyDispositionEpisode, legacyDispositionFingerprint,
@@ -6217,6 +6218,15 @@ export function recoveryService(
       // newer terminal status. Do not test claim ownership using the old status.
       const owner = originalOwner ? { ...originalOwner,
         status: runStatusById.get(originalOwner.id) ?? originalOwner.status } : undefined;
+      if (owner && owner.companyId === issue.companyId && owner.contextSnapshot?.issueId === issue.id &&
+          issue.status !== "done" && issue.status !== "cancelled" &&
+          await isComputerAdmissionWaitBeforeProvider(db, owner)) {
+        // Expected cancellation retains the task claim while preparation is
+        // unwinding, including a crash before its retry successor is committed.
+        // Retry admission separately waits for cleanup or old-controller expiry;
+        // that policy (or Stop) owns release/transfer of this verified claim.
+        continue;
+      }
       if (owner && isExplicitContinuationRetryClaim(issue, owner)) {
         // A terminal row can still own cleanup and a pending bounded retry.
         // Re-enter the same policy rather than erasing its exact-owner proof.
