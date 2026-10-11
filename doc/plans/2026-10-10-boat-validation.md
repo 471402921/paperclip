@@ -4,6 +4,14 @@
 
 Historical screenshots and receipts are preserved on the [fixed evidence branch](https://github.com/paperclipai/paperclip/tree/5909bfac9fa41405beb3fe8a65253dc28ba52835/doc/plans/assets/2026-10-10-boat). Historical links below use that exact commit; the implementation PR keeps a bounded set of current proofs.
 
+## Review corrections integrated (2026-10-11 14:39 UTC)
+
+Core `f527d43a68` includes the reviewed task-claim, empty-directory and viewer-preparation corrections. The exact merged core passed 252 focused cases across seven files and normal server typecheck; staging `c91eab5d07` passed 267 across eight files and server typecheck, with no skips. All 338 staging migration blobs remain unchanged. Combined `795f8e1b73` passed full workspace typecheck and build. [Grouped, source-bound verification](assets/2026-10-10-boat/evidence/review-corrections-verification.json). The earlier red/green runs overlap these integration runs and are not summed.
+
+The stack now contains 5 fixture, 77 runtime, 96 core and 80 UI files before this evidence update. Runtime `0c4bb6fa57` received a fresh 5/5 review; its remaining CI was still running at this observation. Core and UI require new exact-head checks. Earlier UI `f6f42a8df0` failed a chat integration shard; a narrow clean reproduction passed both selected cases, but the CI failure cause remains unproven.
+
+Deployment30 is rolling out `c2861407ff` with independent-file packaging and ordered retirement. It is not yet verified serving. Full Claude cold/warm/archive/saved-resume acceptance remains pending. The next staging candidate `c91eab5d07` adds the latest review corrections; its preview image is building without changing the running controller. Nothing is merged to master.
+
 ## Current source boundary (2026-10-11 14:12 UTC)
 
 **The live independent-file control passed; full Claude package acceptance is still pending.** The four-file experiment ran on unchanged staging29 source `05f3725af838b5a074707df1d6ed1e193bdfe49e`. After normal warm timeout and completed archive, the same saved Codex task read each file once through the unchanged bounded-read guard. The hardlinked control reproduced **nlink 1→2 / LINK_COUNT rejection**. Both independent files passed with unchanged hashes and nlink 1. Their permitted second read verified the same bytes after ctime changed. The complete tool-output JSON was verified against its persisted SHA-256; the stored 4096-byte prefix alone was insufficient.

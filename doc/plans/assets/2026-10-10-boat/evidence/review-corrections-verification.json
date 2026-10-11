@@ -1,0 +1,115 @@
+{
+  "capturedAt": "2026-10-11T14:36:20.613777+00:00",
+  "heads": {
+    "runtime": "0c4bb6fa57bb7c5c3090291617e5b95d93d77a92",
+    "core": "f527d43a68ed111d7e8a846d2b4de90f85d61556",
+    "ui": "795f8e1b73332b118558e267069eab3db4bbc91d"
+  },
+  "stackDiffCounts": {
+    "fixture": 5,
+    "runtime": 77,
+    "core": 96,
+    "ui": 80
+  },
+  "testGroups": [
+    {
+      "name": "P2 empty directories and viewer preparation",
+      "source": "6cfdcbb659ba82da5aeccbdc14c3eb092766c6bf",
+      "focusedPassed": 134,
+      "adjacentPassed": 91,
+      "groupTotal": 225,
+      "redFailures": {
+        "directories": 2,
+        "viewer": 4
+      },
+      "serverTypecheck": "passed",
+      "independentReview": "approved by live_state_probe",
+      "receipt": "computer-empty-directories-viewer-preparation-verification.json"
+    },
+    {
+      "name": "P1 stale task-lock recovery",
+      "source": "182131171db66fa3864706787cdeca50375eddc3",
+      "passed": 75,
+      "redFailures": 2,
+      "serverTypecheck": "passed",
+      "independentReview": "approved by live_state_probe",
+      "receipt": "computer-wait-stale-lock-verification.json"
+    },
+    {
+      "name": "Prerequisite contract merge",
+      "source": "bc3e2407cd1a60dafc002f6baa2303d02e682cc9",
+      "passed": 143,
+      "serverTypecheck": "passed",
+      "receipt": "computer-wait-stale-lock-verification.json",
+      "overlap": "Includes P1/retry coverage; do not add to the preceding75."
+    }
+  ],
+  "aggregatePolicy": "No stack-wide total is asserted.225 is only the disjoint134+91 P2 suites, not a whole-repository pass.75 and143 overlap.",
+  "limits": [
+    "Historical full Darwin command remains failed:34914passed/24failed/338skipped; not rerun as a whole.",
+    "Full production Claude cold/warm/archive/saved-resume qualification remains pending.",
+    "Exact-head CI and fresh Greptile reviews remain pending.",
+    "Draft files only; no PR posting, git edits, push or deployment."
+  ],
+  "drafts": [
+    "pr15813-review-corrections-draft.md",
+    "pr15804-review-corrections-draft.md"
+  ],
+  "finalIntegration": {
+    "coreHead": "f527d43a68ed111d7e8a846d2b4de90f85d61556",
+    "stagingHead": "c91eab5d0716f269091c30f024b043af5d98a540",
+    "prerequisiteHead": "0c4bb6fa57bb7c5c3090291617e5b95d93d77a92",
+    "coreChangedFiles": 96,
+    "stagingMigrationBase": "05f3725af838b5a074707df1d6ed1e193bdfe49e",
+    "migrationBlobCountBefore": 338,
+    "migrationBlobCountAfter": 338,
+    "migrationBlobsIdentical": true,
+    "changedMigrationPaths": [],
+    "worktreeStatus": {
+      "core": "",
+      "staging": ""
+    },
+    "verification": {
+      "core": {
+        "testsPassed": 252,
+        "testFilesPassed": 7,
+        "testsFailed": 0,
+        "testsSkipped": 0,
+        "testExitCode": 0,
+        "testLog": "final-core-f527-integration.log",
+        "normalServerTypecheckExitCode": 0,
+        "typecheckLog": "final-core-f527-tsc.log",
+        "finalHead": "f527d43a68ed111d7e8a846d2b4de90f85d61556",
+        "finalWorktreeStatus": ""
+      },
+      "staging": {
+        "testsPassed": 267,
+        "testFilesPassed": 8,
+        "testsFailed": 0,
+        "testsSkipped": 0,
+        "testExitCode": 0,
+        "testLog": "final-stage-c91-integration.log",
+        "normalServerTypecheckExitCode": 0,
+        "typecheckLog": "final-stage-c91-tsc.log",
+        "finalHead": "c91eab5d0716f269091c30f024b043af5d98a540",
+        "finalWorktreeStatus": ""
+      }
+    },
+    "scope": "Boat adapter and computer lifecycle service, persistent home seeding, native recovery lifecycle, computer-wait retry and stale-lock sweep, computer routes (plus staging route-selection suite).",
+    "databaseSafety": "Only isolated boat_wait_test_UUID databases on the task-owned PostgreSQL instance; each tree used its own migration registry. No product database access or provider/guest operations.",
+    "qualificationLimit": "Focused integration and normal server typecheck only. No broad full-suite rerun, deployment, push, or live acceptance claim."
+  },
+  "combinedTypecheck": {
+    "source": "795f8e1b73332b118558e267069eab3db4bbc91d",
+    "command": "pnpm -r typecheck",
+    "exitCode": 0,
+    "log": "combined-795f-typecheck-network.log",
+    "sandboxAttempt": "Registry signature lookup could not reach registry; normal network-enabled retry passed without bypass."
+  },
+  "combinedBuild": {
+    "source": "795f8e1b73332b118558e267069eab3db4bbc91d",
+    "command": "pnpm build",
+    "exitCode": 0,
+    "log": "combined-795f-build.log"
+  }
+}
