@@ -840,6 +840,61 @@ process.stdout.write(result.stdout||"");process.stderr.write(result.stderr||"");
     expect(existsSync(join(f.root, "tasks", "missing"))).toBe(false);
     expect(spawnSync("git", ["show-ref", "--verify", "refs/heads/paperclip/missing"], { cwd: checkout }).status).not.toBe(0);
   });
+  it.each(["unpublished", "feature/unpublished"])("uses a verified unpushed local base only after proving its remote absence: %s", branch => {
+    const f = fixture(), source = join(f.temp, "source"); mkdirSync(source);
+    const git = (cwd: string, ...args: string[]) => {
+      const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+      if (result.status !== 0) throw new Error(result.stderr);
+      return result.stdout.trim();
+    };
+    const commit = (cwd: string, message: string) => git(cwd, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", message);
+    git(source, "init", "-b", "main"); commit(source, "default");
+    const repositoryUrl = "https://fixture.invalid/local-base.git";
+    const gitAuth = { configArgs: ["-c", `url.file://${source}.insteadOf=${repositoryUrl}`, "-c", "protocol.file.allow=always"], env: {} };
+    const shared = { action: "workspace", mode: "shared", repositoryUrl, gitAuth };
+    const checkout = f.call(shared).remoteCwd;
+    git(checkout, "checkout", "-b", branch); commit(checkout, "unpushed agent work");
+    const localCommit = git(checkout, "rev-parse", "HEAD");
+    writeFileSync(join(checkout, "uncommitted"), "keep");
+    const request = { ...shared, mode: "worktree", baseRef: branch, taskId: "local-base", branch: "paperclip/local-base" };
+    const result = f.call(request);
+    expect(result.remoteCwd).toBe(join(f.root, "tasks", "local-base"));
+    expect(git(result.remoteCwd, "rev-parse", "HEAD")).toBe(localCommit);
+    const deniedAuth = { ...gitAuth, configArgs: [...gitAuth.configArgs, "-c", "protocol.file.allow=never"] };
+    expect(f.call({ ...request, gitAuth: deniedAuth, taskId: "unknown-remote", branch: "paperclip/unknown-remote" })).toEqual({ error: "command_failed" });
+    expect(existsSync(join(f.root, "tasks", "unknown-remote"))).toBe(false);
+    for (const baseRef of [`origin/${branch}`, `refs/remotes/origin/${branch}`]) {
+      expect(f.call({ ...request, baseRef, taskId: "remote-only", branch: "paperclip/remote-only" })).toEqual({ error: "command_failed" });
+    }
+    // Explicit local-ref intent does not depend on the remote's availability.
+    const explicit = f.call({ ...request, gitAuth: deniedAuth, baseRef: `refs/heads/${branch}`, taskId: "explicit-local", branch: "paperclip/explicit-local" });
+    expect(git(explicit.remoteCwd, "rev-parse", "HEAD")).toBe(localCommit);
+    git(source, "checkout", "-b", branch); commit(source, "published remote work");
+    const remoteCommit = git(source, "rev-parse", "HEAD");
+    const remote = f.call({ ...request, taskId: "remote-base", branch: "paperclip/remote-base" });
+    expect(git(remote.remoteCwd, "rev-parse", "HEAD")).toBe(remoteCommit);
+    const bin = join(f.temp, "bin"); mkdirSync(bin);
+    const realGit = spawnSync("which", ["git"], { encoding: "utf8" }).stdout.trim();
+    const probe = join(f.temp, "remote-probe"), fetch = join(f.temp, "fetch-attempt");
+    writeFileSync(join(bin, "git"), `#!${process.execPath}
+const fs=require("node:fs"),{spawnSync}=require("node:child_process"),args=process.argv.slice(2);
+if(args.includes("fetch")){fs.writeFileSync(process.env.FIXTURE_FETCH,"attempted");process.exit(128);}
+const result=spawnSync(process.env.FIXTURE_GIT,args,{encoding:"utf8"});
+if(args.includes("ls-remote")&&result.status===0)fs.writeFileSync(process.env.FIXTURE_PROBE,"present");
+process.stdout.write(result.stdout||"");process.stderr.write(result.stderr||"");process.exit(result.status??1);
+`, { mode: 0o700 });
+    expect(f.call({ ...request, taskId: "failed-refresh", branch: "paperclip/failed-refresh" }, {
+      ...process.env, PATH: `${bin}:${process.env.PATH}`, FIXTURE_GIT: realGit, FIXTURE_PROBE: probe, FIXTURE_FETCH: fetch,
+    })).toEqual({ error: "command_failed" });
+    expect(readFileSync(probe, "utf8")).toBe("present");
+    expect(readFileSync(fetch, "utf8")).toBe("attempted");
+    expect(existsSync(join(f.root, "tasks", "failed-refresh"))).toBe(false);
+
+    const explicitAfter = f.call({ ...request, baseRef: `refs/heads/${branch}`, taskId: "explicit-after", branch: "paperclip/explicit-after" });
+    expect(git(explicitAfter.remoteCwd, "rev-parse", "HEAD")).toBe(localCommit);
+    expect(readFileSync(join(checkout, "uncommitted"), "utf8")).toBe("keep");
+    expect(git(checkout, "rev-parse", `refs/heads/${branch}`)).toBe(localCommit);
+  });
   it.each([false, true])("attaches only the exact existing worktree branch (present: %s)", present => {
     const f = fixture(), checkout = join(f.root, "checkout");
     mkdirSync(checkout, { recursive: true });
