@@ -790,6 +790,56 @@ process.stdout.write(result.stdout||"");process.stderr.write(result.stderr||"");
     expect(f.call({ ...input, branch: "another-branch" })).toEqual({ error: "conflict" });
     expect(git("-C", result.remoteCwd, "status", "--short")).toContain("preserved");
   });
+  it.each(["release", "feature/release", "origin/release", "refs/remotes/origin/release"])("refreshes the authoritative remote worktree base %s without rewriting existing work", baseRef => {
+    const f = fixture(), source = join(f.temp, "source"); mkdirSync(source);
+    const git = (cwd: string, ...args: string[]) => {
+      const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+      if (result.status !== 0) throw new Error(result.stderr);
+      return result.stdout.trim();
+    };
+    const commit = (message: string) => git(source, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", message);
+    git(source, "init", "-b", "main"); commit("default");
+    const branch = baseRef === "feature/release" ? baseRef : "release";
+    git(source, "checkout", "-b", branch); commit("release one");
+    const original = git(source, "rev-parse", "HEAD"); git(source, "tag", "baseline"); git(source, "checkout", "main");
+    const repositoryUrl = "https://fixture.invalid/source.git";
+    // Real Git clone/fetch over a local transport; the URL rewrite exists only
+    // in each child invocation, never in repository or global configuration.
+    const gitAuth = { configArgs: ["-c", `url.file://${source}.insteadOf=${repositoryUrl}`, "-c", "protocol.file.allow=always"], env: {} };
+    const request = { action: "workspace", mode: "worktree", repositoryUrl, gitAuth, baseRef, taskId: "one", branch: "paperclip/one" };
+    const first = f.call(request);
+    expect(first.remoteCwd).toBe(join(f.root, "tasks", "one"));
+    expect(git(first.remoteCwd, "rev-parse", "HEAD")).toBe(original);
+    const checkout = join(f.root, "checkout");
+    expect(spawnSync("git", ["show-ref", "--verify", `refs/heads/${branch}`], { cwd: checkout }).status).not.toBe(0);
+    writeFileSync(join(first.remoteCwd, "uncommitted"), "keep");
+    git(source, "checkout", branch); commit("release two");
+    const updated = git(source, "rev-parse", "HEAD"); git(source, "checkout", "main");
+    // A divergent local branch must not override the current remote base.
+    git(checkout, "branch", branch, "HEAD");
+    const deniedAuth = { ...gitAuth, configArgs: [...gitAuth.configArgs, "-c", "protocol.file.allow=never"] };
+    expect(f.call({ ...request, gitAuth: deniedAuth, taskId: "denied", branch: "paperclip/denied" })).toEqual({ error: "command_failed" });
+    expect(existsSync(join(f.root, "tasks", "denied"))).toBe(false);
+    const second = f.call({ ...request, taskId: "two", branch: "paperclip/two" });
+    expect(second.remoteCwd).toBe(join(f.root, "tasks", "two"));
+    expect(git(second.remoteCwd, "rev-parse", "HEAD")).toBe(updated);
+    expect(git(checkout, "rev-parse", branch)).not.toBe(updated);
+    const existing = f.call({ ...request, gitAuth: deniedAuth, taskId: "existing", branch, existingBranch: branch });
+    expect(git(existing.remoteCwd, "rev-parse", "HEAD")).toBe(git(checkout, "rev-parse", branch));
+    const tagged = f.call({ ...request, gitAuth: deniedAuth, taskId: "tagged", branch: "paperclip/tagged", baseRef: "baseline" });
+    expect(git(tagged.remoteCwd, "rev-parse", "HEAD")).toBe(original);
+    const ancestor = f.call({ ...request, gitAuth: deniedAuth, taskId: "ancestor", branch: "paperclip/ancestor", baseRef: `origin/${branch}~1` });
+    expect(git(ancestor.remoteCwd, "rev-parse", "HEAD")).toBe(original);
+    const defaultHead = f.call({ ...request, gitAuth: deniedAuth, taskId: "default-head", branch: "paperclip/default-head", baseRef: "origin/HEAD" });
+    expect(git(defaultHead.remoteCwd, "rev-parse", "HEAD")).toBe(git(checkout, "rev-parse", "HEAD"));
+    expect(f.call(request).remoteCwd).toBe(first.remoteCwd);
+    expect(git(first.remoteCwd, "rev-parse", "HEAD")).toBe(original);
+    expect(readFileSync(join(first.remoteCwd, "uncommitted"), "utf8")).toBe("keep");
+    expect(readFileSync(join(checkout, ".git/config"), "utf8")).not.toContain("insteadOf");
+    expect(f.call({ ...request, taskId: "missing", branch: "paperclip/missing", baseRef: "missing" })).toEqual({ error: "command_failed" });
+    expect(existsSync(join(f.root, "tasks", "missing"))).toBe(false);
+    expect(spawnSync("git", ["show-ref", "--verify", "refs/heads/paperclip/missing"], { cwd: checkout }).status).not.toBe(0);
+  });
   it.each([false, true])("attaches only the exact existing worktree branch (present: %s)", present => {
     const f = fixture(), checkout = join(f.root, "checkout");
     mkdirSync(checkout, { recursive: true });
