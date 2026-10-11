@@ -141,6 +141,29 @@ describe("ACPX sidecar input sequencing", () => {
     },
   );
 
+  it.each(["RESOLUTION", "OPEN", "BOUNDS", "ANCESTRY", "FORMAT", "PATH_IDENTITY", "READ_RESULT",
+    "SIZE", "DEVICE", "INODE", "MODE", "UID", "GID", "LINK_COUNT", "MTIME", "BYTE_CONTINUITY", "REPEATED_CTIME"])(
+    "preserves delimited fence %s through ACPX stderr summarization", fence => {
+      // ACPX 0.13.1 summarizeStartupStderr collapses whitespace before exposing
+      // AgentStartupError.stderrSummary; line boundaries do not survive.
+      const summarize = (stderr: string) => stderr.replace(/\s+/gu, " ").trim().slice(0, 8192);
+      const classify = (stderr: string) => acpxSidecarErrorCode(Object.assign(new Error("private-canary"), {
+        detailCode: "AGENT_STARTUP_FAILED", stderrSummary: summarize(stderr), exitCode: 1,
+      }));
+      expect(classify(`prior diagnostic\nPAPERCLIP_ACPX_IMPORT_FAILURE:UNVERIFIED_MODULE:${fence}:END\nError: private-canary /secret\ncode: ERR_ACPX_UNVERIFIED_MODULE`))
+        .toBe(`AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.${fence}`);
+      for (const marker of [
+        `UNVERIFIED_MODULE:${fence}:EN`,
+        `UNVERIFIED_MODULE:${fence}:END_PRIVATE_CANARY`,
+        `UNVERIFIED_MODULE:${fence}.PRIVATE_CANARY:END`,
+        "UNVERIFIED_MODULE:PRIVATE_CANARY:END",
+      ]) {
+        expect(classify(`PAPERCLIP_ACPX_IMPORT_FAILURE:${marker}\nprivate-canary`))
+          .toBe("AGENT_STARTUP_FAILED.EXIT_NONZERO");
+      }
+    },
+  );
+
   it.each(["OTHER", "UNVERIFIED_MODULE"])("classifies closed import marker %s without private stderr", category => {
     const classify = (stderrSummary: string) => acpxSidecarErrorCode(Object.assign(new Error("private-canary"), {
       detailCode: "AGENT_STARTUP_FAILED", stderrSummary, exitCode: 1,

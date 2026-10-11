@@ -1816,7 +1816,7 @@ describe("ACPX installation integrity", () => {
       const fences: Record<string, string> = { recurring: "REPEATED_CTIME", bytes: "BYTE_CONTINUITY", mode: "MODE" };
       const fence = fences[transition];
       if (fence && !(transition === "bytes" && process.platform === "darwin")) {
-        expect(stderr).toContain(`PAPERCLIP_ACPX_IMPORT_FAILURE:UNVERIFIED_MODULE:${fence}\n`);
+        expect(stderr).toContain(`PAPERCLIP_ACPX_IMPORT_FAILURE:UNVERIFIED_MODULE:${fence}:END\n`);
       }
     } finally {
       clearTimeout(timeout);
@@ -1876,7 +1876,7 @@ describe("ACPX installation integrity", () => {
         await awaitVerifiedAcpxProviderExit(child);
         expect(child.exitCode === 0 && child.signalCode === null).toBe(false);
         const code = acpxSidecarErrorCode(Object.assign(new Error("private-canary"), {
-          detailCode: "AGENT_STARTUP_FAILED", stderrSummary: stderr,
+          detailCode: "AGENT_STARTUP_FAILED", stderrSummary: stderr.replace(/\s+/gu, " ").trim().slice(0, 8192),
           exitCode: child.exitCode, signal: child.signalCode,
         }));
         expect(code).toBe(category === "UNVERIFIED_MODULE" ? "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.ANCESTRY" : "AGENT_STARTUP_FAILED.OTHER");
