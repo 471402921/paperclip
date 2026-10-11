@@ -14371,6 +14371,7 @@ describe("warm native retirement diagnostics", () => {
       closeState: ["superseded", "retirement_failed", "not_started"].includes(mode) ? "not_started" : mode === "collection_failed" ? "completed" : mode,
       failureCode: mode === "superseded" ? "computer_owner_retirement_superseded" : ["not_started", "pending"].includes(mode) ? "native_session_cleanup_quarantined" : "native_session_interrupted",
     });
+    expect(diagnostic).toHaveBeenCalledTimes(1);
     if (mode !== "collection_failed") expect(collect).not.toHaveBeenCalled();
     if (["not_started", "superseded", "retirement_failed"].includes(mode)) expect(close).not.toHaveBeenCalled();
     if (mode === "pending") {
@@ -14379,6 +14380,7 @@ describe("warm native retirement diagnostics", () => {
       rejectClose!(failure);
       await expect(lateClose).rejects.toBe(failure);
       expect(successorObserver).not.toHaveBeenCalled();
+      expect(diagnostic).toHaveBeenCalledTimes(2);
       expect(diagnostic).toHaveBeenLastCalledWith({ phase: "session_close", closeState: "failed", failureCode: "native_session_interrupted" });
     }
     expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(secret);
@@ -14391,9 +14393,27 @@ describe("warm native retirement diagnostics", () => {
     const entry = { session: { close: async () => { throw failure; } },
       onRetirementDiagnostic: diagnostic } as unknown as Parameters<typeof closeWarmNativeSession>[0];
     await expect(closeWarmNativeSession(entry, "test")).rejects.toBe(failure);
+    expect(diagnostic).toHaveBeenCalledTimes(1);
     expect(diagnostic).toHaveBeenLastCalledWith({ phase: "session_close", closeState: "failed", failureCode: "native_session_close_unrecoverable" });
     expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("CANARY");
     expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("privatePath");
+  });
+
+  it.each(["controller_detach", "instruction_receipt", "access_cleanup"] as const)("preserves a distinct failure after close rejection (%s)", async phase => {
+    const failure = new Error("PRIVATE-CANARY");
+    const diagnostic = vi.fn();
+    const entry = { session: { close: async () => { throw failure; },
+      detachControllerForRestart: async () => { if (phase === "controller_detach") throw failure; } },
+      computerTarget: { retire: async ({ beforeStop }: { beforeStop: () => Promise<void> }) => { await beforeStop().catch(() => undefined); return true; } },
+      instructionWorkingCopy: { retirementFailed: async () => { if (phase === "instruction_receipt") throw failure; } },
+      githubAccess: { stop: async () => { if (phase === "access_cleanup") throw failure; } },
+      onRetirementDiagnostic: diagnostic } as unknown as Parameters<typeof closeWarmNativeSession>[0];
+    if (phase === "instruction_receipt") await expect(closeWarmNativeSession(entry, "test")).rejects.toBeInstanceOf(AggregateError);
+    else await expect(closeWarmNativeSession(entry, "test")).rejects.toBe(failure);
+    expect(diagnostic).toHaveBeenCalledTimes(2);
+    expect(diagnostic.mock.calls[0]?.[0]).toMatchObject({ phase: "session_close", closeState: "failed" });
+    expect(diagnostic.mock.calls[1]?.[0]).toMatchObject({ phase: phase === "instruction_receipt" ? "session_close" : phase, closeState: "failed" });
+    expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("PRIVATE-CANARY");
   });
 
   it("does not let an observer failure change a failed close", async () => {
