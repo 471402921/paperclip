@@ -1752,6 +1752,13 @@ describe("ACPX installation integrity", () => {
           expect(verify).toHaveBeenCalledTimes(pass);
         } else {
           expect(read).toThrow();
+          const reasons: Record<string, string> = { recurring: "REPEATED_CTIME", changed_bytes: "BYTE_CONTINUITY",
+            dev: "DEVICE", ino: "INODE", mode: "MODE", uid: "UID", gid: "GID", nlink: "LINK_COUNT",
+            size: "SIZE", mtimeNs: "MTIME", not_regular: "BOUNDS", oversized: "BOUNDS" };
+          if (reasons[transition]) {
+            pass = 0;
+            expect(read).toThrow(expect.objectContaining({ code: "ERR_ACPX_UNVERIFIED_MODULE", moduleFence: reasons[transition] }));
+          }
           expect(pass).toBeLessThanOrEqual(2);
           if (transition === "snapshot_second") expect(verify).toHaveBeenCalledTimes(2);
         }
@@ -1799,13 +1806,18 @@ describe("ACPX installation integrity", () => {
     const closed = once(child, "close");
     let stdout = "";
     child.stdout?.on("data", bytes => { stdout += String(bytes); });
-    // Drain private stderr while keeping it out of test/report output.
-    child.stderr?.resume();
+    let stderr = "";
+    child.stderr?.on("data", bytes => { stderr += String(bytes); });
     const timeout = setTimeout(() => child.kill("SIGKILL"), 4_000);
     try {
       const [code] = await closed;
       expect(code).toBe(transition === "once" ? 0 : 1);
       expect(stdout).toBe(transition === "once" ? "dependency-success" : "");
+      const fences: Record<string, string> = { recurring: "REPEATED_CTIME", bytes: "BYTE_CONTINUITY", mode: "MODE" };
+      const fence = fences[transition];
+      if (fence && !(transition === "bytes" && process.platform === "darwin")) {
+        expect(stderr).toContain(`PAPERCLIP_ACPX_IMPORT_FAILURE:UNVERIFIED_MODULE:${fence}\n`);
+      }
     } finally {
       clearTimeout(timeout);
       if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
@@ -1867,7 +1879,7 @@ describe("ACPX installation integrity", () => {
           detailCode: "AGENT_STARTUP_FAILED", stderrSummary: stderr,
           exitCode: child.exitCode, signal: child.signalCode,
         }));
-        expect(code).toBe(`AGENT_STARTUP_FAILED.${category}`);
+        expect(code).toBe(category === "UNVERIFIED_MODULE" ? "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE.ANCESTRY" : "AGENT_STARTUP_FAILED.OTHER");
         expect(code).not.toMatch(/canary|\//);
         expect(stderr).not.toContain("must-not-execute");
       } finally {

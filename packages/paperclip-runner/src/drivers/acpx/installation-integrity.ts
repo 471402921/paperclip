@@ -1861,40 +1861,45 @@ export function readStableSnapshotModuleSource(input: {
   verify: (bytes: Buffer) => void;
   maxBytes: number;
 }): Buffer {
-  const reject = (): never => {
+  const reject = (moduleFence: string): never => {
     throw Object.assign(new Error("ACPX provider module changed while it was read"), {
-      code: "ERR_ACPX_UNVERIFIED_MODULE",
+      code: "ERR_ACPX_UNVERIFIED_MODULE", moduleFence,
     });
   };
   let before = input.before;
   let first: Buffer | null = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    if (!before.isFile() || before.size < 0n || before.size > BigInt(input.maxBytes)) reject();
+    if (!before.isFile() || before.size < 0n || before.size > BigInt(input.maxBytes)) reject("BOUNDS");
     const size = Number(before.size);
     const buffer = Buffer.alloc(size + 1);
     let offset = 0;
     while (offset < buffer.length) {
       const count = input.read(buffer, offset, buffer.length - offset, offset);
-      if (!Number.isSafeInteger(count) || count < 0 || count > buffer.length - offset) reject();
+      if (!Number.isSafeInteger(count) || count < 0 || count > buffer.length - offset) reject("READ_RESULT");
       if (count === 0) break;
       offset += count;
     }
     const bytes = buffer.subarray(0, offset);
     const after = input.stat();
     input.verify(bytes);
-    if (!after.isFile() || bytes.length !== size || BigInt(bytes.length) !== after.size
-      || before.dev !== after.dev || before.ino !== after.ino || before.mode !== after.mode
-      || before.uid !== after.uid || before.gid !== after.gid || before.nlink !== after.nlink
-      || before.size !== after.size || before.mtimeNs !== after.mtimeNs) reject();
-    if (first !== null && !first.equals(bytes)) reject();
+    if (!after.isFile()) reject("BOUNDS");
+    if (bytes.length !== size || BigInt(bytes.length) !== after.size || before.size !== after.size) reject("SIZE");
+    if (before.dev !== after.dev) reject("DEVICE");
+    if (before.ino !== after.ino) reject("INODE");
+    if (before.mode !== after.mode) reject("MODE");
+    if (before.uid !== after.uid) reject("UID");
+    if (before.gid !== after.gid) reject("GID");
+    if (before.nlink !== after.nlink) reject("LINK_COUNT");
+    if (before.mtimeNs !== after.mtimeNs) reject("MTIME");
+    if (first !== null && !first.equals(bytes)) reject("BYTE_CONTINUITY");
     if (before.ctimeNs === after.ctimeNs) return bytes;
-    if (attempt !== 0) reject();
+    if (attempt !== 0) reject("REPEATED_CTIME");
     first = bytes;
     // Continue from the full final metadata, including ctime. A further drift
     // between passes is therefore rejected, not granted another transition.
     before = after;
   }
-  return reject();
+  return reject("REPEATED_CTIME");
 }
 
 function snapshotBootstrap(format: AcpxCommandFormat, guarded = false): string {
@@ -1960,7 +1965,7 @@ function snapshotBootstrap(format: AcpxCommandFormat, guarded = false): string {
     `const snapshotDescriptorResolution = ${snapshotDescriptorResolution.toString()};`,
     "const dependencyAncestorIndex = (url) => { const recorded = dependencyAncestorByUrl.get(url); return recorded === undefined ? snapshotDescriptorAncestorIndex(url, directoryUrl, dependencyDirectoryUrls) : recorded; };",
     `const guardSnapshotModuleResolution = ${guardSnapshotModuleResolution.toString()};`,
-    'const canonicalizeDescriptorResolution = (url) => { if (typeof url !== "string" || !url.startsWith("file:") || snapshotDescriptorAncestorIndex(url, directoryUrl, dependencyDirectoryUrls) < 0) return url; try { return pathToFileURL(fs.realpathSync(fileURLToPath(url))).href; } catch { const error = new Error("ACPX provider module could not be canonicalized through its retained descriptor"); error.code = "ERR_ACPX_UNVERIFIED_MODULE"; throw error; } };',
+    'const canonicalizeDescriptorResolution = (url) => { if (typeof url !== "string" || !url.startsWith("file:") || snapshotDescriptorAncestorIndex(url, directoryUrl, dependencyDirectoryUrls) < 0) return url; try { return pathToFileURL(fs.realpathSync(fileURLToPath(url))).href; } catch { const error = new Error("ACPX provider module could not be canonicalized through its retained descriptor"); error.code = "ERR_ACPX_UNVERIFIED_MODULE"; error.moduleFence = "RESOLUTION"; throw error; } };',
     'const rememberDependencyAncestor = (specifier, resolution) => { const canonicalUrl = canonicalizeDescriptorResolution(resolution?.url); const pinned = snapshotDescriptorResolution(canonicalUrl, directoryUrl, dependencyDirectoryUrls, canonicalDirectoryUrl, canonicalDependencyDirectoryUrls); guardSnapshotModuleResolution(isBuiltin(specifier), resolution?.url, pinned !== null); if (pinned !== null && typeof resolution?.url === "string") { for (const rememberedUrl of [resolution.url, canonicalUrl, pinned.url]) { if (typeof rememberedUrl !== "string") continue; dependencyAncestorByUrl.set(rememberedUrl, pinned.ancestorIndex); if (typeof resolution.format === "string") descriptorFormatByUrl.set(rememberedUrl, resolution.format); } } return pinned === null || pinned.url === resolution?.url ? resolution : { ...resolution, url: pinned.url }; };',
     `const source = fs.readFileSync(${COMMAND_SOURCE_FD});`,
     "let resolvingDescriptorBare = false;",
@@ -1987,7 +1992,7 @@ function snapshotBootstrap(format: AcpxCommandFormat, guarded = false): string {
     'return new URL(segments.slice(ancestorLevels).join("/") || ".", dependencyDirectoryUrls[targetAncestorIndex]);',
     "};",
     "const pinnedSpecifier = relativeImport ? pinRelativeSpecifier() : null;",
-    'if (relativeImport && pinnedSpecifier === null) { const error = new Error("ACPX provider relative module escaped its verified package"); error.code = "ERR_ACPX_UNVERIFIED_MODULE"; throw error; }',
+    'if (relativeImport && pinnedSpecifier === null) { const error = new Error("ACPX provider relative module escaped its verified package"); error.code = "ERR_ACPX_UNVERIFIED_MODULE"; error.moduleFence = "ANCESTRY"; throw error; }',
     'const lookupSpecifier = pinnedSpecifier === null ? specifier : context.conditions?.includes("require") ? fileURLToPath(pinnedSpecifier) : pinnedSpecifier.href;',
     "const snapshotImport = entryImport || parentDependencyAncestorIndex >= 0;",
     'const bareImport = snapshotImport && !isBuiltin(specifier) && !specifier.startsWith("./") && !specifier.startsWith("../") && !specifier.startsWith("/") && !specifier.includes(":");',
@@ -2017,21 +2022,21 @@ function snapshotBootstrap(format: AcpxCommandFormat, guarded = false): string {
     "if (!descriptorLookup) return nextLoad(url, context);",
     "const canonicalRootUrl = url.startsWith(directoryUrl) ? canonicalDirectoryUrl : canonicalDependencyDirectoryUrls[dependencyDescriptorIndex];",
     "let moduleFd;",
-    'try { moduleFd = fs.openSync(fileURLToPath(url), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); } catch { const error = new Error("ACPX provider module could not be opened without following its final component"); error.code = "ERR_ACPX_UNVERIFIED_MODULE"; throw error; }',
+    'try { moduleFd = fs.openSync(fileURLToPath(url), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW); } catch { const error = new Error("ACPX provider module could not be opened without following its final component"); error.code = "ERR_ACPX_UNVERIFIED_MODULE"; error.moduleFence = "OPEN"; throw error; }',
     "try {",
     "const metadataBefore = fs.fstatSync(moduleFd, { bigint: true });",
-    `if (!metadataBefore.isFile() || metadataBefore.size > BigInt(${MAX_AGENT_COMMAND_BYTES})) { const error = new Error("ACPX provider module is not a bounded regular file"); error.code = "ERR_ACPX_UNVERIFIED_MODULE"; throw error; }`,
+    `if (!metadataBefore.isFile() || metadataBefore.size > BigInt(${MAX_AGENT_COMMAND_BYTES})) { const error = new Error("ACPX provider module is not a bounded regular file"); error.code = "ERR_ACPX_UNVERIFIED_MODULE"; error.moduleFence = "BOUNDS"; throw error; }`,
     'const openedUrl = pathToFileURL(fs.realpathSync(privateSnapshot ? fileURLToPath(url) : "/proc/self/fd/" + moduleFd)).href;',
-    'if (typeof canonicalRootUrl !== "string" || !openedUrl.startsWith(canonicalRootUrl)) { const error = new Error("ACPX provider module escaped descriptor-pinned ancestry"); error.code = "ERR_ACPX_UNVERIFIED_MODULE"; throw error; }',
+    'if (typeof canonicalRootUrl !== "string" || !openedUrl.startsWith(canonicalRootUrl)) { const error = new Error("ACPX provider module escaped descriptor-pinned ancestry"); error.code = "ERR_ACPX_UNVERIFIED_MODULE"; error.moduleFence = "ANCESTRY"; throw error; }',
     "const packageFormat = url.startsWith(directoryUrl) ? serverPackageFormat : dependencyAncestorFormats[dependencyDescriptorIndex];",
     "const hintedFormat = descriptorFormatByUrl.get(url) || context.format;",
     "const extension = extname(fileURLToPath(url));",
     'const moduleFormat = extension === ".mjs" ? "module" : extension === ".cjs" ? "commonjs" : extension === ".json" ? "json" : extension === ".node" ? "addon" : extension === ".js" ? (hintedFormat === "module" || hintedFormat === "commonjs" ? hintedFormat : packageFormat) : hintedFormat;',
-    'if (moduleFormat !== "module" && moduleFormat !== "commonjs" && moduleFormat !== "json") { const error = new Error("ACPX provider module format is not supported by descriptor-pinned loading"); error.code = "ERR_ACPX_UNVERIFIED_MODULE"; throw error; }',
+    'if (moduleFormat !== "module" && moduleFormat !== "commonjs" && moduleFormat !== "json") { const error = new Error("ACPX provider module format is not supported by descriptor-pinned loading"); error.code = "ERR_ACPX_UNVERIFIED_MODULE"; error.moduleFence = "FORMAT"; throw error; }',
     // Re-check both the retained descriptor's canonical path and its named
     // inode after each pass; a rename is not harmless hydration just because
     // its already-open descriptor still returns identical bytes.
-    'const statModule = () => { const currentUrl = pathToFileURL(fs.realpathSync(privateSnapshot ? fileURLToPath(url) : "/proc/self/fd/" + moduleFd)).href; const named = fs.lstatSync(fileURLToPath(url), { bigint: true }); const metadata = fs.fstatSync(moduleFd, { bigint: true }); if (currentUrl !== openedUrl || !named.isFile() || named.dev !== metadata.dev || named.ino !== metadata.ino) { const error = new Error("ACPX provider module path changed while it was read"); error.code = "ERR_ACPX_UNVERIFIED_MODULE"; throw error; } return metadata; };',
+    'const statModule = () => { const currentUrl = pathToFileURL(fs.realpathSync(privateSnapshot ? fileURLToPath(url) : "/proc/self/fd/" + moduleFd)).href; const named = fs.lstatSync(fileURLToPath(url), { bigint: true }); const metadata = fs.fstatSync(moduleFd, { bigint: true }); if (currentUrl !== openedUrl || !named.isFile() || named.dev !== metadata.dev || named.ino !== metadata.ino) { const error = new Error("ACPX provider module path changed while it was read"); error.code = "ERR_ACPX_UNVERIFIED_MODULE"; error.moduleFence = "PATH_IDENTITY"; throw error; } return metadata; };',
     `const moduleSource = readStableSnapshotModuleSource({ before: metadataBefore, stat: statModule, read: (buffer, offset, length, position) => fs.readSync(moduleFd, buffer, offset, length, position), verify: (bytes) => verifySnapshotBytes(fileURLToPath(url), bytes), maxBytes: ${MAX_AGENT_COMMAND_BYTES} });`,
     "return { format: moduleFormat, source: moduleSource, shortCircuit: true };",
     "} finally { fs.closeSync(moduleFd); }",
@@ -2046,7 +2051,7 @@ function snapshotBootstrap(format: AcpxCommandFormat, guarded = false): string {
     guarded
       ? "const exitOnImportFailure = reapOnGuardianLoss;"
       : "const exitOnImportFailure = process.exit.bind(process);",
-    'import(target).catch((error) => { let category = "OTHER"; try { if (error?.code === "ERR_ACPX_UNVERIFIED_MODULE") category = "UNVERIFIED_MODULE"; } catch {} try { writeImportFailure(2, "PAPERCLIP_ACPX_IMPORT_FAILURE:" + category + "\\n"); console.error(error); } finally { exitOnImportFailure(1); } });',
+    'import(target).catch((error) => { let category = "OTHER"; try { if (error?.code === "ERR_ACPX_UNVERIFIED_MODULE") { category = "UNVERIFIED_MODULE"; const fence = error.moduleFence; if (["RESOLUTION", "OPEN", "BOUNDS", "ANCESTRY", "FORMAT", "PATH_IDENTITY", "READ_RESULT", "SIZE", "DEVICE", "INODE", "MODE", "UID", "GID", "LINK_COUNT", "MTIME", "BYTE_CONTINUITY", "REPEATED_CTIME"].includes(fence)) category += ":" + fence; } } catch {} try { writeImportFailure(2, "PAPERCLIP_ACPX_IMPORT_FAILURE:" + category + "\\n"); console.error(error); } finally { exitOnImportFailure(1); } });',
   ].join("");
 }
 
@@ -2079,7 +2084,7 @@ export function guardSnapshotModuleResolution(
     const error = new Error(
       "ACPX provider module escaped descriptor-pinned ancestry",
     );
-    Object.assign(error, { code: "ERR_ACPX_UNVERIFIED_MODULE" });
+    Object.assign(error, { code: "ERR_ACPX_UNVERIFIED_MODULE", moduleFence: "ANCESTRY" });
     throw error;
   }
 }
