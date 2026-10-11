@@ -250,6 +250,8 @@ export function createIsolatedCodexAppServerArgs(
   readOnlyRoots: string[] = [],
   /** Server-registered run copy, never an environment/config-supplied root. */
   instructionWorkingCopyRoot?: string,
+  /** Separate controller-registered personal directory, never an ambient env grant. */
+  persistentAgentHome?: string,
 ): string[] {
   const explicitSource = source;
   source ??= process.env;
@@ -268,7 +270,9 @@ export function createIsolatedCodexAppServerArgs(
   const commandEnvironment = codexCommandEnvironment(source);
   // Selected task values are inherited, never serialized into configuration argv.
   for (const key of configuredEnvironmentKeys(explicitSource)) delete commandEnvironment[key];
-  if (instructionWorkingCopyRoot && source.AGENT_HOME === instructionWorkingCopyRoot) commandEnvironment.AGENT_HOME = instructionWorkingCopyRoot;
+  const registeredAgentHome = persistentAgentHome ?? instructionWorkingCopyRoot;
+  if (registeredAgentHome && source.AGENT_HOME === registeredAgentHome) commandEnvironment.AGENT_HOME = registeredAgentHome;
+  const registeredWritableRoots = [...new Set([instructionWorkingCopyRoot, persistentAgentHome].filter((root): root is string => Boolean(root)))];
   const shellEnvironmentKeys = [...new Set([...inheritedGitHubKeys, ...Object.keys(commandEnvironment)])].sort();
   if (source.PAPERCLIP_GITHUB_LAUNCHER_DIR) readOnlyRoots = [...readOnlyRoots, source.PAPERCLIP_GITHUB_LAUNCHER_DIR];
   const deniedHostRoots = [
@@ -289,7 +293,7 @@ export function createIsolatedCodexAppServerArgs(
     ...readOnlyRoots.map((path) => `${tomlString(resolve(path))}="read"`),
     ...gitRoots.read.map((path) => `${tomlString(path)}="read"`),
     ...gitRoots.write.map((path) => `${tomlString(path)}="write"`),
-    ...(instructionWorkingCopyRoot ? [`${tomlString(resolve(instructionWorkingCopyRoot))}="write"`] : []),
+    ...registeredWritableRoots.map((root) => `${tomlString(resolve(root))}="write"`),
     ...(source.PAPERCLIP_GITHUB_BROKER_TOKEN && source.GH_CONFIG_DIR
       ? [`${tomlString(resolve(source.GH_CONFIG_DIR))}="write"`] : []),
     `":workspace_roots"={"."="write"}`,
@@ -301,7 +305,7 @@ export function createIsolatedCodexAppServerArgs(
     ...deniedHostRoots.map((path) => `${tomlString(path)}="none"`),
     ...readOnlyRoots.map((path) => `${tomlString(resolve(path))}="read"`),
     ...[...gitRoots.read, ...gitRoots.write].map((path) => `${tomlString(path)}="read"`),
-    ...(instructionWorkingCopyRoot ? [`${tomlString(resolve(instructionWorkingCopyRoot))}="read"`] : []),
+    ...registeredWritableRoots.map((root) => `${tomlString(resolve(root))}="read"`),
     ...(source.PAPERCLIP_GITHUB_BROKER_TOKEN && source.GH_CONFIG_DIR
       ? [`${tomlString(resolve(source.GH_CONFIG_DIR))}="write"`] : []),
     `":workspace_roots"={"."="read"}`,

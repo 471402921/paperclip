@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -95,7 +95,7 @@ describe("claude remote execution", () => {
     }
   });
 
-  it("prepares the workspace, syncs Claude runtime assets, and restores workspace changes for remote SSH execution", async () => {
+  it.each([true, false])("prepares and restores a copied SSH workspace (already exists: %s)", async (exists) => {
     vi.stubEnv("CLAUDE_CODE_USE_BEDROCK", "1");
     vi.stubEnv("ANTHROPIC_MODEL", "host-only-model");
     const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-claude-remote-"));
@@ -104,7 +104,11 @@ describe("claude remote execution", () => {
     const alternateWorkspaceDir = path.join(rootDir, "workspace-other");
     const instructionsPath = path.join(rootDir, "instructions.md");
     const managedRemoteWorkspace = "/remote/workspace/.paperclip-runtime/runs/run-1/workspace";
-    await mkdir(workspaceDir, { recursive: true });
+    if (exists) await mkdir(workspaceDir, { recursive: true });
+    prepareWorkspaceForSshExecution.mockImplementationOnce(async () => {
+      expect((await stat(workspaceDir)).isDirectory()).toBe(true);
+      return { gitBacked: false };
+    });
     await mkdir(alternateWorkspaceDir, { recursive: true });
     await writeFile(instructionsPath, "Use the remote workspace.\n", "utf8");
 

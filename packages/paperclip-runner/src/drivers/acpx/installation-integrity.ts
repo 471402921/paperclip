@@ -1188,7 +1188,10 @@ async function openVerifiedExecutable(
       const beforeIdentity = fileIdentity(before);
       if (
         !sameIdentity(fileIdentity(lexicalBaseline), beforeIdentity) ||
-        lexicalBaseline.mode !== before.mode
+        lexicalBaseline.mode !== before.mode ||
+        lexicalBaseline.uid !== before.uid ||
+        lexicalBaseline.gid !== before.gid ||
+        lexicalBaseline.nlink !== before.nlink
       ) {
         throw new Error(
           `${label} changed while it was verified`,
@@ -1226,7 +1229,13 @@ async function openVerifiedExecutable(
         !lexicalAfter.isFile() ||
         !sameIdentity(fileIdentity(lexicalAfter), afterIdentity) ||
         lexicalAfter.mode !== after.mode ||
+        lexicalAfter.uid !== after.uid ||
+        lexicalAfter.gid !== after.gid ||
+        lexicalAfter.nlink !== after.nlink ||
         before.mode !== after.mode ||
+        before.uid !== after.uid ||
+        before.gid !== after.gid ||
+        before.nlink !== after.nlink ||
         !sameIdentity(
           { ...beforeIdentity, changedNanoseconds: afterIdentity.changedNanoseconds },
           afterIdentity,
