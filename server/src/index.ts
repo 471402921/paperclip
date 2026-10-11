@@ -1185,7 +1185,8 @@ async function startServerWithDatabaseTeardown(
   };
   const executionControlSweepsInFlight = new Set<string>();
   const executionControlSweeps = [
-    ["computers", () => computerService(db).reconcile()],
+    ["computer_renewal", () => computerService(db).reconcile("renewal")],
+    ["computer_cleanup", () => computerService(db).reconcile("cleanup")],
     ["finalization", () => reconcileAbandonedExecutionControl(db)],
     ["replacement", () => heartbeat ? reconcileSafeNativeReplacements(db, new Date(), { verifyStoppedSession: run => verifyStoppedNativeSessionForReplacement(db, run) }) : undefined],
     ["reconciliation_delivery", () => heartbeat ? deliverReconciledExecutions(db, heartbeat.wakeup) : undefined],

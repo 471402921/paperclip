@@ -28,6 +28,9 @@ class ComputerSessionBusyError extends ComputerError {
 }
 
 const VIEWER_PREPARATION_BUDGET_MS = 120_000;
+// Each independently scheduled lane has four workers. Slow cleanup cannot hold
+// the next renewal pass; an arbitrary all-live fleet still has finite capacity.
+const RECONCILIATION_CONCURRENCY = 4;
 const FILE_OPERATION_BUDGET_MS = 120_000;
 const FILE_OPERATION_SETTLEMENT_MS = 5000;
 type Scope = { companyId: string; environmentId: string };
@@ -1093,19 +1096,41 @@ finally:
         current.ledger.action.providerStopId = stop.id;
     });
   }
-  async function reconcile() {
-    const failures: unknown[] = [];
-    for (const record of await repository.all())
-      try {
-        await reconcileRecord(record);
-      } catch (error) {
-        failures.push(error);
-      }
-    if (failures.length)
-      throw new AggregateError(
-        failures,
-        "Computer reconciliation requires retry",
-      );
+  type ReconciliationLane = "renewal" | "cleanup";
+  const reconciliationSweeps = new Map<ReconciliationLane, Promise<void>>();
+  async function reconcileLane(lane: ReconciliationLane) {
+    const existing = reconciliationSweeps.get(lane);
+    if (existing) return existing;
+    const pending = (async () => {
+      const observedAt = now();
+      const records = (await repository.all()).filter(record => {
+        const renewalCandidate = record.ledger.status === "attached" && !record.ledger.action &&
+          liveOwners(record.ledger).some(owner => owner.phase !== "retiring" && !expired(owner, observedAt));
+        return renewalCandidate === (lane === "renewal");
+      });
+      // Lane selection is scheduling, not authority: reconcileRecord reloads
+      // each ledger and shares in-flight work even if it has changed lanes.
+      const failures: unknown[] = [];
+      let next = 0;
+      await Promise.all(Array.from({ length: Math.min(RECONCILIATION_CONCURRENCY, records.length) }, async () => {
+        while (next < records.length) {
+          const record = records[next++];
+          try { await reconcileRecord(record); }
+          catch (error) { failures.push(error); }
+        }
+      }));
+      if (failures.length) throw new AggregateError(failures, "Computer reconciliation requires retry");
+    })();
+    reconciliationSweeps.set(lane, pending);
+    try { await pending; }
+    finally { if (reconciliationSweeps.get(lane) === pending) reconciliationSweeps.delete(lane); }
+  }
+  async function reconcile(lane?: ReconciliationLane) {
+    if (lane) return reconcileLane(lane);
+    const results = await Promise.allSettled([reconcileLane("renewal"), reconcileLane("cleanup")]);
+    const failures = results.flatMap(result => result.status === "fulfilled" ? []
+      : result.reason instanceof AggregateError ? result.reason.errors : [result.reason]);
+    if (failures.length) throw new AggregateError(failures, "Computer reconciliation requires retry");
   }
   return {
     async list(companyId: string) {
