@@ -1768,6 +1768,59 @@ describe("Codex ACPX runtime adapter", () => {
     await owner.command.close();
   });
 
+  it("reports deferred turn initialization, session load and ownership without acknowledging early", async () => {
+    const runtime = fakeRuntime();
+    const child = fakeChild();
+    const command = fakeCommand();
+    vi.mocked(command.spawn).mockReturnValue(child);
+    let created!: AcpRuntimeOptions;
+    let submit!: () => void;
+    let verifyOwner!: () => void;
+    const promptStarted = new Promise<void>(resolve => { submit = resolve; });
+    const owned = new Promise<void>(resolve => { verifyOwner = resolve; });
+    const phases: string[] = [];
+    let observedOwnership!: () => void;
+    const ownershipEntered = new Promise<void>(resolve => { observedOwnership = resolve; });
+    const options = openOptions(command);
+    options.onTurnStage = stage => {
+      phases.push(stage);
+      if (stage === "turn_ownership") observedOwnership();
+    };
+    vi.mocked(runtime.startTurn).mockImplementation(() => {
+      created.spawnAgent!({ command: "private-command-canary", args: [], options: {} });
+      created.onAgentSpawn!({ pid: 123, startedAt: "private-time-canary" });
+      created.onAcpMessage!("outbound", { id: "private-id-canary", method: "initialize", params: { secret: "private-payload-canary" } });
+      return { requestId: "resumed", promptStarted, events: { async *[Symbol.asyncIterator]() {} },
+        result: new Promise<never>(() => undefined), cancel: vi.fn(), closeStream: vi.fn() };
+    });
+    const port = await openCodexAcpxRuntime(options, {
+      createRegistry: () => registry(), createStore: () => store(),
+      awaitProviderOwnership: () => owned, awaitProviderExit: providerOwnershipEstablished,
+      createRuntime: value => { created = value; return runtime; },
+    });
+    const turn = port.startTurn({ text: "Resume", requestId: "resumed" });
+    let acknowledged = false;
+    void turn.promptStarted.then(() => { acknowledged = true; });
+    expect(phases.at(-1)).toBe("turn_initialize");
+    await Promise.resolve();
+    expect(acknowledged).toBe(false);
+    created.onAcpMessage!("inbound", { id: "private-id-canary", result: {} });
+    created.onAcpMessage!("outbound", { id: 2, method: "session/load", params: { sessionId: "private-session-canary" } });
+    expect(phases.at(-1)).toBe("turn_session_load");
+    await Promise.resolve();
+    expect(acknowledged).toBe(false);
+    created.onAcpMessage!("inbound", { id: 2, result: {} });
+    submit();
+    await ownershipEntered;
+    expect(phases.at(-1)).toBe("turn_ownership");
+    expect(acknowledged).toBe(false);
+    verifyOwner();
+    await expect(turn.promptStarted).resolves.toBeUndefined();
+    expect(phases).toEqual(["turn_prepare", "turn_spawn", "turn_spawned", "turn_initialize", "turn_initialized",
+      "turn_session_load", "turn_session_loaded", "turn_prompt_submitted", "turn_ownership", "turn_ownership_verified"]);
+    expect(JSON.stringify(phases)).not.toContain("canary");
+  });
+
   it("admits a verified provider that starts with the first recovered turn", async () => {
     const runtime = fakeRuntime();
     const child = fakeChild();

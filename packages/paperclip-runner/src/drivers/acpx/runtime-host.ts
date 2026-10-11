@@ -1,3 +1,4 @@
+import type { AcpxTurnAdmissionStage } from "./turn-admission-diagnostics.js";
 import { piProviderConfiguration } from "./pi-provider-config.js";
 import { withAcpxTurnCancellation } from "./turn-cancellation.js";
 import { resolveAcpxProviderMode } from "./provider-mode.js";
@@ -149,6 +150,8 @@ export interface AcpxRuntimePort {
 }
 
 export interface AcpxRuntimePortOpenOptions {
+  /** Closed active-turn progress, measured from the host admission origin. */
+  onTurnStage?: (stage: AcpxTurnAdmissionStage) => void;
   /** A durable identity was admitted; restored native mode must already match. */
   restoringSession?: boolean;
   /** Ephemeral provider extension metadata; mandatory ACP caps remain host-owned. */
@@ -199,7 +202,7 @@ export interface AcpxRetainedCleanupFailure {
   error: unknown;
 }
 
-export type AcpxAdmissionStage = "binding" | "installation" | "sandbox" | "lifetime"
+export type AcpxAdmissionStage = AcpxTurnAdmissionStage | "binding" | "installation" | "sandbox" | "lifetime"
   | "agent_files" | "skills" | "command" | "tool_bridge" | "handshake" | "verification" | "ready" | "cleanup";
 
 export interface AcpxRuntimeHostDependencies {
@@ -590,6 +593,7 @@ export class AcpxRuntimeHost {
           agentFiles?.assertHeld();
           await assertAcpxProfileWorkspace(options.agent, binding.workspacePath);
           return dependencies.openRuntime({
+            onTurnStage: reportStage,
             ...(options.clientCapabilities === undefined ? {} : {
               clientCapabilities: structuredClone(options.clientCapabilities),
             }),
