@@ -170,6 +170,8 @@ export interface RealizedExecutionWorkspace extends ExecutionWorkspaceInput {
   strategy: "project_primary" | "git_worktree";
   cwd: string;
   branchName: string | null;
+  /** Remote realization intent; distinct from ownership established after creation. */
+  existingBranch?: string;
   worktreePath: string | null;
   warnings: string[];
   created: boolean;
