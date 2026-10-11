@@ -1,4 +1,4 @@
-import { compareAndSealRetiredComputerCheckpoint, retiredComputerCheckpointIsSettled, retiredComputerCheckpointUnsettledReason, retireUnlaunchedComputerAttempt, nativeSessionBootstrapTimeoutMs } from "./native-session-executor.js";
+import { closeWarmNativeSession, compareAndSealRetiredComputerCheckpoint, retiredComputerCheckpointIsSettled, retiredComputerCheckpointUnsettledReason, retireUnlaunchedComputerAttempt, nativeSessionBootstrapTimeoutMs } from "./native-session-executor.js";
 import { prepareHeartbeatGitHubLaunchers } from "../heartbeat-github-launchers.js";
 import { RemoteProviderPackVerificationError } from "./remote-provider-pack-cache.js";
 import { gunzipSync } from "node:zlib";
@@ -14157,6 +14157,41 @@ describe("computer idle authority transition", () => {
 });
 
 describe("computer graceful idle reservation", () => {
+  it("attributes preparation retirement to the actual advanced computer generation", async () => {
+    const name = "computer-retirement-diagnostic-generation";
+    const current = { ...execution, binding: { ...execution.binding, runId: `${name}-one`, agentId: name },
+      session: { ...execution.session, normalizedSessionId: name, lifecyclePolicy: { mode: "warm", idleTimeoutMs: 60_000 } } } as NativeExecutionInputV1;
+    const onEvent = vi.fn(async () => undefined);
+    const close = vi.fn(async () => undefined);
+    const retire = vi.fn(async () => true);
+    const nextRetire = vi.fn(async () => true);
+    const target = { kind: "remote", transport: "computer", environmentId: name, remoteCwd: "/remote/agent",
+      resourceAuthority: { kind: "computer-owner", computerId: name, ownerId: name, generation: 1 },
+      retainWarm: async () => undefined, retire };
+    state.execute.mockReset().mockImplementationOnce(async options => { await options.onSession?.({ close });
+      return { result: { summary: "completed" }, terminal: { runTerminalState: "succeeded" }, turnId: name,
+        normalizedSessionId: name, providerSessionId: name, driverKind: "test", driverVersion: "1", nativeEventCount: 1,
+        highestContiguousSourceSeq: 1, usage: null }; });
+    await executePaperclipNativeSession({ db: leaseDb(current), execution: current, runnerInstanceId: name, onEvent,
+      runnerExecutionTarget: target as never,
+      instructionWorkingCopy: { runId: current.binding.runId, root: "/remote/agent", hasChanges: async () => false,
+        checkpointWarm: async () => true, collectStopped: async () => undefined } });
+    try {
+      await expect(reserveWarmNativeInstructionDirectory({ companyId: current.binding.companyId, agentId: name,
+        previousRunId: current.binding.runId, runId: `${name}-two`, canReuse: async () => false,
+        target: { ...target, resourceAuthority: { ...target.resourceAuthority, generation: 2 }, retire: nextRetire } as never,
+      })).rejects.toThrow("prior session cleanup requires operator recovery");
+      await vi.waitFor(() => expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+        eventType: "native_session.retirement_diagnostic", payload: expect.objectContaining({
+          runId: current.binding.runId, preparingRunId: `${name}-two`, ownerId: name, ownerGeneration: 2, closeState: "not_started",
+        }),
+      })));
+      expect(retire).not.toHaveBeenCalled();
+      expect(nextRetire).toHaveBeenCalledOnce();
+      expect(close).not.toHaveBeenCalled();
+    } finally { await closeWarmNativeSessionsForRun({ runId: current.binding.runId, reason: "fixture cleanup" }); }
+  });
+
   it.each(["codex", "acpx"])("suspends %s before retiring descendants and admits the next idle turn", async kind => {
     const name = `graceful-idle-${kind}`;
     const current = { ...execution, binding: { ...execution.binding, runId: `${name}-one`, agentId: name },
@@ -14195,7 +14230,8 @@ describe("computer graceful idle reservation", () => {
     const name = `graceful-${condition}`;
     const current = { ...execution, binding: { ...execution.binding, runId: name, agentId: name },
       session: { ...execution.session, normalizedSessionId: name, lifecyclePolicy: { mode: "warm", idleTimeoutMs: 60_000 } } } as NativeExecutionInputV1;
-    const close = vi.fn(async () => { throw new Error("protocol close failed"); });
+    const close = vi.fn(async () => { throw new Error("PRIVATE-CANARY protocol close failed /private/home?token=secret"); });
+    const onEvent = vi.fn(async () => undefined);
     const detach = vi.fn(async () => undefined);
     let retired = false;
     const retire = vi.fn(async (options?: { beforeStop?: () => Promise<void> }) => {
@@ -14208,12 +14244,20 @@ describe("computer graceful idle reservation", () => {
       return { result: { summary: "completed" }, terminal: { runTerminalState: "succeeded" }, turnId: name,
         normalizedSessionId: name, providerSessionId: name, driverKind: "test", driverVersion: "1", nativeEventCount: 1,
         highestContiguousSourceSeq: 1, usage: null }; });
-    await executePaperclipNativeSession({ db: leaseDb(current), execution: current, runnerInstanceId: name,
+    await executePaperclipNativeSession({ db: leaseDb(current), execution: current, runnerInstanceId: name, onEvent,
       runnerExecutionTarget: { kind: "remote", transport: "computer", environmentId: name, remoteCwd: "/remote/agent",
         resourceAuthority: { kind: "computer-owner", computerId: name, ownerId: name, generation: 1 },
         retainWarm: async () => undefined, retire } as never });
     const result = await closeWarmNativeSessionsForRun({ runId: name, reason: "cancel exact task" });
     expect(result.failed).toBe(1);
+    await vi.waitFor(() => expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "native_session.retirement_diagnostic",
+      payload: expect.objectContaining({ runId: name, normalizedSessionId: name, runnerInstanceId: name,
+        computerId: name, ownerId: name, ownerGeneration: 1,
+        closeState: condition === "failed-close" ? "failed" : "not_started",
+        phase: condition === "superseded" ? "computer_retirement" : "session_close" }),
+    })));
+    expect(JSON.stringify(onEvent.mock.calls)).not.toContain("PRIVATE-CANARY");
     expect(retired).toBe(condition !== "superseded");
     if (condition === "superseded") { expect(close).not.toHaveBeenCalled(); expect(detach).not.toHaveBeenCalled(); }
     else expect(detach).toHaveBeenCalledOnce();
@@ -14293,5 +14337,69 @@ describe("computer managed context snapshots", () => {
     await retireUnlaunchedComputerAttempt(target as never, dispatched);
     if (condition === "prepare-failed") { expect(launch).not.toHaveBeenCalled(); expect(retire).toHaveBeenCalledOnce(); }
     else { expect(launch).toHaveBeenCalledOnce(); expect(inspectProcess).not.toHaveBeenCalled(); expect(retire).not.toHaveBeenCalled(); }
+  });
+});
+
+
+describe("warm native retirement diagnostics", () => {
+  it.each(["not_started", "pending", "failed", "superseded", "retirement_failed", "collection_failed"] as const)("records a closed diagnostic without changing retirement (%s)", async mode => {
+    const secret = "PRIVATE-CANARY /private/provider/home?token=secret";
+    const failure = new Error(secret);
+    const diagnostic = vi.fn();
+    const collect = vi.fn(async () => { if (mode === "collection_failed") throw failure; });
+    const detach = vi.fn(async () => undefined);
+    let rejectClose: ((error: Error) => void) | undefined;
+    const close = vi.fn(async () => {
+      if (mode === "failed") throw failure;
+      if (mode === "pending") await new Promise<void>((_, reject) => { rejectClose = reject; });
+    });
+    let lateClose: Promise<void> | undefined;
+    const retire = vi.fn(async ({ beforeStop }: { beforeStop: () => Promise<void> }) => {
+      if (mode === "superseded") return false;
+      if (mode === "retirement_failed") throw failure;
+      if (mode === "pending") { lateClose = beforeStop(); void lateClose.catch(() => undefined); }
+      if (mode === "failed" || mode === "collection_failed") await beforeStop().catch(() => undefined);
+      return true;
+    });
+    const entry = { session: { close, detachControllerForRestart: detach }, computerTarget: { retire },
+      instructionWorkingCopy: { collectStopped: collect }, onRetirementDiagnostic: diagnostic } as unknown as Parameters<typeof closeWarmNativeSession>[0];
+    if (["failed", "retirement_failed", "collection_failed"].includes(mode))
+      await expect(closeWarmNativeSession(entry, secret)).rejects.toBe(failure);
+    else await expect(closeWarmNativeSession(entry, secret)).rejects.toThrow(mode === "superseded" ? "computer_owner_retirement_superseded" : "prior session cleanup requires operator recovery");
+    expect(diagnostic).toHaveBeenLastCalledWith({
+      phase: ["superseded", "retirement_failed"].includes(mode) ? "computer_retirement" : mode === "collection_failed" ? "instruction_collection" : "session_close",
+      closeState: ["superseded", "retirement_failed", "not_started"].includes(mode) ? "not_started" : mode === "collection_failed" ? "completed" : mode,
+      failureCode: mode === "superseded" ? "computer_owner_retirement_superseded" : ["not_started", "pending"].includes(mode) ? "native_session_cleanup_quarantined" : "native_session_interrupted",
+    });
+    if (mode !== "collection_failed") expect(collect).not.toHaveBeenCalled();
+    if (["not_started", "superseded", "retirement_failed"].includes(mode)) expect(close).not.toHaveBeenCalled();
+    if (mode === "pending") {
+      const successorObserver = vi.fn();
+      entry.onRetirementDiagnostic = successorObserver;
+      rejectClose!(failure);
+      await expect(lateClose).rejects.toBe(failure);
+      expect(successorObserver).not.toHaveBeenCalled();
+      expect(diagnostic).toHaveBeenLastCalledWith({ phase: "session_close", closeState: "failed", failureCode: "native_session_interrupted" });
+    }
+    expect(JSON.stringify(diagnostic.mock.calls)).not.toContain(secret);
+    expect(retire).toHaveBeenCalledOnce();
+  });
+
+  it("retains the known close settlement failure code without its payload", async () => {
+    const failure = Object.assign(new Error("PRIVATE-CANARY"), { code: "native_session_close_unrecoverable", settlement: { privatePath: "/private/canary" } });
+    const diagnostic = vi.fn();
+    const entry = { session: { close: async () => { throw failure; } },
+      onRetirementDiagnostic: diagnostic } as unknown as Parameters<typeof closeWarmNativeSession>[0];
+    await expect(closeWarmNativeSession(entry, "test")).rejects.toBe(failure);
+    expect(diagnostic).toHaveBeenLastCalledWith({ phase: "session_close", closeState: "failed", failureCode: "native_session_close_unrecoverable" });
+    expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("CANARY");
+    expect(JSON.stringify(diagnostic.mock.calls)).not.toContain("privatePath");
+  });
+
+  it("does not let an observer failure change a failed close", async () => {
+    const failure = new Error("original close failure");
+    const entry = { session: { close: async () => { throw failure; } },
+      onRetirementDiagnostic: () => { throw new Error("observer failure"); } } as unknown as Parameters<typeof closeWarmNativeSession>[0];
+    await expect(closeWarmNativeSession(entry, "test")).rejects.toBe(failure);
   });
 });

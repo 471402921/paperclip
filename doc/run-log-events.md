@@ -58,6 +58,17 @@ and incomplete result-delivery command IDs and statuses. If execution and
 cleanup both fail, execution retains its original error identity and cleanup is
 attached as `cleanupError`.
 
+Warm retirement failures emit `native_session.retirement_diagnostic` on the
+persistent run log, including after the turn's output stream closes. The payload
+contains a closed retirement phase, close state (`not_started`, `pending`,
+`completed`, or `failed`), a closed failure code, and the bound run, native
+session, runner, optional preparing run, and computer-owner IDs/generation.
+The retirement attempt snapshots its owner and observer before awaiting. A close that
+rejects after the retirement grace can emit a later diagnostic. Arbitrary
+exception text, paths, and caller-supplied retirement reasons are excluded.
+These observations do not change retirement, quarantine, or replay authority;
+logging failure cannot alter the cleanup result.
+
 Semantic settlement also includes up to 20 content-free failure records, with
 the call ID, operation ID, stage (`dispatch` or `persist_result`), and cause.
 Causes distinguish an oversized command, a full command journal, known storage
