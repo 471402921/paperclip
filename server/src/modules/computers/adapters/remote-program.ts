@@ -71,7 +71,8 @@ if act=='workspace':
   info=os.fstat(workspace_lock.fileno())
   if not stat.S_ISREG(info.st_mode) or info.st_nlink!=1:fail('invalid')
   fcntl.flock(workspace_lock,fcntl.LOCK_EX)
-  repo=p.get('repositoryUrl');branch=p.get('branch');task=p.get('taskId');base_ref=p.get('baseRef')
+  repo=p.get('repositoryUrl');branch=p.get('branch');task=p.get('taskId');base_ref=p.get('baseRef');existing_branch=p.get('existingBranch')
+  if existing_branch and (p.get('mode')!='worktree' or existing_branch!=branch):fail('invalid')
   if base_ref and (base_ref.startswith('-') or '\n' in base_ref):fail('invalid')
   checkout=os.path.join(root,'checkout')
   if repo:
@@ -94,7 +95,10 @@ if act=='workspace':
    if not task:fail('invalid')
    target=os.path.join(root,'tasks',task);os.makedirs(os.path.dirname(target),exist_ok=True)
    task_branch=branch or 'paperclip/task-'+task
-   if not os.path.exists(target):run(['git','worktree','add','-b',task_branch,target,base_ref or 'HEAD'],checkout)
+   if existing_branch:run(['git','show-ref','--verify','refs/heads/'+existing_branch],checkout)
+   if not os.path.exists(target):
+    if existing_branch:run(['git','worktree','add',target,existing_branch],checkout)
+    else:run(['git','worktree','add','-b',task_branch,target,base_ref or 'HEAD'],checkout)
    run(['git','rev-parse','--show-toplevel'],target)
    if run(['git','symbolic-ref','--quiet','--short','HEAD'],target)!=task_branch:fail('conflict')
   else:

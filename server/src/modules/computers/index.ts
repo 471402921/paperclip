@@ -1,6 +1,5 @@
-import type { Db } from "@paperclipai/db";
 import { secretService } from "../../services/secrets.js";
-import { computerRepository } from "./adapters/repository.js";
+import { computerRepository, type ComputerDatabase } from "./adapters/repository.js";
 import { boatBackend } from "./adapters/boat.js";
 import { createComputerService } from "./application/service.js";
 export { COMPUTER_RETIREMENT_GRACE_MS, ComputerError, ComputerStopPendingError } from "./domain/ledger.js";
@@ -10,8 +9,8 @@ export type {
 } from "./domain/ledger.js";
 export type ComputerService = ReturnType<typeof createComputerService>;
 export type ComputerBinding = Awaited<ReturnType<ComputerService["admit"]>>;
-const services = new WeakMap<Db, ComputerService>();
-export function computerService(db: Db): ComputerService {
+const services = new WeakMap<ComputerDatabase, ComputerService>();
+export function computerService(db: ComputerDatabase): ComputerService {
   const existing = services.get(db);
   if (existing) return existing;
   const secrets = secretService(db);

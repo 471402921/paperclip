@@ -351,6 +351,8 @@ export interface WorkspaceRealizationRequest {
     repoRef: string | null;
     strategy: "project_primary" | "git_worktree";
     branchName: string | null;
+    /** Attach this exact pre-existing branch without creating or resetting it. */
+    existingBranch?: string;
     worktreePath: string | null;
   };
   /**

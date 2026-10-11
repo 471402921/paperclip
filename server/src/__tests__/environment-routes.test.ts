@@ -13,9 +13,10 @@ const mockAccessService = vi.hoisted(() => ({
 }));
 
 const mockComputerAttach = vi.hoisted(() => vi.fn());
+const mockComputerServiceDb = vi.hoisted(() => vi.fn());
 vi.mock("../modules/computers/index.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../modules/computers/index.js")>(),
-  computerService: () => ({ attach: mockComputerAttach }),
+  computerService: (db: unknown) => { mockComputerServiceDb(db); return { attach: mockComputerAttach }; },
 }));
 
 const mockAgentService = vi.hoisted(() => ({
@@ -2706,6 +2707,50 @@ describe("environment routes", () => {
     expect(mockComputerAttach).toHaveBeenCalledOnce();
     expect(environment.status).toBe(succeeds ? "active" : "archived");
     if (!succeeds) expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("commits Boat key rotation only after attachment succeeds (%s)", async succeeds => {
+    const priorSecret = "11111111-1111-1111-1111-111111111111";
+    const nextSecret = "22222222-2222-2222-2222-222222222222";
+    let environment = { ...createEnvironment(), driver: "computer", status: "active",
+      config: { provider: "boat", sandboxId: "bx_retained", apiKeySecretRef: { type: "secret_ref", secretId: priorSecret } },
+      metadata: { computerCompanyId: "company-1" } };
+    let boundSecret = priorSecret;
+    let transactionOpen = false;
+    const transaction = vi.spyOn(routeDb, "transaction").mockImplementation(async fn => {
+      const before = environment, bindingBefore = boundSecret;
+      transactionOpen = true;
+      try { return await fn(routeDbTx); }
+      catch (error) { environment = before; boundSecret = bindingBefore; throw error; }
+      finally { transactionOpen = false; }
+    });
+    mockEnvironmentService.getById.mockImplementation(async () => environment);
+    mockEnvironmentService.update.mockImplementation(async (_id, patch) => environment = { ...environment, ...patch });
+    mockSecretService.replaceSecretRefsForInstanceTarget.mockImplementation(async (_target, _refs, options) => {
+      expect(options.db).toBe(routeDbTx);
+      boundSecret = environment.config.apiKeySecretRef.secretId;
+      return [];
+    });
+    mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableBoatEnvironments: true });
+    mockComputerAttach.mockImplementation(async input => {
+      expect(transactionOpen).toBe(true);
+      expect(mockComputerServiceDb).toHaveBeenLastCalledWith(routeDbTx);
+      expect(boundSecret).toBe(nextSecret);
+      expect(input.apiKeySecretRef.secretId).toBe(nextSecret);
+      if (!succeeds) throw conflict("Boat rejected the replacement key");
+      return { computerId: "computer-1" };
+    });
+    try {
+      const app = createApp({ type: "board", userId: "user-1", source: "local_implicit" });
+      const res = await request(app).patch(`/api/environments/${environment.id}`).send({
+        config: { apiKeySecretRef: { type: "secret_ref", secretId: nextSecret } },
+      });
+      expect(res.status, JSON.stringify(res.body)).toBe(succeeds ? 200 : 409);
+      expect(environment.config.apiKeySecretRef.secretId).toBe(succeeds ? nextSecret : priorSecret);
+      expect(boundSecret).toBe(succeeds ? nextSecret : priorSecret);
+      expect(mockComputerAttach).toHaveBeenCalledOnce();
+      if (!succeeds) expect(mockLogActivity).not.toHaveBeenCalled();
+    } finally { transaction.mockRestore(); }
   });
 
   it("logs a redacted update summary instead of raw config or metadata", async () => {

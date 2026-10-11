@@ -8,6 +8,9 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "../../__tests__/helpers/embedded-postgres.js";
 import { environmentRunOrchestrator } from "../environment-run-orchestrator.js";
+import { computerService } from "../../modules/computers/index.js";
+import { createComputerEnvironmentDriver } from "../computer-environment-driver.js";
+import { buildWorkspaceRealizationRequest, readWorkspaceRealizationRequest } from "../workspace-realization.js";
 import { environmentService } from "../environments.js";
 import { executionWorkspaceService } from "../execution-workspaces.js";
 import { instanceSettingsService } from "../instance-settings.js";
@@ -217,6 +220,45 @@ describe.skipIf(!support.supported)("heartbeat workspace preparation boundary", 
     expect(acquire).not.toHaveBeenCalled();
     expect(await leases(input.run.id)).toHaveLength(0);
     expect(input.nativeRunnerPreparationSpans).toMatchObject([{ name: "environment.acquire", outcome: "failed" }]);
+  });
+
+  it("rejects an existing Boat branch with a shared workspace strategy before acquisition", async () => {
+    const { input, envOrchestrator } = await fixture();
+    input.environment.selectedEnvironmentForConfig = { ...input.environment.selectedEnvironmentForConfig!, driver: "computer" };
+    input.config.mergedConfig = { workspaceStrategy: { type: "project_primary", existingBranch: "operator/retained" } };
+    const acquire = vi.spyOn(envOrchestrator, "acquireForRun");
+    await expect(prepareHeartbeatWorkspace(db, input)).rejects.toMatchObject({
+      resultJson: { workspaceValidation: { reason: "existing_branch_requires_git_worktree" } },
+    });
+    expect(acquire).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("preserves Boat workspace base and existing-branch selection (%s)", async existing => {
+    const { input, envOrchestrator } = await fixture(true);
+    input.environment.selectedEnvironmentForConfig = { ...input.environment.selectedEnvironmentForConfig!, driver: "computer" };
+    input.config.mergedConfig = { workspaceStrategy: { type: "git_worktree", baseRef: "release-base",
+      ...(existing ? { existingBranch: "operator/retained" } : {}) } };
+    const stopBeforeRemote = new Error("captured remote realization");
+    const realize = vi.spyOn(envOrchestrator, "realizeForRun").mockRejectedValue(stopBeforeRemote);
+    await expect(prepareHeartbeatWorkspace(db, input)).rejects.toBe(stopBeforeRemote);
+    expect(realize).toHaveBeenCalledOnce();
+    expect(realize.mock.calls[0]![0].executionWorkspace).toMatchObject({
+      repoRef: "release-base", branchName: existing ? "operator/retained" : `paperclip/task-${input.task.issueId}`,
+      branchCreatedByRuntime: false,
+    });
+    const args = realize.mock.calls[0]![0];
+    const request = readWorkspaceRealizationRequest(buildWorkspaceRealizationRequest({ adapterType: input.agent.adapterType,
+      companyId: input.agent.companyId, environmentId: input.environment.selectedEnvironmentId,
+      executionWorkspaceId: null, issueId: input.task.issueId, heartbeatRunId: input.run.id,
+      requestedMode: "isolated_workspace", workspace: args.executionWorkspace, workspaceConfig: null }))!;
+    const remote = vi.spyOn(computerService(db), "realizeWorkspace").mockResolvedValue({
+      remoteCwd: "/home/user/project/task", agentHome: "/home/user/agent", placementId: "placement" });
+    await createComputerEnvironmentDriver(db).realizeWorkspace!({ environment: args.environment,
+      lease: { ...args.lease, providerLeaseId: "owner", metadata: { computerOwner: { computerId: "computer", ownerId: "owner", generation: 1 } } },
+      workspace: { localPath: args.executionWorkspace.cwd, metadata: { workspaceRealizationRequest: request } } });
+    expect(remote).toHaveBeenCalledWith(expect.objectContaining({ baseRef: "release-base",
+      branch: existing ? "operator/retained" : `paperclip/task-${input.task.issueId}`,
+      existingBranch: existing ? "operator/retained" : undefined }));
   });
 
   it("binds a replacement workspace from realization and snapshots the restore lease", async () => {

@@ -6,7 +6,8 @@ import {
   type Ledger,
 } from "../domain/ledger.js";
 import type { ComputerRepository } from "../application/ports.js";
-export function computerRepository(db: Db): ComputerRepository {
+export type ComputerDatabase = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
+export function computerRepository(db: ComputerDatabase): ComputerRepository {
   const decode = (row: typeof computers.$inferSelect): ComputerRecord => ({
     ...row,
     ledger: row.ledger as unknown as Ledger,

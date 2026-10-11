@@ -332,7 +332,7 @@ describe("server adapter registry", () => {
     expect(config).not.toHaveProperty("engine");
   });
 
-  it("verifies the Claude harness on a computer after checking its platform", async () => {
+  it.each([true, false])("retains the unverified ACPX warning after a computer Claude CLI probe (succeeds: %s)", async (succeeds) => {
     const calls: string[] = [];
     const result = await requireServerAdapter("paperclip_runner").testEnvironment({
       companyId: "company-1", adapterType: "paperclip_runner",
@@ -342,13 +342,15 @@ describe("server adapter registry", () => {
           calls.push(input.command);
           const stdout = input.command === "claude" ? JSON.stringify({ type: "result", result: "hello", usage: { input_tokens: 1, output_tokens: 1 } })
             : input.args?.some(arg => arg.includes("uname -s")) ? "Linux\nx86_64\n" : "";
-          return { exitCode: 0, timedOut: false, stdout, stderr: "", signal: null, pid: null, startedAt: new Date().toISOString() };
+          return { exitCode: input.command === "claude" && !succeeds ? 1 : 0, timedOut: false, stdout, stderr: "", signal: null, pid: null, startedAt: new Date().toISOString() };
         } },
       } as never,
     });
     expect(calls).toContain("claude");
-    expect(result.checks).toContainEqual(expect.objectContaining({ code: "claude_hello_probe_passed", level: "info" }));
-    expect(result.checks.some(check => check.level === "error")).toBe(false);
+    expect(result.status).toBe(succeeds ? "warn" : "fail");
+    expect(result.checks).toContainEqual(expect.objectContaining({ code: "acpx_remote_runtime_unverified", level: "warn" }));
+    if (succeeds) expect(result.checks).toContainEqual(expect.objectContaining({ code: "claude_hello_probe_passed", level: "info" }));
+    expect(result.checks.some(check => check.level === "error")).toBe(!succeeds);
   });
 
   it.each([true, false])("checks actual local ACPX installation readiness (%s)", async (ready) => {
