@@ -1,0 +1,14 @@
+{
+  "checkedAt": "2026-10-11T08:28:45.216972+00:00",
+  "controllerSource": "9808eae33768f4a8beb31f3955737713a5f737ae",
+  "selectedArtifactPaths": {
+    "PAPERCLIP_RUNNER_REMOTE_BINARY_PATH": "/tmp/boat-architect/linux-turn-diagnostics-86c1aa/paperclip-runnerd",
+    "PAPERCLIP_RUNNER_REMOTE_PROVIDER_PACK_PATH": "/tmp/boat-architect/linux-turn-diagnostics-86c1aa/provider-pack"
+  },
+  "diagnosticsOptIn": "Inherited launch flag stripped by test-drive prepareTestDriveEnvironment before saved.env loading",
+  "preservedData": true,
+  "artifactSource": "86c1aa2b0c53b1b41888cea6b8e04e42e28dd05c",
+  "previousGracefulDrainInterruptedRuns": 0,
+  "diagnosticsEnabled": false,
+  "instrumentationOutcome": "inconclusive: disabled"
+}

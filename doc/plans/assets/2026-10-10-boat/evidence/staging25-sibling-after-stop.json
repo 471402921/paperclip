@@ -1,0 +1,401 @@
+{
+  "observedAt": "2026-10-11T08:56:26.133Z",
+  "providerId": "bx_b8sawfyp",
+  "providerObserved": {
+    "state": "idle",
+    "health": "ok",
+    "stopStatus": "completed"
+  },
+  "guestRead": true,
+  "exitCode": 0,
+  "timedOut": false,
+  "data": {
+    "at": "2026-10-11T08:56:28.653518+00:00",
+    "bootId": "082f50cb-7577-45e3-89d2-e20f650f482c",
+    "processes": [
+      {
+        "pid": 177566,
+        "parentPid": 1319,
+        "name": "MainThread",
+        "state": "S",
+        "startTicks": 125182,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "runtime": "legacy_claude"
+      },
+      {
+        "pid": 178326,
+        "parentPid": 1319,
+        "name": "python3",
+        "state": "S",
+        "startTicks": 125685,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "runtime": "legacy_claude",
+        "foregroundJobMatch": false
+      },
+      {
+        "pid": 178334,
+        "parentPid": 178326,
+        "name": "bash",
+        "state": "S",
+        "startTicks": 125688,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "runtime": "legacy_claude"
+      },
+      {
+        "pid": 178337,
+        "parentPid": 178334,
+        "name": "bash",
+        "state": "S",
+        "startTicks": 125688,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "runtime": "legacy_claude"
+      },
+      {
+        "pid": 178338,
+        "parentPid": 178334,
+        "name": "tee",
+        "state": "S",
+        "startTicks": 125688,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "runtime": "legacy_claude"
+      },
+      {
+        "pid": 178339,
+        "parentPid": 178337,
+        "name": "bash",
+        "state": "S",
+        "startTicks": 125688,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "runtime": "legacy_claude"
+      },
+      {
+        "pid": 178340,
+        "parentPid": 178337,
+        "name": "tee",
+        "state": "S",
+        "startTicks": 125688,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "runtime": "legacy_claude"
+      },
+      {
+        "pid": 178341,
+        "parentPid": 178339,
+        "name": "claude",
+        "state": "S",
+        "startTicks": 125688,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "runtime": "legacy_claude"
+      },
+      {
+        "pid": 181156,
+        "parentPid": 178341,
+        "name": "bash",
+        "state": "S",
+        "startTicks": 127354,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "runtime": "legacy_claude"
+      },
+      {
+        "pid": 181157,
+        "parentPid": 181156,
+        "name": "python3",
+        "state": "S",
+        "startTicks": 127354,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "runtime": "legacy_claude",
+        "foregroundJobMatch": true,
+        "expectedDurationSeconds": 600,
+        "processAgeSeconds": 104.81
+      }
+    ],
+    "expectedChecks": [
+      {
+        "pid": 177566,
+        "startTicks": 125182,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "sameBoot": true,
+        "exists": true,
+        "exactIdentityAlive": true,
+        "current": {
+          "pid": 177566,
+          "parentPid": 1319,
+          "name": "MainThread",
+          "state": "S",
+          "startTicks": 125182,
+          "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163"
+        }
+      },
+      {
+        "pid": 178326,
+        "startTicks": 125685,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "sameBoot": true,
+        "exists": true,
+        "exactIdentityAlive": true,
+        "current": {
+          "pid": 178326,
+          "parentPid": 1319,
+          "name": "python3",
+          "state": "S",
+          "startTicks": 125685,
+          "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163"
+        }
+      },
+      {
+        "pid": 178334,
+        "startTicks": 125688,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "sameBoot": true,
+        "exists": true,
+        "exactIdentityAlive": true,
+        "current": {
+          "pid": 178334,
+          "parentPid": 178326,
+          "name": "bash",
+          "state": "S",
+          "startTicks": 125688,
+          "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163"
+        }
+      },
+      {
+        "pid": 178337,
+        "startTicks": 125688,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "sameBoot": true,
+        "exists": true,
+        "exactIdentityAlive": true,
+        "current": {
+          "pid": 178337,
+          "parentPid": 178334,
+          "name": "bash",
+          "state": "S",
+          "startTicks": 125688,
+          "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163"
+        }
+      },
+      {
+        "pid": 178338,
+        "startTicks": 125688,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "sameBoot": true,
+        "exists": true,
+        "exactIdentityAlive": true,
+        "current": {
+          "pid": 178338,
+          "parentPid": 178334,
+          "name": "tee",
+          "state": "S",
+          "startTicks": 125688,
+          "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163"
+        }
+      },
+      {
+        "pid": 178339,
+        "startTicks": 125688,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "sameBoot": true,
+        "exists": true,
+        "exactIdentityAlive": true,
+        "current": {
+          "pid": 178339,
+          "parentPid": 178337,
+          "name": "bash",
+          "state": "S",
+          "startTicks": 125688,
+          "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163"
+        }
+      },
+      {
+        "pid": 178340,
+        "startTicks": 125688,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "sameBoot": true,
+        "exists": true,
+        "exactIdentityAlive": true,
+        "current": {
+          "pid": 178340,
+          "parentPid": 178337,
+          "name": "tee",
+          "state": "S",
+          "startTicks": 125688,
+          "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163"
+        }
+      },
+      {
+        "pid": 178341,
+        "startTicks": 125688,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "sameBoot": true,
+        "exists": true,
+        "exactIdentityAlive": true,
+        "current": {
+          "pid": 178341,
+          "parentPid": 178339,
+          "name": "claude",
+          "state": "S",
+          "startTicks": 125688,
+          "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163"
+        }
+      },
+      {
+        "pid": 181156,
+        "startTicks": 127354,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "sameBoot": true,
+        "exists": true,
+        "exactIdentityAlive": true,
+        "current": {
+          "pid": 181156,
+          "parentPid": 178341,
+          "name": "bash",
+          "state": "S",
+          "startTicks": 127354,
+          "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163"
+        }
+      },
+      {
+        "pid": 181157,
+        "startTicks": 127354,
+        "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "sameBoot": true,
+        "exists": true,
+        "exactIdentityAlive": true,
+        "current": {
+          "pid": 181157,
+          "parentPid": 181156,
+          "name": "python3",
+          "state": "S",
+          "startTicks": 127354,
+          "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163"
+        }
+      },
+      {
+        "pid": 187290,
+        "startTicks": 130872,
+        "ownerId": "382edf5c-aeec-4ce2-89b9-a4cdde9687d8",
+        "agentId": "d227579b-7543-4c8c-94aa-9dfea261fa16",
+        "sameBoot": true,
+        "exists": false,
+        "exactIdentityAlive": false
+      },
+      {
+        "pid": 188759,
+        "startTicks": 131474,
+        "ownerId": "382edf5c-aeec-4ce2-89b9-a4cdde9687d8",
+        "agentId": "d227579b-7543-4c8c-94aa-9dfea261fa16",
+        "sameBoot": true,
+        "exists": false,
+        "exactIdentityAlive": false
+      },
+      {
+        "pid": 188780,
+        "startTicks": 131476,
+        "ownerId": "382edf5c-aeec-4ce2-89b9-a4cdde9687d8",
+        "agentId": "d227579b-7543-4c8c-94aa-9dfea261fa16",
+        "sameBoot": true,
+        "exists": false,
+        "exactIdentityAlive": false
+      },
+      {
+        "pid": 188783,
+        "startTicks": 131477,
+        "ownerId": "382edf5c-aeec-4ce2-89b9-a4cdde9687d8",
+        "agentId": "d227579b-7543-4c8c-94aa-9dfea261fa16",
+        "sameBoot": true,
+        "exists": false,
+        "exactIdentityAlive": false
+      },
+      {
+        "pid": 188784,
+        "startTicks": 131477,
+        "ownerId": "382edf5c-aeec-4ce2-89b9-a4cdde9687d8",
+        "agentId": "d227579b-7543-4c8c-94aa-9dfea261fa16",
+        "sameBoot": true,
+        "exists": false,
+        "exactIdentityAlive": false
+      },
+      {
+        "pid": 188785,
+        "startTicks": 131477,
+        "ownerId": "382edf5c-aeec-4ce2-89b9-a4cdde9687d8",
+        "agentId": "d227579b-7543-4c8c-94aa-9dfea261fa16",
+        "sameBoot": true,
+        "exists": false,
+        "exactIdentityAlive": false
+      },
+      {
+        "pid": 188786,
+        "startTicks": 131477,
+        "ownerId": "382edf5c-aeec-4ce2-89b9-a4cdde9687d8",
+        "agentId": "d227579b-7543-4c8c-94aa-9dfea261fa16",
+        "sameBoot": true,
+        "exists": false,
+        "exactIdentityAlive": false
+      },
+      {
+        "pid": 188787,
+        "startTicks": 131477,
+        "ownerId": "382edf5c-aeec-4ce2-89b9-a4cdde9687d8",
+        "agentId": "d227579b-7543-4c8c-94aa-9dfea261fa16",
+        "sameBoot": true,
+        "exists": false,
+        "exactIdentityAlive": false
+      },
+      {
+        "pid": 188795,
+        "startTicks": 131479,
+        "ownerId": "382edf5c-aeec-4ce2-89b9-a4cdde9687d8",
+        "agentId": "d227579b-7543-4c8c-94aa-9dfea261fa16",
+        "sameBoot": true,
+        "exists": false,
+        "exactIdentityAlive": false
+      },
+      {
+        "pid": 189945,
+        "startTicks": 131927,
+        "ownerId": "382edf5c-aeec-4ce2-89b9-a4cdde9687d8",
+        "agentId": "d227579b-7543-4c8c-94aa-9dfea261fa16",
+        "sameBoot": true,
+        "exists": false,
+        "exactIdentityAlive": false
+      }
+    ],
+    "proofs": [
+      {
+        "agentId": "d227579b-7543-4c8c-94aa-9dfea261fa16",
+        "runtime": "legacy_codex",
+        "relativeName": "boat-final-proof.txt",
+        "read": false,
+        "skipReason": "no_live_owned_process"
+      },
+      {
+        "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+        "runtime": "legacy_claude",
+        "relativeName": "boat-final-proof.txt",
+        "read": true,
+        "bytes": 25,
+        "sha256": "ec9169f87b99329a3a24fe194d2cff1a43fb29ef8374d1317ccc28bb83be0ddc"
+      }
+    ]
+  }
+}

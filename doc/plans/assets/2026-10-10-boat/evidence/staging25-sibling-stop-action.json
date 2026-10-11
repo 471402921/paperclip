@@ -1,0 +1,12 @@
+{
+  "action": "normal UI Stop on BOA-4 only",
+  "before": "2026-10-11T08:55:49.062Z",
+  "after": "2026-10-11T08:55:49.359Z",
+  "runId": "3f718fd1-1049-4200-bca8-8b2ac377791d",
+  "targetPid": 189945,
+  "targetStartTicks": 131927,
+  "siblingPid": 181157,
+  "siblingStartTicks": 127354,
+  "beforeGuestReceipt": "retry-staging-25-sibling-before6.json",
+  "beforeControllerSnapshot": "staging25-sibling-setup-before-stop-console.txt"
+}

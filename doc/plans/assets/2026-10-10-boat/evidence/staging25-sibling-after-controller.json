@@ -1,0 +1,167 @@
+{
+  "observedAt": "2026-10-11T08:56:15.380Z",
+  "source": "staging25_scoped_read_only",
+  "companyId": "76e38a59-75e7-5ff8-a4bf-ebb78a7b8ebe",
+  "runs": [
+    {
+      "runId": "3f718fd1-1049-4200-bca8-8b2ac377791d",
+      "agentId": "d227579b-7543-4c8c-94aa-9dfea261fa16",
+      "taskId": "612d0551-2947-435e-9b7d-d64dc584a41a",
+      "runtime": "legacy_codex",
+      "status": "cancelled",
+      "startedAt": "2026-10-11T08:54:01.791Z",
+      "finishedAt": "2026-10-11T08:55:49.300Z",
+      "errorCode": "cancelled",
+      "categories": [],
+      "nativeSessionId": null,
+      "runnerInstanceId": null
+    },
+    {
+      "runId": "297bbc52-a529-4906-88cd-7d398ba0a6c3",
+      "agentId": "d227579b-7543-4c8c-94aa-9dfea261fa16",
+      "taskId": "612d0551-2947-435e-9b7d-d64dc584a41a",
+      "runtime": "legacy_codex",
+      "status": "succeeded",
+      "startedAt": "2026-10-11T08:46:47.397Z",
+      "finishedAt": "2026-10-11T08:53:49.542Z",
+      "errorCode": null,
+      "categories": [],
+      "nativeSessionId": null,
+      "runnerInstanceId": null
+    },
+    {
+      "runId": "f4881989-1914-49c7-837c-d68a2cbb4302",
+      "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+      "taskId": "8a437e8b-3a17-4ec6-8bda-9aab1c067c29",
+      "runtime": "legacy_claude",
+      "status": "running",
+      "startedAt": "2026-10-11T08:53:12.664Z",
+      "finishedAt": null,
+      "errorCode": null,
+      "categories": [],
+      "nativeSessionId": null,
+      "runnerInstanceId": null
+    },
+    {
+      "runId": "0514f033-343e-48d8-8a07-1d489967e7de",
+      "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+      "taskId": "8a437e8b-3a17-4ec6-8bda-9aab1c067c29",
+      "runtime": "legacy_claude",
+      "status": "succeeded",
+      "startedAt": "2026-10-11T08:42:24.042Z",
+      "finishedAt": "2026-10-11T08:49:33.046Z",
+      "errorCode": null,
+      "categories": [],
+      "nativeSessionId": null,
+      "runnerInstanceId": null
+    }
+  ],
+  "leases": [
+    {
+      "id": "4d2f0d98-8bf4-4060-a296-de6d99537409",
+      "runId": "297bbc52-a529-4906-88cd-7d398ba0a6c3",
+      "status": "released",
+      "cleanupStatus": "success",
+      "acquiredAt": "2026-10-11T08:46:58.559Z",
+      "releasedAt": "2026-10-11T08:53:55.194Z",
+      "expiresAt": null,
+      "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+      "ownerId": "6ca5df91-0846-4b4c-b2fd-bd86775ffd72",
+      "generation": 1
+    },
+    {
+      "id": "ad470c50-2de0-484d-aab6-c981129af98a",
+      "runId": "f4881989-1914-49c7-837c-d68a2cbb4302",
+      "status": "active",
+      "cleanupStatus": null,
+      "acquiredAt": "2026-10-11T08:53:22.410Z",
+      "releasedAt": null,
+      "expiresAt": null,
+      "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+      "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+      "generation": 1
+    },
+    {
+      "id": "861dfa16-c7fe-4b97-9834-b9ce434817f1",
+      "runId": "3f718fd1-1049-4200-bca8-8b2ac377791d",
+      "status": "expired",
+      "cleanupStatus": "success",
+      "acquiredAt": "2026-10-11T08:54:11.766Z",
+      "releasedAt": "2026-10-11T08:56:12.648Z",
+      "expiresAt": null,
+      "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+      "ownerId": "382edf5c-aeec-4ce2-89b9-a4cdde9687d8",
+      "generation": 1
+    },
+    {
+      "id": "5264773c-f991-4fb3-a0d4-1a7dca7d44d8",
+      "runId": "0514f033-343e-48d8-8a07-1d489967e7de",
+      "status": "released",
+      "cleanupStatus": "success",
+      "acquiredAt": "2026-10-11T08:42:32.959Z",
+      "releasedAt": "2026-10-11T08:49:39.320Z",
+      "expiresAt": null,
+      "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+      "ownerId": "031244f8-812a-43bf-bdc3-a0be83425b0f",
+      "generation": 1
+    }
+  ],
+  "owners": [
+    {
+      "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+      "ledgerStatus": "attached",
+      "actionPresent": false,
+      "ownerId": "031244f8-812a-43bf-bdc3-a0be83425b0f",
+      "runId": "0514f033-343e-48d8-8a07-1d489967e7de",
+      "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+      "generation": 1,
+      "phase": "retired",
+      "admittedAt": "2026-10-11T08:42:27.173Z",
+      "deadline": null,
+      "retirementDeadline": null,
+      "processBindingPresent": false
+    },
+    {
+      "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+      "ledgerStatus": "attached",
+      "actionPresent": false,
+      "ownerId": "6ca5df91-0846-4b4c-b2fd-bd86775ffd72",
+      "runId": "297bbc52-a529-4906-88cd-7d398ba0a6c3",
+      "agentId": "d227579b-7543-4c8c-94aa-9dfea261fa16",
+      "generation": 1,
+      "phase": "retired",
+      "admittedAt": "2026-10-11T08:46:53.031Z",
+      "deadline": null,
+      "retirementDeadline": null,
+      "processBindingPresent": false
+    },
+    {
+      "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+      "ledgerStatus": "attached",
+      "actionPresent": false,
+      "ownerId": "eb0f40f6-f16f-4e17-b887-de8e2db37163",
+      "runId": "f4881989-1914-49c7-837c-d68a2cbb4302",
+      "agentId": "644df48a-6c38-4bfb-8f8e-1dec3253ee55",
+      "generation": 1,
+      "phase": "active",
+      "admittedAt": "2026-10-11T08:53:16.520Z",
+      "deadline": null,
+      "retirementDeadline": null,
+      "processBindingPresent": false
+    },
+    {
+      "computerId": "6d53efb3-5b96-4694-a1c1-9746dc8278f0",
+      "ledgerStatus": "attached",
+      "actionPresent": false,
+      "ownerId": "382edf5c-aeec-4ce2-89b9-a4cdde9687d8",
+      "runId": "3f718fd1-1049-4200-bca8-8b2ac377791d",
+      "agentId": "d227579b-7543-4c8c-94aa-9dfea261fa16",
+      "generation": 1,
+      "phase": "retired",
+      "admittedAt": "2026-10-11T08:54:05.018Z",
+      "deadline": null,
+      "retirementDeadline": null,
+      "processBindingPresent": false
+    }
+  ]
+}
