@@ -168,6 +168,15 @@ are unavailable. Accepting a native plan ends the planning run successfully whil
 the task waits for the next instruction. See the
 [Cursor release report](../../doc/plans/2026-10-03-cursor-production-readiness.md).
 
+New provider packs declare `payload.fileLayout: "independent-regular-files-v1"`.
+The builder separates hardlinked regular files in its unpublished temporary tree,
+preserving file bytes, modes, and symlinks. The policy participates in the manifest
+digest, so a new layout cannot reuse a legacy cache identity. Controller and guest
+verification reject unknown policies and hardlinked files under this policy.
+Existing manifests without the field retain their original immutable contract;
+they are not rewritten or repaired during session reuse. Runtime module and
+executable integrity guards remain unchanged.
+
 A release includes all three platform daemons and the Linux provider-pack identity
 from its matching Daytona image. Run `stage:release-binaries` with a manifest that
 binds each daemon path and SHA-256, plus `remoteProviderPack: {path, sha256}` for

@@ -20,6 +20,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { parseProviderPackArguments, materializeCandidateProviderPack, providerPackProviders, providerPackManifestFields } from "./candidate-provider-pack.mjs";
+import { materializeIndependentProviderPackFiles, PROVIDER_PACK_FILE_LAYOUT } from "./provider-pack-file-layout.mjs";
 import { buildNodeStartupTimeout } from "./build-node-startup-timeout.mjs";
 import { writePortableExecutableShim, writePortableCopilotShims } from "./provider-pack-executable-shims.mjs";
 
@@ -277,6 +278,8 @@ try {
     }
   }
 
+  materializeIndependentProviderPackFiles(temporaryRoot);
+
   const opencodeProxySha = sha256File(join(temporaryRoot, opencodeProxyPath));
   const acpxSidecarSha = sha256File(join(temporaryRoot, acpxSidecarPath));
   const distDigest = sha256Tree(join(temporaryRoot, "dist"));
@@ -297,6 +300,7 @@ try {
         cwd: workspaceRoot,
       }).status !== 0;
   const payload = {
+    fileLayout: PROVIDER_PACK_FILE_LAYOUT,
     pins: {
       nodeMinimum: minimumNodeVersion.join("."),
       codex: profiles.profiles.codex.agentRuntimeVersion,

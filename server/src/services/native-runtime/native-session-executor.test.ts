@@ -8,6 +8,7 @@ import {
   chmod,
   cp,
   lstat,
+  link,
   mkdir,
   mkdtemp,
   open,
@@ -1289,6 +1290,28 @@ describe("remote provider pack manifest", () => {
     expect(readRemoteProviderPackManifest(root).payload.pins.opencode).toBe(
       "1.18.34",
     );
+    // Content digests cannot distinguish hardlinks from independent files.
+    const legacyDigest = readRemoteProviderPackManifest(root).digest;
+    const alias = join(root, "node_modules", "node-alias");
+    await link(join(root, "node_modules", "node", "bin", "node"), alias);
+    expect(readRemoteProviderPackManifest(root).digest).toBe(legacyDigest);
+    Object.assign(payload, { fileLayout: "independent-regular-files-v1" });
+    await writeManifest();
+    expect(() => readRemoteProviderPackManifest(root)).toThrow("provider pack file layout");
+    expect((await lstat(alias)).nlink).toBe(2); // Reject; never repair immutable caches.
+    await rm(alias);
+    const independent = readRemoteProviderPackManifest(root);
+    expect(independent.digest).not.toBe(legacyDigest);
+    expect(readBundledRemoteProviderPackManifest(join(root, "provider-pack.json")).digest).toBe(independent.digest);
+    expect(independent.payload.distDigest).toBe(payload.distDigest);
+    expect(readRemoteProviderPackManifest(root).digest).toBe(independent.digest);
+    Object.assign(payload, { fileLayout: "unknown-policy" });
+    await writeManifest();
+    expect(() => readRemoteProviderPackManifest(root)).toThrow("provider pack file layout");
+    expect(() => readBundledRemoteProviderPackManifest(join(root, "provider-pack.json"))).toThrow("provider pack file layout");
+    delete (payload as typeof payload & { fileLayout?: string }).fileLayout;
+    await writeManifest();
+    expect(readRemoteProviderPackManifest(root).digest).toBe(legacyDigest);
     const cursorPath = "provider-assets/cursor/linux-x64";
     await mkdir(join(root, cursorPath), { recursive: true });
     await writeFile(join(root, cursorPath, "runtime"), "pinned Cursor runtime");
