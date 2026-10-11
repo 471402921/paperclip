@@ -51,7 +51,8 @@ import {
   reconcileRetainedNativeSessionCleanup,
   reconcileRetainedNativeSessionCleanups,
 } from "../native-runtime/index.js";
-import { drainRetainedRunnerdMaintenanceOperations } from "../../vendor/paperclip-runner/index.js";
+import { readNativeComputerWorkspaceReference } from "../native-runtime/native-workspace-sync.js";
+import { drainRetainedRunnerdMaintenanceOperations, parseNativeExecutionInput } from "../../vendor/paperclip-runner/index.js";
 import { runningProcesses } from "../../adapters/index.js";
 import { parseObject } from "../../adapters/utils.js";
 import {
@@ -1838,9 +1839,30 @@ export function createHeartbeatRecovery(db: Db, dependencies: HeartbeatRecoveryD
     succeeded: boolean;
   }) {
     const settledRun = await getRun(input.runId);
-    const workspaceSyncReference = readNativeWorkspaceSyncReference(
-      parseObject(settledRun?.runnerProfileJson).nativeWorkspaceSync,
-    );
+    const profile = parseObject(settledRun?.runnerProfileJson);
+    const workspaceSyncReference = readNativeWorkspaceSyncReference(profile.nativeWorkspaceSync);
+    let computerLifecycle: { mode: "warm" | "per_turn" } | null = null;
+    if (settledRun?.runtimeMode === "native" &&
+        settledRun.companyId === input.companyId && settledRun.agentId === input.agentId &&
+        !profile.nativeWorkspaceSync && !parseObject(settledRun.resultJson).workspaceExportRetry &&
+        readNativeComputerWorkspaceReference(profile.nativeComputerWorkspace)) {
+      try {
+        const execution = parseNativeExecutionInput(profile.nativeExecutionInput);
+        if (execution.binding.runId === input.runId && execution.binding.companyId === input.companyId &&
+            execution.binding.agentId === input.agentId &&
+            execution.binding.issueId === (settledRun.nativeIssueId ?? settledRun.issueId)) {
+          computerLifecycle = execution.session.lifecyclePolicy;
+        }
+      } catch { /* Unreadable persisted policy cannot earn warm retention. */ }
+    }
+    // Persistent computer workspaces never hand off copy-back. The local
+    // executor owns this suffix until its finally releases the lease; recovery
+    // must not stop its warm session between terminalization and that release.
+    // Sandbox copy-back callbacks still own their explicitly delegated suffix.
+    if (computerLifecycle && activeRunExecutions.has(input.runId)) return;
+    const resourceDisposition = computerLifecycle?.mode === "warm" && settledRun?.status === "succeeded"
+      ? "keep_running"
+      : workspaceSyncReference?.resourceDisposition ?? "stop_and_retain";
     await releaseEnvironmentLeasesForRun({
       runId: input.runId,
       companyId: input.companyId,
@@ -1848,7 +1870,7 @@ export function createHeartbeatRecovery(db: Db, dependencies: HeartbeatRecoveryD
       status: settledRun?.status,
       failureReason: settledRun?.error ?? undefined,
       providerResourceDisposition: input.succeeded && (!parseObject(settledRun?.resultJson).workspaceExportRetry || workspaceSyncReference?.resourceDisposition === "destroy")
-        ? (workspaceSyncReference?.resourceDisposition ?? "stop_and_retain")
+        ? resourceDisposition
         : "stop_and_retain",
     });
     await releaseRuntimeServicesForRun(input.runId).catch(() => undefined);
