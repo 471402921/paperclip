@@ -9444,6 +9444,19 @@ describe("workspace realization request additionalSources", () => {
     };
   }
 
+  it.each([undefined, "operator/retained"])("round-trips exact-branch intent independently of branch ownership (%s)", existingBranch => {
+    const workspace = buildRealizedWorkspace({ strategy: "git_worktree", branchName: existingBranch ?? "new-task-branch",
+      existingBranch, branchCreatedByRuntime: false });
+    const request = buildWorkspaceRealizationRequest({ adapterType: "codex", companyId: "company-1",
+      environmentId: "environment-1", executionWorkspaceId: null, issueId: "issue-1", heartbeatRunId: "run-1",
+      requestedMode: "isolated_workspace", workspace, workspaceConfig: null });
+    const parsed = readWorkspaceRealizationRequest(JSON.parse(JSON.stringify(request)));
+    expect(parsed?.source.existingBranch).toBe(existingBranch);
+    expect(parsed?.source.branchName).toBe(workspace.branchName);
+    expect(workspace.branchCreatedByRuntime).toBe(false);
+    if (!existingBranch) expect(request.source).not.toHaveProperty("existingBranch");
+  });
+
   it("round-trips additionalSources and runtime provisioning through build/read realization request", () => {
     const workspace = buildRealizedWorkspace({
       additionalWorkspaces: [
