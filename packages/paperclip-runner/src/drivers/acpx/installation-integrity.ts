@@ -1990,7 +1990,16 @@ function snapshotBootstrap(format: AcpxCommandFormat, guarded = false): string {
     "} finally { fs.closeSync(moduleFd); }",
     "});",
     "} });",
-    "import(target).catch((error) => { console.error(error); process.exitCode = 1; });",
+    // A guardian stream intentionally keeps the provider alive. A failed module
+    // import must use the existing owned-group reaper or ACP initialize waits
+    // until its deadline. process.exit can itself wait on the guardian pipe read.
+    // Capture these before provider code runs; emit a closed marker synchronously
+    // so the existing startup-error classifier survives truncated private stderr.
+    "const writeImportFailure = fs.writeSync.bind(fs);",
+    guarded
+      ? "const exitOnImportFailure = reapOnGuardianLoss;"
+      : "const exitOnImportFailure = process.exit.bind(process);",
+    'import(target).catch((error) => { let category = "OTHER"; try { if (error?.code === "ERR_ACPX_UNVERIFIED_MODULE") category = "UNVERIFIED_MODULE"; } catch {} try { writeImportFailure(2, "PAPERCLIP_ACPX_IMPORT_FAILURE:" + category + "\\n"); console.error(error); } finally { exitOnImportFailure(1); } });',
   ].join("");
 }
 

@@ -88,6 +88,10 @@ function directAcpxSidecarErrorCode(error: Error): string | null {
 
   const stderr =
     typeof details.stderrSummary === "string" ? details.stderrSummary : "";
+  // Bootstrap writes this fixed marker before printing private error details and
+  // terminating. Never copy those details into the public classification.
+  const importFailure = /(?:^|\n)PAPERCLIP_ACPX_IMPORT_FAILURE:(UNVERIFIED_MODULE|OTHER)(?:\r?\n|$)/.exec(stderr);
+  if (importFailure?.[1] === "UNVERIFIED_MODULE") return "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE";
   if (/ERR_ACPX_UNVERIFIED_MODULE/.test(stderr)) {
     return "AGENT_STARTUP_FAILED.UNVERIFIED_MODULE";
   }
@@ -106,6 +110,7 @@ function directAcpxSidecarErrorCode(error: Error): string | null {
   if (/ERR_INVALID_ARG|invalid argument/i.test(stderr)) {
     return "AGENT_STARTUP_FAILED.INVALID_ARGUMENT";
   }
+  if (importFailure) return "AGENT_STARTUP_FAILED.OTHER";
   if (!stderr.trim()) return "AGENT_STARTUP_FAILED.NO_STDERR";
   if (typeof details.signal === "string" && details.signal) {
     return "AGENT_STARTUP_FAILED.SIGNAL";
