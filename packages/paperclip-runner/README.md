@@ -66,8 +66,8 @@ are allowed. Relative PATH entries use the selected process working directory.
 Compatibility is established by the actual protocol or login attempt.
 Missing executables and real protocol failures still return actionable errors.
 Package identity and executable containment remain checked. Browser login keeps
-its existing provider-specific credential home. Linux ARM64 retains its existing
-legacy login path because native execution is not qualified there.
+its existing provider-specific credential home and uses the native Codex resolver
+on supported Linux and macOS targets, including Linux ARM64.
 
 Exact dependency pins remain release and ACPX artifact-qualification checks.
 They make published builds reproducible and verify sandbox artifacts; they do not
@@ -168,7 +168,7 @@ are unavailable. Accepting a native plan ends the planning run successfully whil
 the task waits for the next instruction. See the
 [Cursor release report](../../doc/plans/2026-10-03-cursor-production-readiness.md).
 
-A release includes all three platform daemons and the Linux provider-pack identity
+A release includes all four platform daemons and the Linux provider-pack identity
 from its matching Daytona image. Run `stage:release-binaries` with a manifest that
 binds each daemon path and SHA-256, plus `remoteProviderPack: {path, sha256}` for
 the actual image's `provider-pack.json`. Assemble these assets after the normal
@@ -182,6 +182,40 @@ build still rejects any wrapper that retains its temporary deployment path.
 Ordinary remote Cursor startup uses the packaged Linux daemon and verifies every
 image asset against that manifest. A mismatched image fails before the provider
 starts; install the matching package and image together.
+
+### Native binary platform baseline
+
+Release packages contain Paperclip daemons for `linux-x64`, `linux-arm64`,
+`darwin-arm64`, and `darwin-x64`. Codex native binaries are installed separately
+through the official optional npm platform dependencies described above.
+
+The shipped Linux daemons target **GNU libc 2.39 or newer**, on x86-64 or AArch64.
+Their ELF version requirements include `GLIBC_2.39`; both depend on `libc.so.6`,
+`libm.so.6`, `libgcc_s.so.1`, and the matching GNU dynamic loader. The ARM64
+loader is `/lib/ld-linux-aarch64.so.1`; x64 uses
+`/lib64/ld-linux-x86-64.so.2`. This is a binary compatibility baseline, not a
+promise that every Linux distribution or kernel has been qualified.
+
+Hosted native producers use Ubuntu 24.04 for both Linux architectures. Clean npm
+install checks use the pinned Debian 13 Node image; the cloud Dockerfile uses
+Debian 13 (`node:24-trixie-slim`). macOS binaries build on the existing macOS 15
+Apple Silicon and Intel hosts. Actual task and follow-up acceptance is performed
+on Apple Silicon; Intel qualification covers build, installation, and protocol
+startup.
+
+Automatic creation selects legacy execution when a Linux host has musl, unknown
+libc, or a measured GNU libc version below the baseline. Existing agents retain
+their stored runner. Windows, 32-bit ARM, and Alpine/musl native qualification
+remain deferred.
+
+Native release jobs cache Cargo dependencies per platform and OS baseline,
+including compiler, lockfile, and external generated-contract inputs. Workspace
+crates and released binaries are rebuilt and verified every time. Only canonical
+exact-source master pushes may save trusted caches; preview qualification can
+restore them. JavaScript preparation and native compilation run concurrently,
+and both must succeed before artifact metadata and source-bound hashes are
+recorded. Run Docker and native qualification on hosted CI rather than a local
+developer machine.
 
 Pi cold provider admission has an absolute 60-second budget. Warm run attachment
 checkpoints the old ACPX sidecar and starts a new one, so it uses that same budget

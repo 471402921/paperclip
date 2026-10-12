@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, expect, it } from "vitest";
@@ -107,7 +107,7 @@ it("startup-only accepts only explicit uncredentialed local hello and zero retri
   expect(()=>assertInstalledStartupOnly({},[cell],options)).toThrow("startup-only");
 });
 
-async function startupFixture(mode: "normal" | "wrong-model" | "ambient-codex" = "normal") {
+async function startupFixture(mode: "normal" | "wrong-model" | "ambient-codex" | "startup-and-cleanup-failed" | "cleanup-failed" = "normal") {
   const f = await fixture();
   const vendor = join(f.server, "dist/vendor/paperclip-runner");
   const daemon = join(vendor, "bin", `${process.platform}-${process.arch}`, "paperclip-runnerd");
@@ -129,15 +129,18 @@ async function startupFixture(mode: "normal" | "wrong-model" | "ambient-codex" =
     export function createRunnerdCodexTransport(options){
       state.environmentKeys=Object.keys(options.environment).sort();
       state.fileAuthPinned=options.codexArgs.includes('cli_auth_credentials_store="file"');
-      save();return {transport:{async close(){retired=true;state.calls.push("transport-close");save();}},
-        evidence:()=>({runnerPid:111,codexPid:222,providerDriver:"codex_app_server",runnerExited:retired})};}
+      state.privateStateDirectory=options.stateDirectory;
+      save();return {transport:{async close(){retired=true;state.calls.push("transport-close");save();${mode === "startup-and-cleanup-failed" ? 'throw new Error("fixture secondary transport cleanup failure");' : ''}}},
+        evidence:()=>({runnerPid:111,codexPid:222,providerDriver:"codex_app_server",runnerExited:retired,diagnostics:["fixture provider bootstrap failed"],providerSessionId:"PRIVATE-PROVIDER-ID"})};}
     export class CodexAppServerDriver {
       constructor(options){this.options=options;}
-      async openSession(){state.calls.push("open");save();const model=${JSON.stringify(mode === "wrong-model" ? "wrong-model" : "gpt-5.6-sol")};
+      async openSession(){state.calls.push("open");save();
+        ${mode === "startup-and-cleanup-failed" ? 'throw new Error("fixture original provider startup failure");' : ''}
+        const model=${JSON.stringify(mode === "wrong-model" ? "wrong-model" : "gpt-5.6-sol")};
         return {ids:()=>({driverSessionId:"PRIVATE-DRIVER-ID",providerSessionId:"PRIVATE-PROVIDER-ID"}),
           events:()=>({async *[Symbol.asyncIterator](){yield {eventType:"session.started",payload:{context:{model,sandbox:{permissionProfile:{id:"paperclip-runner-workspace-read-only"}}}}};}}),
           startTurn(){state.calls.push("FORBIDDEN-TURN");save();throw new Error("No provider turn is permitted");},
-          async close(){retired=true;state.calls.push("session-close");save();}};}
+          async close(){retired=true;state.calls.push("session-close");save();${mode === "cleanup-failed" ? 'throw new Error("fixture session cleanup failure");' : ''}}};}
     }
   `);
   return { ...f, observations, expectedRunnerSha256: hash("fixture-daemon") };
@@ -151,6 +154,27 @@ it.skipIf(process.platform === "win32")("installed native startup uses closed ho
   expect(await readFile(f.observations, "utf8").then(JSON.parse)).toMatchObject({ calls: ["open", "session-close"], fileAuthPinned: true,
     environmentKeys: ["CODEX_HOME", "HOME", "LC_ALL", "PAPERCLIP_RUNNER_NETWORK_ACCESS", "PATH", "TMPDIR", "TZ"] });
   expect(JSON.stringify(receipt)).not.toMatch(/PRIVATE-(?:DRIVER|PROVIDER)-ID/);
+});
+
+it.skipIf(process.platform === "win32")("installed startup preserves the primary cause, records bounded diagnostics and attempts independent cleanup", async () => {
+  const f = await startupFixture("startup-and-cleanup-failed");
+  const error = await probeInstalledCodexStartup({ consumerRoot: f.root, serverRoot: f.server, expectedRunnerSha256: f.expectedRunnerSha256 }).catch(error => error);
+  expect(error).toBeInstanceOf(AggregateError);
+  expect(error.message).toContain("fixture original provider startup failure");
+  expect(error.message).toContain("fixture secondary transport cleanup failure");
+  expect(error.message).toContain("fixture provider bootstrap failed");
+  expect(error.cause.message).toBe("fixture original provider startup failure");
+  expect(error.errors.map((error: Error) => error.message)).toEqual(["fixture original provider startup failure", "fixture secondary transport cleanup failure"]);
+  expect(error.message).not.toContain("PRIVATE-PROVIDER-ID");
+  const observations = JSON.parse(await readFile(f.observations, "utf8"));
+  expect(observations.calls).toEqual(["open", "transport-close"]);
+  await expect(lstat(observations.privateStateDirectory)).rejects.toThrow();
+});
+
+it.skipIf(process.platform === "win32")("installed startup cannot qualify when session cleanup fails after successful open", async () => {
+  const f = await startupFixture("cleanup-failed");
+  await expect(probeInstalledCodexStartup({ consumerRoot: f.root, serverRoot: f.server, expectedRunnerSha256: f.expectedRunnerSha256 })).rejects.toThrow("fixture session cleanup failure");
+  expect(JSON.parse(await readFile(f.observations, "utf8")).calls).toEqual(["open", "session-close", "session-close"]);
 });
 
 it.skipIf(process.platform === "win32")("installed startup rejects stale daemon/ambient Codex and cleans a mismatched native session", async () => {

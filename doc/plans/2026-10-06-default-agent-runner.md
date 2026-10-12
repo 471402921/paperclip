@@ -2,6 +2,66 @@
 
 Updated 2026-10-12.
 
+## Current amendment: remote build performance and Linux baseline
+
+The user requires Cargo dependency caching and overlapping JavaScript/native
+preparation in the existing hosted jobs. Dockerfile and native builds must stay
+off this Mac. Reuse the current child supervisor for concurrent commands and
+failure/cancellation cleanup; join both outputs before source, header, signature,
+and hash recording. Cache dependency crates only, keyed by target, OS baseline,
+compiler, lockfile, and external contract inputs. Only canonical exact-source
+master pushes may save trusted caches. Preview jobs restore only. Seventy-nine
+workflow/process controls pass; actual speed or cache hits remain unproven until
+the final hosted run. Receipt:
+`/private/tmp/pr2-native-cache-parallel-owned-receipt.json`.
+
+The exact `dcdf09a0f33536fa2b6daaf6e731d921d5711282` four-target qualifier
+[38268767165](https://github.com/paperclipai/paperclip/actions/runs/38268767165)
+has built all four actual daemons. Linux package installation passes, as does
+the clean Apple Silicon consumer. ARM64 installs successfully but native session
+startup fails; cleanup masked the original cause. Ordinary CI passes at that
+source. Fresh review found a target-daemon
+selection mismatch for cross-architecture SSH: an x64 controller could select
+its own daemon for an ARM64 environment. The existing resolver/setup/execution
+seams now select and verify the actual target header. One hundred four affected
+controls and both typechecks pass. Setup and execution share the fix; missing or
+wrong artifacts fail explicitly. Receipt:
+`/private/tmp/pr2-native-ubuntu-ssh-owned-receipt.json`.
+
+The existing installed startup fixture now preserves the primary error and
+separately records cleanup failure. Fourteen controls and E2E typecheck pass.
+Docker isolation, no-network policy, and zero provider turns stay unchanged.
+Use the exact failed package artifact `11757308120` from run `38268767165` in
+one disposable hosted ARM diagnostic job. Keep corrected tooling provenance
+separate from its literal `dcdf09a` product source. Verify registry ZIP digest,
+bounded archive members, source, and every package hash before using the
+existing consumer. This temporary diagnostic ref adds no permanent test suite
+or workflow inputs. The primary cause and final ARM startup remain unresolved.
+Receipts: `/private/tmp/pr2-installed-startup-error-preservation-receipt.json`
+and `/private/tmp/ci-final-dcdf09a-arm-startup-failure-receipt.json`.
+
+Independent inert ELF inspection of both Linux artifacts at this revision
+confirms required `GLIBC_2.39`, GNU loaders, `libc.so.6`, `libm.so.6`, and
+`libgcc_s.so.1`. Neither binary was executed locally. The published Linux
+baseline is therefore GNU libc >=2.39 on x64/AArch64. Pin current producers to
+Ubuntu 24.04; clean consumers use the pinned Debian 13 Node image. Do not claim
+older distribution/kernel qualification. Automatic new-agent selection rejects
+measured older, musl, or unknown Linux libc; existing native configurations keep
+their execution. Windows and Alpine/musl remain deferred. Receipts:
+`/private/tmp/ci-final-dcdf09a-linux-arm64-data/elf-dependencies.json` and
+`/private/tmp/ci-final-dcdf09a-linux-x64-data/elf-dependencies.json`.
+
+The libc guard passes 209 focused controls and both typechecks. Seven actual
+POSIX probe/version controls pass. Forty-one built-in database cases did not
+execute because embedded PostgreSQL timed out on this Mac; require Linux CI.
+Token gates pass with the pinned pnpm launcher. Receipt:
+`/private/tmp/codex-default-glibc-floor-receipt.json`.
+
+Next action: freeze corrected diagnostic tooling, identify and fix the actual
+ARM startup cause, then require fresh hosted qualification, CI, and review. Keep
+the current branch, PR, test-drive, budget holds, and no-Codex-bundling boundary.
+No merge or production deployment is authorized.
+
 ## Current addition: Linux ARM64
 
 The user now requires ARM Linux support as well. Treat ARM Linux as ARM64

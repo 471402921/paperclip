@@ -5,7 +5,7 @@ import { copyBackCodexAuth } from "@paperclipai/adapter-codex-local/server";
 import type { AdapterEnvironmentTestContext, AdapterEnvironmentTestResult } from "@paperclipai/adapter-utils";
 import { ADAPTER_AUTH_MISSING_CHECK_CODE } from "@paperclipai/shared";
 import { probeNativeRunnerEnvironment, resolveSourceCodexHome } from "../../vendor/paperclip-runner/index.js";
-import { resolvePaperclipRunnerBinary } from "./native-codex-runner.js";
+import { resolvePaperclipRunnerBinary, resolveRemotePaperclipRunnerBinary } from "./native-codex-runner.js";
 import { readLocalAiCredentialFile } from "../local-ai-credential-file.js";
 import { createNativeSshCommandRunner } from "./native-ssh-command-runner.js";
 import { resolvePaperclipRunnerTransport } from "@paperclipai/adapter-utils/runner-connectivity";
@@ -63,8 +63,11 @@ async function probeRemoteNativeCodex(options: {
   const remoteCodexNpmSpec = process.env.PAPERCLIP_RUNNER_REMOTE_CODEX_NPM_SPEC?.trim() || null;
   const remoteCodexBinary = remoteCodexNpmSpec ? posix.join(remoteRoot, "harnesses", "codex", "node_modules", ".bin", "codex") : posix.join(remoteRoot, "bin", "codex");
   const explicitRunner = process.env.PAPERCLIP_RUNNER_REMOTE_BINARY_PATH?.trim() || null;
-  const controllerRunnerBinary = explicitRunner || resolvePaperclipRunnerBinary();
+  const controllerRunnerBinary = target.transport === "ssh"
+    ? await resolveRemotePaperclipRunnerBinary({ runner, remoteCwd: target.remoteCwd, configuredPath: explicitRunner })
+    : explicitRunner || resolvePaperclipRunnerBinary();
   const artifacts = createRemoteNativeArtifactPreparation({ target, runner, remoteBinary, controllerRunnerBinary, remoteRuntimeRoot: remoteRoot, remoteCodexBinary,
+    targetPlatformArtifactVerified: target.transport === "ssh",
     runnerRemoteBinaryPath: explicitRunner, runnerRemoteCodexPath: process.env.PAPERCLIP_RUNNER_REMOTE_CODEX_PATH?.trim(), runnerRemoteCodexNpmSpec: remoteCodexNpmSpec, model: options.model });
   const requireSuccess = (result: { timedOut: boolean; exitCode: number | null }, message: string) => {
     if (result.timedOut || result.exitCode !== 0) throw new Error(message);

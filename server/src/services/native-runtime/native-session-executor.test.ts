@@ -206,6 +206,7 @@ const state = vi.hoisted(() => ({
   bundledPackManifestPath: null as string | null,
   bundledRunnerBinary: null as string | null,
   resolveRunnerBinary: vi.fn(() => "/tmp/paperclip-runnerd"),
+  resolveRemoteRunnerBinary: vi.fn(async (input: { configuredPath?: string | null }) => input.configuredPath || "/tmp/paperclip-runnerd"),
   release: null as null | (() => void),
 }));
 
@@ -300,6 +301,7 @@ vi.mock("../issue-recovery-actions.js", () => ({
 
 vi.mock("./native-codex-runner.js", () => ({
   resolvePaperclipRunnerBinary: state.resolveRunnerBinary,
+  resolveRemotePaperclipRunnerBinary: state.resolveRemoteRunnerBinary,
 }));
 
 import {
@@ -373,6 +375,7 @@ beforeEach(() => {
   state.bundledRunnerBinary = null;
   state.createAssignedMcpTools.mockReset();
   state.resolveRunnerBinary.mockReset().mockReturnValue("/tmp/paperclip-runnerd");
+  state.resolveRemoteRunnerBinary.mockReset().mockImplementation(async (input: { configuredPath?: string | null }) => input.configuredPath || "/tmp/paperclip-runnerd");
   state.resolveCurrentWakeCommentsBinding.mockReset().mockResolvedValue(null);
   state.assertCurrentWakeCommentsRead.mockReset().mockResolvedValue(undefined);
 });
@@ -12926,9 +12929,10 @@ describe("runnerd provider runtime wiring", () => {
 
   });
 
-  it("binds a remote launch to the configured controller-owned runner artifact", async () => {
+  it.each(["explicit", "linux-arm64", "linux-x64"])("binds an SSH launch to the selected controller-owned runner artifact (%s)", async mode => {
     const remoteCwd = "/home/daytona/paperclip-workspace";
-    const controllerArtifact = "/controller/artifacts/paperclip-runnerd";
+    const controllerArtifact = `/controller/artifacts/${mode}/paperclip-runnerd`;
+    state.resolveRemoteRunnerBinary.mockResolvedValue(controllerArtifact);
     const remoteExecution = {
       ...execution,
       binding: { ...execution.binding, runId: "run-remote-runner-artifact" },
@@ -12954,7 +12958,7 @@ describe("runnerd provider runtime wiring", () => {
           strictHostKeyChecking: true,
         },
       },
-      runnerRemoteBinaryPath: controllerArtifact,
+      ...(mode === "explicit" ? { runnerRemoteBinaryPath: controllerArtifact } : {}),
     });
 
     state.createTransport.mockClear();
@@ -12962,6 +12966,8 @@ describe("runnerd provider runtime wiring", () => {
     expect(state.createTransport).toHaveBeenCalledWith(
       expect.objectContaining({ runnerBinary: controllerArtifact }),
     );
+    expect(state.resolveRemoteRunnerBinary).toHaveBeenCalledWith(expect.objectContaining({ remoteCwd, configuredPath: mode === "explicit" ? controllerArtifact : undefined }));
+    expect(state.resolveRunnerBinary).not.toHaveBeenCalled();
   });
 
   it.each([

@@ -18,6 +18,7 @@ afterEach(async () => {
   Object.defineProperty(process, "arch", initialArchitecture);
   process.env.PATH = initialPath;
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
   if (root) await rm(root, { recursive: true, force: true });
   root = undefined;
@@ -35,14 +36,19 @@ async function fakeCli(name: string, source: string) {
   return realpath(home);
 }
 
-function targetPlatform(platform: string, architecture: string) {
+function targetPlatform(platform: string, architecture: string, glibc = true, glibcVersionRuntime = "2.39") {
   Object.defineProperty(process, "platform", { ...initialPlatform, value: platform });
   Object.defineProperty(process, "arch", { ...initialArchitecture, value: architecture });
+  if (platform === "linux") vi.spyOn(process.report, "getReport").mockReturnValue({ header: glibc ? { glibcVersionRuntime } : {} } as never);
 }
 
 describe.skipIf(process.platform === "win32")("local browser subscription login", () => {
-  it.each([false, true])("uses the selected Codex command with its credential home and ambient HOME/cwd (legacy Linux ARM32: %s)", async (legacy) => {
-    if (legacy) targetPlatform("linux", "arm");
+  it.each(["native", "arm32", "musl", "glibc-2.38", "glibc-3.0"])("uses the selected Codex command with its credential home and ambient HOME/cwd (%s)", async platform => {
+    const legacy = ["arm32", "musl", "glibc-2.38"].includes(platform);
+    if (platform === "arm32") targetPlatform("linux", "arm");
+    if (platform === "musl") targetPlatform("linux", "arm64", false);
+    if (platform === "glibc-2.38") targetPlatform("linux", "arm64", true, "2.38");
+    if (platform === "glibc-3.0") targetPlatform("linux", "arm64", true, "3.0");
     const home = await fakeCli("codex", [
       '[ "$1 $2" = "login --device-auth" ] || exit 11',
       '[ "$HOME" = "$CLAUDE_CONFIG_DIR" ] && [ "$HOME" != "$CODEX_HOME" ] && [ "$CODEX_HOME" = "$PAPERCLIP_TEST_LOGIN_CODEX_HOME" ] || exit 12',

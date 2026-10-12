@@ -110,6 +110,7 @@ export const createRunnerdCodexTransport: (
   runner.createRunnerdCodexTransport;
 export const defaultCapabilityRunnerdBinary =
   runner.defaultCapabilityRunnerdBinary;
+export const runnerBinaryTarget = runner.runnerBinaryTarget;
 export const executeNativeSession = runner.executeNativeSession;
 export const applyNativeSessionGoalControl =
   runner.applyNativeSessionGoalControl;

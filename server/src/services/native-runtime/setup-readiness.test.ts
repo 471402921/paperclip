@@ -3,12 +3,12 @@ import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 import { ADAPTER_AUTH_MISSING_CHECK_CODE } from "@paperclipai/shared";
-const { execute, nativeProbe, selectedRunner, sshExecute, sshRunner, nativeArtifacts, remoteLauncher, registerPrp, ingressConnect } = vi.hoisted(() => ({ execute: vi.fn(), nativeProbe: vi.fn(), selectedRunner: vi.fn(), sshExecute: vi.fn(), sshRunner: vi.fn(), nativeArtifacts: vi.fn(), remoteLauncher: vi.fn(), registerPrp: vi.fn(), ingressConnect: vi.fn() }));
+const { execute, nativeProbe, selectedRunner, selectedRemoteRunner, sshExecute, sshRunner, nativeArtifacts, remoteLauncher, registerPrp, ingressConnect } = vi.hoisted(() => ({ execute: vi.fn(), nativeProbe: vi.fn(), selectedRunner: vi.fn(), selectedRemoteRunner: vi.fn(), sshExecute: vi.fn(), sshRunner: vi.fn(), nativeArtifacts: vi.fn(), remoteLauncher: vi.fn(), registerPrp: vi.fn(), ingressConnect: vi.fn() }));
 vi.mock("@paperclipai/adapter-utils/execution-target", () => ({ runAdapterExecutionTargetShellCommand: execute }));
 vi.mock("./native-ssh-command-runner.js", () => ({ createNativeSshCommandRunner: sshRunner }));
 vi.mock("../../realtime/runner-prp-ws.js", () => ({ registerRunnerPrpAuthority: registerPrp }));
 vi.mock("../../realtime/runner-prp-outbound.js", () => ({ connectRunnerPrpIngress: ingressConnect }));
-vi.mock("./native-codex-runner.js", () => ({ resolvePaperclipRunnerBinary: selectedRunner }));
+vi.mock("./native-codex-runner.js", () => ({ resolvePaperclipRunnerBinary: selectedRunner, resolveRemotePaperclipRunnerBinary: selectedRemoteRunner }));
 vi.mock("../../vendor/paperclip-runner/index.js", async original => ({ ...await original<typeof import("../../vendor/paperclip-runner/index.js")>(), probeNativeRunnerEnvironment: nativeProbe }));
 vi.mock("./native-session-executor.js", async original => ({ ...await original<typeof import("./native-session-executor.js")>(), createRemoteNativeArtifactPreparation: nativeArtifacts, createRemoteRunnerProcessLauncher: remoteLauncher }));
 import { testNativeRunnerAuthentication } from "./setup-readiness.js";
@@ -30,6 +30,7 @@ describe("Codex selected native account verification", () => {
     vi.stubEnv("PAPERCLIP_RUNNER_REMOTE_CODEX_PATH", "");
     vi.stubEnv("PAPERCLIP_RUNNER_REMOTE_CODEX_NPM_SPEC", "");
     selectedRunner.mockReset().mockReturnValue("/fixture/bin/paperclip-runnerd");
+    selectedRemoteRunner.mockReset().mockResolvedValue("/fixture/bin/paperclip-runnerd");
     vi.stubEnv("PAPERCLIP_RUNNER_REMOTE_PROVIDER_PACK_PATH", "");
     vi.stubEnv("PAPERCLIP_RUNNER_REMOTE_BINARY_PATH", "");
   });
@@ -97,7 +98,9 @@ describe("Codex selected native account verification", () => {
   const sshContext = { companyId: "company", adapterType: "paperclip_runner", config: {}, executionTarget: {
     kind: "remote" as const, transport: "ssh" as const, remoteCwd: "/qa-workspace", spec: { host: "qa-host", username: "qa-user", port: 22, remoteCwd: "/qa-workspace", remoteWorkspacePath: "/qa-workspace", privateKey: null, knownHosts: null, strictHostKeyChecking: true },
   } };
-  it("uses task staging and the company-scoped native SSH transport without a provider pack", async () => {
+  it.each(["linux-arm64", "linux-x64"])("uses task staging and the selected %s SSH daemon without a provider pack", async target => {
+    const selectedBinary = `/fixture/bin/${target}/paperclip-runnerd`;
+    selectedRemoteRunner.mockResolvedValue(selectedBinary);
     let released = false;
     registerPrp.mockResolvedValue({ release: async () => { released = true; } });
     nativeProbe.mockImplementation(async input => {
@@ -110,8 +113,10 @@ describe("Codex selected native account verification", () => {
     expect((await testNativeRunnerAuthentication({ ...sshContext, config: { env: { OPENAI_API_KEY: "company-account" }, modelReasoningEffort: "low" } }, "codex", "gpt-6.1-sol")).status).toBe("pass");
     const input = nativeProbe.mock.calls[0][0];
     expect(input).toMatchObject({ reasoningEffort: "low", environment: { OPENAI_API_KEY: "company-account" }, workingDirectory: expect.stringMatching(/^\/qa-workspace\/.paperclip-runtime\/paperclip-native-setup-.*\/filesystem\/workspace$/) });
-    expect(input.transportOptions).toMatchObject({ runnerBinary: "/fixture/bin/paperclip-runnerd", codexCommand: expect.stringMatching(/\/bin\/codex$/), runnerFilesystemRoot: expect.stringMatching(/\/filesystem$/) });
-    expect(nativeArtifacts).toHaveBeenCalledWith(expect.objectContaining({ controllerRunnerBinary: "/fixture/bin/paperclip-runnerd", model: "gpt-6.1-sol" }));
+    expect(input.transportOptions).toMatchObject({ runnerBinary: selectedBinary, codexCommand: expect.stringMatching(/\/bin\/codex$/), runnerFilesystemRoot: expect.stringMatching(/\/filesystem$/) });
+    expect(nativeArtifacts).toHaveBeenCalledWith(expect.objectContaining({ controllerRunnerBinary: selectedBinary, model: "gpt-6.1-sol", targetPlatformArtifactVerified: true }));
+    expect(selectedRemoteRunner).toHaveBeenCalledExactlyOnceWith({ runner: { execute: sshExecute }, remoteCwd: "/qa-workspace", configuredPath: null });
+    expect(selectedRunner).not.toHaveBeenCalled();
     expect(nativeArtifacts.mock.results[0]!.value.prepare).toHaveBeenCalledWith("dial_wss");
     expect(registerPrp).toHaveBeenCalledWith({ companyId: "company", runId: input.transportOptions.prpIdentity.runId, authority: { marker: "native-authority" } });
     expect(remoteLauncher).toHaveBeenCalledWith(expect.objectContaining({ runnerInstanceId: input.transportOptions.prpIdentity.runnerInstanceId }));
@@ -132,6 +137,13 @@ describe("Codex selected native account verification", () => {
     vi.stubEnv("PAPERCLIP_RUNNER_PUBLIC_URL", "");
     expect((await testNativeRunnerAuthentication(sshContext, "codex", null)).status).toBe("fail");
     expect(sshExecute).not.toHaveBeenCalled(); expect(nativeArtifacts).not.toHaveBeenCalled(); expect(nativeProbe).not.toHaveBeenCalled();
+  });
+  it("reports an unavailable SSH target daemon before probing credentials or switching runtimes", async () => {
+    selectedRemoteRunner.mockRejectedValue(new Error("runner_remote_artifact_unavailable: install the matching linux-arm64 Paperclip release"));
+    const result = await testNativeRunnerAuthentication(sshContext, "codex", null);
+    expect(result.status).toBe("fail"); expect(result.checks[0].message).toContain("matching linux-arm64 Paperclip release");
+    expect(nativeArtifacts).not.toHaveBeenCalled(); expect(nativeProbe).not.toHaveBeenCalled();
+    expect(selectedRunner).not.toHaveBeenCalled(); expect(execute).not.toHaveBeenCalled();
   });
   it.each([true, false])("removes SSH probe state only after confirmed teardown (%s)", async confirmed => {
     nativeProbe.mockImplementation(async input => {

@@ -5,7 +5,7 @@ import path from "node:path";
 import { runSetupTokenLogin } from "@paperclipai/adapter-claude-local/server";
 import { runDeviceLogin } from "@paperclipai/adapter-codex-local/server";
 import { ensureCommandResolvable, resolveCommandForLogs } from "@paperclipai/adapter-utils/server-utils";
-import { paperclipRunnerSupportsPlatform } from "@paperclipai/shared";
+import { localPaperclipRunnerSupported } from "../lib/agent-runner-platform.js";
 import { resolveCodexCommand } from "../vendor/paperclip-runner/index.js";
 
 export type LocalBrowserLoginState = {
@@ -59,7 +59,7 @@ export function startLocalBrowserLogin(provider: "anthropic" | "openai", home: s
       if (provider === "openai") {
         // Native targets use the same owned Codex resolution as execution.
         // Other platforms retain the legacy CLI lookup.
-        const legacyPlatform = !paperclipRunnerSupportsPlatform("codex_local", process.platform, process.arch);
+        const legacyPlatform = !localPaperclipRunnerSupported();
         try {
           if (legacyPlatform) {
             await ensureCommandResolvable("codex", home, process.env);

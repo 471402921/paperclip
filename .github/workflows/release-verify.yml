@@ -495,7 +495,7 @@ jobs:
           const current = [...historical, 'linux-arm64'];
           const targets = [...RELEASE_RUNNER_TARGETS].sort();
           assert.ok(JSON.stringify(targets) === JSON.stringify(historical.sort()) || JSON.stringify(targets) === JSON.stringify(current.sort()), 'Unknown exact-source daemon platform contract');
-          const hosts = { 'linux-x64': 'ubuntu-latest', 'linux-arm64': 'ubuntu-24.04-arm', 'darwin-arm64': 'macos-15', 'darwin-x64': 'macos-15-intel' };
+          const hosts = { 'linux-x64': targets.length === current.length ? 'ubuntu-24.04' : 'ubuntu-latest', 'linux-arm64': 'ubuntu-24.04-arm', 'darwin-arm64': 'macos-15', 'darwin-x64': 'macos-15-intel' };
           const include = RELEASE_RUNNER_TARGETS.map(target => ({ target, host: hosts[target] }));
           appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${JSON.stringify({ include })}\nnative_consumers=${JSON.stringify({ include: include.filter(row => row.target !== 'linux-x64') })}\n`);
           NODE
@@ -535,13 +535,76 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || exit 1
           [[ "$(node -p 'process.platform + "-" + process.arch')" == "$TARGET" ]] || exit 1
           echo "artifact_prefix=runner-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
-      - name: Install dependencies and build production TypeScript contract
-        run: |
-          pnpm install --no-frozen-lockfile
-          pnpm --filter @paperclipai/paperclip-runner build:typescript
-      - name: Build the host daemon with the pinned toolchain
+      - name: Pin native Cargo workspace and toolchain
+        id: native_rust_workspace
         working-directory: packages/paperclip-runner
-        run: pnpm build:binary
+        run: |
+          set -euo pipefail
+          pinned="$HOME/paperclip-runner-rust"
+          if [[ -e "$pinned" && ! -L "$pinned" ]]; then
+            echo '::error::Native Cargo cache path must not replace a real directory'
+            exit 1
+          fi
+          rm -f "$pinned"
+          ln -s "$GITHUB_WORKSPACE/packages/paperclip-runner/runner" "$pinned"
+          echo "path=$pinned" >> "$GITHUB_OUTPUT"
+          rustup show
+          toolchain="$(rustup show active-toolchain | awk '{print $1}')"
+          echo "RUSTUP_TOOLCHAIN=$toolchain" >> "$GITHUB_ENV"
+          extra_toolchains="$(rustup toolchain list | awk '{print $1}' | grep -vx "$toolchain" || true)"
+          if [[ -n "$extra_toolchains" ]]; then
+            echo "$extra_toolchains" | xargs -n1 rustup toolchain uninstall \
+              || echo '::notice title=Native Rust cache::could not remove an extra toolchain; the cache key may not match'
+          fi
+          rustup toolchain list
+      - name: Cache native Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: ${{ steps.native_rust_workspace.outputs.path }} -> target
+          # Compiler/environment and Cargo lock hashes are added by the action.
+          # Also bind generated contracts outside the Rust workspace, while
+          # always recompiling workspace code and recording actual new bytes.
+          shared-key: release-native-v2-${{ matrix.host }}-${{ matrix.target }}-${{ hashFiles('packages/paperclip-runner/protocol/**', 'packages/paperclip-runner/src/**', 'packages/paperclip-runner/*.json') }}
+          cache-workspace-crates: false
+          cache-bin: false
+          cache-on-failure: false
+          # A master workflow can verify an unmerged preview ref. Those jobs
+          # restore only; they never write master's trusted dependency cache.
+          save-if: ${{ github.repository == 'paperclipai/paperclip' && github.repository_id == '1170821064' && github.event_name == 'push' && github.ref == 'refs/heads/master' && inputs.ref == github.sha }}
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Build TypeScript contract and host daemon concurrently
+        run: |
+          node --input-type=module <<'NODE'
+          import { mkdirSync, readFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { startPrefetch, stopPrefetches } from './scripts/prefetch-child.mjs';
+          const root = process.cwd(), logs = join(process.env.RUNNER_TEMP, 'native-build-preparation');
+          mkdirSync(logs, { recursive: true });
+          const builds = [];
+          let failure;
+          try {
+            for (const [name, args, cwd] of [
+              ['typescript', ['--filter', '@paperclipai/paperclip-runner', 'build:typescript'], root],
+              ['native', ['build:binary'], join(root, 'packages/paperclip-runner')],
+            ]) {
+              builds.push(startPrefetch({ name, cmd: 'pnpm', args, cwd, env: process.env, logPath: join(logs, name + '.log') }));
+            }
+            await Promise.all(builds.map(build => build.done));
+          } catch (error) { failure = error; }
+          finally {
+            await stopPrefetches(builds);
+            const results = await Promise.allSettled(builds.map(build => build.done));
+            builds.forEach((build, index) => {
+              console.log('::group::' + build.name + ' build');
+              process.stdout.write(readFileSync(join(logs, build.name + '.log'), 'utf8'));
+              console.log('::endgroup::');
+              console.log(JSON.stringify({ build: build.name, status: results[index].status,
+                exitCode: build.child.exitCode, signal: build.child.signalCode, durationMs: build.durationMs }));
+            });
+          }
+          if (failure) throw failure;
+          NODE
       - name: Record actual daemon metadata and immutable bytes
         env:
           SOURCE_SHA: ${{ inputs.ref }}

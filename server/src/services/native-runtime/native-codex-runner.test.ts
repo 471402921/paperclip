@@ -9,6 +9,7 @@ import {
   buildNativeRunnerArguments,
   buildNativeRunnerPreparePayload,
   resolvePaperclipRunnerBinary,
+  resolveRemotePaperclipRunnerBinary,
 } from "./native-codex-runner.js";
 
 afterEach(() => vi.restoreAllMocks());
@@ -42,6 +43,59 @@ describe("installed runner selection", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe("selected SSH daemon target", () => {
+  function header(target: string) {
+    const bytes = Buffer.alloc(64);
+    if (target.startsWith("darwin")) {
+      bytes.writeUInt32LE(0xfeedfacf); bytes.writeUInt32LE(target.endsWith("arm64") ? 0x0100000c : 0x01000007, 4);
+    } else {
+      bytes.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]); bytes.writeUInt16LE(target.endsWith("arm64") ? 183 : 62, 18);
+    }
+    return bytes;
+  }
+  const remote = (stdout: string, overrides = {}) => ({ execute: vi.fn(async () => ({ exitCode: 0, signal: null, timedOut: false, stdout, stderr: "", pid: null, startedAt: null, ...overrides })) });
+  it.each([
+    ["Linux", "aarch64", "linux", "arm64"], ["Linux", "x86_64", "linux", "x64"],
+    ["Darwin", "arm64", "darwin", "arm64"], ["Darwin", "x86_64", "darwin", "x64"],
+  ] as const)("uses the packaged %s/%s daemon independent of the controller", async (os, arch, platform, architecture) => {
+    const root = await mkdtemp(join(tmpdir(), "paperclip-ssh-daemon-"));
+    const binary = join(root, "paperclip-runnerd");
+    try {
+      await writeFile(binary, header(`${platform}-${architecture}`));
+      const select = vi.spyOn(runner, "defaultCapabilityRunnerdBinary").mockReturnValue(binary);
+      const target = remote(`${os}\n${arch}\n`);
+      expect(await resolveRemotePaperclipRunnerBinary({ runner: target, remoteCwd: "/selected-workspace" })).toBe(binary);
+      expect(select).toHaveBeenCalledExactlyOnceWith(platform, architecture);
+      expect(target.execute).toHaveBeenCalledExactlyOnceWith({ command: "sh", args: ["-c", "uname -s; uname -m"], cwd: "/selected-workspace", bypassSession: true, timeoutMs: 10_000 });
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+  it.each(["matching", "wrong-architecture", "malformed", "missing"])("verifies an explicit controller-owned remote artifact (%s)", async scenario => {
+    const root = await mkdtemp(join(tmpdir(), "paperclip-ssh-daemon-"));
+    const binary = join(root, "configured-runnerd");
+    try {
+      if (scenario !== "missing") await writeFile(binary, scenario === "malformed" ? Buffer.alloc(64) : header(scenario === "matching" ? "linux-arm64" : "linux-x64"));
+      const select = vi.spyOn(runner, "defaultCapabilityRunnerdBinary");
+      const request = resolveRemotePaperclipRunnerBinary({ runner: remote("Linux\naarch64\n"), remoteCwd: "/workspace", configuredPath: binary });
+      if (scenario === "matching") expect(await request).toBe(binary);
+      else await expect(request).rejects.toThrow(scenario === "missing" ? "runner_remote_artifact_unavailable" : "runner_remote_artifact_platform_mismatch");
+      expect(select).not.toHaveBeenCalled();
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+  it("keeps missing package targets actionable without a controller or legacy fallback", async () => {
+    const select = vi.spyOn(runner, "defaultCapabilityRunnerdBinary").mockImplementation(() => { throw new Error("runner_remote_artifact_unavailable: install the matching release"); });
+    await expect(resolveRemotePaperclipRunnerBinary({ runner: remote("Linux\naarch64\n"), remoteCwd: "/workspace" })).rejects.toThrow("runner_remote_artifact_unavailable");
+    expect(select).toHaveBeenCalledExactlyOnceWith("linux", "arm64");
+  });
+  it.each([
+    ["Linux\naarch64\n", { exitCode: 1 }], ["Linux\naarch64\n", { timedOut: true }],
+    ["Linux\nriscv64\n", {}], ["FreeBSD\nx86_64\n", {}], ["", {}],
+  ])("fails a missing, failed or unsupported platform probe (%s)", async (stdout, overrides) => {
+    const select = vi.spyOn(runner, "defaultCapabilityRunnerdBinary");
+    await expect(resolveRemotePaperclipRunnerBinary({ runner: remote(stdout as string, overrides), remoteCwd: "/workspace" })).rejects.toThrow("runner_remote_artifact_platform_mismatch");
+    expect(select).not.toHaveBeenCalled();
   });
 });
 
