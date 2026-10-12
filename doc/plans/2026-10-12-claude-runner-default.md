@@ -399,3 +399,21 @@ port has a listener but current API health did not respond, so its current polic
 state is unconfirmed rather than asserted stopped or reverified. No accounting
 hold was cleared by this audit. Timer heartbeats and automatic paid retries remain
 disabled. No local Docker or Rust builds occurred.
+
+
+## Complete CI fixture corrections — 2026-10-12
+
+The first current-head matrix exposed stale fixture assumptions after graduation:
+experimental harness-switch rejection still targeted Claude, Linux SSH creation
+still expected Legacy, and Legacy instruction/skill cases relied on an implicit
+runner. The gating case now uses Pi; all 56 validation-route controls pass.
+Qualified SSH creation asserts native Claude/Opus 5.5; all 92 permission-route
+controls pass. Legacy instruction/skill fixtures explicitly choose Legacy.
+The native Claude creation/hire matrix now checks preserved skill-version pins
+and CEO defaults, while omitting the legacy operational skill supplied by PRP.
+All 111 skills-route controls pass. Builder/config controls retain the shared
+package and mounted-form evidence rather than a duplicate UI pure-function test
+that expected blank effort to restore saved values. The historical missing-form
+fixture now deletes the property instead of assigning an invalid typed undefined;
+Codex package noemit passes. These corrections make no provider calls and change
+no runtime artifact identities.
