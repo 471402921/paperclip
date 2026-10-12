@@ -129,6 +129,52 @@ and require fresh Linux CI. Keep ARM startup sign-off unresolved until proven
 on a compatible target; package installation and direct execution alone do not
 qualify the native runner. All Docker/native builds remain remote.
 
+Checkpoint `598e190cb308f4d7f8f43c188c2e7d88c3fc90d1` passes
+[ordinary CI](https://github.com/paperclipai/paperclip/actions/runs/38279960223):
+both required gates, 54 successful checks/statuses, and four conditional skips.
+Fresh review is 5/5; all 15 review threads are resolved. Human code-owner approval
+is still absent. The test-drive serves `2026.1005.0+350.git.598e190cb3`; all four
+execution configurations and both historical native runs survive restart.
+The verified Apple Silicon daemon remains unchanged, `needsBuild: false`, with
+no binary override, native compilation, Docker build, or provider turn locally.
+Receipts: `/private/tmp/ci-final-598e190-ci-review-receipt.json` and
+`/private/tmp/pr2-final-preservation-after.json`.
+
+The [direct/native ARM diagnostic](https://github.com/paperclipai/paperclip/actions/runs/38280515437)
+records GNU libc 2.39, AppArmor enabled with restricted unprivileged user
+namespaces, an unconfined current profile, zero effective capabilities, and no
+seccomp filter. Native startup still fails at bubblewrap loopback `RTM_NEWADDR`.
+The direct control stopped before Codex spawn at a TOML preservation guard,
+so it does not establish the sandbox failure's cause. Receipt:
+`/private/tmp/ci-final-arm-direct-diagnostic-598-receipt.json`.
+
+Pure, integrity-bound public `smol-toml` 1.9.1 reproduction identifies that guard
+failure: its null-prototype tables differ from the writer's spread-created
+ordinary objects. Preserve the parser's tables while changing only the intended
+trust field; keep strict comparison, original comments/bytes, private writes,
+and malformed-input rejection. No parser pin, semantic bypass, or permission
+change. The existing suite passes 22 controls across both table representations;
+real 1.9.1 treatment repairs five valid configurations and keeps two invalid
+configurations unchanged. Runner/server typechecks pass. Receipt:
+`/private/tmp/codex-default-startup-trust-fix-receipt.json`.
+
+The [four-target performance qualifier](https://github.com/paperclipai/paperclip/actions/runs/38281631416)
+uses literal `598e190` product/workflow source. Observed Linux x64/ARM64 and Apple
+Silicon builds pass with actual concurrent JavaScript/native preparation.
+Cache restore is exercised; observed results are cold misses, not measured
+speedups. The cache writer is reachable through the existing verified master
+canary push, with exact source and repository guards; no write-gate expansion
+is needed. Linux daemon bytes match the measured GNU 2.39 baseline. Remaining
+producer/consumer results must be recorded before qualification claims.
+
+Next action: freeze the narrow trust correction, repeat the bounded direct
+control with explicit corrected-tooling provenance, and retain native startup
+as mandatory. A private namespace negative control and bounded read-only
+AppArmor journal may help distinguish host denial. Do not modify host policy,
+relax Codex's sandbox, or substitute direct execution for native qualification.
+Require fresh CI/review after the correction. ARM startup and managed staging
+remain unresolved; no merge or production recommendation is made.
+
 ## Current addition: Linux ARM64
 
 The user now requires ARM Linux support as well. Treat ARM Linux as ARM64
