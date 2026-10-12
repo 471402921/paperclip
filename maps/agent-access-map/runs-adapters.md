@@ -9,6 +9,11 @@ Each capability needs operation-level review before its entire scope can be
 qualified. No live agent execution is claimed. Follow the [map contract](../README.md)
 for format, permission checks, evidence and maintenance.
 
+Scoped runner-default source review: 2026-10-12 at
+`eee0534154eaf5d0d3f2bbc97c1e24d86f34a5a5`, limited to runner discovery,
+selected-runtime testing and saved execution/session preservation. The original
+baseline source and review depth remain unchanged for unrelated operations.
+
 ## `availability`
 
 Review: `baseline`.
@@ -40,6 +45,15 @@ Source: [adapter discovery](../../server/src/adapters/registry.ts).
 Gaps: Raw instance adapter listing requires board, while company model discovery exists
 for eligible agents.
 
+Scoped source-only evidence: [adapter discovery](../../server/src/routes/adapters.ts)
+reports supported runners/effective default for the selected company/environment;
+[selection policy](../../server/src/services/agent-runner-selection.ts) reads
+server-owned immutable sandbox facts without provisioning. New Codex defaults
+and explicit overrides follow the [shared runner contract](../../packages/shared/src/agent-runner.ts);
+other harness defaults remain unchanged. The board inventory does not grant a
+native agent an equivalent discovery binding. See
+[probe restrictions](./execution-environments.md#probe) for acquiring qualification.
+
 ## `validation`
 
 Review: `baseline`.
@@ -64,6 +78,22 @@ remaining operations before qualifying the whole capability.
 
 Gaps: Environment test path checks creation/configuration policy; missing provider auth
 must use its owner setup flow.
+
+Scoped source review: [test authorization and resolution](../../server/src/routes/agents.ts)
+requires same-company `agents:create`, saved-agent update access when supplied,
+allowed environment selection, and normal secret/responsible-user checks. An
+unchanged saved runner avoids new-creation policy but still receives selected
+runtime validation. [Native readiness](../../server/src/services/native-runtime/setup-readiness.ts)
+tests native Codex startup/model/account and bounded teardown; an authentication
+or Legacy CLI check cannot replace that runtime evidence. Missing dependencies,
+credentials, invalid models and incompatible settings fail without silently
+changing runners. Account login remains board/owner-bound.
+
+Verification for this scope remains `not-run`: use an admitted agent REST/CLI
+validation path, assert missing grants and cross-company targets/accounts are
+denied, then prove the useful task/follow-up separately. `hire_agent` inherits its
+caller's runtime; do not assume its binding accepts arbitrary runner or account
+settings. See [creation access](./agents.md#hire).
 
 ## `runs`
 
@@ -114,3 +144,10 @@ own policy and access review.
 
 Gaps: Execution context reset is not a permitted generic native API mutation or an
 ordinary agent management path.
+
+Scoped source-only evidence: [configuration changes](../../server/src/services/agent-configuration.ts)
+and [native execution/recovery](../../server/src/services/native-runtime/native-session-executor.ts)
+retain existing execution on unrelated edits and use recorded run configuration
+for active/recovered runs. Explicit runner changes use revisions and session
+invalidation. Verify saved configuration, current versus historical run identity,
+restart and follow-up without granting session-reset authority to an agent.
