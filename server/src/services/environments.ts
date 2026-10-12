@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+
+import { SANDBOX_PLATFORM_PROBE_METADATA_KEY } from "./environment-custom-image-runtime.js";
 import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
@@ -859,6 +861,21 @@ export function environmentService(db: Db) {
   };
 
   return {
+    recordSandboxPlatformProbe: async (input: {
+      environmentId: string;
+      companyId: string;
+      config: Record<string, unknown>;
+      proof: Record<string, unknown> | null;
+    }): Promise<boolean> => {
+      const existing = sql`coalesce(${environments.metadata}->${SANDBOX_PLATFORM_PROBE_METADATA_KEY}, '{}'::jsonb)`;
+      const probes = input.proof === null
+        ? sql`${existing} - ${input.companyId}`
+        : sql`${existing} || ${JSON.stringify({ [input.companyId]: input.proof })}::jsonb`;
+      const rows = await db.update(environments).set({
+        metadata: sql`jsonb_set(coalesce(${environments.metadata}, '{}'::jsonb), ARRAY[${SANDBOX_PLATFORM_PROBE_METADATA_KEY}]::text[], ${probes}, true)`,
+      }).where(and(eq(environments.id, input.environmentId), eq(environments.driver, "sandbox"), eq(environments.config, input.config))).returning({ id: environments.id });
+      return rows.length > 0;
+    },
     list: async (
       companyIdOrFilters?: string | EnvironmentListFilters,
       maybeFilters?: EnvironmentListFilters,
