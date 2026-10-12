@@ -9,6 +9,7 @@ vi.mock("./environment-probe.js", () => ({ readSandboxPlatformQualification: sta
 vi.mock("./environment-config.js", () => ({ resolveEnvironmentDriverConfigForRuntime: state.resolveEnvironment }));
 vi.mock("@paperclipai/adapter-utils/ssh", () => ({ runSshCommand: state.ssh }));
 import { AGENT_RUNNER_SSH_PLATFORM_COMMAND, agentRunnerAvailability, resolveAgentRunnerTargetForCompany, resolveNewAgentRunner, resolveNewAgentRunnerForCompany } from "./agent-runner-selection.js";
+import { buildCodexAcpConfig } from "@paperclipai/adapter-codex-local/server";
 import { localAgentRunnerTarget } from "../lib/agent-runner-platform.js";
 const target = { driver: "local", platform: "linux", architecture: "x64" };
 const qualifiedTargets = [target, { driver: "local", platform: "linux", architecture: "arm64" }, { driver: "local", platform: "darwin", architecture: "arm64" }, { driver: "local", platform: "darwin", architecture: "x64" }];
@@ -117,6 +118,71 @@ describe("server-owned Codex runner selection", () => {
     try { resolveNewAgentRunner({ adapterType: "codex_local", target, adapterConfig: { [field]: true } }); }
     catch (error) { expect(error).toMatchObject({ status: 422, details: { fields: [field] } }); }
   });
+  it.each([
+    ["agentCommand", "acpAgentCommand", "custom-codex-acp"],
+    ["stateDir", "acpStateDir", "/custom/acp-state"],
+    ["mode", "acpMode", "oneshot"],
+    ["permissionMode", "acpPermissionMode", "deny-all"],
+    ["nonInteractivePermissions", "acpNonInteractivePermissions", "fail"],
+    ["warmHandleIdleMs", "acpWarmHandleIdleMs", 30_000],
+  ])("rejects effective Legacy ACP alias %s/%s before automatic native translation", (canonical, alias, value) => {
+    const adapterConfig = { engine: "acp", [alias]: value };
+    expect(buildCodexAcpConfig(adapterConfig)).toHaveProperty(canonical, value);
+    for (const runner of ["auto", "paperclip"] as const) {
+      expect(() => resolveNewAgentRunner({ adapterType: "codex_local", adapterConfig, target, runner }))
+        .toThrow(expect.objectContaining({ status: 422, details: { code: "agent_runner_config_incompatible", fields: [alias] } }));
+    }
+    expect(resolveNewAgentRunner({ adapterType: "codex_local", adapterConfig, target, runner: "legacy" }))
+      .toEqual({ adapterType: "codex_local", adapterConfig });
+  });
+
+  it.each([
+    ["agentCommand", "acpAgentCommand", "canonical-command", "alias-command"],
+    ["stateDir", "acpStateDir", "/canonical-state", "/alias-state"],
+    ["permissionMode", "acpPermissionMode", "approve-all", "deny-all"],
+  ])("checks the effective canonical ACP %s ahead of its alias", (canonical, alias, value, aliasedValue) => {
+    const adapterConfig = { engine: "acp", [canonical]: value, [alias]: aliasedValue };
+    expect(buildCodexAcpConfig(adapterConfig)).toHaveProperty(canonical, value);
+    expect(() => resolveNewAgentRunner({ adapterType: "codex_local", adapterConfig, target }))
+      .toThrow(expect.objectContaining({ status: 422, details: { code: "agent_runner_config_incompatible", fields: [canonical] } }));
+  });
+
+  it("uses Legacy ACP canonical precedence and removes compatible or shadowed aliases idempotently", () => {
+    const adapterConfig = { engine: "acp", mode: "persistent", acpMode: "oneshot",
+      nonInteractivePermissions: "deny", acpNonInteractivePermissions: "fail",
+      warmHandleIdleMs: 0, acpWarmHandleIdleMs: 30_000 };
+    expect(buildCodexAcpConfig(adapterConfig)).toMatchObject({ mode: "persistent", nonInteractivePermissions: "deny", warmHandleIdleMs: 0 });
+    const resolved = resolveNewAgentRunner({ adapterType: "codex_local", adapterConfig, target });
+    expect(resolved).toMatchObject({ adapterType: "paperclip_runner", adapterConfig: { codexPermissionMode: "never" } });
+    for (const field of Object.keys(adapterConfig)) expect(resolved.adapterConfig).not.toHaveProperty(field);
+    expect(resolveNewAgentRunner(resolved)).toEqual(resolved);
+    expect(resolveNewAgentRunner({ adapterType: "codex_local", adapterConfig, target, runner: "legacy" }))
+      .toEqual({ adapterType: "codex_local", adapterConfig });
+  });
+
+  it("accepts equivalent ACP default aliases without persisting legacy-only controls", () => {
+    const adapterConfig = { engine: "acp", acpMode: " persistent ", acpNonInteractivePermissions: " deny ", acpWarmHandleIdleMs: 0 };
+    expect(buildCodexAcpConfig(adapterConfig)).toMatchObject({ mode: "persistent", nonInteractivePermissions: "deny", warmHandleIdleMs: 0 });
+    const resolved = resolveNewAgentRunner({ adapterType: "codex_local", adapterConfig, target });
+    expect(resolved.adapterType).toBe("paperclip_runner");
+    for (const field of Object.keys(adapterConfig)) expect(resolved.adapterConfig).not.toHaveProperty(field);
+    expect(resolveNewAgentRunner(resolved)).toEqual(resolved);
+  });
+
+  it("uses nullish ACP idle precedence instead of treating a canonical zero as absent", () => {
+    const adapterConfig = { engine: "acp", warmHandleIdleMs: null, acpWarmHandleIdleMs: 30_000 };
+    expect(buildCodexAcpConfig(adapterConfig)).toHaveProperty("warmHandleIdleMs", 30_000);
+    expect(() => resolveNewAgentRunner({ adapterType: "codex_local", adapterConfig, target }))
+      .toThrow(expect.objectContaining({ status: 422, details: { code: "agent_runner_config_incompatible", fields: ["acpWarmHandleIdleMs"] } }));
+  });
+
+  it("uses a nonempty ACP alias when its canonical string is blank", () => {
+    const adapterConfig = { engine: "acp", permissionMode: "  ", acpPermissionMode: " deny-all " };
+    expect(buildCodexAcpConfig(adapterConfig)).toHaveProperty("permissionMode", "deny-all");
+    expect(() => resolveNewAgentRunner({ adapterType: "codex_local", adapterConfig, target }))
+      .toThrow(expect.objectContaining({ status: 422, details: { code: "agent_runner_config_incompatible", fields: ["acpPermissionMode"] } }));
+  });
+
   it("preserves explicit historical native profiles, including managed configurations", () => {
     for (const config of [{ provider: "acpx", acpxAgent: "claude", model: "claude-sonnet-5" }, { provider: "claude_managed", managedProfileId: "profile", managedAgentsRetentionAcknowledged: true }, { provider: "aws_agentcore", agentCoreProfileId: "profile" }]) expect(resolveNewAgentRunner({ adapterType: "paperclip_runner", adapterConfig: config })).toEqual({ adapterType: "paperclip_runner", adapterConfig: config });
   });

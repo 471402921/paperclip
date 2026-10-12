@@ -118,6 +118,14 @@ describe("buildCodexLocalConfig", () => {
 });
 
 describe("buildPaperclipRunnerConfig", () => {
+  it.each(["codex", "claude"])("preserves, overrides and explicitly clears saved %s reasoning effort", harness => {
+    const profile = harness === "codex" ? { provider: "codex" } : { provider: "acpx", acpxAgent: "claude" };
+    const values = makeValues({ adapterSchemaValues: { ...profile, modelReasoningEffort: "high", reasoningEffort: "low", effort: "low" } });
+    expect(buildPaperclipRunnerConfig({ ...values, thinkingEffort: undefined }).modelReasoningEffort).toBe("high");
+    expect(buildPaperclipRunnerConfig({ ...values, thinkingEffort: "max" }).modelReasoningEffort).toBe("max");
+    const cleared = buildPaperclipRunnerConfig({ ...values, thinkingEffort: "" });
+    for (const key of ["modelReasoningEffort", "reasoningEffort", "effort"]) expect(cleared).not.toHaveProperty(key);
+  });
   it.each([undefined, false, true])("preserves Dot attachment consent in create/import forms: %s", value => {
     const config = buildPaperclipRunnerConfig(makeValues({ adapterType: "paperclip_runner", adapterSchemaValues: { provider: "openai_dot", dotAttachmentAccess: value } }));
     expect(config.dotAttachmentAccess).toBe(value === true);
@@ -142,6 +150,7 @@ describe("buildPaperclipRunnerConfig", () => {
       codexPermissionMode: "never",
       lifecycleMode: "per_turn",
       model: "gpt-5.4",
+      modelReasoningEffort: "high",
       timeoutSec: 0,
       graceSec: 15,
     });
@@ -149,7 +158,6 @@ describe("buildPaperclipRunnerConfig", () => {
       "engine",
       "agentCommand",
       "stateDir",
-      "modelReasoningEffort",
       "search",
       "fastMode",
       "dangerouslyBypassApprovalsAndSandbox",

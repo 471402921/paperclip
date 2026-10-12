@@ -26,8 +26,8 @@ import { getAgentOrderStorageKey, writeAgentOrder } from "../lib/agent-order";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "../components/EmptyState";
-import { AgentConfigForm } from "../components/AgentConfigForm";
-import { cn } from "../lib/utils";
+import { AgentConfigForm, overlayValuesEqual } from "../components/AgentConfigForm";
+import { asObject, cn } from "../lib/utils";
 import {
   ArrowRight,
   Check,
@@ -585,7 +585,7 @@ function importAdapterValues(
     ...(runner !== undefined ? { runner } : nativeHarness ? { runner: agentRunner("paperclip_runner") } : {}),
     ...(sourceConfig && choice === "codex_local" ? {
       model: typeof sourceConfig.model === "string" ? sourceConfig.model : "",
-      thinkingEffort: String(sourceConfig.reasoningEffort ?? sourceConfig.modelReasoningEffort ?? ""),
+      thinkingEffort: String(sourceConfig.modelReasoningEffort ?? sourceConfig.reasoningEffort ?? ""),
       ...(typeof savedBypass === "boolean" ? { codexLegacySandboxBypass: savedBypass } : {}),
       // Runner-only imports preserve server-translated policy; display that policy too.
       dangerouslyBypassSandbox: typeof savedBypass === "boolean" ? savedBypass
@@ -594,6 +594,18 @@ function importAdapterValues(
           : resolveCodexLocalCliPolicy(sourceConfig).bypass,
     } : {}),
     ...(sourceConfig && choice === "claude_local" ? { model: typeof sourceConfig.model === "string" ? sourceConfig.model : "", thinkingEffort: String(sourceConfig.modelReasoningEffort ?? sourceConfig.reasoningEffort ?? sourceConfig.effort ?? "") } : {}),
+    ...(nativeHarness && sourceConfig ? {
+      cwd: typeof sourceConfig.cwd === "string" ? sourceConfig.cwd : "",
+      instructionsFilePath: typeof sourceConfig.instructionsFilePath === "string" ? sourceConfig.instructionsFilePath : "",
+      envBindings: { ...asObject(sourceConfig.env) },
+      workspaceStrategyType: String(asObject(sourceConfig.workspaceStrategy).type ?? "project_primary"),
+      workspaceBaseRef: String(asObject(sourceConfig.workspaceStrategy).baseRef ?? ""),
+      workspaceBranchTemplate: String(asObject(sourceConfig.workspaceStrategy).branchTemplate ?? ""),
+      worktreeParentDir: String(asObject(sourceConfig.workspaceStrategy).worktreeParentDir ?? ""),
+      runtimeServicesJson: sourceConfig.workspaceRuntime ? JSON.stringify(sourceConfig.workspaceRuntime) : "",
+      ...(sourceConfig.lifecycleMode === "warm" || sourceConfig.lifecycleMode === "per_turn" ? { paperclipRunnerLifecycleMode: sourceConfig.lifecycleMode } : {}),
+      ...(typeof sourceConfig.idleTimeoutMs === "number" ? { paperclipRunnerIdleTimeoutMs: sourceConfig.idleTimeoutMs } : {}),
+    } : {}),
     ...(sourceAdapterType === "paperclip_runner" && choice !== "openai_dot"
       ? { adapterSchemaValues: { ...sourceConfig } } : {}),
     ...(choice === "openai_dot" ? {
@@ -1738,7 +1750,51 @@ export function CompanyImport() {
         if (selectedType === "openai_dot" && configVals.adapterSchemaValues?.allowUnmeteredProvider !== true) {
           throw new Error("OpenAI Dot requires acknowledgement of external billing. Configure the Dot adapter and enable Allow externally billed provider.");
         }
-        override.adapterConfig = getUIAdapter(retainsNativeHarness ? "paperclip_runner" : configVals.adapterType).buildAdapterConfig(configVals);
+        const nativeClaudeForm = selectedType === "claude_local" && (retainsNativeHarness
+          || (configVals.runner !== "legacy" && configVals.adapterSchemaValues?.provider === "acpx"
+            && configVals.adapterSchemaValues.acpxAgent === "claude"));
+        const build = getUIAdapter(nativeClaudeForm ? "paperclip_runner" : configVals.adapterType).buildAdapterConfig;
+        const edited = build(configVals);
+        if (agent.adapterType === "paperclip_runner" && selectedType === agent.adapterChoice
+          && ["codex_local", "claude_local"].includes(selectedType) && configVals.adapterType === selectedType
+          && agentHarnessType("paperclip_runner", configVals.adapterSchemaValues) === selectedType) {
+          // Project only real form changes onto the saved native configuration.
+          // Form defaults must not replace bindings or runtime fields; explicit
+          // clears must not be filled back in from the source either.
+          const original = importAdapterValues(selectedType, agent.adapterConfig, agent.adapterType, configVals.runner);
+          const baseline = build(original);
+          const retained = { ...agent.adapterConfig };
+          const applyChanges = (before: Record<string, unknown>, after: Record<string, unknown>) => {
+            for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+              if (overlayValuesEqual(before[key], after[key])) continue;
+              if (after[key] === undefined) delete retained[key];
+              else retained[key] = after[key];
+            }
+          };
+          applyChanges(original.adapterSchemaValues ?? {}, configVals.adapterSchemaValues ?? {});
+          applyChanges(baseline, edited);
+          if (selectedType === "claude_local") {
+            // The native builder preserves source schema fields. Project common
+            // form edits separately so a removed binding cannot be restored there.
+            const commonBuild = getUIAdapter("claude_local").buildAdapterConfig;
+            const commonBefore = commonBuild(original);
+            const commonAfter = commonBuild(configVals);
+            for (const key of ["cwd", "instructionsFilePath", "env", "workspaceStrategy", "workspaceRuntime"]) {
+              if (overlayValuesEqual(commonBefore[key], commonAfter[key])) continue;
+              if (commonAfter[key] === undefined) delete retained[key];
+              else retained[key] = commonAfter[key];
+            }
+          }
+          if (original.model !== configVals.model && !configVals.model) delete retained.model;
+          if (original.thinkingEffort !== configVals.thinkingEffort) {
+            delete retained.reasoningEffort;
+            delete retained.effort;
+            if (!configVals.thinkingEffort) delete retained.modelReasoningEffort;
+          }
+          override.adapterConfig = retained;
+        } else {
+          override.adapterConfig = edited;
+        }
       }
       overrides[agent.slug] = override;
     }

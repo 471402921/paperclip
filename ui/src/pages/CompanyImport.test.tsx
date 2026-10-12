@@ -1269,7 +1269,7 @@ describe("CompanyImport", () => {
     expect(preview.manifest.agents[0]!.adapterConfig).toEqual(savedSourceConfig);
   });
 
-  it.each(["deny-all", "approve-reads"])("preserves native Claude settings and saves an edited permission from %s", async permission => {
+  it.each(["deny-all", "approve-reads"].flatMap(permission => ["paperclip_runner", "claude_local"].map(sourceType => ({ permission, sourceType }))))("saves the selected Claude permission from $sourceType ($permission)", async ({ permission, sourceType }) => {
     mockOptionalCompany.mockReturnValue({ selectedCompanyId: "company-1" });
     mockAdaptersApi.list.mockResolvedValue([
       { type: "claude_local", disabled: false, supportedRunners: ["paperclip", "legacy"], defaultRunner: "paperclip" },
@@ -1277,16 +1277,22 @@ describe("CompanyImport", () => {
     ]);
     const preview = buildPreviewResult();
     const source = { provider: "acpx", acpxAgent: "claude", model: "claude-opus-5-5", modelReasoningEffort: "high", acpxPermissionMode: permission, timeoutSec: 180, lifecycleMode: "per_turn" };
-    preview.manifest.agents[0]!.adapterType = "paperclip_runner";
-    preview.manifest.agents[0]!.runner = "paperclip";
+    preview.manifest.agents[0]!.adapterType = sourceType;
+    preview.manifest.agents[0]!.runner = sourceType === "paperclip_runner" ? "paperclip" : "legacy";
     preview.manifest.agents[0]!.adapterConfig = source;
     mockCompaniesApi.importPreview.mockResolvedValue(preview);
     await renderPage();
     await enterGithubUrl();
     await clickButton(text => text === "Preview import");
     await clickButton(text => text.includes("configure adapter"));
+    if (sourceType === "claude_local") {
+      await clickButton(text => text.includes("Advanced"));
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Runner"]')!.click());
+      await act(async () => document.querySelector<HTMLButtonElement>('[role="option"][data-value="paperclip"]')!.click());
+      await flushReact();
+    }
     const select = container.querySelector<HTMLButtonElement>('[aria-label="Permission mode"]');
-    expect(select?.textContent).toContain(permission === "deny-all" ? "Deny all" : "Allow Paperclip reads");
+    if (sourceType === "paperclip_runner") expect(select?.textContent).toContain(permission === "deny-all" ? "Deny all" : "Allow Paperclip reads");
     await act(async () => select!.click());
     const nextPermission = permission === "deny-all" ? "approve-reads" : "deny-all";
     const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(element => element.textContent === (nextPermission === "deny-all" ? "Deny all" : "Allow Paperclip reads"));
@@ -1297,7 +1303,7 @@ describe("CompanyImport", () => {
     await settle();
     expect(lastImportMeta().adapterOverrides?.coder).toMatchObject({
       runner: "paperclip",
-      adapterConfig: { ...source, acpxPermissionMode: nextPermission },
+      adapterConfig: sourceType === "paperclip_runner" ? { ...source, acpxPermissionMode: nextPermission } : { provider: "acpx", acpxAgent: "claude", acpxPermissionMode: nextPermission },
     });
     expect(preview.manifest.agents[0]!.adapterConfig).toEqual(source);
   });
@@ -1358,6 +1364,76 @@ describe("CompanyImport", () => {
     });
     expect(lastImportMeta().adapterOverrides?.coder?.adapterConfig).not.toHaveProperty("model");
     expect(lastImportMeta().adapterOverrides?.coder?.adapterConfig).not.toHaveProperty("codexLegacySandboxBypass");
+  });
+
+  it.each(["codex_local", "claude_local"].flatMap(harness => ["model-clear", "effort-clear", "env-remove", "legacy-model", "changed-harness"].map(edit => ({ harness, edit }))))("preserves native source configuration during an ordinary import edit ($harness, $edit)", async ({ harness, edit }) => {
+    mockOptionalCompany.mockReturnValue({ selectedCompanyId: "company-1" });
+    mockAdaptersApi.list.mockResolvedValue([
+      { type: "claude_local", disabled: false, supportedRunners: ["paperclip", "legacy"], defaultRunner: "paperclip" },
+      { type: "codex_local", disabled: false, supportedRunners: ["paperclip", "legacy"], defaultRunner: "paperclip" },
+      { type: "paperclip_runner", disabled: false },
+    ]);
+    const preview = buildPreviewResult();
+    const sourceConfig = {
+      ...(harness === "codex_local" ? { provider: "codex", model: "gpt-5.6-sol" } : { provider: "acpx", acpxAgent: "claude", model: "claude-opus-5-5", acpxPermissionMode: "approve-all" }), modelReasoningEffort: "high", reasoningEffort: "low",
+      env: { CODEX_HOME: { type: "secret_ref", secretId: "saved-account", version: "latest" },
+        OPENAI_API_KEY: { type: "user_secret_ref", key: "OPENAI_API_KEY", version: "latest", required: true } },
+      timeoutSec: 120, graceSec: 30, cwd: "/saved/workspace", instructionsFilePath: "/saved/AGENTS.md",
+      workspaceStrategy: { type: "git_worktree", baseRef: "main", branchTemplate: "qa/{runId}", worktreeParentDir: "/saved/worktrees" },
+      workspaceRuntime: { services: [{ name: "app", command: "pnpm dev" }] },
+      lifecycleMode: "per_turn", idleTimeoutMs: 45000,
+    };
+    preview.manifest.agents[0]!.adapterType = "paperclip_runner";
+    preview.manifest.agents[0]!.runner = "paperclip";
+    preview.manifest.agents[0]!.adapterConfig = sourceConfig;
+    mockCompaniesApi.importPreview.mockResolvedValue(preview);
+    await renderPage();
+    await enterGithubUrl();
+    await clickButton(text => text === "Preview import");
+    if (edit === "changed-harness") {
+      const harness = findAdapterSelects()[0]!;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(harness, sourceConfig.provider === "codex" ? "claude_local" : "codex_local");
+        harness.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    }
+    await clickButton(text => text.includes("configure adapter"));
+    await clickButton(text => text.includes("Advanced"));
+    const expected: Record<string, unknown> = structuredClone(sourceConfig);
+    if (edit === "legacy-model") {
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Runner"]')!.click());
+      await act(async () => document.querySelector<HTMLButtonElement>('[role="option"][data-value="legacy"]')!.click());
+    }
+    if (edit === "model-clear" || edit === "legacy-model" || edit === "changed-harness") {
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Model"]')!.click());
+      await act(async () => [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(option => option.textContent?.trim().startsWith("Default"))!.click());
+      delete expected.model;
+    } else if (edit === "effort-clear") {
+      expect(container.querySelector('[aria-label="Thinking effort"]')?.textContent).toContain("High");
+      await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Thinking effort"]')!.click());
+      await act(async () => document.querySelector<HTMLButtonElement>('[role="option"][data-value=""]')!.click());
+      delete expected.modelReasoningEffort;
+      delete expected.reasoningEffort;
+    } else {
+      const remove = container.querySelector<HTMLButtonElement>('[aria-label="Remove CODEX_HOME"]');
+      expect(remove).toBeTruthy();
+      await act(async () => remove!.click());
+      await clickButton(text => text === "Save");
+      expected.env = { OPENAI_API_KEY: sourceConfig.env.OPENAI_API_KEY };
+    }
+    await clickButton(text => text.startsWith("Import 3 file"));
+    await settle();
+    if (edit === "changed-harness") {
+      expect(lastImportMeta().adapterOverrides?.coder?.adapterType).toBe(harness === "codex_local" ? "claude_local" : "codex_local");
+      const config = lastImportMeta().adapterOverrides?.coder?.adapterConfig;
+      for (const field of ["provider", "env", "workspaceStrategy", "workspaceRuntime", "lifecycleMode", "idleTimeoutMs", "modelReasoningEffort"]) expect(config).not.toHaveProperty(field);
+      expect(config?.timeoutSec).toBe(0);
+      return;
+    }
+    expect(lastImportMeta().adapterOverrides?.coder).toEqual({
+      adapterType: "paperclip_runner", runner: edit === "legacy-model" ? "legacy" : "paperclip", adapterConfig: expected,
+    });
+    expect(preview.manifest.agents[0]!.adapterConfig).toEqual(sourceConfig);
   });
 
   it("does not reinterpret an unknown native provider as Codex when its configuration is edited", async () => {
