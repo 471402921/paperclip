@@ -1430,7 +1430,7 @@ export const runnerSuites: readonly RunnerSuiteFixture[] = [
     groups: ["onboarding"],
     profiles: runnerProfiles.filter(profile => ["legacy-codex", "legacy-claude", "runner-codex", "runner-acpx-claude"].includes(profile.id)),
     environments: [localEnvironment], tasks: firstTaskTasks, expectedMatrixSize: 52,
-    definitionMetadata: { version: 6, runGrading: "evidenced-nonexecution-and-refusal", credentialPersistenceCheck: false, questionChoiceMinimum: 2, nativeSetup: "qualified-platform-wizard-saved-default", productionInstructions: true, qualityGrading: "informational" },
+    definitionMetadata: { version: 7, runGrading: "evidenced-nonexecution-and-refusal", credentialPersistenceCheck: false, questionChoiceMinimum: 2, nativeSetup: "qualified-platform-wizard-saved-default", claudeDefaultTarget: "darwin-arm64", legacySetup: "explicit-advanced-runner-choice", productionInstructions: true, qualityGrading: "informational" },
   },
   {
     id: "agent-chat", label: "Persistent Agent Chat",

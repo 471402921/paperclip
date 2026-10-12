@@ -204,7 +204,7 @@ export async function setupFirstTaskFixtures(input: {
     exact: true,
   });
   const savedKey = page.getByRole("combobox", { name: "Saved API key" });
-  if (execution.profile.id === "legacy-codex") {
+  if (["legacy-codex", "legacy-claude"].includes(execution.profile.id)) {
     await page.getByText("Advanced", { exact: true }).click();
     await page.getByRole("button", { name: "Runner", exact: true }).click();
     await page.getByRole("option", { name: "Legacy runner", exact: true }).click();

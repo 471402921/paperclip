@@ -1735,7 +1735,9 @@ export function CompanyImport() {
         if (selectedType === "openai_dot" && configVals.adapterSchemaValues?.allowUnmeteredProvider !== true) {
           throw new Error("OpenAI Dot requires acknowledgement of external billing. Configure the Dot adapter and enable Allow externally billed provider.");
         }
-        override.adapterConfig = getUIAdapter(configVals.adapterType).buildAdapterConfig(configVals);
+        const retainsNativeHarness = agent.adapterType === "paperclip_runner"
+          && selectedType === agent.adapterChoice && ["codex_local", "claude_local"].includes(selectedType);
+        override.adapterConfig = getUIAdapter(retainsNativeHarness ? "paperclip_runner" : configVals.adapterType).buildAdapterConfig(configVals);
       }
       overrides[agent.slug] = override;
     }

@@ -41,16 +41,27 @@ function incompatible(fields: string[]): never {
 }
 
 function resolveClaudeRunnerConfig(config: Record<string, unknown>): Record<string, unknown> {
-  const unsupported = claudeRunnerUnsupportedSettings(config);
+  const translated = { ...config };
+  const legacyPermission = [config.permissionMode, config.acpPermissionMode].find(value => typeof value === "string" && value.trim()) as string | undefined;
+  if (legacyPermission !== undefined) {
+    const mode = legacyPermission.trim();
+    if (!["approve-all", "approve-reads", "deny-all"].includes(mode)
+      || (config.acpxPermissionMode !== undefined && config.acpxPermissionMode !== mode)) incompatible(["permissionMode", "acpPermissionMode"]);
+    translated.acpxPermissionMode = mode;
+  }
+  for (const key of ["permissionMode", "acpPermissionMode"]) {
+    if (config[key] !== undefined && typeof config[key] !== "string") incompatible([key]);
+    delete translated[key];
+  }
+  const unsupported = claudeRunnerUnsupportedSettings(translated);
   const effort = config.modelReasoningEffort ?? config.reasoningEffort ?? config.effort;
   if (config.model !== undefined && typeof config.model !== "string") unsupported.push("model");
   if (unsupported.length) incompatible(unsupported);
-  const translated = { ...config };
-  for (const key of ["engine", "command", "mode", "nonInteractivePermissions", "dangerouslySkipPermissions", "chrome", "maxTurnsPerRun", "effort", "reasoningEffort"]) delete translated[key];
+  for (const key of ["engine", "command", "mode", "acpMode", "nonInteractivePermissions", "acpNonInteractivePermissions", "dangerouslySkipPermissions", "chrome", "maxTurnsPerRun", "effort", "reasoningEffort"]) delete translated[key];
   const env = config.env && typeof config.env === "object" ? config.env as Record<string, unknown> : {};
   const model = resolveClaudeModel(config.model, env);
   if (!model) incompatible(["model"]);
-  return { ...translated, ...(effort === undefined || effort === "" ? {} : { modelReasoningEffort: effort }), provider: "acpx", acpxAgent: "claude", model, acpxPermissionMode: config.acpxPermissionMode ?? "approve-all", lifecycleMode: config.lifecycleMode ?? "per_turn" };
+  return { ...translated, ...(effort === undefined || effort === "" ? {} : { modelReasoningEffort: effort }), provider: "acpx", acpxAgent: "claude", model, acpxPermissionMode: translated.acpxPermissionMode ?? "approve-all", lifecycleMode: config.lifecycleMode ?? "per_turn" };
 }
 
 /** Idempotent translation. Missing dependencies or credentials never select another runner. */

@@ -23,7 +23,7 @@ describe("complete Anthropic receipt pricing", () => {
   });
   it.each([
     { complete: false }, { billingType: "unknown" }, { billingType: "subscription_included" },
-    { provider: "unknown" }, { biller: "aws_bedrock" }, { model: "claude-sonnet-latest" },
+    { provider: "unknown" }, { biller: "aws_bedrock" }, { model: "claude-sonnet-latest" }, { model: "constructor" }, { model: "toString" }, { model: "__proto__" },
     { usageBasis: "session_cumulative" }, { costUsd: 0.12 }, { costUsdExact: "0.12" }, { cacheAdjustedCostUsd: 0.12 },
     { pricingContext: { serviceTier: "priority" } }, { usageByModel: [{ model: "other", usage: { inputTokens: 1, outputTokens: 1 }, costUsd: 1 }] },
     { usage: undefined }, { usage: { inputTokens: 1, outputTokens: 1 } },

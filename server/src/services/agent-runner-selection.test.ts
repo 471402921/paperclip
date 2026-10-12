@@ -219,6 +219,15 @@ describe("Claude runner defaults", () => {
     expect(resolveNewAgentRunner(legacy)).toEqual({ adapterType: legacy.adapterType, adapterConfig: legacy.adapterConfig });
     expect(resolveNewAgentRunner({ adapterType: "claude_local", target: mac, adapterConfig: { model: "custom" } }).adapterConfig.model).toBe("custom");
   });
+  it.each(["permissionMode", "acpPermissionMode"])("translates the legacy Claude %s without granting broader permissions", key => {
+    for (const mode of ["deny-all", "approve-reads", "approve-all"]) {
+      const native = resolveNewAgentRunner({ adapterType: "claude_local", target: mac, adapterConfig: { engine: "acp", [key]: mode } });
+      expect(native.adapterConfig.acpxPermissionMode).toBe(mode);
+      expect(native.adapterConfig[key]).toBeUndefined();
+    }
+    expect(() => resolveNewAgentRunner({ adapterType: "claude_local", target: mac, adapterConfig: { [key]: "deny-all", acpxPermissionMode: "approve-all" } })).toThrow("cannot honor");
+    expect(() => resolveNewAgentRunner({ adapterType: "claude_local", target: mac, adapterConfig: { [key]: "unrecognized" } })).toThrow("Legacy runner");
+  });
   it("retains saved native Claude and allows an explicit compatible Legacy switch", () => {
     const saved = { adapterType: "paperclip_runner", adapterConfig: { provider: "acpx", acpxAgent: "claude", model: "custom", acpxPermissionMode: "approve-all", lifecycleMode: "per_turn" } };
     expect(resolveNewAgentRunner(saved)).toEqual(saved);
