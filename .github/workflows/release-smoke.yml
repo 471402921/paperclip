@@ -320,6 +320,49 @@ jobs:
           path: ${{ runner.temp }}/public-runner-packs
       - name: Install only the existing verifier tooling
         run: pnpm install --ignore-scripts --no-frozen-lockfile
+      - name: Checkout immutable ARM qualification tooling
+        if: ${{ matrix.target == 'linux-arm64' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # job.workflow_* identifies this reusable workflow, not its caller.
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .qualification-tooling
+          sparse-checkout: scripts/prepare-linux-arm64-qualification.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Prepare Linux ARM sandbox prerequisites
+        if: ${{ matrix.target == 'linux-arm64' }}
+        timeout-minutes: 5
+        env:
+          SOURCE_SHA: ${{ inputs.qualification_source_sha }}
+          TOOLING_SHA: ${{ job.workflow_sha }}
+          TOOLING_REPOSITORY: ${{ job.workflow_repository }}
+          TOOLING_WORKFLOW_REF: ${{ job.workflow_ref }}
+          TOOLING_WORKFLOW_PATH: ${{ job.workflow_file_path }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          [[ "$TOOLING_SHA" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || exit 1
+          [[ "$(git -C .qualification-tooling rev-parse HEAD)" == "$TOOLING_SHA" ]] || exit 1
+          node --input-type=module <<'NODE'
+          import { createHash } from 'node:crypto';
+          import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          const directory = join(process.env.RUNNER_TEMP, 'paperclip-arm-bwrap-prerequisite');
+          mkdirSync(directory, { recursive: true });
+          const helper = '.qualification-tooling/scripts/prepare-linux-arm64-qualification.sh';
+          writeFileSync(join(directory, 'qualification-identity.json'), JSON.stringify({
+            productSourceSha: process.env.SOURCE_SHA,
+            toolingSourceSha: process.env.TOOLING_SHA,
+            toolingRepository: process.env.TOOLING_REPOSITORY,
+            toolingWorkflowRef: process.env.TOOLING_WORKFLOW_REF,
+            toolingWorkflowPath: process.env.TOOLING_WORKFLOW_PATH,
+            helperSha256: createHash('sha256').update(readFileSync(helper)).digest('hex'),
+          }, null, 2) + '\n');
+          NODE
+          bash .qualification-tooling/scripts/prepare-linux-arm64-qualification.sh
       - name: Verify host identity and actual clean npm consumer
         env:
           SOURCE_SHA: ${{ inputs.qualification_source_sha }}
@@ -336,6 +379,8 @@ jobs:
         if: always()
         with:
           name: ${{ inputs.artifact_name }}-${{ matrix.target }}
-          path: ${{ runner.temp }}/native-public-install.json
+          path: |
+            ${{ runner.temp }}/native-public-install.json
+            ${{ runner.temp }}/paperclip-arm-bwrap-prerequisite/
           if-no-files-found: warn
           retention-days: 14
