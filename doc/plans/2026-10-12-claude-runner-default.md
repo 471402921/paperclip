@@ -216,3 +216,38 @@ and [cloud image build](https://github.com/paperclipai/paperclip/actions/runs/38
 retain source `557c3064a30779e86e1ae312eab3d1d42c3a8b8d`. Actual pack/image
 identity agreement remains required. Additional Claude defaults remain gated
 pending clean-install and execution evidence. No local Docker or Rust build.
+
+### Independent cloud pack comparison and explicit-asset compatibility
+
+The cloud image build `38293576503` passed. Its immutable image is
+`ghcr.io/paperclipai/paperclip-daytona-runner@sha256:d9dbda3a9435e3e555f431bdeb0ba22e1241ae9103184e6c1646a200e26423e1`.
+The image manifest, copied from a stopped disposable container on the cloud
+host, exactly matches the independently downloaded Linux x64 producer manifest:
+pack digest `sha256:97f44524d1b35ed6295c922f6b52ac376960213be0a0e09a3635c281db26aecf`;
+Node digest `sha256:7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c`;
+provider-tree digest `sha256:83aafb7d6c951c1fa31c0d8bbbfd32c39b4d265b01607cd566c55c8d9b4a6143`.
+Both bind source 557c3064a3. This is actual byte-identity proof, not task execution.
+
+The independently downloaded ARM producer archive has storage SHA256
+`7c219420b02149cdc3f44c6c5073bed40631d26c03d06f0b109a9ff36962c9c7`;
+its pack digest is `sha256:51fe734d79211b474ee13f53080ac60f07cdc9315ebd33b703ecf4a7dc0f8ce1`.
+Bounded extraction checked 7,244 members, all recorded artifact hashes and
+absence of controller binaries. The shipped Claude admission probe passed on
+the native cloud ARM host with zero provider turns and no credentials.
+The prior installed pack remains available separately.
+
+Latest platform review found the automatic Linux restriction also affected
+explicit Mac SSH assets. The restriction now applies only when selecting a
+bundled pack; explicit assets retain their existing manifest integrity checks.
+Eight targeted controls passed, including both Mac architectures and unchanged
+automatic Linux selection. Final broad source checks run in the cloud on
+reconciled `06c4f5e5a0`: [campaign 38296110502](https://github.com/paperclipai/paperclip/actions/runs/38296110502).
+The behavior head `2874232d25` received 5/5 after its three settings fixes.
+
+Installed Mac proof is available as a Paperclip
+[acceptance report](http://127.0.0.1:3105/api/attachments/61653e0a-3ae0-459c-b1d1-20b5d1db73d6/content?download=1)
+and [screenshot](http://127.0.0.1:3105/api/attachments/bce37c56-3984-45b9-a995-b6a23cc9a85d/content?download=1),
+with artifact work products on CLAA-2. The actual native SDK is the server's
+nested 0.3.286 package, executable SHA256
+`75e3016e9d2570767b08e43a7467d4817a4f149232c169ca295f2c95fef21433`;
+the top-level Legacy SDK is a separate dependency and was not this runtime.

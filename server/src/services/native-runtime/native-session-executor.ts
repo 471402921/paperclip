@@ -11523,10 +11523,11 @@ async function createRunnerdBackendWithinSessionClaim(
     ? await resolveRemotePaperclipRunnerBinary({ runner: remoteCommandRunner!, remoteCwd: remoteTarget!.remoteCwd, configuredPath: input.runnerRemoteBinaryPath })
     : null;
   const remoteClaudeTarget = remoteClaudeRunnerBinary ? runnerBinaryTarget(readFileSync(remoteClaudeRunnerBinary)) : null;
-  if (remoteClaude && remoteClaudeTarget !== "linux-x64" && remoteClaudeTarget !== "linux-arm64") {
+  const useBundledClaudePack = remoteClaude && !input.runnerRemoteProviderPackPath?.trim();
+  if (useBundledClaudePack && remoteClaudeTarget !== "linux-x64" && remoteClaudeTarget !== "linux-arm64") {
     throw new Error("runner_remote_provider_artifact_incompatible: Claude remote provider packs require a qualified Linux target");
   }
-  const bundledClaudeManifest = remoteClaudeTarget === "linux-x64" || remoteClaudeTarget === "linux-arm64"
+  const bundledClaudeManifest = useBundledClaudePack && (remoteClaudeTarget === "linux-x64" || remoteClaudeTarget === "linux-arm64")
     ? bundledRemoteProviderPackManifestPath(undefined, remoteClaudeTarget) : null;
   const bundledClaudeRoot = bundledClaudeManifest && existsSync(join(dirname(bundledClaudeManifest), "node_modules"))
     ? dirname(bundledClaudeManifest) : null;
