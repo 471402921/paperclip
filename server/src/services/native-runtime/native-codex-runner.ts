@@ -224,7 +224,13 @@ export async function resolveRemotePaperclipRunnerBinary(input: {
   }
   const configured = input.configuredPath?.trim();
   if (configured && !isAbsolute(configured)) throw new Error("PAPERCLIP_RUNNER_REMOTE_BINARY_PATH must be an absolute path");
-  const binary = configured || defaultCapabilityRunnerdBinary(platform, architecture);
+  // A same-host sandbox can use the supervisor's fresh development artifact.
+  // Cross-platform targets must never inherit the controller's override.
+  const controllerOverride = platform === process.platform && architecture === process.arch
+    ? process.env.PAPERCLIP_RUNNER_BINARY : undefined;
+  const binary = configured || (controllerOverride
+    ? resolvePaperclipRunnerBinary(controllerOverride)
+    : defaultCapabilityRunnerdBinary(platform, architecture));
   let bytes: Buffer;
   try { bytes = readFileSync(binary); }
   catch (cause) { throw new Error(`runner_remote_artifact_unavailable: install the Paperclip release containing the ${platform}-${architecture} daemon or configure PAPERCLIP_RUNNER_REMOTE_BINARY_PATH`, { cause }); }

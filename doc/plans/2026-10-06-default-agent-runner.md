@@ -78,7 +78,26 @@ These corrections update server setup/execution and guide source. The qualified
 `a200495` package startup and historical task evidence retain their literal
 component boundaries; no new managed live proof or paid turn is claimed.
 
-Next action: require fresh CI/review on the corrected integrated candidate, refresh the
+Fresh review at `e79254b` verifies the preceding fixes and reports one valid
+development override edge. The common remote resolver now preserves
+`PAPERCLIP_RUNNER_BINARY` only when the measured target OS/CPU matches the
+controller. Explicit remote overrides retain priority; every selected artifact
+still requires a matching native header. Cross-target selection ignores the
+controller override. Seven new baseline failures reproduce the defect; 133
+target/setup/backend/retained/version controls and server typecheck pass after
+the correction. Receipt:
+`/private/tmp/codex-default-same-host-override-fix-receipt.json`.
+
+The `e79254b` preview restart preserves all four configurations and both
+historical native runs. Its actual served guide now reports the shared GNU floor
+and qualified Mac/ARM targets. No native build, Docker build, or provider call
+runs locally. Main CI's selector remains unallocated; other PRs share this queue.
+No environment approval, owned concurrency conflict, or routing failure was
+found. Org capacity versus GitHub allocation is unconfirmed. Receipt:
+`/private/tmp/pr2-e792-selector-queue-investigation.json`. Required final CI
+aggregates and fresh review remain pending, not passed.
+
+Next action: require fresh CI/review on the final corrected candidate, refresh the
 matched preview, and publish final conclusions in the canonical PR's evidence
 index. Human code-owner approval, managed staging onboarding, and actual
 post-merge Cloud composition remain outstanding. No merge or production
