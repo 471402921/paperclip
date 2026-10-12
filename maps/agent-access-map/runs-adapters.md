@@ -32,6 +32,11 @@ credentials/run context; inspect its result and applicable persistence/attributi
 Assert the relevant denied actor, owner, company or mode from Policy. Review the
 remaining operations before qualifying the whole capability.
 
+Runner discovery exposes `supportedRunners` and `defaultRunner`; it describes
+qualified selection, not successful authentication or task execution. Native
+Claude retains existing account grants and company/responsible-user boundaries.
+Source: [adapter discovery](../../server/src/adapters/registry.ts).
+
 Gaps: Raw instance adapter listing requires board, while company model discovery exists
 for eligible agents.
 

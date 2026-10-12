@@ -31,6 +31,10 @@ Preconditions: follow the [baseline](./README.md#before-driving-a-journey). Reco
 
 Automated: [adapter validation routes](../../server/src/__tests__/agent-adapter-validation-routes.test.ts) and [model refresh](../../server/src/__tests__/adapter-model-refresh-routes.test.ts) cover server behavior.
 
+Claude native setup uses the existing Anthropic API-key or subscription connection
+flow. Record the selected account separately from successful execution; unavailable
+models/authentication and unsupported Legacy-only options must fail visibly.
+
 Manual: Select the intended adapter and account, refresh model choices, and run its environment test. Save, reload, then execute a small task. Repeat with a deliberately unavailable account and verify the failure remains visible.
 
 ### `run-history`
