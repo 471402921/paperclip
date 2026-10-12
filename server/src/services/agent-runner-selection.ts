@@ -59,7 +59,17 @@ function resolveClaudeRunnerConfig(config: Record<string, unknown>): Record<stri
   if (unsupported.length) incompatible(unsupported);
   for (const key of ["engine", "command", "mode", "acpMode", "nonInteractivePermissions", "acpNonInteractivePermissions", "dangerouslySkipPermissions", "chrome", "maxTurnsPerRun", "effort", "reasoningEffort"]) delete translated[key];
   const env = config.env && typeof config.env === "object" ? config.env as Record<string, unknown> : {};
-  const model = resolveClaudeModel(config.model, env);
+  const modelEnv = { ...env };
+  if (!(typeof config.model === "string" && config.model.trim())) {
+    for (const key of ["ANTHROPIC_MODEL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "ANTHROPIC_BEDROCK_BASE_URL"]) {
+      const binding = env[key];
+      if (binding === undefined || typeof binding === "string") continue;
+      if (binding && typeof binding === "object" && "type" in binding && binding.type === "plain"
+        && "value" in binding && typeof binding.value === "string") modelEnv[key] = binding.value;
+      else incompatible([`env.${key}`]);
+    }
+  }
+  const model = resolveClaudeModel(config.model, modelEnv);
   if (!model) incompatible(["model"]);
   return { ...translated, ...(effort === undefined || effort === "" ? {} : { modelReasoningEffort: effort }), provider: "acpx", acpxAgent: "claude", model, acpxPermissionMode: translated.acpxPermissionMode ?? "approve-all", lifecycleMode: config.lifecycleMode ?? "per_turn" };
 }

@@ -1265,7 +1265,7 @@ describe("CompanyImport", () => {
     }
     await clickButton(text => text.startsWith("Import 3 file"));
     await settle();
-    expect(lastImportMeta().adapterOverrides).toEqual({ coder: { adapterType: "codex_local", runner } });
+    expect(lastImportMeta().adapterOverrides).toEqual({ coder: { adapterType: sourceType === "paperclip_runner" ? "paperclip_runner" : "codex_local", runner } });
     expect(preview.manifest.agents[0]!.adapterConfig).toEqual(savedSourceConfig);
   });
 
@@ -1299,6 +1299,32 @@ describe("CompanyImport", () => {
       runner: "paperclip",
       adapterConfig: { ...source, acpxPermissionMode: nextPermission },
     });
+    expect(preview.manifest.agents[0]!.adapterConfig).toEqual(source);
+  });
+
+  it("keeps native Claude configuration at the server translation boundary when switching an import to Legacy", async () => {
+    mockOptionalCompany.mockReturnValue({ selectedCompanyId: "company-1" });
+    mockAdaptersApi.list.mockResolvedValue([
+      { type: "claude_local", disabled: false, supportedRunners: ["paperclip", "legacy"], defaultRunner: "paperclip" },
+      { type: "paperclip_runner", disabled: false },
+    ]);
+    const preview = buildPreviewResult();
+    const source = { provider: "acpx", acpxAgent: "claude", model: "claude-opus-5-5", modelReasoningEffort: "high", acpxPermissionMode: "approve-all", timeoutSec: 180, lifecycleMode: "per_turn" };
+    preview.manifest.agents[0]!.adapterType = "paperclip_runner";
+    preview.manifest.agents[0]!.runner = "paperclip";
+    preview.manifest.agents[0]!.adapterConfig = source;
+    mockCompaniesApi.importPreview.mockResolvedValue(preview);
+    await renderPage();
+    await enterGithubUrl();
+    await clickButton(text => text === "Preview import");
+    await clickButton(text => text.includes("configure adapter"));
+    await clickButton(text => text.includes("Advanced"));
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Runner"]')!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('[role="option"][data-value="legacy"]')!.click());
+    await flushReact();
+    await clickButton(text => text.startsWith("Import 3 file"));
+    await settle();
+    expect(lastImportMeta().adapterOverrides?.coder).toMatchObject({ adapterType: "paperclip_runner", runner: "legacy" });
     expect(preview.manifest.agents[0]!.adapterConfig).toEqual(source);
   });
 

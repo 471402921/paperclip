@@ -174,3 +174,45 @@ The existing successful preview/data and all unknown-charge holds remain.
 No additional paid turns occurred during this review/packaging work; aggregate
 active company caps remain $42 of the $50 Claude ceiling. Remaining live checks
 use API keys per the user's steering. No Docker or Rust build ran locally.
+
+## Installed API-key acceptance and latest review corrections
+
+The installed 8d07b409 public package preview is now usable at
+[CLAA-2](http://127.0.0.1:3105/CLAA/issues/CLAA-2). Runs
+`11155946-5239-4127-9c67-ff23acf961c2` and
+`5f0e4191-9dd6-44ef-bc0a-0b66a910ec2c` succeeded using the saved API-key
+connection, Opus 5.5, admitted high effort, and normal installed daemon
+resolution with no runner override or ambient Claude credential. Accounting
+completed: estimates $0.197602000 and $0.136576400. Known estimates now total
+$1.331719; unknown-charge reservations and aggregate $42 caps remain intact.
+
+The controller restarted between turns. Task, provider and backend session
+identities matched privately; IDs are redacted from the sanitized report
+`/private/tmp/claude-installed-api-acceptance.json`. Agent settings and the
+completed task persisted after reload with the native experiment disabled.
+Independent downloads matched v1 (168 bytes, SHA256
+`858f0438f048937dcd2e357a77f77e058582968215d33d5857637cd37fcfdb94`) and
+v2 (222 bytes, SHA256
+`4efd87a1f3a9d946d4278906bb779c4e3c0c83ec92faafdc29b9d6da28cada6d`);
+v1 remained unchanged. [v1 download](http://127.0.0.1:3105/api/attachments/4fa30ccf-f6bd-47a5-83f3-564c1b16a138/content?download=1),
+[v2 download](http://127.0.0.1:3105/api/attachments/af0f2c2e-a0f1-4138-980e-f93f5b48d2cf/content?download=1).
+Installed daemon SHA256:
+`36bbf4d878bfaa23e2fcec443e117cf04f46006ff8815c64855491b7bd3e440f`;
+sidecar SHA256:
+`ca6cad1f9b2fb2822d940d281a383360076c2ac03ea2ac875e64662f4719ae13`.
+This source predates subsequent review fixes; final package qualification and
+subscription follow-up are not claimed.
+
+Latest behavior corrections preserve plain environment model bindings, reject
+unresolved default/model-routing bindings, retain native translation when an
+import explicitly switches to Legacy, and clear every effort alias on an
+incompatible model change. Selection/import/form controls: 271 passed; server
+noemit and token gates passed. Current historical instruction admission: 6
+passed. Platform `33077bed73` pins producer Node to the image's 24.21.0 version;
+its narrow policy exception and workflow controls passed (71 tests).
+
+[Four-target campaign](https://github.com/paperclipai/paperclip/actions/runs/38293566808)
+and [cloud image build](https://github.com/paperclipai/paperclip/actions/runs/38293576503)
+retain source `557c3064a30779e86e1ae312eab3d1d42c3a8b8d`. Actual pack/image
+identity agreement remains required. Additional Claude defaults remain gated
+pending clean-install and execution evidence. No local Docker or Rust build.

@@ -1006,6 +1006,53 @@ describe("AgentConfigForm environment selector", () => {
     });
   });
 
+  it.each(["modelReasoningEffort", "reasoningEffort", "effort"])("clears native Claude %s when the model does not support it", async key => {
+    mockAgentsApi.adapterModels.mockResolvedValue([
+      { id: "claude-opus-5-5", label: "claude-opus-5-5" },
+      { id: "claude-haiku-4-5", label: "claude-haiku-4-5" },
+    ]);
+    const result = await renderForm(
+      [makeEnvironment({ id: "local-1", name: "Local", driver: "local" })],
+      {
+        adapterType: "paperclip_runner",
+        adapterConfig: {
+          provider: "acpx", acpxAgent: "claude",
+          model: "claude-opus-5-5",
+          [key]: "max",
+        },
+      },
+    );
+    roots.push(result.root);
+
+    const modelButton = Array.from(result.container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "claude-opus-5-5");
+    expect(modelButton).not.toBeUndefined();
+    await act(async () => {
+      modelButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+
+    const astraOption = Array.from(document.body.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "claude-haiku-4-5");
+    expect(astraOption).not.toBeUndefined();
+    await act(async () => {
+      astraOption!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+
+    const saveButton = Array.from(result.container.querySelectorAll("button"))
+      .find((button) => button.textContent?.trim() === "Save");
+    expect(saveButton).not.toBeUndefined();
+    await act(async () => {
+      saveButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(result.onSave).toHaveBeenCalledWith({
+      adapterConfig: { provider: "acpx", acpxAgent: "claude", model: "claude-haiku-4-5" },
+      replaceAdapterConfig: true,
+    });
+  });
+
   it("names the Claude default for new and existing agents without pinning it", async () => {
     const environments = [makeEnvironment({ id: "local-1", name: "Local", driver: "local" })];
     const existing = await renderForm(environments, { adapterType: "claude_local", adapterConfig: {} });
