@@ -1086,13 +1086,12 @@ model. Configured and provider-observed model identities are reported separately
 There are thirteen cases on `legacy-codex`, `legacy-claude`, `runner-codex`, and
 `runner-acpx-claude`, local only (52 cells). `runner-codex` selects OpenAI in the
 production wizard, omits the runner override, and verifies the saved native
-configuration without changing runners afterward. `legacy-codex` selects
-Legacy runner in Advanced before authentication and creation. Both are labeled
-`production-wizard`. Claude's creation default is unchanged: `legacy-claude`
-retains its wizard configuration, while `runner-acpx-claude` explicitly changes
-runtime through the public API before its first task and is labeled
-`post-onboarding-runtime-switch`. Persona, managed instructions, skills, seeded
-question, and task invocation are preserved. The native path removes the legacy
+configuration without changing runners afterward. `runner-acpx-claude` does the
+same for Claude on its qualified default targets and inspects the saved ACPX
+Claude profile directly. Both Legacy profiles select Legacy runner in Advanced
+before authentication and creation. All four paths are labeled
+`production-wizard`; there is no post-onboarding runner switch. Persona,
+managed instructions, skills, seeded question, and task invocation are preserved. The native path removes the legacy
 Paperclip operational skill because Runner supplies that contract through its
 protocol; other assigned skills, including `/first-task`, are retained.
 Each isolated onboarding company has a $5 task budget. Setup probes have a
@@ -1454,9 +1453,10 @@ prompts, onboarding defaults, or provider permissions are changed.
 
 For native onboarding qualification, select `first-task` with profiles
 `runner-codex,runner-acpx-claude` (26 cells). Codex verifies the production
-creation default with the experimental flag disabled. Claude still uses the
-existing public-API runtime switch before provider work; that case does not
-qualify a native Claude creation default.
+creation default with the experimental flag disabled. Claude also inspects its
+wizard's saved native default with the experimental flag disabled; select that
+profile on a qualified default target. Retained results from the former API-switch
+definition do not establish that the current creation-default journey passed.
 
 Current proof and remaining decisions are recorded in
 [the 21 September qualification report](QUALIFICATION-2026-09-21.md). In particular,
