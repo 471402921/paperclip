@@ -2,6 +2,31 @@
 
 Updated 2026-10-12.
 
+## Metadata review closure checkpoint
+
+Runtime prerequisite source is `cae179c21412048d08aeb94e0fe8b0f7844119de`,
+with 55 changed files; Codex remains 99 files. Two fresh metadata review P2s
+are fixed: explicit null clears user metadata, and saves preserve only the
+latest private platform proof through an atomic database update. Config/driver
+updates invalidate proof in the same write; status cleanup retains its existing
+archive-token behavior. Public callers cannot supply the proof.
+
+The three existing environment suites pass 83 controls. Seven focused tests
+exercise real PostgreSQL writes between request preparation and save; there are
+42 name-filter exclusions and zero host-guard skips. Both canonical server
+no-emit commands pass. Source hashes match in both worktrees and independent
+review is clear. A separate read-only audit confirms no actual company/team
+import bypass or proof export: portability does not copy environment rows, and
+environment API responses strip the private subtree. No new infrastructure,
+provider turn, Docker/Rust build or schema/API change was introduced.
+
+Fresh exact-head full CI/review remain required. The verified Mac preview restart
+at `64d0746f8a` preserved four execution configurations and two historical native
+runs with the deprecated flag false and no provider actions. Refresh the idle
+preview to the next recorded head; old measurements retain their literal source.
+Merge the qualified prerequisite first, then reconcile Codex with actual master
+before the final remote image and managed acceptance. No merge has occurred.
+
 ## Fixture closure checkpoint
 
 The runtime prerequisite advances to `093b97aa12` with 54 files. The Codex
