@@ -2,6 +2,64 @@
 
 Updated 2026-10-12.
 
+## Latest checkpoint: ARM qualification and master integration
+
+The native runtime, protocol, Codex adapter/driver, selection code, and provider
+requirements remain unchanged from qualified source
+`a200495cc7488f4d59da570407e516cf702e5af8`. Its verified 18-package archive
+retains that literal identity. All four hosted daemon producers, Linux x64 clean
+installation, and both Mac installed startup/cleanup consumers pass. The original
+unprepared ARM failure remains recorded; qualified ARM startup passes with stock
+scoped OS prerequisites and no global restriction change.
+
+The [committed-helper consumer](https://github.com/paperclipai/paperclip/actions/runs/38290234153)
+passes using tooling `0690801` and literal `a200495` packages. Receipt:
+`/private/tmp/ci-final-0690801-integrated-arm-receipt.json`.
+Fresh review at `a5b1683` is 5/5, with all 16 threads resolved. That correction
+loads the helper from the immutable workflow definition rather than an older
+frozen product checkout that does not contain it. A separate sparse checkout
+uses `job.workflow_repository`/`job.workflow_sha`; both source identities and
+the helper digest enter the existing report. No mutable branch or caller-source
+fallback is used. The original product consumer and archive guards stay intact.
+
+The [actual final workflow wiring](https://github.com/paperclipai/paperclip/actions/runs/38291535914)
+also passes: immutable helper checkout, stock prerequisite preparation, native
+session, default daemon, read-only model context, and joined cleanup. Its three
+critical steps are byte-preserved from the delivery workflow. Literal product
+source is `a200495`, definition base is `a5b1683`, and actual tooling source is
+`8eb3595a`. All 18 packages and lock/daemon/official-launcher/native-payload
+hashes remain unchanged. Global restrictions stay 1/Y/1; scoped profiles stay
+enforced. No overlay, direct-control substitute, Rust rebuild, credentials, or
+provider turns were used. Receipt:
+`/private/tmp/ci-final-a5b1683-final-wiring-receipt.json`.
+Normal OS APT installation and paid ARM task/follow-up remain unproven.
+
+Master `82274853729f8c5b0f812da08595020f7eb64d66` requires one test-fixture
+conflict resolution. Its shared test-home cleanup replaces the duplicate
+traversal. Real Mac Node 24 tests expose `ENOTEMPTY` for read-only descendants;
+the shared helper now retries only after restoring owned directory permissions.
+Unrelated errors remain visible; symlinks and immutable file modes stay intact.
+All 84 fixture/selection controls, server typecheck, 80 merged workflow/cache
+controls, and token gates pass. Both master's general release-crate cache and
+this branch's native producer dependency cache remain. Receipts:
+`/private/tmp/codex-default-master-home-cleanup-fix-receipt.json` and
+`/private/tmp/codex-default-master822748-readonly-audit.json`.
+
+Master's heartbeat extraction updates server orchestration. Historical frozen
+package startup and useful-task evidence remain component proof with literal
+revisions; they are not relabeled as complete current-server onboarding proof.
+The last verified preview restart serves `2026.1005.0+352.git.0690801f13` at
+[3125](http://127.0.0.1:3125/COD/agents/all), preserving all four agent
+configurations and both historical native runs. The downloaded Apple Silicon
+daemon requires no source build or binary override.
+
+Next action: require fresh CI/review on the integrated candidate, refresh the
+matched preview, and publish final conclusions in the canonical PR's evidence
+index. Human code-owner approval, managed staging onboarding, and actual
+post-merge Cloud composition remain outstanding. No merge or production
+deployment is authorized. Historical unknown costs and cleanup holds remain
+reserved; all Dockerfile/native builds stay remote.
+
 ## Current amendment: remote build performance and Linux baseline
 
 The user requires Cargo dependency caching and overlapping JavaScript/native
@@ -174,6 +232,57 @@ AppArmor journal may help distinguish host denial. Do not modify host policy,
 relax Codex's sandbox, or substitute direct execution for native qualification.
 Require fresh CI/review after the correction. ARM startup and managed staging
 remain unresolved; no merge or production recommendation is made.
+
+The frozen production checkpoint `a200495cc7488f4d59da570407e516cf702e5af8`
+passes [CI](https://github.com/paperclipai/paperclip/actions/runs/38283122068)
+(54 successful checks/statuses, four conditional skips) and fresh 5/5 review;
+all 15 review threads are resolved. It serves the test-drive at
+`2026.1005.0+351.git.a200495cc7`, with four complete agent configurations and two
+historical native runs unchanged after restart. No local native/Docker build
+or additional provider turn ran.
+
+Its [exact-source qualifier](https://github.com/paperclipai/paperclip/actions/runs/38283695248)
+builds and verifies all four daemons. Linux clean installation and both actual
+Mac native startup/cleanup consumers pass. Cache restores are real cold misses;
+JavaScript/native preparation overlaps on all four producers. The unchanged
+host's ARM startup fails at AppArmor's namespace capability restriction, so that
+original run remains failed. Public artifact `11763536756` contains the verified
+18-package graph. Receipts: `/private/tmp/ci-final-a200495-hosted-qualification-receipt.json`
+and `/private/tmp/ci-final-a200495-cached-producer-observations.json`.
+
+The separate [stock-prerequisite ARM treatment](https://github.com/paperclipai/paperclip/actions/runs/38287918968)
+passes actual native startup, default daemon resolution, model selection,
+read-only context, and joined cleanup on the exact same packages. Lock, daemon,
+official Codex launcher, and native payload hashes match before/after. GNU libc
+is 2.39. Global AppArmor enforcement, namespace restriction, and clone setting
+remain Y/1/1. Authenticated Ubuntu package files provide system bubblewrap and
+its reviewed stock scoped profile. Only those files are materialized; no package
+maintainer scripts, sysctl writes, or broad profile reload runs. This is a
+qualified target prerequisite, not a product permission-policy change.
+The user has no other QA ARM host. No new paid environment was provisioned.
+Receipt: `/private/tmp/ci-final-a200495-arm-stock-prerequisite-receipt.json`.
+
+Keep the boundaries explicit: normal OS APT installation is unproven; the actual
+Paperclip npm installation and native startup are proven. The separate direct
+control hits a read-only temporary-home error and is excluded from native
+qualification. No ARM paid task/follow-up is claimed. Actual Apple Silicon
+useful-task/follow-up evidence remains tied to its recorded source and identical
+verified daemon bytes. Existing agents keep their runners.
+
+The tested setup body is integrated as
+`scripts/prepare-linux-arm64-qualification.sh`, with an early hosted-Linux guard.
+The existing ARM-only qualification step invokes it before the existing consumer
+and uploads its report through the same artifact pipeline. Four focused workflow
+and guard controls pass; syntax and diff checks pass. Receipt:
+`/private/tmp/codex-default-arm-prerequisite-ci-integration-receipt.json`.
+
+Next action: require latest-head CI/review and one hosted consumer against the
+unchanged `a200495` production packages using the integrated helper. Production
+code remains frozen there; subsequent edits are qualification tooling or
+documentation and retain separate source identities when reusing those literal
+package archives. Managed staging, human
+code-owner approval, actual post-merge cloud composition, and production sign-off
+remain outstanding. No merge or deployment is authorized.
 
 ## Current addition: Linux ARM64
 

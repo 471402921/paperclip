@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -959,6 +960,108 @@ test("premerge native qualification consumes the same Linux-packed npm bytes wit
   assert.match(qualification, /--linux-arm64-consumer/);
   assert.match(qualification, /fromJSON\(needs.qualification_daemons.outputs.native_consumer_matrix\)/);
   assert.match(qualification, /pnpm install --ignore-scripts --no-frozen-lockfile/);
+});
+
+test("native ARM qualification prepares its scoped distro sandbox before the existing consumer", () => {
+  const smoke = readWorkflow("release-smoke.yml");
+  const native = smoke.split("  qualification_native:\n")[1];
+  const preparation = native.split("      - name: Prepare Linux ARM sandbox prerequisites\n")[1].split("\n      - ")[0];
+  assert.match(preparation, /if: \$\{\{ matrix\.target == 'linux-arm64' \}\}/);
+  assert.match(preparation, /timeout-minutes: 5/);
+  assert.match(preparation, /bash \.qualification-tooling\/scripts\/prepare-linux-arm64-qualification\.sh/);
+  const tooling = native.split("      - name: Checkout immutable ARM qualification tooling\n")[1].split("\n      - ")[0];
+  assert.match(tooling, /if: \$\{\{ matrix\.target == 'linux-arm64' \}\}/);
+  assert.match(tooling, /repository: \$\{\{ job\.workflow_repository \}\}/);
+  assert.match(tooling, /ref: \$\{\{ job\.workflow_sha \}\}/);
+  assert.match(tooling, /sparse-checkout: scripts\/prepare-linux-arm64-qualification\.sh/);
+  assert.match(tooling, /sparse-checkout-cone-mode: false/);
+  assert.match(tooling, /persist-credentials: false/);
+  assert.doesNotMatch(tooling + preparation, /github\.workflow_sha|github\.sha|ref: (?:master|main)|ref: \$\{\{ inputs\.qualification_source_sha/);
+  assert.ok(native.indexOf("Checkout immutable ARM qualification tooling") < native.indexOf("Prepare Linux ARM sandbox prerequisites"));
+  assert.ok(native.indexOf("Prepare Linux ARM sandbox prerequisites") < native.indexOf("Verify host identity and actual clean npm consumer"));
+  assert.match(native, /path: \|\n\s+\$\{\{ runner\.temp \}\}\/native-public-install\.json\n\s+\$\{\{ runner\.temp \}\}\/paperclip-arm-bwrap-prerequisite\//);
+  assert.doesNotMatch(smoke.split("  qualification_daemons:\n")[0], /prepare-linux-arm64-qualification/,
+    "ordinary service and Docker smoke keep their existing setup");
+});
+
+test("ARM qualification binds separate product and reusable-workflow revisions even when the product lacks the helper", { skip: process.platform === "win32" }, () => {
+  const native = readWorkflow("release-smoke.yml").split("  qualification_native:\n")[1];
+  const step = native.split("      - name: Prepare Linux ARM sandbox prerequisites\n")[1].split("\n      - ")[0];
+  const script = step.split("        run: |\n")[1].split("\n").map(line => line.startsWith("          ") ? line.slice(10) : line).join("\n");
+  const root = mkdtempSync(path.join(tmpdir(), "arm-separate-tooling-"));
+  try {
+    const tools = path.join(root, "tools"); mkdirSync(tools);
+    const tooling = path.join(root, ".qualification-tooling", "scripts"); mkdirSync(tooling, { recursive: true });
+    const helper = 'printf "%s\\n" "$TOOLING_SHA" > "$FIXTURE_PREPARED"\n';
+    writeFileSync(path.join(tooling, "prepare-linux-arm64-qualification.sh"), helper);
+    writeFileSync(path.join(tools, "git"), '#!/bin/bash\nif [[ "$1" == -C ]]; then printf "%s\\n" "$FIXTURE_TOOLING_HEAD"; else printf "%s\\n" "$FIXTURE_PRODUCT_HEAD"; fi\n', { mode: 0o755 });
+    const productSha = "a".repeat(40), toolingSha = "b".repeat(40);
+    for (const [productHead, toolingHead, expectedStatus] of [[productSha, toolingSha, 0], ["c".repeat(40), toolingSha, 1], [productSha, "c".repeat(40), 1], [productSha, "invalid", 1]]) {
+      const report = path.join(root, "report"); mkdirSync(report);
+      const prepared = path.join(root, "prepared");
+      const result = spawnSync("/bin/bash", ["-c", script], { cwd: root, encoding: "utf8", env: {
+        PATH: `${tools}:${path.dirname(process.execPath)}:/usr/bin:/bin`, RUNNER_TEMP: report,
+        SOURCE_SHA: productSha, TOOLING_SHA: toolingSha, TOOLING_REPOSITORY: "paperclipai/paperclip",
+        TOOLING_WORKFLOW_REF: "paperclipai/paperclip/.github/workflows/release-smoke.yml@refs/heads/qualification",
+        TOOLING_WORKFLOW_PATH: ".github/workflows/release-smoke.yml",
+        FIXTURE_PRODUCT_HEAD: productHead, FIXTURE_TOOLING_HEAD: toolingHead, FIXTURE_PREPARED: prepared,
+        // Reusable calls retain the caller context; it must not select tooling.
+        GITHUB_REPOSITORY: "different/caller", GITHUB_SHA: "d".repeat(40),
+      } });
+      assert.equal(result.status, expectedStatus, result.stderr);
+      assert.equal(existsSync(path.join(root, "scripts", "prepare-linux-arm64-qualification.sh")), false);
+      assert.equal(existsSync(prepared), expectedStatus === 0);
+      if (expectedStatus === 0) {
+        assert.equal(readFileSync(prepared, "utf8").trim(), toolingSha);
+        const identity = JSON.parse(readFileSync(path.join(report, "paperclip-arm-bwrap-prerequisite", "qualification-identity.json"), "utf8"));
+        assert.equal(identity.productSourceSha, productSha);
+        assert.equal(identity.toolingSourceSha, toolingSha);
+        assert.equal(identity.toolingRepository, "paperclipai/paperclip");
+        assert.equal(identity.toolingWorkflowPath, ".github/workflows/release-smoke.yml");
+        assert.equal(identity.helperSha256, createHash("sha256").update(helper).digest("hex"));
+      }
+      rmSync(report, { recursive: true, force: true });
+      rmSync(prepared, { force: true });
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("Linux ARM prerequisite setup rejects other hosts before invoking tools and preserves scoped security", { skip: process.platform === "win32" }, () => {
+  const helper = path.join(repoRoot, "scripts/prepare-linux-arm64-qualification.sh");
+  const source = readFileSync(helper, "utf8");
+  const root = mkdtempSync(path.join(tmpdir(), "arm-prerequisite-guard-"));
+  try {
+    const tools = path.join(root, "tools"); mkdirSync(tools);
+    const sentinel = path.join(root, "invoked");
+    for (const command of ["dpkg", "uname", "mkdir", "mktemp", "sysctl", "sudo"]) {
+      writeFileSync(path.join(tools, command), '#!/bin/bash\nprintf "%s\\n" "$0" >> "$PREREQUISITE_SENTINEL"\nexit 85\n', { mode: 0o755 });
+    }
+    for (const [actions, runnerOs] of [["", "Linux"], ["false", "Linux"], ["true", "macOS"], ["true", "Windows"]]) {
+      const result = spawnSync("/bin/bash", [helper], { encoding: "utf8", env: {
+        PATH: tools, GITHUB_ACTIONS: actions, RUNNER_OS: runnerOs, RUNNER_TEMP: root, PREREQUISITE_SENTINEL: sentinel,
+      } });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /requires a GitHub Actions Linux runner/);
+      assert.equal(existsSync(sentinel), false, "host guard must precede every external tool");
+      assert.equal(existsSync(path.join(root, "paperclip-arm-bwrap-prerequisite")), false);
+    }
+    assert.ok(source.indexOf('"${GITHUB_ACTIONS:-}" != true') < source.indexOf(". /etc/os-release"));
+    assert.match(source, /-o Acquire::AllowInsecureRepositories=false/);
+    assert.match(source, /download "\$package_name=\$package_version"/);
+    assert.match(source, /printf '%s  %s\\n' "\$package_sha256" "\$package_file" \| sha256sum -c -/);
+    assert.match(source, /dpkg-deb --fsys-tarfile "\$package_file"/);
+    assert.match(source, /tar -xO \.\/usr\/bin\/bwrap/);
+    assert.match(source, /11d39094f044f0cda0febb3ad517b830301da6b2ce929664af09ee9e4dd264f9/);
+    assert.ok(source.indexOf('test ! -L "$target"') < source.indexOf('sudo install -o root -g root -m 0644 "$stock_profile" "$target"'));
+    assert.match(source, /timeout 15s sudo "\$parser" -r "\$target"/);
+    for (const setting of ["userns", "apparmor", "clone"]) assert.ok(source.includes(`test "$after_${setting}" = "$before_${setting}"`));
+    const aptCommands = source.replace(/\\\n\s*/g, " ").split("\n").filter(line => /\bapt-get\b/.test(line));
+    assert.equal(aptCommands.length, 2, "only signed-index update and download may invoke APT");
+    assert.match(aptCommands[0], /\bupdate\b/);
+    assert.match(aptCommands[1], /\bdownload\b/);
+    for (const command of aptCommands) assert.doesNotMatch(command, /\b(?:install|upgrade|remove|purge)\b/);
+    assert.doesNotMatch(source, /apt-get[^\n]* install|\bdpkg(?:-deb)?\s+(?:-i|--install|--unpack)|sysctl\s+(?:-w|--system)|\baa-disable\b|\bsetcap\b|systemctl|--no-sandbox/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test("exact-source daemon matrices preserve historical three-target sources and add native ARM only for new sources", () => {
