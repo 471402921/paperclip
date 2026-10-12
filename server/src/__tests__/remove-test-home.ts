@@ -9,7 +9,8 @@ import path from "node:path";
  * in them read-only (`makeDirectoriesReadOnly` in
  * services/native-runtime/runtime-context.ts), and a run that is still
  * finishing when the worker exits can leave such a bundle under the worker's
- * home. Removing a file inside a read-only directory fails with `EACCES`,
+ * home. Removing a file inside a read-only directory fails with `EACCES`
+ * or, on macOS, the recursive removal can report `ENOTEMPTY` instead.
  * Vitest reports it as an unhandled error, and the shard fails after every
  * test passed. So on a permission error every directory in the tree is made
  * writable first and the removal is tried once more.
@@ -19,8 +20,12 @@ export function removeTestHome(home: string): void {
   try {
     fs.rmSync(home, options);
   } catch (error) {
-    if (!isPermissionError(error)) throw error;
-    makeDirectoriesWritable(home);
+    const permissionError = isPermissionError(error);
+    if (!permissionError && (error as NodeJS.ErrnoException | null)?.code !== "ENOTEMPTY") throw error;
+    const restored = makeDirectoriesWritable(home);
+    // ENOTEMPTY also has unrelated causes; retry only after restoring an
+    // actual read-only directory, and still surface a failed second removal.
+    if (!permissionError && !restored) throw error;
     fs.rmSync(home, options);
   }
 }
@@ -30,28 +35,33 @@ function isPermissionError(error: unknown): boolean {
   return code === "EACCES" || code === "EPERM";
 }
 
-function makeDirectoriesWritable(directory: string): void {
+function makeDirectoriesWritable(directory: string): boolean {
   let stat: fs.Stats;
   try {
     stat = fs.lstatSync(directory);
   } catch {
-    return;
+    return false;
   }
-  if (!stat.isDirectory()) return;
+  if (!stat.isDirectory()) return false;
   // Owner read, write and search: enough to list and unlink the children.
   // A symlink is not followed, so nothing outside the home is touched.
-  try {
-    fs.chmodSync(directory, stat.mode | 0o700);
-  } catch {
-    // A directory that cannot be changed still fails the removal below, loudly.
+  let restored = false;
+  if ((stat.mode & 0o700) !== 0o700) {
+    try {
+      fs.chmodSync(directory, stat.mode | 0o700);
+      restored = true;
+    } catch {
+      // A directory that cannot be changed still fails the removal below, loudly.
+    }
   }
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(directory, { withFileTypes: true });
   } catch {
-    return;
+    return restored;
   }
   for (const entry of entries) {
-    if (entry.isDirectory()) makeDirectoriesWritable(path.join(directory, entry.name));
+    if (entry.isDirectory() && makeDirectoriesWritable(path.join(directory, entry.name))) restored = true;
   }
+  return restored;
 }
