@@ -15,7 +15,7 @@ const paths = { assets: '/private/staging/assets', consumer: '/private/staging/c
 const values = (args, flag) => args.flatMap((value, index) => value === flag ? [args[index + 1]] : []);
 
 test('native host startup preserves the consumer lock and both executable byte identities', () => {
-  const before = { lockSha256: 'a'.repeat(64), runnerSha256: 'b'.repeat(64), codexCommandSha256: 'c'.repeat(64) };
+  const before = { lockSha256: 'a'.repeat(64), runnerSha256: 'b'.repeat(64), codexCommandSha256: 'c'.repeat(64), codexNativeExecutableSha256: 'e'.repeat(64) };
   assert.doesNotThrow(() => assertInstalledNativeConsumerContinuity(before, { ...before }));
   for (const field of Object.keys(before)) {
     assert.throws(() => assertInstalledNativeConsumerContinuity(before, { ...before, [field]: 'd'.repeat(64) }), new RegExp(field));
@@ -252,6 +252,14 @@ test('the installed Codex probe exercises the public export and rejects incomple
     const platformPath = `node_modules/@openai/codex-${target}`;
     const platform = join(consumer, platformPath); mkdirSync(platform, { recursive: true });
     const nativeVendor = join(platform, 'vendor'); mkdirSync(nativeVendor);
+    const triple = { 'linux-x64': 'x86_64-unknown-linux-musl', 'linux-arm64': 'aarch64-unknown-linux-musl',
+      'darwin-x64': 'x86_64-apple-darwin', 'darwin-arm64': 'aarch64-apple-darwin', 'win32-x64': 'x86_64-pc-windows-msvc', 'win32-arm64': 'aarch64-pc-windows-msvc' }[target];
+    const nativeBytes = Buffer.alloc(64);
+    if (process.platform === 'darwin') { nativeBytes.writeUInt32LE(0xfeedfacf); nativeBytes.writeUInt32LE(process.arch === 'arm64' ? 0x0100000c : 0x01000007, 4); }
+    else if (process.platform === 'win32') { nativeBytes.set([0x4d, 0x5a]); nativeBytes.writeUInt32LE(40, 60); nativeBytes.writeUInt32LE(0x00004550, 40); nativeBytes.writeUInt16LE(process.arch === 'arm64' ? 0xaa64 : 0x8664, 44); }
+    else { nativeBytes.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]); nativeBytes.writeUInt16LE(process.arch === 'arm64' ? 183 : 62, 18); }
+    const nativeFile = join(nativeVendor, triple, 'bin', process.platform === 'win32' ? 'codex.exe' : 'codex');
+    mkdirSync(join(nativeVendor, triple, 'bin'), { recursive: true }); writeFileSync(nativeFile, nativeBytes, { mode: 0o755 });
     const manifest = { name: '@openai/codex', version: `0.160.0-${target}`, os: [process.platform], cpu: [process.arch] };
     writeFileSync(join(platform, 'package.json'), JSON.stringify(manifest));
     const entry = { name: manifest.name, version: manifest.version,
@@ -260,6 +268,8 @@ test('the installed Codex probe exercises the public export and rejects incomple
     writeFileSync(join(consumer, 'package-lock.json'), JSON.stringify(lock));
     const server = join(consumer, 'node_modules/@paperclipai/server');
     const vendor = join(server, 'dist/vendor/paperclip-runner'), drivers = join(vendor, 'drivers/acpx'); mkdirSync(drivers, { recursive: true });
+    mkdirSync(join(vendor, 'live'));
+    writeFileSync(join(vendor, 'live/runner-binary.js'), `export const runnerBinaryTarget = ${runnerBinaryTarget.toString()};`);
     writeFileSync(join(server, 'package.json'), JSON.stringify({ name: '@paperclipai/server', type: 'module' }));
     const integrity = join(drivers, 'installation-integrity.js');
     const security = join(vendor, 'drivers/codex/codex-security-config.js'); mkdirSync(join(vendor, 'drivers/codex'));
@@ -285,6 +295,23 @@ test('the installed Codex probe exercises the public export and rejects incomple
     assert.equal(JSON.parse(result.stdout).codexPlatformPackageSource, 'official npm');
     assert.equal(JSON.parse(result.stdout).codexConsumerPlatform, target);
     assert.equal(JSON.parse(result.stdout).codexCommandSha256, createHash('sha256').update(readFileSync(command)).digest('hex'));
+    assert.equal(JSON.parse(result.stdout).codexNativeExecutableSha256, createHash('sha256').update(nativeBytes).digest('hex'));
+    const original = JSON.parse(result.stdout);
+    nativeBytes[63] = 1; writeFileSync(nativeFile, nativeBytes);
+    result = run(); assert.equal(result.status, 0, result.stderr);
+    const changed = JSON.parse(result.stdout);
+    assert.equal(changed.codexCommandSha256, original.codexCommandSha256, 'native mutation does not change the npm launcher');
+    assert.notEqual(changed.codexNativeExecutableSha256, original.codexNativeExecutableSha256);
+    assert.throws(() => assertInstalledNativeConsumerContinuity({ lockSha256: 'a'.repeat(64), runnerSha256: 'b'.repeat(64), ...original },
+      { lockSha256: 'a'.repeat(64), runnerSha256: 'b'.repeat(64), ...changed }), /codexNativeExecutableSha256/);
+    nativeBytes[63] = 0; writeFileSync(nativeFile, nativeBytes);
+    rmSync(nativeFile);
+    result = run(); assert.notEqual(result.status, 0); assert.match(result.stderr, /one native executable/);
+    const foreignNative = join(root, 'foreign-codex'); writeFileSync(foreignNative, nativeBytes, { mode: 0o755 });
+    symlinkSync(foreignNative, nativeFile);
+    result = run(); assert.notEqual(result.status, 0); assert.match(result.stderr, /bounded regular file in its selected platform package/);
+    rmSync(nativeFile); writeFileSync(nativeFile, nativeBytes, { mode: 0o755 });
+    result = run(); assert.equal(result.status, 0, result.stderr);
     assert.equal(JSON.parse(result.stdout).codexQualifiedInstallationVerified, true);
     assert.equal(JSON.parse(result.stdout).codexCommandLeaseVerified, true);
     assert.equal(JSON.parse(result.stdout).codexNativeSandboxResourcesVerified, true);
@@ -308,6 +335,8 @@ test('the installed Codex probe exercises the public export and rejects incomple
     // Native Codex uses protocol compatibility, not the ACPX version allowlist.
     // Keep exact official-npm host provenance and the selected resource boundary.
     mkdirSync(join(legacy, 'vendor'));
+    const legacyNative = join(legacy, 'vendor', triple, 'codex', process.platform === 'win32' ? 'codex.exe' : 'codex');
+    mkdirSync(join(legacy, 'vendor', triple, 'codex'), { recursive: true }); writeFileSync(legacyNative, nativeBytes, { mode: 0o755 });
     writeFileSync(legacyCommand, '#!/bin/sh\nprintf "codex-cli 0.156.1\\n"\n', { mode: 0o755 });
     writeFileSync(security, securitySource.replaceAll(JSON.stringify(nativeVendor), JSON.stringify(join(legacy, 'vendor'))));
     writeFileSync(probe, installedCodexProbeSource(index, consumer, undefined, { nativeCodex: true }));

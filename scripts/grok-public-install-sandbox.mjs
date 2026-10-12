@@ -160,6 +160,21 @@ export function installedCodexProbeSource(indexPath, consumerRoot, expectedVersi
     const platformRoot = realpathSync(dirname(selectedPlatformManifest));
     const nativeVendor = realpathSync(join(platformRoot, 'vendor'));
     assert.ok(contained(nativeVendor) && nativeVendor.startsWith(platformRoot + sep), 'Codex vendor resources must remain inside their installed platform package');
+    const triple = { 'linux-x64': 'x86_64-unknown-linux-musl', 'linux-arm64': 'aarch64-unknown-linux-musl',
+      'darwin-x64': 'x86_64-apple-darwin', 'darwin-arm64': 'aarch64-apple-darwin',
+      'win32-x64': 'x86_64-pc-windows-msvc', 'win32-arm64': 'aarch64-pc-windows-msvc' }[process.platform + '-' + process.arch];
+    assert.ok(triple, 'Codex native payload requires a known host target');
+    const nativeName = process.platform === 'win32' ? 'codex.exe' : 'codex';
+    const nativeCandidates = ['bin', 'codex'].map(directory => join(nativeVendor, triple, directory, nativeName)).filter(existsSync);
+    assert.equal(nativeCandidates.length, 1, 'Selected official Codex platform must contain one native executable');
+    const nativeExecutable = realpathSync(nativeCandidates[0]);
+    const nativeStat = lstatSync(nativeCandidates[0]);
+    assert.ok(nativeExecutable.startsWith(nativeVendor + sep) && nativeStat.isFile() && !nativeStat.isSymbolicLink()
+      && nativeStat.size >= 20 && nativeStat.size <= 512 * 1024 * 1024, 'Codex native executable must be a bounded regular file in its selected platform package');
+    accessSync(nativeExecutable, constants.X_OK);
+    const nativeBytes = readFileSync(nativeExecutable);
+    const { runnerBinaryTarget } = await import(pathToFileURL(join(vendor, 'live/runner-binary.js')).href);
+    assert.equal(runnerBinaryTarget(nativeBytes), process.platform + '-' + process.arch, 'Codex native executable must match the actual host architecture');
     const sandboxSource = { HOME: '/private-provider-home', PATH: '/usr/local/bin:/usr/bin:/bin' };
     const readRoots = codexExecutableReadOnlyRoots(sandboxSource, command);
     assert.ok(readRoots.includes(nativeVendor), 'Selected native Codex vendor directory must be readable inside its sandbox');
@@ -176,6 +191,8 @@ export function installedCodexProbeSource(indexPath, consumerRoot, expectedVersi
     await lease.close();`}
     console.log(JSON.stringify({ pinnedCodexCommandVerified: true, installedCodexVersion: version,
       codexCommandSha256: createHash('sha256').update(readFileSync(command)).digest('hex'),
+      codexNativeExecutableSha256: createHash('sha256').update(nativeBytes).digest('hex'),
+      codexNativeExecutablePath: relative(root, nativeExecutable).split(sep).join('/'),
       ...provenance, codexSelectedPlatformPath: selectedPlatform.path, codexSelectedPlatformVersion: selectedMetadata.version,
       codexNativeSandboxResourcesVerified: true,
       ${nativeCodex ? '' : `pinnedCodexVersion: ${JSON.stringify(expectedVersion)}, codexQualifiedInstallationVerified: true, codexCommandLeaseVerified: true,`}
@@ -185,7 +202,7 @@ export function installedCodexProbeSource(indexPath, consumerRoot, expectedVersi
 
 /** Installed bytes and consumer resolution must survive host protocol startup. */
 export function assertInstalledNativeConsumerContinuity(before, after) {
-  for (const field of ['lockSha256', 'runnerSha256', 'codexCommandSha256']) {
+  for (const field of ['lockSha256', 'runnerSha256', 'codexCommandSha256', 'codexNativeExecutableSha256']) {
     if (!/^[a-f0-9]{64}$/.test(before[field]) || before[field] !== after[field]) {
       throw new Error(`Installed native host startup changed ${field}`);
     }
