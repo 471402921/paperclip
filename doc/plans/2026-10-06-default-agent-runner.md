@@ -2,6 +2,54 @@
 
 Updated 2026-10-12.
 
+## CI fixture, network policy and map synchronization checkpoint
+
+Runtime prerequisite source is `5a9ce11c49db31440863d633426ebe30bcc850ca`
+with 60 changed files. The hosted static check on literal Codex source `eee0534`
+passed 133 cases and failed one: its isolated assembly fixture omitted the new
+target JSON, so the helper failed before its existing Cursor-identity assertion.
+The fixture now copies that exact inert JSON; all negative assertions remain.
+Baseline provider-pack controls reproduced eight passes and one failure;
+treatment passes nine, with 16 related provider/assembly controls passing.
+No local Cargo or Docker build was used.
+
+Codex behavior source `fe1ecf1c3449c21d6e6f0c9d9772d1949b80ea82` fixes the
+fresh no-network P1. Effective Legacy ACP restrictions, including plain or
+unresolved secret bindings, now fail native selection with field-specific Legacy
+guidance. The unused flag for an explicitly selected CLI, existing Legacy/native
+execution, and trusted server-owned native network policy retain their behavior.
+Five failures reproduced before correction; all 112 selection controls, canonical
+server no-emit, and independent source review pass. No secret was read or native
+network authority translated to an agent setting.
+
+The replacement user AGENTS.md requires synchronized feature/access maps in the
+same change. Eight existing documents now describe the affected behavior and
+access limits: the environment pair belongs to the prerequisite; agents,
+onboarding and runs/adapters pairs belong to Codex. The Codex review is 105 files,
+comprising its original 99 plus six required map documents. Preserve required
+documentation and useful tests rather than satisfying the lower-priority former
+100-file preparation guideline by dropping them. IDs, original baseline review
+scope and indexes remain intact. Both structural checks pass 35 areas and 171
+capability IDs. Scoped source references are separate from live proof; all new
+agent/provider map recipes remain explicitly source-only/not-run. Independent
+map and fixture review is clear.
+
+The [local preview](http://127.0.0.1:3125/COD/agents/all) serves this behavior
+source as `2026.1005.0+407.git.fe1ecf1c34`. Four complete execution configurations
+and two historical native runs survive the controlled restart unchanged, recovery
+is ready, active runs are zero, and the deprecated flag remains false. Receipts:
+`/private/tmp/pr2-fe1e-preservation-{before,after}.json`. Staged daemon preflight
+required no source build. Provider actions, Cargo builds and Docker builds are
+zero. This record's subsequent commit changes documentation only.
+
+Current-source full CI and fresh review remain gates. Prior `eee0534` hosted
+typecheck, build, Rust, Canary and eight E2E shards passed, while aggregates were
+incomplete; those results are not relabeled as the new head. Prior prerequisite
+`d16eccf` had fresh 5/5; the new source requires review again. The Claude owner
+is carrying these shared changes and owns its separate fixture corrections and
+verified explicit effort-clear semantics. No final image, merge or production
+deployment has occurred. Managed onboarding/task/follow-up remain pending.
+
 ## Codex configuration review closure checkpoint
 
 Runtime prerequisite [#16028](https://github.com/paperclipai/paperclip/pull/16028)
