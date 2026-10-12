@@ -711,7 +711,7 @@ describe("agent routes adapter validation", () => {
     expect(mockAgentService.create).not.toHaveBeenCalled();
   });
 
-  it("rechecks selection policy when a saved native adapter switches its underlying harness", async () => {
+  it("rechecks selection policy when a saved native adapter switches to an experimentally gated harness", async () => {
     mockAgentService.getById.mockResolvedValue({ ...(await mockAgentService.getById()), adapterType: "paperclip_runner", adapterConfig: { provider: "codex" } });
     mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableNativeRunner: false });
     const probe = vi.fn();
@@ -721,7 +721,7 @@ describe("agent routes adapter validation", () => {
       const app = await createApp();
       const res = await requestApp(app, baseUrl => request(baseUrl)
         .post("/api/companies/company-1/adapters/paperclip_runner/test-environment")
-        .send({ agentId: "11111111-1111-4111-8111-111111111111", adapterConfig: { provider: "acpx", acpxAgent: "claude" } }));
+        .send({ agentId: "11111111-1111-4111-8111-111111111111", adapterConfig: { provider: "acpx", acpxAgent: "pi" } }));
       expect(res.status, JSON.stringify(res.body)).toBe(422);
       expect(res.body.details).toMatchObject({ code: "paperclip_runner_rollout_disabled" });
       expect(probe).not.toHaveBeenCalled();
