@@ -12,6 +12,30 @@ export const SANDBOX_INSTALL_COMMAND = "npm install -g @openai/codex";
 // Codex CLI warn ("Model metadata for `gpt-5.6` not found") and fall back to generic context limits.
 export const DEFAULT_CODEX_LOCAL_MODEL = PAPERCLIP_RUNNER_DEFAULT_MODELS.codex;
 export const DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX = true;
+
+/** Shared by CLI execution and configuration previews; explicit arguments keep their policy. */
+export function resolveCodexLocalCliPolicy(config: unknown, options: { networkAccess?: boolean } = {}) {
+  const record = typeof config === "object" && config !== null && !Array.isArray(config)
+    ? config as Record<string, unknown> : {};
+  const stringArgs = (value: unknown): string[] => Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string") : [];
+  const configuredExtraArgs = stringArgs(record.extraArgs);
+  const extraArgs = configuredExtraArgs.length > 0 ? configuredExtraArgs : stringArgs(record.args);
+  const explicitSandbox = extraArgs.some((arg) =>
+    /^(--sandbox(?:=|$)|-s|--profile(?:=|$)|-p|--full-auto$|--yolo$|--dangerously-bypass-approvals-and-sandbox$)/.test(arg)
+    || /^(?:(?:--config=|-c=?)\s*)?(?:sandbox_mode|profile)\s*=/.test(arg),
+  );
+  const explicitPermissionRestriction = extraArgs.some((arg) =>
+    /^(?:(?:--config=|-c=?)\s*)?(?:approval_policy\s*=|sandbox_workspace_write\.network_access\s*=\s*false)/.test(arg),
+  );
+  const defaultBypass = !explicitSandbox && !explicitPermissionRestriction
+    && options.networkAccess !== false && DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX;
+  const bypass = typeof record.dangerouslyBypassApprovalsAndSandbox === "boolean"
+    ? record.dangerouslyBypassApprovalsAndSandbox
+    : typeof record.dangerouslyBypassSandbox === "boolean" ? record.dangerouslyBypassSandbox : defaultBypass;
+  return { extraArgs, explicitSandbox, bypass };
+}
+
 export const CODEX_LOCAL_FAST_MODE_SUPPORTED_MODELS = [
   "gpt-6-astra",
   "gpt-6.1-sol",

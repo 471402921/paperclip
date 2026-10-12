@@ -1221,6 +1221,14 @@ describe("CompanyImport", () => {
     { sourceType: "paperclip_runner", sourceRunner: "paperclip" as const, runner: "legacy" as const, sourcePolicy: { codexPermissionMode: "never", dangerouslyBypassApprovalsAndSandbox: false }, expectedBypass: false },
     { sourceType: "codex_local", sourceRunner: undefined, runner: "legacy" as const, sourcePolicy: { dangerouslyBypassSandbox: false }, expectedBypass: false },
     { sourceType: "codex_local", sourceRunner: undefined, runner: "legacy" as const, sourcePolicy: { dangerouslyBypassApprovalsAndSandbox: true }, expectedBypass: true },
+    { sourceType: "codex_local", sourceRunner: undefined, runner: "legacy" as const, sourcePolicy: { extraArgs: ["--sandbox", "read-only"] }, expectedBypass: false },
+    { sourceType: "codex_local", sourceRunner: undefined, runner: "legacy" as const, sourcePolicy: { args: ["-c", "approval_policy=on-request"] }, expectedBypass: false },
+    { sourceType: "codex_local", sourceRunner: undefined, runner: "legacy" as const, sourcePolicy: { extraArgs: [], args: ["--profile", "restricted"] }, expectedBypass: false },
+    { sourceType: "codex_local", sourceRunner: undefined, runner: "legacy" as const, sourcePolicy: { extraArgs: ["--color", "never"], args: ["--sandbox", "read-only"] }, expectedBypass: true },
+    { sourceType: "codex_local", sourceRunner: undefined, runner: "legacy" as const, sourcePolicy: { extraArgs: ["-c", "sandbox_workspace_write.network_access=false"] }, expectedBypass: false },
+    { sourceType: "codex_local", sourceRunner: undefined, runner: "legacy" as const, sourcePolicy: { dangerouslyBypassApprovalsAndSandbox: true, extraArgs: ["--sandbox", "read-only"] }, expectedBypass: true },
+    { sourceType: "codex_local", sourceRunner: undefined, runner: "legacy" as const, sourcePolicy: { dangerouslyBypassSandbox: true, args: ["--sandbox", "read-only"] }, expectedBypass: true },
+    { sourceType: "codex_local", sourceRunner: undefined, runner: "legacy" as const, sourcePolicy: { dangerouslyBypassApprovalsAndSandbox: false, dangerouslyBypassSandbox: true, extraArgs: ["--color", "never"] }, expectedBypass: false },
   ])("submits $runner from $sourceType with visible bypass=$expectedBypass while preserving saved policy", async ({ sourceType, sourceRunner, runner, sourcePolicy, expectedBypass }) => {
     mockOptionalCompany.mockReturnValue({ selectedCompanyId: "company-1" });
     mockAdaptersApi.list.mockResolvedValue([

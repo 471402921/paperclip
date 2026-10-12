@@ -342,7 +342,7 @@ jobs:
 
   release_runner_source:
     # Old promotions retain their already-shipped packaging contract. New
-    # sources opt into mandatory three-target assembly in their release.sh.
+    # sources opt into source-declared native target assembly in their release.sh.
     needs: [verify_canary, select_nightly, select_beta, preflight_stable]
     if: >-
       !cancelled() && (

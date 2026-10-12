@@ -284,7 +284,7 @@ describeEmbeddedPostgres("plugin-managed agents", () => {
     });
   });
 
-  it.each([{ platform: "linux", architecture: "x64" }, { platform: "darwin", architecture: "arm64" }, { platform: "darwin", architecture: "x64" }])("creates managed agents with the most-used compatible company adapter ($platform/$architecture)", async ({ platform, architecture }) => {
+  it.each([{ platform: "linux", architecture: "x64" }, { platform: "linux", architecture: "arm64" }, { platform: "darwin", architecture: "arm64" }, { platform: "darwin", architecture: "x64" }])("creates managed agents with the most-used compatible company adapter ($platform/$architecture)", async ({ platform, architecture }) => {
     runnerTarget.platform = platform;
     runnerTarget.architecture = architecture;
     const pluginManifest = manifest();

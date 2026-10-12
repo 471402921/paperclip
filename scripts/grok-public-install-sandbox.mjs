@@ -198,7 +198,7 @@ export function installedDaemonProbeSource(outputRoot, consumerRoot, sourceRevis
     const { parsePaperclipRunnerdBuildMetadata } = await import(pathToFileURL(join(output, 'evals/runnerd-artifact.js')).href);
     const { PAPERCLIP_RUNNER_BUILD_METADATA: expected } = await import(pathToFileURL(join(output, 'evals/build-metadata.js')).href);
     const manifest = JSON.parse(readFileSync(join(output, 'bin/release-manifest.json'), 'utf8'));
-    const targets = ['darwin-arm64', 'darwin-x64', 'linux-x64'];
+    const targets = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'linux-arm64'];
     assert.equal(manifest.schema, 'paperclip.runner.release-binaries.v1');
     assert.equal(manifest.sourceRevision, ${JSON.stringify(sourceRevision)});
     assert.deepEqual(Object.keys(manifest.platforms).sort(), targets.sort());
@@ -240,7 +240,8 @@ export function macInstalledStartupProbeSource(consumerRoot, serverRoot, runnerD
       serverRoot:${JSON.stringify(serverRoot)},expectedRunnerSha256:${JSON.stringify(runnerDigest.slice(7))}})));`;
 }
 
-export function grokConsumerDockerArgs({ assets, consumer, cache, command, uid, gid, download = false, prerequisite, temporarySizeMiB = 256, temporaryExecutable = false }) {
+export function grokConsumerDockerArgs({ assets, consumer, cache, command, uid, gid, download = false, prerequisite, temporarySizeMiB = 256, temporaryExecutable = false, platform = 'linux/amd64' }) {
+  if (!['linux/amd64', 'linux/arm64'].includes(platform)) throw new Error('Public-install verification requires a supported native Linux platform');
   if (!Number.isSafeInteger(uid) || uid <= 0 || !Number.isSafeInteger(gid) || gid <= 0) {
     throw new Error('Public-install verification requires an unprivileged host user');
   }
@@ -251,7 +252,7 @@ export function grokConsumerDockerArgs({ assets, consumer, cache, command, uid, 
     throw new Error('Executable runtime snapshots require an offline verification sandbox');
   }
   return [
-    'run', '--rm', '--platform', 'linux/amd64',
+    'run', '--rm', '--platform', platform,
     '--user', `${uid}:${gid}`, '--read-only',
     '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
     '--pids-limit', '256', '--memory', '3g',

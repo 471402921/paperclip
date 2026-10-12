@@ -169,7 +169,8 @@ test('the bundled-dependency installs run together while the other packages are 
   const checks = position("for (const tarball of tarballs) assertNoBundledCodexPayloads(run('tar', ['-tzf', tarball])");
   const copied = position('for (const tarball of tarballs) {');
   assert.ok(bundledSources < start && start < registered && registered < otherSources && otherSources < join && join < packs && packs < reordered && reordered < checks && checks < copied);
-  assert.equal(source.match(/run\('npm', \['pack'/g).length, 1, 'only the lifecycle sentinel is packed in-process');
+  const packagingLane = source.slice(position("} else {\nassert.equal(process.platform, 'linux'"));
+  assert.equal(packagingLane.match(/run\('npm', \['pack'/g).length, 1, 'only the lifecycle sentinel is packed in-process in the packaging lane');
   assert.ok(source.includes("destination: join(root, `pack-${index}`)"), 'each pack writes into its own directory');
   // The timing line reports the split staging phase, each install, and the
   // pack step with what the packs would have cost one after another.
@@ -352,6 +353,7 @@ test('actual tar member checks allow Codex JavaScript but reject nested platform
   assert.doesNotThrow(() => assertNoBundledCodexPayloads(javascript));
   for (const payload of [
     'package/node_modules/@openai/codex-linux-x64/package.json',
+    'package/node_modules/@openai/codex-linux-arm64/package.json',
     'package/node_modules/bridge/node_modules/@openai/codex-darwin-arm64/package.json',
     'package/node_modules/@openai/codex-win32-x64/package.json',
     'package/node_modules/@openai/codex/vendor/x86_64-unknown-linux-musl/codex/codex',
@@ -364,26 +366,28 @@ test('actual tar member checks allow Codex JavaScript but reject nested platform
 });
 
 test('consumer provenance rejects bundled, foreign, inconsistent and non-official Codex payloads', () => {
-  const path = 'node_modules/@openai/codex-linux-x64';
-  const manifest = { name: '@openai/codex', version: '0.160.0-linux-x64', os: ['linux'], cpu: ['x64'] };
+  for (const target of ['linux-x64', 'linux-arm64']) {
+  const path = `node_modules/@openai/codex-${target}`;
+  const manifest = { name: '@openai/codex', version: `0.160.0-${target}`, os: ['linux'], cpu: [target.slice('linux-'.length)] };
   const entry = { version: manifest.version, resolved: `https://registry.npmjs.org/@openai/codex/-/codex-${manifest.version}.tgz`,
     integrity: `sha512-${Buffer.alloc(64, 1).toString('base64')}` };
-  const check = (value = entry, installed = [{ path, manifest }]) => assertInstalledCodexPlatformProvenance({ packages: { [path]: value } }, installed, 'linux-x64');
+  const check = (value = entry, installed = [{ path, manifest }]) => assertInstalledCodexPlatformProvenance({ packages: { [path]: value } }, installed, target);
   assert.equal(check().codexConsumerHostOnly, true);
-  const legacyManifest = { ...manifest, version: '0.156.1-linux-x64' };
+  const legacyManifest = { ...manifest, version: `0.156.1-${target}` };
   assert.equal(check({ ...entry, version: legacyManifest.version,
-    resolved: 'https://registry.npmjs.org/@openai/codex/-/codex-0.156.1-linux-x64.tgz' }, [{ path, manifest: legacyManifest }]).codexConsumerHostOnly, true);
-  assert.throws(() => check(entry, [{ path, manifest: { ...manifest, version: '^0.160.0-linux-x64' } }]), /exact host version/);
+    resolved: `https://registry.npmjs.org/@openai/codex/-/codex-0.156.1-${target}.tgz` }, [{ path, manifest: legacyManifest }]).codexConsumerHostOnly, true);
+  assert.throws(() => check(entry, [{ path, manifest: { ...manifest, version: `^0.160.0-${target}` } }]), /exact host version/);
   for (const change of [
-    { inBundle: true }, { link: true }, { version: '0.156.1-linux-x64' },
-    { resolved: 'https://example.com/@openai/codex/-/codex-0.160.0-linux-x64.tgz' },
-    { resolved: 'https://registry.npmjs.org/@openai/codex/-/codex-0.156.1-linux-x64.tgz' },
-    { resolved: 'https://user@registry.npmjs.org/@openai/codex/-/codex-0.160.0-linux-x64.tgz' },
+    { inBundle: true }, { link: true }, { version: `0.156.1-${target}` },
+    { resolved: `https://example.com/@openai/codex/-/codex-0.160.0-${target}.tgz` },
+    { resolved: `https://registry.npmjs.org/@openai/codex/-/codex-0.156.1-${target}.tgz` },
+    { resolved: `https://user@registry.npmjs.org/@openai/codex/-/codex-0.160.0-${target}.tgz` },
     { integrity: undefined }, { integrity: 'sha512-AA==' },
   ]) assert.throws(() => check({ ...entry, ...change }));
   assert.throws(() => check(entry, []), /must install its host/);
   assert.throws(() => check(entry, [{ path: 'node_modules/@openai/codex-darwin-arm64', manifest }]), /only the host/);
   assert.throws(() => check(entry, [{ path, manifest: { ...manifest, name: 'untrusted' } }]), /identity/);
+  }
 });
 
 
@@ -413,7 +417,29 @@ test('installed daemon proof uses the production host resolver and complete sour
   assert.match(source, /runnerBinaryTarget\(bytes\), target/);
   assert.match(source, /createHash\('sha256'\)/);
   assert.match(source, /metadata.binaryContractVersion, expected.contracts.runnerdArtifact/);
+  assert.match(source, /'linux-arm64'/);
   assert.doesNotMatch(source, /PAPERCLIP_RUNNERD_BINARY|runner\/target\/debug|execFileSync\('paperclip-runnerd'/);
+});
+
+test('native ARM clean consumers keep the existing container and installed-runtime boundaries', () => {
+  const args = grokConsumerDockerArgs({ ...paths, platform: 'linux/arm64', command: GROK_PUBLIC_INSTALL_LIFECYCLE });
+  assert.deepEqual(values(args, '--platform'), ['linux/arm64']);
+  assert.deepEqual(values(args, '--network'), ['none']);
+  assert.deepEqual(values(args, '--user'), ['1001:1001']);
+  assert.ok(args.includes('--read-only'));
+  assert.deepEqual(values(args, '--cap-drop'), ['ALL']);
+  assert.deepEqual(values(args, '--security-opt'), ['no-new-privileges']);
+  assert.ok(values(args, '--mount').some(value => value.endsWith('dst=/packages,readonly')));
+  assert.throws(() => grokConsumerDockerArgs({ ...paths, platform: 'linux/arm/v7', command: [] }), /supported native Linux platform/);
+  const source = readFileSync(new URL('../verify-grok-npm-install.mjs', import.meta.url), 'utf8');
+  const arm = source.split('async function verifyLinuxArmConsumer(')[1].split("if (process.argv[2] === '--linux-arm64-consumer')")[0];
+  assert.match(arm, /process.platform \+ '-' \+ process.arch, 'linux-arm64'/);
+  assert.match(arm, /const platform = 'linux\/arm64'/);
+  assert.match(arm, /isolated\(GROK_PUBLIC_INSTALL_LIFECYCLE\)/);
+  assert.match(arm, /installedCodexProbeSource\(installed \+ '\/index.js', '\/consumer', undefined, \{ nativeCodex: true \}\)/);
+  assert.match(arm, /tests\/runner-e2e\/installed-cli.ts/);
+  assert.match(arm, /temporarySizeMiB: 2048, temporaryExecutable: true/);
+  assert.doesNotMatch(arm, /stage-runner|runner\/target|PAPERCLIP_RUNNER_BINARY|prerequisite:/);
 });
 
 

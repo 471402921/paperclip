@@ -24,7 +24,7 @@ on:
         default: release-smoke
         type: string
       qualification_source_sha:
-        description: Optional immutable source SHA for provider-free three-target package qualification
+        description: Optional immutable source SHA for provider-free native package qualification
         required: false
         default: ""
         type: string
@@ -282,7 +282,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  qualification_mac:
+  qualification_native:
     if: ${{ !cancelled() && inputs.qualification_source_sha != '' && needs.qualification_daemons.result == 'success' }}
     needs: [qualification_daemons, qualification_pack]
     name: Clean installed package (${{ matrix.target }})
@@ -290,12 +290,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - target: darwin-arm64
-            host: macos-15
-          - target: darwin-x64
-            host: macos-15-intel
+      matrix: ${{ fromJSON(needs.qualification_daemons.outputs.native_consumer_matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -321,12 +316,14 @@ jobs:
           set -euo pipefail
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || exit 1
           [[ "$(node -p 'process.platform + "-" + process.arch')" == "$TARGET" ]] || exit 1
-          node scripts/verify-grok-npm-install.mjs --mac-consumer \
-            "$RUNNER_TEMP/public-runner-packs" "$SOURCE_SHA" "$RUNNER_TEMP/mac-public-install.json"
+          mode=--mac-consumer
+          if [[ "$TARGET" == linux-arm64 ]]; then mode=--linux-arm64-consumer; fi
+          node scripts/verify-grok-npm-install.mjs "$mode" \
+            "$RUNNER_TEMP/public-runner-packs" "$SOURCE_SHA" "$RUNNER_TEMP/native-public-install.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: ${{ inputs.artifact_name }}-${{ matrix.target }}
-          path: ${{ runner.temp }}/mac-public-install.json
+          path: ${{ runner.temp }}/native-public-install.json
           if-no-files-found: warn
           retention-days: 14
