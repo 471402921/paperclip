@@ -94,3 +94,30 @@ Executable identities: daemon source `5f0b898e9ecef77afefe309a230e04d7fef66cde`,
 ## Approved prerequisite split and current CI
 
 The behavior PR now targets the protocol branch and has 64 changed files. Protocol #15994 targets the latest Codex dependency and adds the shared v7 effort/resume contract with historical readers. Cloud Docker-context verification found that `.dockerignore` omitted the new Pi v23 and Copilot v18 identity inputs; explicit exceptions retain them without broadening the fixture context. The old 9788c05 package campaign passed all four daemon producers and Apple Silicon clean install, but the Linux ARM64 consumer failed durable-suspend settlement. Retain that failure; current-source package qualification and ARM diagnosis remain required. No local Docker or Rust compilation occurred.
+
+
+## Platform candidate implementation
+
+The isolated platform checkout is `/private/tmp/claude-runner-platform-pr` on
+`codex/claude-runner-platforms`. It preserves behavior candidate `8d07b40907`.
+The pinned Linux ARM64 Claude SDK 0.3.286 archive passed registry SHA512
+integrity, ELF aarch64 inspection and an actual no-prompt version launch on
+the authorized cloud ARM host. Its executable SHA256 is
+`0292fa22ac2fd43e16be9d0e511ddd8347280d6e0ebaca744ef5b27e05d8d0f8`.
+Native admission retains descriptor/no-follow, package and architecture checks.
+
+Release producers now retain target-owned Linux x64 and ARM64 provider-pack
+identities and relocatable archives separately from daemon receipts. Assembly
+binds both target identities to its daemon source and vendors the manifests.
+ARM inventories cannot claim additional Pi, Cursor or Copilot qualification.
+Mac controllers probe the selected Claude remote target and select its packaged
+identity without a development override. Installed SSH hosts use the standard
+pack locations. Additional automatic defaults remain gated pending evidence.
+
+Focused platform checks: pack integrity11, release workflow67, native remote
+manifest/selection12, executable/profile/path86 passed (six platform skips).
+The first new ARM selection test failed from shared durable fixture identity;
+a unique workspace/session per case fixed the fixture. No product guard was
+removed. Platform TypeScript build passed. Cloud package and actual Linux task
+pairs remain required. Current behavior package campaign:
+https://github.com/paperclipai/paperclip/actions/runs/38284813521 .

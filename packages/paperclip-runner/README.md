@@ -170,7 +170,7 @@ the task waits for the next instruction. See the
 
 A release includes all four platform daemons and the Linux provider-pack identity
 from its matching Daytona image. Run `stage:release-binaries` with a manifest that
-binds each daemon path and SHA-256, plus `remoteProviderPack: {path, sha256}` for
+binds each daemon path and SHA-256, plus `remoteProviderPacks: {"linux-x64": {path, sha256}, "linux-arm64": {path, sha256}}` for
 the actual image's `provider-pack.json`. Assemble these assets after the normal
 build and include them in the server's vendored Runner output before npm packing.
 Assembly requires the provider pack's source revision to match `sourceRevision`
@@ -682,3 +682,18 @@ canonical event retained for that command. The header marker `🖇️ v0.1.2`
 identifies the current console iteration.
 
 `create_task` accepts an optional initial `status` of `backlog` or `todo`. Use `backlog` when the user wants a saved task or plan without execution: assignment and the initial plan are committed without scheduling a wake, even when dependencies are already complete. Omitting status preserves immediate delegation (`todo`, or `blocked` for unresolved dependencies).
+
+
+Linux provider-pack producers run on the corresponding native Linux target and
+retain `provider-pack.json` with a relocatable `provider-pack.tar.gz`. Release
+assembly binds both identities to the same source as its four daemons. The
+historical `remoteProviderPack` field remains the Linux x64 identity. Linux
+ARM64 packs do not qualify Pi, Cursor or Copilot on that target.
+
+For an installed SSH host, install the same release producer's pack at
+`$HOME/.local/share/paperclip-runner/provider-pack` or
+`/opt/paperclip-runner/provider-pack`. A Mac controller selects its packaged
+Linux target identity after probing the selected host. The runtime verifies the
+installed pack before prompting. No development pack override is needed. A
+missing or mismatched pack fails clearly. Existing explicit overrides remain
+authoritative. ARM64 cloud-image production remains deferred.
