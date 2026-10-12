@@ -1338,6 +1338,8 @@ export interface CapabilityRunnerdCodexTransportOptions {
   controlPlaneRegistration?: (
     authority: DurablePrpControlPlane,
     identity?: DurableRecoveryIdentity,
+    /** Setup owners abort preparation before draining or releasing its result. */
+    signal?: AbortSignal,
   ) => Promise<{
     connectUrl?: string;
     connection?: RunnerProcessConnection;
@@ -7101,6 +7103,7 @@ export async function probeNativeRunnerEnvironment(options: {
   const controller = new AbortController();
   let registrationTeardownError: unknown;
   let registrationOperation: Promise<unknown> | undefined;
+  let registrationCleanupConfirmed = true;
   const sourceCodexHome = options.transportOptions?.sourceCodexHome ?? resolveSourceCodexHome(environment);
   // Never let an unbound home or an external-sandbox flag admit host state or
   // weaken this read-only probe. The normal materializer copies bound auth and
@@ -7114,13 +7117,20 @@ export async function probeNativeRunnerEnvironment(options: {
     ...(options.transportOptions?.controlPlaneRegistration ? { controlPlaneRegistration: (authority, identity) => {
       const operation = (async () => {
         controller.signal.throwIfAborted();
-        const registration = await options.transportOptions!.controlPlaneRegistration!(authority, identity);
+        registrationCleanupConfirmed = false;
+        const registration = await options.transportOptions!.controlPlaneRegistration!(authority, identity, controller.signal);
+        let releaseOperation: Promise<void> | undefined;
+        const release = () => releaseOperation ??= Promise.resolve()
+          .then(() => registration.release())
+          .then(() => { registrationCleanupConfirmed = true; }, error => {
+            registrationTeardownError = error;
+            throw error;
+          });
         if (controller.signal.aborted) {
-          try { await registration.release(); }
-          catch (error) { registrationTeardownError = error; throw error; }
+          await release();
           controller.signal.throwIfAborted();
         }
-        return registration;
+        return { ...registration, release };
       })();
       registrationOperation = operation;
       return operation;
@@ -7215,17 +7225,34 @@ export async function probeNativeRunnerEnvironment(options: {
     failure = error;
   } finally {
     clearTimeout(timer);
+    controller.abort(failure ?? new Error("Native provider hello probe complete."));
     // Preserve private recovery state if the production close cannot confirm
     // teardown; callers remove it only after an authoritative receipt.
     const teardownErrors: unknown[] = [];
+    const teardownDeadline = Date.now() + 10_000;
+    const awaitTeardown = async (pending: Promise<unknown>, detail: string): Promise<void> => {
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          pending,
+          new Promise<never>((_resolve, reject) => {
+            timeout = setTimeout(() => reject(new Error(`Native setup probe cleanup timed out while ${detail}; recovery state retained.`)), Math.max(0, teardownDeadline - Date.now()));
+          }),
+        ]);
+      } finally { clearTimeout(timeout); }
+    };
     try {
-      if (session) await session.close({ reason: "environment probe complete" });
-      else await bundle.transport.close("environment probe complete");
+      await awaitTeardown(session ? session.close({ reason: "environment probe complete" }) : bundle.transport.close("environment probe complete"), "closing the selected runtime");
       if (bundle.evidence().runnerPid !== null && !bundle.evidence().runnerExited) throw new Error("Native setup probe cleanup is incomplete.");
     } catch (error) { teardownErrors.push(error); }
-    await operation.catch(() => undefined);
-    await registrationOperation?.catch(() => undefined);
-    if (registrationTeardownError !== undefined) teardownErrors.push(registrationTeardownError);
+    try { await awaitTeardown(operation.catch(() => undefined), "draining native setup"); }
+    catch (error) { teardownErrors.push(error); }
+    if (registrationOperation) {
+      try { await awaitTeardown(registrationOperation.catch(() => undefined), "draining authority registration"); }
+      catch (error) { teardownErrors.push(error); }
+    }
+    if (registrationTeardownError !== undefined && !teardownErrors.includes(registrationTeardownError)) teardownErrors.push(registrationTeardownError);
+    if (!registrationCleanupConfirmed) teardownErrors.push(new Error("Native setup probe authority release is unconfirmed; recovery state retained."));
     if (bundle.evidence().runnerPid !== null && bundle.evidence().runnerExited && options.provider === "codex" && options.onCodexCredentialRefresh) {
       try { await options.onCodexCredentialRefresh(resolve(remoteFilesystemRoot ?? options.runtimeDirectory, "codex-home", "auth.json")); }
       catch (error) { teardownErrors.push(error); }

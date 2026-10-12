@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createRoot } from "react-dom/client";
-import { act } from "react";
+import { act, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
@@ -9,6 +9,9 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { CodexLocalConfigFields } from "./config-fields";
+import { buildCodexRunnerConfig } from "./config-fields";
+import { defaultCreateValues } from "@/components/agent-config-defaults";
+import { resolveCodexLocalCliPolicy } from "@paperclipai/adapter-codex-local";
 
 beforeAll(() => { Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true }); });
 
@@ -51,6 +54,47 @@ async function renderRunner(config: Record<string, unknown>, expand?: string, in
 }
 
 describe("Paperclip Runner Codex configuration", () => {
+  it.each(["", "--sandbox,read-only"])("shows actual automatic Legacy policy and preserves the explicit toggle (%s)", async (extraArgs) => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    let saved: typeof defaultCreateValues = { ...defaultCreateValues, adapterType: "codex_local", runner: "auto", extraArgs };
+    function Fixture() {
+      const [values, setValues] = useState(saved);
+      saved = values;
+      return <CodexLocalConfigFields mode="create" isCreate adapterType="codex_local" values={values}
+        set={(patch) => setValues(current => ({ ...current, ...patch }))} config={{}}
+        eff={(_group, _field, original) => original} mark={() => undefined} models={[]} hideInstructionsFile />;
+    }
+    try {
+      await act(async () => root.render(<QueryClientProvider client={new QueryClient()}><TooltipProvider><Fixture /></TooltipProvider></QueryClientProvider>));
+      const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Bypass sandbox"]');
+      expect(toggle).toBeDefined();
+      expect(toggle?.getAttribute("aria-checked")).toBe(String(resolveCodexLocalCliPolicy(buildCodexRunnerConfig(saved)).bypass));
+      await act(async () => toggle!.click());
+      const config = buildCodexRunnerConfig(saved);
+      expect(saved.runner).toBe("auto");
+      expect(config.dangerouslyBypassApprovalsAndSandbox).toBe(extraArgs !== "");
+      expect(toggle?.getAttribute("aria-checked")).toBe(String(resolveCodexLocalCliPolicy(config).bypass));
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+  it.each([
+    {},
+    { dangerouslyBypassApprovalsAndSandbox: false, dangerouslyBypassSandbox: true },
+    { dangerouslyBypassSandbox: false },
+    { extraArgs: ["--sandbox", "read-only"] },
+  ])("shows the actual saved Legacy CLI policy while editing %j", async config => {
+    await renderMarkup(<TooltipProvider><CodexLocalConfigFields mode="edit" isCreate={false}
+      adapterType="codex_local" values={null} set={null} config={config}
+      eff={(_group, _field, original) => original} mark={() => undefined} models={[]} hideInstructionsFile />
+    </TooltipProvider>, undefined, container => {
+      expect(container.querySelector('[aria-label="Bypass sandbox"]')?.getAttribute("aria-checked"))
+        .toBe(String(resolveCodexLocalCliPolicy(config).bypass));
+    });
+  });
   it("edits the legacy execution engine through the shared keyboard picker", async () => {
     const container = document.createElement("div");
     document.body.appendChild(container);

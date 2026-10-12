@@ -173,6 +173,7 @@ describe("adapter routes", () => {
     [{ driver: "ssh", platform: "linux", architecture: "arm64" }, "paperclip"],
     [{ driver: "ssh", platform: "linux", architecture: "arm" }, "legacy"],
     [{ driver: "local", platform: "win32", architecture: "x64" }, "legacy"],
+    [{ driver: "sandbox", platform: "linux", architecture: "arm64", libc: "glibc", glibcVersion: "2.39" }, "paperclip"],
   ])("projects the selected environment once for the whole adapter inventory (%s)", async (target, defaultRunner) => {
     const resolveRunnerTarget = vi.fn(async () => target);
     const response = await request(createApp({}, { resolveRunnerTarget })).get("/api/adapters?companyId=company-1&environmentId=selected");
@@ -187,7 +188,7 @@ describe("adapter routes", () => {
     const response = await request(createApp({}, { resolveRunnerTarget })).get("/api/adapters?companyId=company-1");
     expect(response.status).toBe(200);
     expect(resolveRunnerTarget).toHaveBeenCalledExactlyOnceWith("company-1", undefined);
-    expect(response.body.find((adapter: any) => adapter.type === "codex_local")).toMatchObject({ defaultRunner: "paperclip" });
+    expect(response.body.find((adapter: any) => adapter.type === "codex_local")).toMatchObject({ defaultRunner: "legacy" });
   });
 
   it("keeps unscoped inventory independent of company target discovery", async () => {

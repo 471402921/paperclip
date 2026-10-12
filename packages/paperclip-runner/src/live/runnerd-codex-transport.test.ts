@@ -2716,6 +2716,93 @@ const fakeCodex = resolve(
   "../../runner/target/debug/fake-codex-app-server",
 );
 
+it.each(["stuck", "late-release", "late-release-error", "stuck-release", "cooperative-release", "launch-failure"] as const)(
+  "bounds setup registration teardown and retains unconfirmed state (%s)",
+  async mode => {
+    const root = await mkdtemp(join(tmpdir(), "runnerd-setup-registration-"));
+    const runtimeDirectory = join(root, "native-state");
+    await mkdir(runtimeDirectory, { mode: 0o700 });
+    let registrationStarted!: () => void;
+    const started = new Promise<void>(resolve => { registrationStarted = resolve; });
+    let returnRegistration!: (registration: { connection: { mode: "listen"; listenAddress: string; listenPort: number; listenPath: string }; release: () => Promise<void> }) => void;
+    const registration = new Promise<Parameters<typeof returnRegistration>[0]>(resolve => { returnRegistration = resolve; });
+    let finishRelease!: () => void;
+    const releasing = new Promise<void>(resolve => { finishRelease = resolve; });
+    const releaseError = new Error("setup registration release failed");
+    const release = vi.fn(async () => {
+      if (mode === "stuck-release") await releasing;
+      if (mode === "late-release-error") throw releaseError;
+    });
+    const registered = {
+      connection: { mode: "listen" as const, listenAddress: "127.0.0.1", listenPort: 43127, listenPath: "/setup-probe" },
+      release,
+    };
+    let registrationSignal: AbortSignal | undefined;
+    const cleanup = vi.fn(async () => { await rm(runtimeDirectory, { recursive: true, force: true }); });
+    const launch = vi.fn(() => { throw new Error("owned launcher failed before execution"); });
+    let settled = false;
+    vi.useFakeTimers();
+    const result = probeNativeRunnerEnvironment({
+      runtimeDirectory, provider: "codex", model: "gpt-test", timeoutMs: 1_000,
+      environment: { PATH: "", OPENAI_API_KEY: "inert-test-key" },
+      transportOptions: {
+        // Registration and launch are external owners; hash real inert bytes
+        // without executing a daemon, Codex, or an ambient developer binary.
+        runnerBinary: resolve(import.meta.dirname, "../../package.json"),
+        codexCommand: resolve(import.meta.dirname, "../../package.json"),
+        sourceCodexHome: "", runnerProcessLauncher: launch,
+        controlPlaneRegistration: async (_authority, _identity, signal) => {
+          registrationSignal = signal;
+          if (mode === "cooperative-release") signal?.addEventListener("abort", () => returnRegistration(registered), { once: true });
+          registrationStarted();
+          return registration;
+        },
+      },
+      onCleanupConfirmed: cleanup,
+    }).then(value => { settled = true; return value; }, (error: unknown) => { settled = true; return error; });
+    try {
+      await started;
+      if (mode === "launch-failure") returnRegistration(registered);
+      await vi.advanceTimersByTimeAsync(1_000);
+      if (mode === "late-release" || mode === "late-release-error" || mode === "stuck-release") returnRegistration(registered);
+      await vi.advanceTimersByTimeAsync(10_000);
+      if (mode === "late-release" || mode === "cooperative-release" || mode === "launch-failure") await result;
+      expect(settled).toBe(true);
+      expect(registrationSignal?.aborted).toBe(true);
+      const failure = await result;
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).message).toContain(mode === "launch-failure" ? "owned launcher failed before execution" : "Native provider hello probe timed out.");
+      if (mode === "stuck" || mode === "stuck-release" || mode === "late-release-error") {
+        expect(failure).toBeInstanceOf(AggregateError);
+        expect((failure as AggregateError).cause).toMatchObject({ message: "Native provider hello probe timed out." });
+        expect(cleanup).not.toHaveBeenCalled();
+        expect((await stat(runtimeDirectory)).isDirectory()).toBe(true);
+        if (mode === "late-release-error") expect((failure as AggregateError).errors).toContain(releaseError);
+        // A registration that finishes after the bounded return still releases
+        // its authority, without retroactively certifying or deleting state.
+        returnRegistration(registered);
+        finishRelease();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(release).toHaveBeenCalledOnce();
+        expect(cleanup).not.toHaveBeenCalled();
+      } else {
+        expect(release).toHaveBeenCalledOnce();
+        expect(cleanup).toHaveBeenCalledOnce();
+        await expect(stat(runtimeDirectory)).rejects.toThrow();
+      }
+      expect(launch).toHaveBeenCalledTimes(mode === "launch-failure" ? 1 : 0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      returnRegistration(registered);
+      finishRelease();
+      await vi.advanceTimersByTimeAsync(0);
+      await result;
+      vi.useRealTimers();
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
 function fakeCodexArgs(stateDirectory: string, ...args: string[]): string[] {
   return [
     "--state-file",

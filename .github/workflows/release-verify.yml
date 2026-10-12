@@ -546,14 +546,41 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || exit 1
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
+          import { execFileSync } from 'node:child_process';
           import { appendFileSync } from 'node:fs';
-          import { RELEASE_RUNNER_TARGETS } from './packages/paperclip-runner/scripts/stage-release-runner-binaries.mjs';
+          const source = process.env.SOURCE_SHA;
+          const readBlob = file => {
+            const entries = execFileSync('git', ['ls-tree', '-z', source, '--', file], {
+              encoding: 'utf8', maxBuffer: 4096,
+            }).split('\0').filter(Boolean);
+            if (!entries.length) return undefined;
+            assert.equal(entries.length, 1, 'Ambiguous exact-source target contract');
+            assert.ok(entries[0].startsWith('100644 blob ') && entries[0].endsWith('\t' + file), 'Target contract must be a regular source file');
+            return execFileSync('git', ['show', source + ':' + file], { encoding: 'utf8', maxBuffer: 64 * 1024 });
+          };
+          const data = readBlob('packages/paperclip-runner/release-runner-targets.json');
+          let declared;
+          if (data !== undefined) {
+            const contract = JSON.parse(data);
+            assert.ok(contract && contract.schema === 'paperclip.runner.release-targets.v1'
+              && Object.keys(contract).sort().join() === 'schema,targets', 'Unknown exact-source daemon platform contract');
+            declared = contract.targets;
+          } else {
+            // Frozen pre-contract sources used a literal export. Read that one
+            // declaration as JSON data; never import or evaluate preview code.
+            const legacy = readBlob('packages/paperclip-runner/scripts/stage-release-runner-binaries.mjs');
+            const declarations = [...(legacy ?? '').matchAll(/^[ \t]*export const RELEASE_RUNNER_TARGETS = (?:Object\.freeze\()?(\[[^\r\n]*\])\)?;[ \t]*$/gm)];
+            assert.equal(declarations.length, 1, 'Unknown exact-source daemon platform contract');
+            declared = JSON.parse(declarations[0][1]);
+          }
           const historical = ['darwin-arm64', 'darwin-x64', 'linux-x64'];
           const current = [...historical, 'linux-arm64'];
-          const targets = [...RELEASE_RUNNER_TARGETS].sort();
-          assert.ok(JSON.stringify(targets) === JSON.stringify(historical.sort()) || JSON.stringify(targets) === JSON.stringify(current.sort()), 'Unknown exact-source daemon platform contract');
+          assert.ok(Array.isArray(declared), 'Unknown exact-source daemon platform contract');
+          const matches = expected => JSON.stringify([...declared].sort()) === JSON.stringify([...expected].sort());
+          assert.ok(matches(historical) || matches(current), 'Unknown exact-source daemon platform contract');
+          const targets = matches(current) ? current : historical;
           const hosts = { 'linux-x64': targets.length === current.length ? 'ubuntu-24.04' : 'ubuntu-latest', 'linux-arm64': 'ubuntu-24.04-arm', 'darwin-arm64': 'macos-15', 'darwin-x64': 'macos-15-intel' };
-          const include = RELEASE_RUNNER_TARGETS.map(target => ({ target, host: hosts[target] }));
+          const include = targets.map(target => ({ target, host: hosts[target] }));
           appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${JSON.stringify({ include })}\nnative_consumers=${JSON.stringify({ include: include.filter(row => row.target !== 'linux-x64') })}\n`);
           NODE
 

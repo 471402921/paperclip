@@ -9,7 +9,19 @@ import { fileURLToPath } from "node:url";
 import { runnerBinaryTarget } from "../src/live/runner-binary.ts";
 import { verifyReleaseProviderPack } from "./release-provider-pack.mjs";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const RELEASE_RUNNER_TARGETS = Object.freeze(["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"]);
+export function releaseRunnerTargets(contract) {
+  const supported = ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"];
+  if (!contract || contract.schema !== "paperclip.runner.release-targets.v1"
+    || Object.keys(contract).sort().join() !== "schema,targets"
+    || !Array.isArray(contract.targets)
+    || JSON.stringify([...contract.targets].sort()) !== JSON.stringify([...supported].sort())) {
+    throw Error("Unknown release daemon target contract");
+  }
+  return Object.freeze([...contract.targets]);
+}
+export const RELEASE_RUNNER_TARGETS = releaseRunnerTargets(JSON.parse(
+  readFileSync(new URL("../release-runner-targets.json", import.meta.url), "utf8"),
+));
 export const RELEASE_PROVIDER_PACK_TARGETS = Object.freeze(["linux-x64", "linux-arm64"]);
 const required = RELEASE_RUNNER_TARGETS;
 const digest = bytes => "sha256:" + createHash("sha256").update(bytes).digest("hex");
