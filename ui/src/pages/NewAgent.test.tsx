@@ -200,6 +200,22 @@ afterEach(async () => {
   container.remove();
 });
 describe("New agent setup", () => {
+  it.each(["paperclip", "legacy", undefined] as const)("uses Claude's discovered %s default for Auto setup and hire", async (defaultRunner) => {
+    settings.getExperimental.mockResolvedValue({ enableNativeRunner: false });
+    state.adapters = (state.adapters as any[]).map(adapter => adapter.type === "claude_local"
+      ? { ...adapter, supportedRunners: ["paperclip", "legacy"], defaultRunner } : adapter);
+    await render("claude_local");
+    await connect("Claude");
+    await click("Finish setup");
+    expect(api.hire).toHaveBeenCalledTimes(1);
+    for (const config of [api.testEnvironment.mock.calls[0][2].adapterConfig, api.hire.mock.calls[0][1].adapterConfig]) {
+      if (defaultRunner === "paperclip") expect(config).not.toHaveProperty("maxTurnsPerRun");
+      else expect(config.maxTurnsPerRun).toBe(1000);
+      expect(config).not.toHaveProperty("resolvedRunner");
+    }
+    expect(api.hire.mock.calls[0][1]).not.toHaveProperty("runner");
+  });
+
   it("records an explicit legacy choice when it matches the Windows default, then preserves it on Linux", async () => {
     settings.get.mockResolvedValue({ defaultEnvironmentId: "local-1" });
     envApi.list.mockResolvedValue([
