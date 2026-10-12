@@ -129,6 +129,16 @@ function createApp(actor: Record<string, unknown>) {
 }
 
 describe("environment instance routes", () => {
+  it.each(["post", "patch"])("rejects client-written sandbox platform evidence on %s", async method => {
+    mockEnvironmentService.getById.mockResolvedValue(createEnvironment());
+    const app = createApp({ type: "board", source: "local_implicit", isInstanceAdmin: true });
+    const payload = { ...(method === "post" ? { name: "Fixture", driver: "local", config: {} } : {}), metadata: { paperclipSandboxPlatformProbes: { "company-1": { v: 1 } } } };
+    const res = method === "post" ? await request(app).post("/api/companies/company-1/environments").send(payload)
+      : await request(app).patch("/api/environments/env-1").send(payload);
+    expect(res.status).toBe(422);
+    expect(res.body.details?.code ?? res.body.code).toBe("environment_platform_probe_reserved");
+    expect(mockEnvironmentService.create).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     mockIssueService.clearExecutionWorkspaceEnvironmentSelection.mockReset();
     mockProjectService.clearExecutionWorkspaceEnvironmentSelection.mockReset();

@@ -2,6 +2,65 @@
 
 Updated 2026-10-12.
 
+## Final review checkpoint: shared fixes and sandbox qualification
+
+The user authorizes normal sequential merges after the applicable gates pass.
+Runtime prerequisite [#16028](https://github.com/paperclipai/paperclip/pull/16028)
+and Codex defaults [#15683](https://github.com/paperclipai/paperclip/pull/15683)
+remain draft. Their pre-fix sources are `00ac509b0a` and `8de43be4cd`.
+The shared SSH argv and verified cold-resume corrections are already composed.
+Six argv controls, fourteen recovery controls, and actual SSH subprocess checks
+pass. The separate Claude owner reports real ARM and Linux x64 task/follow-up
+pairs across controller restarts on its literal installed-package overlays;
+those results do not qualify an unmodified final Codex package.
+
+The Mac test-drive serves `8de43be4cd` at port 3125. A read-only restart comparison
+preserves four full legacy/native execution configurations and two historical
+native runs with the deprecated native flag false. Zero provider turns and
+zero local native/Docker builds were used. The canonical server no-emit passes
+on the composed root and actual prerequisite worktree.
+
+Both shared fixes are implemented and frozen. The actual workflow selector
+rejects candidate execution/output injection in real Git fixtures. Its full
+existing release-workflow suite passes 70 tests; existing target assembly passes
+7 tests. Registration passes 15 focused controls and canonical runner no-emit.
+An independent scoped review confirms bounded teardown and retained private
+state on unconfirmed release. The first broader local workflow attempt failed
+only because mock loopback listeners were sandbox-blocked; its loopback-enabled
+rerun passes. No daemon/provider execution was used by these controls.
+
+The generic sandbox qualification support passes 30 existing probe and route
+controls plus the canonical server no-emit command. It accepts only OCI digest
+images, checks the returned cleanup receipt, and reports conditional-update races
+without claiming a record. Mutable or name-only configurations retain existing
+connection behavior and receive no native compatibility credit. The default
+consumer and explicit-permission/import controls are being composed next.
+
+Fresh review found four source defects: candidate-code execution during CI runner
+selection, unbounded registration teardown, a lost explicit Codex permission
+setting on automatic Legacy selection, and missing sandbox platform/libc facts.
+Existing subagents own narrow fixes in parallel. Use inert target data and
+workflow-owned public labels; preserve primary failures and private state on
+unconfirmed cleanup; preserve explicit permissions; and use server-measured
+sandbox qualification bound to its effective image/config and company scope.
+The existing explicit environment-probe/setup flow owns qualification. Saving
+and discovery must not provision resources or accept client-authored evidence.
+Unknown targets retain automatic Legacy with an actionable explicit-native error.
+No new product API or database migration is planned.
+
+Preview runs [38303434211](https://github.com/paperclipai/paperclip/actions/runs/38303434211),
+[38304889308](https://github.com/paperclipai/paperclip/actions/runs/38304889308), and
+[38306885592](https://github.com/paperclipai/paperclip/actions/runs/38306885592)
+were cancelled as shared source defects changed their candidates. They are
+excluded from final qualification. Preserve historical evidence and all cost
+and cleanup holds. The next action is to finish the four fixes, run affected
+controls, obtain fresh exact-source checks/review, then build the final immutable
+preview and matching DB/shared pair remotely for the pinned QA tenant.
+Managed Codex retains its $2.50 setup/task envelope and $2 cleanup within the
+original $250 ceiling. Claude retains its separate $50 ceiling. No merge or
+production deployment has occurred.
+
+
 ## Latest checkpoint: runtime prerequisite and authorized merges
 
 The user authorizes preparing and merging ready PRs in dependency order.
