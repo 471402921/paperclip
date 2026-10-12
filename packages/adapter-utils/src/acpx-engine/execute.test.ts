@@ -3393,6 +3393,47 @@ describe("ACP activity diagnostics", () => {
     const diagnostics = Object.fromEntries(Object.entries(result.resultJson ?? {}).filter(([key]) => key.startsWith("acp")));
     expect(JSON.stringify(diagnostics)).not.toContain("private");
   }, 15_000);
+
+  it("keeps the stalled tool's stop-time age when the cancel closes that tool", async () => {
+    const root = await makeTempRoot();
+    const cwd = path.join(root, "worktree");
+    await fs.mkdir(cwd, { recursive: true });
+    let currentNow = 1000;
+    let releaseTurn: (() => void) | null = null;
+    const turnCancelled = new Promise<void>((resolve) => { releaseTurn = resolve; });
+    const execute = createAcpxEngineExecutor({
+      now: () => currentNow,
+      createRuntime: () => ({
+        ...buildRuntime(),
+        startTurn: () => ({
+          events: (async function* () {
+            yield { type: "tool_call", toolCallId: "private-id", title: "private command", kind: "execute", status: "in_progress" };
+            currentNow = 9000;
+            await turnCancelled;
+            // The cancel closes the stalled tool before finalization runs.
+            currentNow = 9500;
+            yield { type: "tool_call", tag: "tool_call_update", toolCallId: "private-id", status: "cancelled" };
+          })(),
+          result: turnCancelled.then(() => ({ status: "cancelled", stopReason: "cancelled" })),
+          cancel: async () => { releaseTurn?.(); },
+        }),
+      }) as never,
+    });
+    const result = await execute({
+      runId: "cancel-closes-tool", agent: { id: "agent-1", companyId: "company-1" }, runtime: {},
+      config: { agent: "custom", agentCommand: "node ./fake-acp.js", stateDir: path.join(root, "state"), cwd, timeoutSec: 1 },
+      context: {}, onMeta: async () => {}, onLog: async () => {},
+    } as never);
+    expect(result.timedOut).toBe(true);
+    expect(result.resultJson).toMatchObject({
+      acpPendingToolCount: 0,
+      acpLastEventAgeAtStopMs: 8000,
+      acpOldestPendingToolAgeAtStopMs: 8000,
+      acpPendingToolKinds: "execute",
+    });
+    const diagnostics = Object.fromEntries(Object.entries(result.resultJson ?? {}).filter(([key]) => key.startsWith("acp")));
+    expect(JSON.stringify(diagnostics)).not.toContain("private");
+  }, 15_000);
 });
 
 describe("summarizeAcpStopActivity", () => {

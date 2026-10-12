@@ -3250,6 +3250,10 @@ async function emitRuntimeEvent(
   }
 }
 
+function isPendingAcpTool(tool: { status?: string }): boolean {
+  return tool.status !== "completed" && tool.status !== "failed" && tool.status !== "cancelled";
+}
+
 /**
  * Activity as of the moment the turn's stop fired, for a stopped turn only.
  * Separates a turn that went silent long before its deadline from one that
@@ -4798,10 +4802,12 @@ export function createAcpxEngineExecutor(deps: AcpxEngineExecutorOptions = {}) {
       let observedRuntimeEvents = 0;
       // Activity as of the moment the turn's stop (wall-clock timeout or
       // operator stop) fired. The cancel can make the agent emit closing
-      // events, so the finalize-time age alone cannot tell a silent stall
+      // events (including updates that close the stalled tool), so the
+      // finalize-time age and pending set alone cannot tell a silent stall
       // from live work.
       let turnStopRequestedAt: number | null = null;
       let lastRuntimeEventBeforeStopAt: number | null = null;
+      let pendingToolsAtStop: Array<{ kind?: string; firstSeenAt?: number }> | null = null;
       let turnDispatchAttempted = false;
       // The turn-local state the sequence steps share. `promptBuild` sets the
       // prompt, `preTurnUsage` sets the pre-turn status, `turnStart` sets the
@@ -4889,7 +4895,11 @@ export function createAcpxEngineExecutor(deps: AcpxEngineExecutorOptions = {}) {
       };
       const stepTurnStart = (signal: AbortSignal, startTimeoutMs: number | undefined): StartedTurn => {
         ctx.signal?.throwIfAborted();
-        signal.addEventListener("abort", () => { turnStopRequestedAt ??= now(); }, { once: true });
+        signal.addEventListener("abort", () => {
+          if (turnStopRequestedAt !== null) return;
+          turnStopRequestedAt = now();
+          pendingToolsAtStop = [...interruptionTools.values()].filter(isPendingAcpTool);
+        }, { once: true });
         // After entering startTurn, a thrown error cannot prove the provider
         // received no work. Only failures before this boundary are free to settle.
         turnDispatchAttempted = true;
@@ -5050,16 +5060,14 @@ export function createAcpxEngineExecutor(deps: AcpxEngineExecutorOptions = {}) {
         // Capture runtime activity before usage reads, error logs, or cleanup
         // make an otherwise silent turn look active at its execution deadline.
         const lastEventAgeMs = lastRuntimeEventAt === null ? undefined : now() - lastRuntimeEventAt;
-        const pendingTools = [...interruptionTools.values()].filter(
-          (tool) => tool.status !== "completed" && tool.status !== "failed" && tool.status !== "cancelled",
-        );
+        const pendingTools = [...interruptionTools.values()].filter(isPendingAcpTool);
         const activityDiagnostics = {
           acpObservedEventCount: observedRuntimeEvents,
           ...(lastEventAgeMs !== undefined && Number.isSafeInteger(lastEventAgeMs) && lastEventAgeMs >= 0
             ? { acpLastEventAgeMs: lastEventAgeMs } : {}),
           acpPendingToolCount: pendingTools.length,
           acpToolInventoryComplete: !incompleteToolInventory,
-          ...summarizeAcpStopActivity(turnStopRequestedAt, lastRuntimeEventBeforeStopAt, pendingTools),
+          ...summarizeAcpStopActivity(turnStopRequestedAt, lastRuntimeEventBeforeStopAt, pendingToolsAtStop ?? pendingTools),
         };
         if (input.kind === "terminal") {
         const terminal = input.terminal;
