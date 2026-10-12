@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { GROK_PUBLIC_INSTALL_IMAGE, GROK_PUBLIC_INSTALL_LIFECYCLE, assertInstalledCodexPlatformProvenance, assertNoBundledCodexPayloads, grokConsumerDockerArgs, installedCodexProbeSource } from '../grok-public-install-sandbox.mjs';
+import { GROK_PUBLIC_INSTALL_IMAGE, GROK_PUBLIC_INSTALL_LIFECYCLE, assertInstalledCodexPlatformProvenance, assertNoBundledCodexPayloads, grokConsumerDockerArgs, installedCodexProbeSource, installedDaemonProbeSource, macPublicInstallLifecycleProfile, macInstalledStartupProbeSource } from '../grok-public-install-sandbox.mjs';
 
 const paths = { assets: '/private/staging/assets', consumer: '/private/staging/consumer', cache: '/private/staging/cache', uid: 1001, gid: 1001 };
 const values = (args, flag) => args.flatMap((value, index) => value === flag ? [args[index + 1]] : []);
@@ -141,6 +141,18 @@ test('the installed Codex probe exercises the public export and rejects incomple
     writeFileSync(legacyCommand, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
     writeFileSync(index, `export const resolvePinnedCodexCommand = () => ${JSON.stringify(legacyCommand)};`);
     result = run(); assert.notEqual(result.status, 0); assert.match(result.stderr, /Selected Codex platform version must match the qualified pin/);
+    // Native Codex uses protocol compatibility, not the ACPX version allowlist.
+    // Keep exact official-npm host provenance and the selected resource boundary.
+    mkdirSync(join(legacy, 'vendor'));
+    writeFileSync(legacyCommand, '#!/bin/sh\nprintf "codex-cli 0.156.1\\n"\n', { mode: 0o755 });
+    writeFileSync(security, securitySource.replaceAll(JSON.stringify(nativeVendor), JSON.stringify(join(legacy, 'vendor'))));
+    writeFileSync(probe, installedCodexProbeSource(index, consumer, undefined, { nativeCodex: true }));
+    result = run(); assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).installedCodexVersion, 'codex-cli 0.156.1');
+    assert.equal(JSON.parse(result.stdout).codexQualifiedInstallationVerified, undefined);
+    writeFileSync(probe, installedCodexProbeSource(index, consumer, '0.160.0'));
+    writeFileSync(security, securitySource);
+
     writeFileSync(index, `import { writeFileSync } from 'node:fs'; export const resolvePinnedCodexCommand = () => {
       writeFileSync(${JSON.stringify(join(platform, 'package.json'))}, ${JSON.stringify(JSON.stringify({ ...manifest, altered: true }))});
       return ${JSON.stringify(command)}; };`);
@@ -228,4 +240,48 @@ test('consumer provenance rejects bundled, foreign, inconsistent and non-officia
   assert.throws(() => check(entry, []), /must install its host/);
   assert.throws(() => check(entry, [{ path: 'node_modules/@openai/codex-darwin-arm64', manifest }]), /only the host/);
   assert.throws(() => check(entry, [{ path, manifest: { ...manifest, name: 'untrusted' } }]), /identity/);
+});
+
+
+test('hosted Mac lifecycle denies OS networking and writes outside owned scratch', () => {
+  const profile = macPublicInstallLifecycleProfile('/Users/runner/work/_temp/owned-check');
+  assert.match(profile, /\(deny network\*\)/);
+  assert.match(profile, /\(deny file-write\*/);
+  assert.match(profile, /subpath "\/Users\/runner\/work\/_temp\/owned-check"/);
+  assert.throws(() => macPublicInstallLifecycleProfile('relative'), /absolute/);
+  assert.throws(() => macPublicInstallLifecycleProfile('/tmp/owned\0bad'), /absolute/);
+  const source = readFileSync(new URL('../verify-grok-npm-install.mjs', import.meta.url), 'utf8');
+  assert.match(source, /process.env.GITHUB_ACTIONS, 'true'/);
+  assert.match(source, /networkProbe, 'allowed'/);
+  assert.match(source, /networkProbe, 'denied'/);
+  assert.match(source, /error.code,'EPERM'/);
+  assert.match(source, /'rebuild', '--offline', '--ignore-scripts=false', '--dangerously-allow-all-scripts'/);
+  assert.match(source, /readFileSync\(sentinel, 'utf8'\), 'ok'/);
+  assert.match(source, /readFileSync\(join\(consumer, 'package-lock.json'\), 'utf8'\), lock/);
+  assert.match(source, /finally \{ rmSync\(root, \{ recursive: true, force: true \}\); \}/);
+});
+
+test('installed daemon proof uses the production host resolver and complete source-bound manifest', () => {
+  const source = installedDaemonProbeSource('/consumer/server/dist/vendor/paperclip-runner', '/consumer', 'a'.repeat(40));
+  assert.match(source, /defaultCapabilityRunnerdBinary\(\)/);
+  assert.match(source, /Object.keys\(manifest.platforms\).sort\(\), targets.sort\(\)/);
+  assert.match(source, /manifest.sourceRevision, "a{40}"/);
+  assert.match(source, /runnerBinaryTarget\(bytes\), target/);
+  assert.match(source, /createHash\('sha256'\)/);
+  assert.match(source, /metadata.binaryContractVersion, expected.contracts.runnerdArtifact/);
+  assert.doesNotMatch(source, /PAPERCLIP_RUNNERD_BINARY|runner\/target\/debug|execFileSync\('paperclip-runnerd'/);
+});
+
+
+test('Mac startup wiring normalizes only validated manifest digests and uses server-scoped tooling', () => {
+  const source = macInstalledStartupProbeSource('/owned/consumer', '/owned/consumer/server', 'sha256:' + 'a'.repeat(64), '/source/tests/runner-e2e/installed-cli.ts');
+  assert.match(source, /expectedRunnerSha256:"a{64}"/);
+  assert.doesNotMatch(source, /expectedRunnerSha256:"sha256:/);
+  for (const digest of ['a'.repeat(64), 'sha256:bad', 'sha512:' + 'a'.repeat(64), 'sha256:' + 'A'.repeat(64)]) {
+    assert.throws(() => macInstalledStartupProbeSource('/owned/consumer', '/owned/consumer/server', digest, '/source/helper.ts'), /verified SHA-256/);
+  }
+  const verifier = readFileSync(new URL('../verify-grok-npm-install.mjs', import.meta.url), 'utf8');
+  assert.match(verifier, /\['--import', 'tsx', startupFile\], join\(repo, 'server'\)/);
+  const closedEnvironment = verifier.match(/const env = \{ PATH: `\$\{tools\}[\s\S]*?\};/)[0];
+  assert.doesNotMatch(closedEnvironment, /NODE_PATH|NODE_OPTIONS|\.\.\.process.env/);
 });

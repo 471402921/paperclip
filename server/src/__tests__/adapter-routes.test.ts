@@ -168,7 +168,10 @@ describe("adapter routes", () => {
 
   it.each([
     [{ driver: "ssh", platform: "linux", architecture: "x64" }, "paperclip"],
-    [{ driver: "ssh", platform: "darwin", architecture: "arm64" }, "legacy"],
+    [{ driver: "ssh", platform: "darwin", architecture: "arm64" }, "paperclip"],
+    [{ driver: "ssh", platform: "darwin", architecture: "x64" }, "paperclip"],
+    [{ driver: "ssh", platform: "linux", architecture: "arm64" }, "legacy"],
+    [{ driver: "local", platform: "win32", architecture: "x64" }, "legacy"],
   ])("projects the selected environment once for the whole adapter inventory (%s)", async (target, defaultRunner) => {
     const resolveRunnerTarget = vi.fn(async () => target);
     const response = await request(createApp({}, { resolveRunnerTarget })).get("/api/adapters?companyId=company-1&environmentId=selected");

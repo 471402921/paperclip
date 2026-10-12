@@ -6067,6 +6067,7 @@ describe("company portability", () => {
 
   it.each([
     { runner: "legacy", platform: "linux" },
+    { runner: "legacy", platform: "darwin" },
     { runner: "paperclip", platform: "linux" },
     { runner: "paperclip", platform: "darwin" },
   ] as const)("exports the resolved Codex runner and preserves it on import ($runner/$platform)", async ({ runner, platform }) => {
@@ -6099,7 +6100,9 @@ describe("company portability", () => {
   it.each([
     { action: "create", platform: "linux", expectedType: "paperclip_runner" },
     { action: "update", platform: "linux", expectedType: "codex_local" },
-    { action: "create", platform: "darwin", expectedType: "codex_local" },
+    { action: "create", platform: "darwin", expectedType: "paperclip_runner" },
+    { action: "update", platform: "darwin", expectedType: "codex_local" },
+    { action: "create", platform: "win32", expectedType: "codex_local" },
   ])("applies qualified Codex defaults only to new imports without a runner ($platform/$action)", async ({ action, platform, expectedType }) => {
     runnerTarget.platform = platform;
     runnerTarget.architecture = platform === "darwin" ? "arm64" : "x64";
@@ -6118,6 +6121,7 @@ describe("company portability", () => {
 
   it.each([
     { existingRunner: "legacy", existingHarness: "codex_local", expectedType: "codex_local", platform: "linux" },
+    { existingRunner: "legacy", existingHarness: "codex_local", expectedType: "codex_local", platform: "darwin" },
     { existingRunner: "paperclip", existingHarness: "codex_local", expectedType: "paperclip_runner", platform: "linux" },
     { existingRunner: "paperclip", existingHarness: "codex_local", expectedType: "paperclip_runner", platform: "darwin" },
     { existingRunner: "legacy", existingHarness: "claude_local", expectedType: "paperclip_runner", platform: "linux" },

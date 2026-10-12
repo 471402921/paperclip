@@ -60,7 +60,7 @@ export function assertInstalledCodexPlatformProvenance(lock, installed, target) 
 
 // Execute this in the existing offline public consumer, never in the checkout.
 // The public index and returned command must both come from the installed graph.
-export function installedCodexProbeSource(indexPath, consumerRoot, expectedVersion) {
+export function installedCodexProbeSource(indexPath, consumerRoot, expectedVersion, { nativeCodex = false } = {}) {
   return `
     import assert from 'node:assert/strict';
     import { execFileSync } from 'node:child_process';
@@ -118,11 +118,11 @@ export function installedCodexProbeSource(indexPath, consumerRoot, expectedVersi
     assert.ok(selectedPlatform, 'Codex wrapper must resolve an official host platform package from its installed graph');
     const selectedMetadata = JSON.parse(readFileSync(selectedPlatformManifest, 'utf8'));
     assert.deepEqual(selectedMetadata, selectedPlatform.manifest, 'Selected Codex platform metadata must match its scanned provenance');
-    assert.equal(selectedMetadata.version, ${JSON.stringify(expectedVersion)} + '-' + process.platform + '-' + process.arch,
-      'Selected Codex platform version must match the qualified pin');
+    ${nativeCodex ? '' : `assert.equal(selectedMetadata.version, ${JSON.stringify(expectedVersion)} + '-' + process.platform + '-' + process.arch,
+      'Selected Codex platform version must match the qualified pin');`}
     const version = execFileSync(command, ['--version'], { timeout: 30_000, maxBuffer: 128 * 1024, encoding: 'utf8',
-      env: { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: '/tmp', NODE_PATH: '' } }).trim();
-    assert.equal(version, 'codex-cli ' + ${JSON.stringify(expectedVersion)}, 'Installed Codex version must match the qualified pin');
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, NODE_PATH: '' } }).trim();
+    ${nativeCodex ? "assert.match(version, /^codex-cli /, 'Installed official Codex command must execute');" : `assert.equal(version, 'codex-cli ' + ${JSON.stringify(expectedVersion)}, 'Installed Codex version must match the qualified pin');`}
     const vendor = dirname(index);
     const integrityPath = join(vendor, 'drivers/acpx/installation-integrity.js');
     const profilesPath = join(vendor, 'drivers/acpx/qualified-profiles.js');
@@ -138,17 +138,79 @@ export function installedCodexProbeSource(indexPath, consumerRoot, expectedVersi
     assert.ok(!readRoots.includes(platformRoot) && !readRoots.includes(root) && !readRoots.includes(sandboxSource.HOME), 'Codex sandbox must not grant enclosing npm or credential-home access');
     const sandboxArgs = createIsolatedCodexAppServerArgs(sandboxSource, readRoots).join('\\n');
     assert.ok(sandboxArgs.includes(JSON.stringify(nativeVendor) + '="read"'), 'Codex sandbox configuration must retain the selected native executable resources');
-    const { createAcpxPackageJsonResolver, verifyQualifiedAcpxInstallation } = await import(pathToFileURL(integrityPath).href);
+    ${nativeCodex ? '' : `const { createAcpxPackageJsonResolver, verifyQualifiedAcpxInstallation } = await import(pathToFileURL(integrityPath).href);
     const { resolveQualifiedAcpxProfile } = await import(pathToFileURL(profilesPath).href);
     const serverRoot = resolve(vendor, '../../..');
     assert.ok(contained(serverRoot), 'Codex package authority must be the installed server');
     const installation = await verifyQualifiedAcpxInstallation(resolveQualifiedAcpxProfile('codex', 'gpt-5.4'),
       createAcpxPackageJsonResolver(serverRoot, join(serverRoot, 'package.json')));
     const lease = await installation.openCommand();
-    await lease.close();
-    console.log(JSON.stringify({ pinnedCodexCommandVerified: true, pinnedCodexVersion: ${JSON.stringify(expectedVersion)},
-      ...provenance, codexSelectedPlatformPath: selectedPlatform.path, codexSelectedPlatformVersion: selectedMetadata.version, codexNativeSandboxResourcesVerified: true, codexQualifiedInstallationVerified: true, codexCommandLeaseVerified: true, providerCalls: 0 }));
+    await lease.close();`}
+    console.log(JSON.stringify({ pinnedCodexCommandVerified: true, installedCodexVersion: version,
+      ...provenance, codexSelectedPlatformPath: selectedPlatform.path, codexSelectedPlatformVersion: selectedMetadata.version,
+      codexNativeSandboxResourcesVerified: true,
+      ${nativeCodex ? '' : `pinnedCodexVersion: ${JSON.stringify(expectedVersion)}, codexQualifiedInstallationVerified: true, codexCommandLeaseVerified: true,`}
+      providerCalls: 0 }));
   `;
+}
+
+/** The installed consumer must select its packaged host daemon, never PATH. */
+export function installedDaemonProbeSource(outputRoot, consumerRoot, sourceRevision) {
+  return `
+    import assert from 'node:assert/strict';
+    import { createHash } from 'node:crypto';
+    import { execFileSync } from 'node:child_process';
+    import { readFileSync, realpathSync } from 'node:fs';
+    import { isAbsolute, join, relative, sep } from 'node:path';
+    import { pathToFileURL } from 'node:url';
+    const root = realpathSync(${JSON.stringify(consumerRoot)}), output = realpathSync(${JSON.stringify(outputRoot)});
+    const inside = path => { const value = relative(root, realpathSync(path)); return value !== '' && value !== '..' && !value.startsWith('..' + sep) && !isAbsolute(value); };
+    assert.ok(inside(output));
+    const { defaultCapabilityRunnerdBinary } = await import(pathToFileURL(join(output, 'live/runnerd-codex-transport.js')).href);
+    const { runnerBinaryTarget } = await import(pathToFileURL(join(output, 'live/runner-binary.js')).href);
+    const { parsePaperclipRunnerdBuildMetadata } = await import(pathToFileURL(join(output, 'evals/runnerd-artifact.js')).href);
+    const { PAPERCLIP_RUNNER_BUILD_METADATA: expected } = await import(pathToFileURL(join(output, 'evals/build-metadata.js')).href);
+    const manifest = JSON.parse(readFileSync(join(output, 'bin/release-manifest.json'), 'utf8'));
+    const targets = ['darwin-arm64', 'darwin-x64', 'linux-x64'];
+    assert.equal(manifest.schema, 'paperclip.runner.release-binaries.v1');
+    assert.equal(manifest.sourceRevision, ${JSON.stringify(sourceRevision)});
+    assert.deepEqual(Object.keys(manifest.platforms).sort(), targets.sort());
+    for (const target of targets) {
+      const record = manifest.platforms[target];
+      assert.equal(record.path, target + '/paperclip-runnerd');
+      const file = join(output, 'bin', record.path); assert.ok(inside(file));
+      const bytes = readFileSync(file);
+      assert.equal(runnerBinaryTarget(bytes), target);
+      assert.equal('sha256:' + createHash('sha256').update(bytes).digest('hex'), record.sha256);
+    }
+    const target = process.platform + '-' + process.arch, selected = defaultCapabilityRunnerdBinary();
+    assert.ok(inside(selected));
+    assert.equal(realpathSync(selected), realpathSync(join(output, 'bin', manifest.platforms[target].path)), 'Production must select the packaged host daemon');
+    const metadata = parsePaperclipRunnerdBuildMetadata(JSON.parse(execFileSync(selected, ['--build-metadata'], {
+      timeout: 15000, maxBuffer: 64 * 1024, encoding: 'utf8', env: { PATH: process.env.PATH, HOME: process.env.HOME, NODE_PATH: '' },
+    })));
+    assert.equal(metadata.binaryContractVersion, expected.contracts.runnerdArtifact);
+    assert.equal(metadata.nativeExecutionVersion, expected.contracts.nativeExecution);
+    assert.equal(metadata.harnessDriverVersion, expected.contracts.harnessDriver);
+    assert.equal(metadata.prp.name, expected.prp.name);
+    assert.ok(metadata.prp.minimumVersion <= expected.prp.maximumVersion && metadata.prp.maximumVersion >= expected.prp.minimumVersion);
+    console.log(JSON.stringify({ installedRunnerDaemonVerified: true, target, sourceRevision: manifest.sourceRevision,
+      sha256: manifest.platforms[target].sha256, buildMetadata: metadata, providerCalls: 0 }));
+  `;
+}
+
+// Hosted, credential-free Mac consumers defer only npm lifecycle execution.
+// Offline npm flags are not an OS network boundary; sandbox-exec supplies it.
+export function macPublicInstallLifecycleProfile(ownedRoot) {
+  if (!ownedRoot.startsWith('/') || ownedRoot.includes('\0')) throw new Error('Mac lifecycle requires an absolute owned root');
+  return `(version 1)\n(allow default)\n(deny network*)\n(deny file-write* (require-all (require-not (subpath ${JSON.stringify(ownedRoot)})) (require-not (literal "/dev/null"))))\n`;
+}
+
+export function macInstalledStartupProbeSource(consumerRoot, serverRoot, runnerDigest, helperPath) {
+  if (!/^sha256:[a-f0-9]{64}$/.test(runnerDigest)) throw new Error('Installed Mac startup requires the verified SHA-256 manifest identity');
+  return `import { probeInstalledCodexStartup } from ${JSON.stringify(helperPath)};
+    console.log(JSON.stringify(await probeInstalledCodexStartup({consumerRoot:${JSON.stringify(consumerRoot)},
+      serverRoot:${JSON.stringify(serverRoot)},expectedRunnerSha256:${JSON.stringify(runnerDigest.slice(7))}})));`;
 }
 
 export function grokConsumerDockerArgs({ assets, consumer, cache, command, uid, gid, download = false, prerequisite, temporarySizeMiB = 256, temporaryExecutable = false }) {

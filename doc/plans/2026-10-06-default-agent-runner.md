@@ -1,6 +1,67 @@
 # Runner defaults: staged delivery
 
-Updated 2026-10-09.
+Updated 2026-10-12.
+
+## Current amendment: include macOS in this PR
+
+The user requires macOS support in the same Codex-default PR. The earlier
+Linux-only scope and macOS deferral below are superseded. Qualify Linux x64,
+macOS arm64 and macOS x64 through the shipped package path. Windows and Linux
+ARM keep their legacy defaults. Existing agents retain recorded execution.
+The user explicitly invoked `dotta:paperclip-test-drive`. Real task/follow-up
+acceptance is required on this Apple Silicon Mac. Intel builds must be attempted;
+an attended Intel provider journey is not required. Reuse the healthy test drive
+and the existing Product E2E helpers rather than create another test system.
+
+Keep the current PR and branch: [#15683](https://github.com/paperclipai/paperclip/pull/15683),
+`codex/codex-runner-default`. The last pushed source is
+`6ca302426b768791b499d2d563bbca4276f2c908`. Its prior CI has 52 passing checks,
+four conditional skips, fresh 5/5 review and eight resolved threads. These do
+not qualify the new macOS changes. Current master has real merge conflicts;
+integrate the fetched master after checkpointing the owned macOS changes.
+
+The [test-drive server](http://127.0.0.1:3125/COD/agents/all) is running through
+the normal dev supervisor at the pushed source. Health and bootstrap are ready;
+the actual listener belongs to this worktree. The preserved Codex QA agent is
+idle on `codex_local`, with its saved unrelated title edit intact. Dependencies
+and ignored configuration had been cleared, so startup restored them and the
+normal CLI signing keys while retaining the database and encrypted account key.
+The existing cached development daemon is from a different Rust tree. It avoids
+a local Rust build and is not macOS qualification evidence for this candidate.
+
+Implementation ownership:
+
+- Packaging worker: reuse the existing daemon assembler, release verification
+  and release-smoke workflows to produce source-bound Linux and both macOS
+  artifacts. Pack the normal npm graph, then test those same tarballs on actual
+  Mac hosts. Retain the Linux and provider-pack controls. Never bundle Codex
+  native payloads; use the installed official npm dependency and real protocol
+  compatibility. Compile Rust and Docker only on remote hosts.
+- Selection worker: extend the shared availability contract and existing
+  creation, onboarding, discovery, approval, import and UI fixtures. Preserve
+  explicit legacy choices, external overrides and existing execution.
+- Runtime worker: verify the existing Mac native launch, account isolation,
+  file delivery and continuity seams; fix only actual gaps. Keep the Linux-only
+  sandboxed workspace-command capability gated on unsupported platforms.
+- Lead: integrate, run targeted and required checks, verify useful Mac native
+  task/follow-up artifacts and ordinary editing, refresh the test-drive on the
+  verified revision, and update the same PR and evidence record.
+
+Reuse existing evaluations and assertions. Provider-free packaging and protocol
+checks do not substitute for authenticated task completion. Preserve the $250
+ceiling and historical unknown/cleanup holds; reconcile only documented
+unstarted future reservations before any new provider turns. No additional
+paid Linux campaign is authorized by this amendment. Embedded-browser-only
+login, no automatic agent migration, and no merge or production deployment
+remain constraints.
+
+Next action: integrate the macOS packaging and policy changes, reconcile the
+confirmed master conflicts, freeze the source, and run remote qualification for
+the Mac artifacts. Native Apple Silicon live acceptance, new-head CI/review, managed
+staging execution, code-owner approval and actual post-merge Cloud composition
+remain unverified. Prior staging image/preflight evidence is retained at
+[37962635959](https://github.com/paperclipai/paperclip/actions/runs/37962635959)
+and [37965658123](https://github.com/paperclipai/paperclip-cloud/actions/runs/37965658123).
 
 ## Outcome and ownership
 

@@ -267,7 +267,9 @@ describeEmbeddedPostgres("built-in agents", () => {
     ])).toThrow("defaultAdapterType must be allowed");
   });
 
-  it("lazily provisions one agent per company/key and updates the same row on setup", async () => {
+  it.each([{ platform: "linux", architecture: "x64" }, { platform: "darwin", architecture: "arm64" }, { platform: "darwin", architecture: "x64" }])("lazily provisions one agent per company/key and updates the same row on setup ($platform/$architecture)", async ({ platform, architecture }) => {
+    runnerTarget.platform = platform;
+    runnerTarget.architecture = architecture;
     const companyId = await seedCompany();
     const svc = builtInAgentService(db);
 
@@ -327,9 +329,9 @@ describeEmbeddedPostgres("built-in agents", () => {
     expect(switchedBack.agent).toMatchObject({ adapterType: "codex_local", adapterConfig: savedSettings });
     const switchedAgain = await svc.ensure(companyId, "briefs", { runner: "paperclip" });
     expect(switchedAgain.agent).toMatchObject({ adapterType: "paperclip_runner", adapterConfig: { provider: "codex", ...savedSettings } });
-    // A saved native profile remains editable on source-built macOS installs.
-    runnerTarget.platform = "darwin";
-    runnerTarget.architecture = "arm64";
+    // Existing native execution survives editing on an unqualified target.
+    runnerTarget.platform = "win32";
+    runnerTarget.architecture = "x64";
     const edited = await svc.ensure(companyId, "briefs", { adapterType: "codex_local", adapterConfig: { model: "gpt-5.4" } });
     expect(edited.agent).toMatchObject({ adapterType: "paperclip_runner", adapterConfig: { provider: "codex", model: "gpt-5.4" } });
   });
@@ -339,8 +341,8 @@ describeEmbeddedPostgres("built-in agents", () => {
     const result = await builtInAgentService(db).provision(companyId, "briefs", { adapterType: "codex_local", adapterConfig: { model: "gpt-5.4" } }, { requestedByUserId: "board-user" });
     expect(result.approval?.payload).toMatchObject({ adapterType: "paperclip_runner", adapterConfig: { provider: "codex", model: "gpt-5.4" } });
     // Restart and approval activate the reviewed config even if eligibility changed.
-    runnerTarget.platform = "darwin";
-    runnerTarget.architecture = "arm64";
+    runnerTarget.platform = "win32";
+    runnerTarget.architecture = "x64";
     await reconcileBuiltInAgentsOnStartup(db);
     await approvalService(db).approve(result.approval!.id, "board-user");
     const approved = await builtInAgentService(db).get(companyId, "briefs");

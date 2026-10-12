@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,7 @@ import test from "node:test";
 import profiles from "../acpx-profiles.json" with { type: "json" };
 import distributions from "../cursor-distributions.json" with { type: "json" };
 import { verifyReleaseProviderPack } from "./release-provider-pack.mjs";
+import { existingReleaseProviderPack } from "./stage-release-runner-binaries.mjs";
 
 const revision = "a".repeat(40);
 const digest = "sha256:" + "b".repeat(64);
@@ -47,7 +48,7 @@ test("rejects omitted Cursor, conflicting legacy inventory, stale sources and fo
 });
 
 test("release assembly rejects rehashed stale or missing packs before staging any files", () => {
-  const root = mkdtempSync(join(tmpdir(), "release-provider-pack-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "release-provider-pack-")));
   const source = dirname(dirname(fileURLToPath(import.meta.url)));
   try {
     // Run the actual assembler in an isolated layout so it cannot overwrite built artifacts.
@@ -75,5 +76,21 @@ test("release assembly rejects rehashed stale or missing packs before staging an
       assert.equal(existsSync(join(root, "dist")), false);
       delete manifest.remoteProviderPack;
     }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+
+test("daemon-only assembly retains an existing same-source Linux provider-pack identity", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "release-provider-retained-")));
+  try {
+    assert.equal(existingReleaseProviderPack(root, revision), undefined);
+    const file = join(root, "dist/remote-provider-packs/linux-x64/provider-pack.json");
+    mkdirSync(dirname(file), { recursive: true });
+    const pack = seal(fixture()); writeFileSync(file, JSON.stringify(pack));
+    assert.deepEqual(existingReleaseProviderPack(root, revision), pack);
+    assert.throws(() => existingReleaseProviderPack(root, "c".repeat(40)), /release source/);
+    const wrongTarget = fixture(); wrongTarget.target = { platform: "darwin", architecture: "arm64" };
+    writeFileSync(file, JSON.stringify(seal(wrongTarget)));
+    assert.throws(() => existingReleaseProviderPack(root, revision), /Linux x64 target/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

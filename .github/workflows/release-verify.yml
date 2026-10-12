@@ -7,18 +7,28 @@ on:
         description: Commit SHA, branch, or tag to verify
         required: true
         type: string
+      runner_binaries_only:
+        description: Build exact-source release daemons without publishing or provider calls
+        required: false
+        default: false
+        type: boolean
+    outputs:
+      runner_artifact_prefix:
+        value: ${{ jobs.runner_binaries.outputs.artifact_prefix }}
 
 # Caller-provided refs may name unmerged PR code. AWS is eligible only when
 # the caller runs on canonical master and verifies that event's exact SHA.
 # The organization group also restricts these workflow files to master.
 jobs:
   runner_chaos_evals:
+    if: ${{ !inputs.runner_binaries_only }}
     name: Pre-release Runner chaos evals
     uses: ./.github/workflows/runner-chaos-evals.yml
     with:
       ref: ${{ inputs.ref }}
 
   typecheck:
+    if: ${{ !inputs.runner_binaries_only }}
     name: Typecheck
     runs-on: ${{ vars.AWS_POST_MERGE_CI_ENABLED == 'true' && github.repository == 'paperclipai/paperclip' && github.repository_id == '1170821064' && github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.sha != '' && inputs.ref == github.sha && 'runs-on/fleet=paperclip-post-merge-x64/env=public-ci' || 'ubuntu-latest' }}
     timeout-minutes: 20
@@ -97,6 +107,7 @@ jobs:
         run: pnpm -r typecheck
 
   general_tests:
+    if: ${{ !inputs.runner_binaries_only }}
     name: General tests (${{ matrix.group_label }})
     runs-on: ${{ vars.AWS_POST_MERGE_CI_ENABLED == 'true' && github.repository == 'paperclipai/paperclip' && github.repository_id == '1170821064' && github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.sha != '' && inputs.ref == github.sha && 'runs-on/fleet=paperclip-post-merge-x64/env=public-ci' || 'ubuntu-latest' }}
     timeout-minutes: 20
@@ -205,6 +216,7 @@ jobs:
           fi
 
   serialized_tests:
+    if: ${{ !inputs.runner_binaries_only }}
     name: Serialized tests (${{ matrix.shard_label }})
     runs-on: ${{ vars.AWS_POST_MERGE_CI_ENABLED == 'true' && github.repository == 'paperclipai/paperclip' && github.repository_id == '1170821064' && github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.sha != '' && inputs.ref == github.sha && 'runs-on/fleet=paperclip-post-merge-x64/env=public-ci' || 'ubuntu-latest' }}
     timeout-minutes: 20
@@ -254,6 +266,7 @@ jobs:
         run: pnpm test:run:serialized -- --shard-index ${{ matrix.shard_index }} --shard-count ${{ matrix.shard_count }}
 
   runner_workflow_evals:
+    if: ${{ !inputs.runner_binaries_only }}
     name: Runner workflow eval scorer contract
     runs-on: ${{ vars.AWS_POST_MERGE_CI_ENABLED == 'true' && github.repository == 'paperclipai/paperclip' && github.repository_id == '1170821064' && github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.sha != '' && inputs.ref == github.sha && 'runs-on/fleet=paperclip-post-merge-x64/env=public-ci' || 'ubuntu-latest' }}
     timeout-minutes: 10
@@ -284,6 +297,7 @@ jobs:
         run: pnpm test:runner-workflow-evals
 
   verify_paperclip_runner:
+    if: ${{ !inputs.runner_binaries_only }}
     name: Verify Paperclip Runner (${{ matrix.lane }})
     runs-on: ${{ vars.AWS_POST_MERGE_CI_ENABLED == 'true' && github.repository == 'paperclipai/paperclip' && github.repository_id == '1170821064' && github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.sha != '' && inputs.ref == github.sha && 'runs-on/fleet=paperclip-post-merge-x64/env=public-ci' || 'ubuntu-latest' }}
     timeout-minutes: 20
@@ -412,6 +426,7 @@ jobs:
         run: pnpm --filter @paperclipai/paperclip-runner build:rust
 
   build:
+    if: ${{ !inputs.runner_binaries_only }}
     name: Build
     runs-on: ${{ vars.AWS_POST_MERGE_CI_ENABLED == 'true' && github.repository == 'paperclipai/paperclip' && github.repository_id == '1170821064' && github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.sha != '' && inputs.ref == github.sha && 'runs-on/fleet=paperclip-post-merge-x64/env=public-ci' || 'ubuntu-latest' }}
     timeout-minutes: 20
@@ -440,3 +455,65 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  runner_binaries:
+    if: inputs.runner_binaries_only
+    name: Release daemon (${{ matrix.target }})
+    runs-on: ${{ matrix.host }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            host: ubuntu-latest
+          - target: darwin-arm64
+            host: macos-15
+          - target: darwin-x64
+            host: macos-15-intel
+    outputs:
+      artifact_prefix: ${{ steps.identity.outputs.artifact_prefix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+      - name: Bind immutable producer source and target
+        id: identity
+        env:
+          SOURCE_SHA: ${{ inputs.ref }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || exit 1
+          [[ "$(node -p 'process.platform + "-" + process.arch')" == "$TARGET" ]] || exit 1
+          echo "artifact_prefix=runner-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+      - name: Install dependencies and build production TypeScript contract
+        run: |
+          pnpm install --no-frozen-lockfile
+          pnpm --filter @paperclipai/paperclip-runner build:typescript
+      - name: Build the host daemon with the pinned toolchain
+        working-directory: packages/paperclip-runner
+        run: pnpm build:binary
+      - name: Record actual daemon metadata and immutable bytes
+        env:
+          SOURCE_SHA: ${{ inputs.ref }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          node packages/paperclip-runner/scripts/stage-release-runner-binaries.mjs record "$SOURCE_SHA" "$TARGET" \
+            packages/paperclip-runner/dist/bin/paperclip-runnerd "$RUNNER_TEMP/runner-release/$TARGET"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ steps.identity.outputs.artifact_prefix }}-${{ matrix.target }}
+          path: ${{ runner.temp }}/runner-release/
+          if-no-files-found: error
+          retention-days: 14

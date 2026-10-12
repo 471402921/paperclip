@@ -43,15 +43,25 @@ export function paperclipRunnerBinaryNeedsBuild({
   nativeRunnerRequired,
   configuredBinary,
   platform = process.platform,
+  architecture = process.arch,
 }) {
   if (!nativeRunnerRequired) return false;
   if (configuredBinary?.trim()) return false;
 
   const executable = platform === "win32" ? "paperclip-runnerd.exe" : "paperclip-runnerd";
   const packageRoot = path.join(repoRoot, "packages", "paperclip-runner");
-  const stagedBinary = path.join(packageRoot, "dist", "bin", executable);
-  const binaryStat = statSync(stagedBinary, { throwIfNoEntry: false });
-  if (!binaryStat?.isFile()) return true;
+  // Match production resolution: a staged release target takes precedence over
+  // the flat source-build output. Remote Mac builds must not trigger Cargo just
+  // because only the normal darwin-<arch> release executable is present.
+  let binaryStat;
+  for (const binary of [
+    path.join(packageRoot, "dist", "bin", `${platform}-${architecture}`, executable),
+    path.join(packageRoot, "dist", "bin", executable),
+  ]) {
+    const candidate = statSync(binary, { throwIfNoEntry: false });
+    if (candidate?.isFile()) { binaryStat = candidate; break; }
+  }
+  if (!binaryStat) return true;
 
   const runnerRoot = path.join(packageRoot, "runner");
   const buildInputs = [

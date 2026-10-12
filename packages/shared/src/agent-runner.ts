@@ -12,10 +12,11 @@ export function paperclipRunnerProfileForHarness(harness: string): { provider: "
   return harness === "codex_local" ? { provider: "codex" } : undefined;
 }
 
-/** Public server packages currently ship a Linux x64 daemon; source-build targets are not release qualification. */
+/** Creation defaults follow the shipped Linux x64 and macOS release artifacts. */
 export function paperclipRunnerSupportsPlatform(harness: string, platform: string, architecture: string): boolean {
   return !!paperclipRunnerProfileForHarness(harness)
-    && platform === "linux" && architecture === "x64";
+    && ((platform === "linux" && architecture === "x64")
+      || (platform === "darwin" && (architecture === "arm64" || architecture === "x64")));
 }
 
 /** Recover harness identity without changing execution or guessing unknown providers. */

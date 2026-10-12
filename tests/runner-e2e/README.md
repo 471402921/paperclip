@@ -2001,11 +2001,30 @@ Run the explicit `paperclipai runtime setup pi` for that installation first.
 This lane rejects candidate flags, local/remote daemon overrides, provider asset
 or pack overrides, and Node injection. It launches the installed JavaScript CLI
 without a TypeScript loader, rechecks its pins on controller restart, and records
-`installed-cli-admission.json` in private attempt evidence. It supports only the
-explicit Pi extended, native, controls and warm suites, which require none of the
+`installed-cli-admission.json` in private attempt evidence. Pi uses the explicit
+extended, native, controls and warm suites, which require none of the
 source-only response barriers. Cursor/Copilot qualification gates stay intact.
 Pi's historical `qualificationCandidate` fixture selector remains a roster key;
 it no longer grants an opt-in when the source Pi declaration admits normal use.
+
+The same four installed-package pins also admit three existing local native
+Codex cells: `first-task.runner-codex.local.task-card-accept`,
+`everyday-workflows.runner-codex.local.build-revise`, and
+`agent-chat.runner-codex.local.continuity-restart`. Select exact IDs; other
+Codex cells, legacy profiles and remote environments remain outside this lane.
+These reuse the onboarding, independently checked file/revision, and restart
+graders. They require separately authorized provider access and are not executed
+by the provider-free release smoke.
+
+The release consumer calls `probeInstalledCodexStartup` from `installed-cli.ts`
+against its installed server, normal platform daemon and contained npm Codex.
+It checks a real native read-only session and joined cleanup using empty homes,
+file-only authentication storage and a closed environment. It sends no provider
+turn, consults no account, records the actual CLI version without an equality
+gate, and exposes no session IDs. Build/source, Mach-O/ELF and official npm
+provenance checks precede this probe. Startup proof does not establish useful-file
+delivery, authentication, reasoning effort or follow-up behavior; the existing
+live journeys must prove those separately.
 
 Installed Pi Daytona cells also require the published plugin fixture inputs
 `PAPERCLIP_RUNNER_E2E_INSTALLED_DAYTONA_PLUGIN` (canonical package root),

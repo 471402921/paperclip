@@ -1260,7 +1260,9 @@ describe("agent skill routes", () => {
   const codexRunnerCases = [
     { adapterType: "codex_local", runner: "auto", platform: "linux", expectedType: "paperclip_runner" },
     { adapterType: "codex_local", runner: "legacy", platform: "linux", expectedType: "codex_local" },
-    { adapterType: "codex_local", runner: "auto", platform: "darwin", expectedType: "codex_local" },
+    { adapterType: "codex_local", runner: "auto", platform: "darwin", expectedType: "paperclip_runner" },
+    { adapterType: "codex_local", runner: "legacy", platform: "darwin", expectedType: "codex_local" },
+    { adapterType: "codex_local", runner: "auto", platform: "win32", expectedType: "codex_local" },
   ];
   it.each([...codexRunnerCases, { adapterType: "claude_local", runner: "auto", platform: "linux", expectedType: "claude_local" }].flatMap((runnerCase) => [
     ["agents", "paperclipai/paperclip/paperclip-create-agent"],

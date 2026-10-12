@@ -200,10 +200,10 @@ afterEach(async () => {
   container.remove();
 });
 describe("New agent setup", () => {
-  it("records an explicit legacy choice when it matches the Mac default, then preserves it on Linux", async () => {
+  it("records an explicit legacy choice when it matches the Windows default, then preserves it on Linux", async () => {
     settings.get.mockResolvedValue({ defaultEnvironmentId: "local-1" });
     envApi.list.mockResolvedValue([
-      { id: "local-1", name: "Mac", driver: "local", status: "active", config: {} },
+      { id: "local-1", name: "Windows", driver: "local", status: "active", config: {} },
       { id: "linux-ssh", name: "Linux", driver: "ssh", status: "active", config: {} },
     ]);
     adapterApi.list.mockImplementation(async (context?: { environmentId?: string | null }) => state.adapters.map((adapter: any) =>
@@ -242,7 +242,7 @@ describe("New agent setup", () => {
   it("discovers the runner for the selected target and rechecks after changing environments", async () => {
     settings.get.mockResolvedValue({ defaultEnvironmentId: "linux-ssh" });
     envApi.list.mockResolvedValue([
-      { id: "local-1", name: "Mac", driver: "local", status: "active", config: {} },
+      { id: "local-1", name: "Windows", driver: "local", status: "active", config: {} },
       { id: "linux-ssh", name: "Linux", driver: "ssh", status: "active", config: {} },
     ]);
     adapterApi.list.mockImplementation(async (context?: { companyId: string; environmentId?: string | null }) => state.adapters.map((adapter: any) =>
@@ -287,9 +287,13 @@ describe("New agent setup", () => {
     expect(api.testEnvironment.mock.calls[0][2]).toMatchObject({ runner: "legacy" });
     expect(api.hire.mock.calls[0][1]).toMatchObject({ runner: "legacy" });
   });
-  it("uses automatic Codex resolution through setup and hire without the experimental gate", async () => {
+  it.each(["Linux x64", "Mac arm64", "Mac x64"])("uses automatic Codex resolution through setup and hire without the experimental gate (%s)", async name => {
     settings.getExperimental.mockResolvedValue({ enableNativeRunner: false });
+    envApi.list.mockResolvedValue([{ id: "local-1", name, driver: "local", status: "active", config: {} }]);
+    state.adapters = (state.adapters as any[]).map(adapter => adapter.type === "codex_local" ? { ...adapter, supportedRunners: ["paperclip", "legacy"], defaultRunner: "paperclip" } : adapter);
     await render("codex_local");
+    await act(async () => (container.querySelector("summary") as HTMLElement).click());
+    expect(container.querySelector('[aria-label="Runner"]')?.textContent).toBe("Paperclip Runner (default)");
     await connect("OpenAI");
     await click("Finish setup");
     expect(api.hire.mock.calls[0][1].adapterType).toBe("codex_local");

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -38,14 +39,14 @@ test("chaos verification isolates callers that verify the same source commit", (
 
 test("canary reuses exact-source proof while stable keeps full verification", () => {
   const releaseWorkflow = readWorkflow("release.yml");
-  const canary = releaseWorkflow.split("  verify_canary:\n")[1].split("\n  publish_canary:")[0];
+  const canary = releaseWorkflow.match(/  verify_canary:\n[\s\S]*?(?=\n  [a-z_]+:)/)[0];
   assert.match(canary, /github\.repository == 'paperclipai\/paperclip' && github\.event_name == 'push' && github\.ref == 'refs\/heads\/master'/);
   assert.match(canary, /actions: read/);
   assert.match(canary, /ref: \$\{\{ github\.sha \}\}/);
   assert.match(canary, /SOURCE_SHA: \$\{\{ github\.sha \}\}/);
   assert.match(canary, /run: node scripts\/cloud-source-verification\.mjs "\$SOURCE_SHA"/);
   assert.doesNotMatch(canary, /release-verify\.yml|continue-on-error|always\(\)/);
-  assert.match(releaseWorkflow, /publish_canary:\n\s+if: github\.event_name == 'push'\n\s+needs: verify_canary/);
+  assert.match(releaseWorkflow, /publish_canary:\n\s+if: .*github\.event_name == 'push'.*\n\s+needs: \[verify_canary, release_runner_source, release_runner_binaries\]/);
   // The stable lane is gated on the stable channel since the nightly lane
   // was added; a `needs:` line (for example a preflight job) may sit between
   // the gate and the delegation.
@@ -478,5 +479,87 @@ test("direct protocol concurrency override only lowers the configured ceiling", 
     });
     assert.equal(result.status, expected === null ? 1 : 0, requested);
     if (expected !== null) assert.equal(result.stdout, expected);
+  }
+});
+
+test("release daemon production uses exact-source native hosts and no publisher or provider permissions", () => {
+  const workflow = readWorkflow("release-verify.yml");
+  const producer = workflow.split("  runner_binaries:\n")[1];
+  for (const [target, host] of [["linux-x64", "ubuntu-latest"], ["darwin-arm64", "macos-15"], ["darwin-x64", "macos-15-intel"]]) {
+    assert.ok(producer.includes(`- target: ${target}\n            host: ${host}`));
+  }
+  assert.match(producer, /persist-credentials: false/);
+  assert.match(producer, /contents: read/);
+  assert.doesNotMatch(producer, /secrets\.|id-token: write|contents: write|npm publish|environment:/);
+  assert.match(producer, /\[\[ "\$SOURCE_SHA" =~ \^\[a-f0-9\]\{40\}\$ \]\]/);
+  assert.match(producer, /git rev-parse HEAD/);
+  assert.match(producer, /process.platform \+ "-" \+ process.arch/);
+  assert.match(producer, /pnpm build:binary/);
+  assert.match(producer, /stage-release-runner-binaries.mjs record/);
+  for (const job of ["runner_chaos_evals", "typecheck", "general_tests", "serialized_tests", "runner_workflow_evals", "verify_paperclip_runner", "build"]) {
+    assert.ok(workflow.includes(`${job}:\n    if: \${{ !inputs.runner_binaries_only }}`));
+  }
+  const release = readWorkflow("release.yml");
+  for (const job of ["publish_canary", "publish_nightly", "publish_beta", "preview_stable", "publish_stable"]) {
+    const block = release.split(`  ${job}:\n`)[1].split(/\n  [a-z_]+:\n/)[0];
+    assert.match(block, /needs: .*release_runner_binaries/);
+    assert.match(block, /pattern: \$\{\{ needs.release_runner_binaries.outputs.runner_artifact_prefix \}\}-\*/);
+    assert.match(block, /PAPERCLIP_RELEASE_RUNNER_ARTIFACTS_DIR/);
+  }
+  const script = readFileSync(path.join(repoRoot, 'scripts/release.sh'), 'utf8');
+  assert.ok(script.indexOf('assemble-daemons "$PAPERCLIP_RELEASE_RUNNER_ARTIFACTS_DIR"') < script.indexOf('scripts/build-standalone-public-packages.mjs'));
+  assert.match(script, /cp -R .*paperclip-runner\/dist\/bin\/\." .*server\/dist\/vendor\/paperclip-runner\/bin\//);
+  assert.match(script, /elif \[ "\$dry_run" = false \]; then[\s\S]*?release_fail "Public releases require/);
+});
+
+test("premerge Mac qualification consumes the same Linux-packed npm bytes without publishing", () => {
+  const smoke = readWorkflow("release-smoke.yml");
+  assert.match(smoke, /smoke_service:\n\s+if: inputs.qualification_source_sha == ''/);
+  assert.match(smoke, /smoke:\n\s+if: inputs.qualification_source_sha == ''/);
+  const qualification = smoke.split("  qualification_daemons:\n")[1];
+  assert.doesNotMatch(qualification, /secrets\.|npm publish|id-token: write|contents: write|continue-on-error/);
+  assert.match(qualification, /runner_binaries_only: true/);
+  assert.match(qualification, /PAPERCLIP_RUNNER_PUBLIC_PACKS_DIR/);
+  assert.match(qualification, /if: \$\{\{ !cancelled\(\) && steps.pack_identity.outputs.available == 'true' \}\}/);
+  assert.match(qualification, /name: \$\{\{ inputs.artifact_name \}\}-public-packages/);
+  assert.match(qualification, /--mac-consumer/);
+  assert.match(qualification, /host: macos-15\n/);
+  assert.match(qualification, /host: macos-15-intel\n/);
+  assert.match(qualification, /pnpm install --ignore-scripts --no-frozen-lockfile/);
+});
+
+
+test("historical promotion sources keep their packaging path while new sources require daemon assembly", () => {
+  const workflow = readWorkflow("release.yml");
+  const selector = workflow.split('      - name: Read the exact source packaging contract')[1].split('\n  release_runner_binaries:')[0];
+  const script = selector.split('        run: |\n')[1].split('\n').map(line => line.startsWith('          ') ? line.slice(10) : line).join('\n');
+  const root = mkdtempSync(path.join(tmpdir(), 'release-source-contract-'));
+  try {
+    const tools = path.join(root, 'tools'); mkdirSync(tools);
+    writeFileSync(path.join(tools, 'git'), '#!/bin/sh\ncase "$1" in\nrev-parse) printf "%s\\n" "$FIXTURE_HEAD";;\nshow) cat "$FIXTURE_SOURCE";;\n*) exit 3;;\nesac\n', { mode: 0o755 });
+    const source = path.join(root, 'release.sh'), output = path.join(root, 'outputs');
+    for (const [contents, required] of [['pnpm build\n', false], ['assemble-daemons "$PAPERCLIP_RELEASE_RUNNER_ARTIFACTS_DIR" "$SOURCE_SHA"\n', true]]) {
+      writeFileSync(source, contents); writeFileSync(output, '');
+      const result = spawnSync('bash', ['-euo', 'pipefail', '-c', script], { encoding: 'utf8', env: {
+        PATH: `${tools}:/usr/bin:/bin`, SOURCE_SHA: 'a'.repeat(40), FIXTURE_HEAD: 'a'.repeat(40), FIXTURE_SOURCE: source, GITHUB_OUTPUT: output,
+      } });
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(readFileSync(output, 'utf8'), new RegExp(`required=${required}`));
+    }
+    const result = spawnSync('bash', ['-euo', 'pipefail', '-c', script], { encoding: 'utf8', env: {
+      PATH: `${tools}:/usr/bin:/bin`, SOURCE_SHA: 'a'.repeat(40), FIXTURE_HEAD: 'b'.repeat(40), FIXTURE_SOURCE: source, GITHUB_OUTPUT: output,
+    } });
+    assert.equal(result.status, 1, 'Wrong checkout cannot opt out of mandatory assembly');
+    const unreadable = spawnSync('bash', ['-euo', 'pipefail', '-c', script], { encoding: 'utf8', env: {
+      PATH: `${tools}:/usr/bin:/bin`, SOURCE_SHA: 'a'.repeat(40), FIXTURE_HEAD: 'a'.repeat(40), FIXTURE_SOURCE: path.join(root, 'absent'), GITHUB_OUTPUT: output,
+    } });
+    assert.equal(unreadable.status, 1, 'A failed immutable source read must not masquerade as a legacy source');
+
+  } finally { rmSync(root, { recursive: true, force: true }); }
+  for (const job of ['publish_canary','publish_nightly','publish_beta','preview_stable','publish_stable']) {
+    const block = workflow.split(`  ${job}:\n`)[1].split(/\n  [a-z_]+:\n/)[0];
+    assert.match(block, /needs.release_runner_source.result == 'success'/);
+    assert.match(block, /needs.release_runner_source.outputs.required == 'false' \|\| needs.release_runner_binaries.result == 'success'/);
+    assert.match(block, /Download exact-source release daemon receipts\n\s+if: needs.release_runner_source.outputs.required == 'true'/);
   }
 });

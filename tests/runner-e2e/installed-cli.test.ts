@@ -1,11 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, expect, it } from "vitest";
 import { runnerMatrix } from "./catalog.js";
-import { assertInstalledCliSelection, installedCliKeys, verifyInstalledCli } from "./installed-cli.js";
+import { assertInstalledCliSelection, installedCliKeys, probeInstalledCodexStartup, verifyInstalledCli } from "./installed-cli.js";
 import { buildPaperclipServerEnvironment, buildRunnerE2EProcessEnvironment } from "./harness-env.js";
 const cells = runnerMatrix.filter(e => e.profile.id === "runner-acpx-pi");
 const roots: string[] = [];
@@ -24,6 +24,20 @@ async function fixture() {
 it("admits all26 current Pi cases through pinned installed public CLI/server with no overrides", async () => {
   const { env, server } = await fixture(); expect(cells).toHaveLength(26);
   for (const cell of cells) expect(await verifyInstalledCli(env, [cell])).toMatchObject({ serverRoot: server, defaultRuntimeResolution: true, qualificationOverride: false });
+});
+it("admits existing Codex onboarding, useful-file revision and restart journeys without broadening other cells", async () => {
+  const { env, server } = await fixture();
+  for (const id of ["first-task.runner-codex.local.task-card-accept", "everyday-workflows.runner-codex.local.build-revise", "agent-chat.runner-codex.local.continuity-restart"]) {
+    const cell = runnerMatrix.find(e => e.id === id)!;
+    expect(cell).toBeDefined();
+    expect(await verifyInstalledCli(env, [cell])).toMatchObject({ serverRoot: server, defaultRuntimeResolution: true, qualificationOverride: false });
+    for (const key of ["PAPERCLIP_RUNNER_BINARY", "NODE_PATH"]) expect(() => assertInstalledCliSelection({ ...env, [key]: "foreign" }, [cell])).toThrow("forbids");
+  }
+  for (const id of ["first-task.legacy-codex.local.task-card-accept", "first-task.runner-codex.local.interview-first-response", "everyday-workflows.runner-codex.daytona.build-revise"]) {
+    const cell = runnerMatrix.find(e => e.id === id)!;
+    expect(cell).toBeDefined();
+    expect(() => assertInstalledCliSelection(env, [cell])).toThrow("explicit supported Pi or Codex");
+  }
 });
 it("qualified providers drop ambient admission while pending Copilot retains its exact gate", () => {
   for (const cell of cells) expect(buildRunnerE2EProcessEnvironment({ PAPERCLIP_RUNNER_ACPX_QUALIFICATION: "ambient" }, [cell]).PAPERCLIP_RUNNER_ACPX_QUALIFICATION).toBeUndefined();
@@ -91,4 +105,61 @@ it("startup-only accepts only explicit uncredentialed local hello and zero retri
   expect(()=>assertInstalledStartupOnly({...f.env,OPENROUTER_API_KEY:"dummy-not-a-real-key"},[cell],options)).toThrow("credential inputs");
   expect(()=>assertInstalledStartupOnly({...f.env,KIMI_MODEL_API_KEY:"dummy-not-a-real-key"},[cell],options)).toThrow("credential inputs");
   expect(()=>assertInstalledStartupOnly({},[cell],options)).toThrow("startup-only");
+});
+
+async function startupFixture(mode: "normal" | "wrong-model" | "ambient-codex" = "normal") {
+  const f = await fixture();
+  const vendor = join(f.server, "dist/vendor/paperclip-runner");
+  const daemon = join(vendor, "bin", `${process.platform}-${process.arch}`, "paperclip-runnerd");
+  const codex = join(f.root, "node_modules/@openai/codex/bin/codex");
+  const observations = join(f.root, "startup-observations.json");
+  await mkdir(join(vendor, "bin", `${process.platform}-${process.arch}`), { recursive: true });
+  await mkdir(join(f.server, "dist/services/native-runtime"), { recursive: true });
+  await mkdir(join(f.root, "node_modules/@openai/codex/bin"), { recursive: true });
+  await writeFile(daemon, "fixture-daemon");
+  await writeFile(codex, "#!/bin/sh\nprintf 'codex-cli 0.149.5\\n'\n");
+  await chmod(codex, 0o755);
+  await writeFile(join(f.server, "dist/services/native-runtime/native-codex-runner.js"), `export function resolvePaperclipRunnerBinary() { return ${JSON.stringify(daemon)}; }`);
+  await writeFile(join(vendor, "index.js"), `
+    import {writeFileSync} from "node:fs";
+    const state={calls:[],environmentKeys:[],fileAuthPinned:false};let retired=false;
+    const save=()=>writeFileSync(${JSON.stringify(observations)},JSON.stringify(state));
+    export function resolveCodexCommand(){return ${JSON.stringify(mode === "ambient-codex" ? process.execPath : codex)};}
+    export function createIsolatedCodexAppServerArgs(){return ["app-server"];}
+    export function createRunnerdCodexTransport(options){
+      state.environmentKeys=Object.keys(options.environment).sort();
+      state.fileAuthPinned=options.codexArgs.includes('cli_auth_credentials_store="file"');
+      save();return {transport:{async close(){retired=true;state.calls.push("transport-close");save();}},
+        evidence:()=>({runnerPid:111,codexPid:222,providerDriver:"codex_app_server",runnerExited:retired})};}
+    export class CodexAppServerDriver {
+      constructor(options){this.options=options;}
+      async openSession(){state.calls.push("open");save();const model=${JSON.stringify(mode === "wrong-model" ? "wrong-model" : "gpt-5.6-sol")};
+        return {ids:()=>({driverSessionId:"PRIVATE-DRIVER-ID",providerSessionId:"PRIVATE-PROVIDER-ID"}),
+          events:()=>({async *[Symbol.asyncIterator](){yield {eventType:"session.started",payload:{context:{model,sandbox:{permissionProfile:{id:"paperclip-runner-workspace-read-only"}}}}};}}),
+          startTurn(){state.calls.push("FORBIDDEN-TURN");save();throw new Error("No provider turn is permitted");},
+          async close(){retired=true;state.calls.push("session-close");save();}};}
+    }
+  `);
+  return { ...f, observations, expectedRunnerSha256: hash("fixture-daemon") };
+}
+
+it.skipIf(process.platform === "win32")("installed native startup uses closed homes, file-only auth and no turn or version equality gate", async () => {
+  const f = await startupFixture();
+  const receipt = await probeInstalledCodexStartup({ consumerRoot: f.root, serverRoot: f.server, expectedRunnerSha256: f.expectedRunnerSha256 });
+  expect(receipt).toMatchObject({ nativeSessionStarted: true, cleanupConfirmed: true, providerTurns: 0, credentialsUsed: false,
+    codexVersion: "codex-cli 0.149.5", defaultRuntimeResolution: true, reasoningEffortExercised: false });
+  expect(await readFile(f.observations, "utf8").then(JSON.parse)).toMatchObject({ calls: ["open", "session-close"], fileAuthPinned: true,
+    environmentKeys: ["CODEX_HOME", "HOME", "LC_ALL", "PAPERCLIP_RUNNER_NETWORK_ACCESS", "PATH", "TMPDIR", "TZ"] });
+  expect(JSON.stringify(receipt)).not.toMatch(/PRIVATE-(?:DRIVER|PROVIDER)-ID/);
+});
+
+it.skipIf(process.platform === "win32")("installed startup rejects stale daemon/ambient Codex and cleans a mismatched native session", async () => {
+  const f = await startupFixture();
+  await expect(probeInstalledCodexStartup({ consumerRoot: f.root, serverRoot: f.server, expectedRunnerSha256: "0".repeat(64) })).rejects.toThrow("reviewed pin");
+  await expect(readFile(f.observations)).rejects.toThrow();
+  const ambient = await startupFixture("ambient-codex");
+  await expect(probeInstalledCodexStartup({ consumerRoot: ambient.root, serverRoot: ambient.server, expectedRunnerSha256: ambient.expectedRunnerSha256 })).rejects.toThrow("ambient Codex");
+  const wrong = await startupFixture("wrong-model");
+  await expect(probeInstalledCodexStartup({ consumerRoot: wrong.root, serverRoot: wrong.server, expectedRunnerSha256: wrong.expectedRunnerSha256 })).rejects.toThrow("matching native identity");
+  expect(await readFile(wrong.observations, "utf8").then(JSON.parse)).toMatchObject({ calls: ["open", "session-close"] });
 });

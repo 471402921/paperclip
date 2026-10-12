@@ -110,6 +110,24 @@ describe("paperclip runner native dev prerequisite", () => {
     ).toBe(false);
   });
 
+  it.each(["arm64", "x64"])("uses the staged Mac %s target before the flat build output", architecture => {
+    const checkout = createRunnerCheckout();
+    const target = path.join(path.dirname(checkout.binary), `darwin-${architecture}`, "paperclip-runnerd");
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, "target-runnerd");
+    const old = new Date(Date.now() - 2000), current = new Date(Date.now() + 2000);
+    fs.utimesSync(checkout.binary, old, old);
+    fs.utimesSync(target, current, current);
+    const input = { repoRoot: checkout.root, nativeRunnerRequired: true, platform: "darwin", architecture };
+    expect(paperclipRunnerBinaryNeedsBuild(input)).toBe(false);
+    fs.rmSync(checkout.binary);
+    expect(paperclipRunnerBinaryNeedsBuild(input)).toBe(false);
+    fs.utimesSync(target, old, old);
+    expect(paperclipRunnerBinaryNeedsBuild(input)).toBe(true);
+    fs.rmSync(target);
+    expect(paperclipRunnerBinaryNeedsBuild(input)).toBe(true);
+  });
+
   it("does not build a workspace binary when an explicit binary is configured", () => {
     expect(
       paperclipRunnerBinaryNeedsBuild({

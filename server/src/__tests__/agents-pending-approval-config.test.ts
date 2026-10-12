@@ -17,6 +17,7 @@ import {
 } from "./helpers/embedded-postgres.js";
 import { agentService } from "../services/agents.ts";
 import { approvalService } from "../services/approvals.ts";
+import { paperclipRunnerSupportsPlatform } from "@paperclipai/shared";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -71,9 +72,7 @@ describeEmbeddedPostgres("pending approval agent config integrity", () => {
     const native = await lifecycle.requestHire(companyId, { name: "New Codex", adapterType: "codex_local", adapterConfig: { modelReasoningEffort: "high" }, status: "pending_approval" });
     const legacy = await lifecycle.requestHire(companyId, { name: "Legacy Codex", adapterType: "codex_local", runner: "legacy", adapterConfig: { extraArgs: ["--search"] }, status: "pending_approval" });
     const reviewedLegacy = await lifecycle.requestHire(companyId, { name: "Historical approved hire", adapterType: "codex_local", adapterConfig: {}, status: "pending_approval" }, { runnerResolved: true });
-    // Only public Linux x64 artifacts qualify an automatic native default;
-    // source-built macOS/Windows agents keep legacy until their packaging is qualified.
-    if (process.platform === "linux" && process.arch === "x64") {
+    if (paperclipRunnerSupportsPlatform("codex_local", process.platform, process.arch)) {
       expect(native).toMatchObject({ adapterType: "paperclip_runner", adapterConfig: { provider: "codex", modelReasoningEffort: "high" } });
     } else {
       expect(native).toMatchObject({ adapterType: "codex_local", adapterConfig: { modelReasoningEffort: "high" } });

@@ -284,7 +284,9 @@ describeEmbeddedPostgres("plugin-managed agents", () => {
     });
   });
 
-  it("creates managed agents with the most-used compatible company adapter", async () => {
+  it.each([{ platform: "linux", architecture: "x64" }, { platform: "darwin", architecture: "arm64" }, { platform: "darwin", architecture: "x64" }])("creates managed agents with the most-used compatible company adapter ($platform/$architecture)", async ({ platform, architecture }) => {
+    runnerTarget.platform = platform;
+    runnerTarget.architecture = architecture;
     const pluginManifest = manifest();
     pluginManifest.agents![0] = {
       ...pluginManifest.agents![0]!,
@@ -336,8 +338,8 @@ describeEmbeddedPostgres("plugin-managed agents", () => {
     const reconciled = await services.agents.managedReconcile({ companyId, agentKey: "wiki-maintainer" });
     expect(reconciled.agent?.adapterConfig).toEqual(created.agent?.adapterConfig);
     // Reset declaration defaults without requalifying an existing native agent.
-    runnerTarget.platform = "darwin";
-    runnerTarget.architecture = "arm64";
+    runnerTarget.platform = "win32";
+    runnerTarget.architecture = "x64";
     const reset = await services.agents.managedReset({ companyId, agentKey: "wiki-maintainer" });
     expect(reset.agent).toMatchObject({ adapterType: "paperclip_runner", adapterConfig: { provider: "codex" } });
   });

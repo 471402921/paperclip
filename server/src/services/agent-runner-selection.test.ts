@@ -9,10 +9,11 @@ vi.mock("./environment-config.js", () => ({ resolveEnvironmentDriverConfigForRun
 vi.mock("@paperclipai/adapter-utils/ssh", () => ({ runSshCommand: state.ssh }));
 import { agentRunnerAvailability, resolveAgentRunnerTargetForCompany, resolveNewAgentRunner, resolveNewAgentRunnerForCompany } from "./agent-runner-selection.js";
 const target = { driver: "local", platform: "linux", architecture: "x64" };
+const qualifiedTargets = [target, { driver: "local", platform: "darwin", architecture: "arm64" }, { driver: "local", platform: "darwin", architecture: "x64" }];
 
 describe("server-owned Codex runner selection", () => {
   beforeEach(() => { state.disabled = []; state.overridden.clear(); state.settings = {}; state.getEnvironment.mockReset(); state.bindings.mockReset().mockResolvedValue([]); state.managedEnvironment.mockReset(); state.ssh.mockReset().mockResolvedValue({ stdout: "Linux\nx86_64\n" }); state.resolveEnvironment.mockReset().mockResolvedValue({ driver: "ssh", config: {} }); });
-  it("uses native Codex automatically with compatible configuration and is idempotent", () => {
+  it.each(qualifiedTargets)("uses native Codex automatically with compatible configuration and is idempotent on $platform/$architecture", target => {
     const input = { adapterType: "codex_local", target, adapterConfig: { model: "gpt-5.6-sol", modelReasoningEffort: "high", env: { OPENAI_API_KEY: { type: "secret_ref", secretId: "secret" } }, cwd: "/workspace", instructionsFilePath: "/workspace/AGENTS.md", workspaceStrategy: { type: "git_worktree" }, timeoutSec: 60, search: false, fastMode: false, dangerouslyBypassApprovalsAndSandbox: true } };
     const resolved = resolveNewAgentRunner(input);
     expect(resolved).toMatchObject({ adapterType: "paperclip_runner", adapterConfig: { provider: "codex", codexPermissionMode: "never", modelReasoningEffort: "high", env: input.adapterConfig.env, workspaceStrategy: input.adapterConfig.workspaceStrategy, timeoutSec: 60 } });
@@ -23,7 +24,7 @@ describe("server-owned Codex runner selection", () => {
   it.each(["claude_local", "opencode_local", "grok_local", "cursor", "pi_local", "process", "external"])("keeps %s default unchanged", adapterType => {
     expect(resolveNewAgentRunner({ adapterType, target, adapterConfig: { custom: "preserved" } })).toEqual({ adapterType, adapterConfig: { custom: "preserved" } });
   });
-  it("allows an explicit legacy runner and native to legacy round trip", () => {
+  it.each(qualifiedTargets)("allows an explicit legacy runner and native to legacy round trip on $platform/$architecture", target => {
     expect(resolveNewAgentRunner({ adapterType: "codex_local", target, runner: "legacy", adapterConfig: { extraArgs: ["--search"] } }).adapterType).toBe("codex_local");
     expect(resolveNewAgentRunner({ adapterType: "paperclip_runner", runner: "legacy", adapterConfig: { provider: "codex", model: "gpt-5.6-sol", lifecycleMode: "per_turn", codexPermissionMode: "never", modelReasoningEffort: "high" } })).toEqual({ adapterType: "codex_local", adapterConfig: { model: "gpt-5.6-sol", modelReasoningEffort: "high", dangerouslyBypassApprovalsAndSandbox: true } });
   });
@@ -33,23 +34,26 @@ describe("server-owned Codex runner selection", () => {
     expect(resolveNewAgentRunner({ adapterType: "paperclip_runner", runner: "legacy", adapterConfig: { provider: "codex", codexPermissionMode: "never", lifecycleMode: "per_turn", dangerouslyBypassApprovalsAndSandbox: false } }))
       .toEqual({ adapterType: "codex_local", adapterConfig: { dangerouslyBypassApprovalsAndSandbox: false } });
   });
-  it.each(["darwin", "win32"])("keeps unqualified %s targets legacy while preserving explicit native profiles", platform => {
-    const input = { adapterType: "codex_local", target: { driver: "local", platform, architecture: "x64" } };
+  it.each([{ platform: "win32", architecture: "x64" }, { platform: "linux", architecture: "arm64" }, { platform: "darwin", architecture: "ia32" }])("keeps unqualified $platform/$architecture targets legacy while preserving explicit native profiles", ({ platform, architecture }) => {
+    const input = { adapterType: "codex_local", target: { driver: "local", platform, architecture } };
     expect(resolveNewAgentRunner(input).adapterType).toBe("codex_local");
     expect(() => resolveNewAgentRunner({ ...input, runner: "paperclip" })).toThrow("unavailable");
     const saved = { adapterType: "paperclip_runner", adapterConfig: { provider: "codex", model: "gpt-5.6-sol" }, target: input.target };
     expect(resolveNewAgentRunner(saved)).toEqual({ adapterType: saved.adapterType, adapterConfig: saved.adapterConfig });
     expect(resolveNewAgentRunner({ ...saved, runner: "paperclip" })).toEqual({ adapterType: saved.adapterType, adapterConfig: saved.adapterConfig });
   });
-  it("automatically keeps unsupported targets and active external overrides legacy", () => {
+  it.each(qualifiedTargets)("automatically keeps unsupported targets and active external overrides legacy on $platform/$architecture", target => {
     const input = { adapterType: "codex_local", target: { driver: "local", platform: "win32", architecture: "x64" } };
     expect(resolveNewAgentRunner(input).adapterType).toBe("codex_local");
     expect(() => resolveNewAgentRunner({ ...input, runner: "paperclip" })).toThrow("unavailable");
     state.overridden.add("codex_local");
     expect(agentRunnerAvailability("codex_local", target).defaultRunner).toBe("legacy");
     expect(resolveNewAgentRunner({ adapterType: "codex_local", target }).adapterType).toBe("codex_local");
+    state.overridden.clear();
+    state.overridden.add("paperclip_runner");
+    expect(resolveNewAgentRunner({ adapterType: "codex_local", target }).adapterType).toBe("codex_local");
   });
-  it("does not select a disabled runner", () => {
+  it.each(qualifiedTargets)("does not select a disabled runner on $platform/$architecture", target => {
     state.disabled = ["paperclip_runner"];
     expect(resolveNewAgentRunner({ adapterType: "codex_local", target }).adapterType).toBe("codex_local");
     expect(() => resolveNewAgentRunner({ adapterType: "codex_local", target, runner: "paperclip" })).toThrow("unavailable");
@@ -80,7 +84,9 @@ describe("server-owned Codex runner selection", () => {
   });
   it.each([
     ["Linux\nx86_64\n", "paperclip", "paperclip_runner"],
-    ["Darwin\narm64\n", "legacy", "codex_local"],
+    ["Darwin\narm64\n", "paperclip", "paperclip_runner"],
+    ["Darwin\nx86_64\n", "paperclip", "paperclip_runner"],
+    ["Linux\naarch64\n", "legacy", "codex_local"],
   ])("uses the same selected SSH target for discovery and saving (%s)", async (stdout, expectedRunner, expectedAdapter) => {
     state.getEnvironment.mockResolvedValue({ id: "selected", driver: "ssh", status: "active", config: {} });
     state.ssh.mockResolvedValue({ stdout });
@@ -113,9 +119,10 @@ describe("Codex creation runner contract", () => {
     expect(agentRunner("codex_local")).toBe("legacy");
     expect(agentRunner("paperclip_runner")).toBe("paperclip");
   });
-  it("qualifies only the daemon actually shipped in public server packages", () => {
-    expect(paperclipRunnerSupportsPlatform("codex_local", "linux", "x64")).toBe(true);
-    for (const [platform, architecture] of [["darwin", "arm64"], ["darwin", "x64"], ["linux", "arm64"], ["win32", "x64"], ["freebsd", "x64"]]) expect(paperclipRunnerSupportsPlatform("codex_local", platform, architecture)).toBe(false);
+  it("qualifies only the Codex daemon targets shipped in public server packages", () => {
+    for (const { platform, architecture } of qualifiedTargets) expect(paperclipRunnerSupportsPlatform("codex_local", platform, architecture)).toBe(true);
+    for (const [platform, architecture] of [["darwin", "ia32"], ["linux", "arm64"], ["win32", "x64"], ["win32", "arm64"], ["freebsd", "x64"]]) expect(paperclipRunnerSupportsPlatform("codex_local", platform, architecture)).toBe(false);
+    expect(paperclipRunnerSupportsPlatform("claude_local", "darwin", "arm64")).toBe(false);
   });
   it("keeps auto out of saved update defaults and validates request intent", () => {
     expect(createAgentSchema.parse({ name: "Codex", adapterType: "codex_local" }).runner).toBeUndefined();
