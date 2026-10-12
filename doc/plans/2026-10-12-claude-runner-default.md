@@ -417,3 +417,32 @@ that expected blank effort to restore saved values. The historical missing-form
 fixture now deletes the property instead of assigning an invalid typed undefined;
 Codex package noemit passes. These corrections make no provider calls and change
 no runtime artifact identities.
+
+
+## Final shared source freeze and corrective matrix — 2026-10-12
+
+Composed published prerequisite `5a9ce11c49db31440863d633426ebe30bcc850ca`
+and Codex `a583630e1c128c6d577b236b7ea9b73cf1be0bdd` without changing
+Codex Linux ARM64 selection. The inherited network-admission guard rejects an
+effective ACP no-network setting or a deferred policy reference with explicit
+Legacy guidance; existing trusted native policy remains separate. The source
+owner retains normal merge ownership and will send the actual master merge
+identity before final reconciliation.
+
+Fresh reviews reached 5/5 with no open findings for protocol `66f20c4682`,
+behavior `628754f6dc` and platform `0a8677d15c`. The subsequent corrective
+composition includes reviewed shared changes and the test-fixture corrections;
+its exact-head review/CI remains required. Packaging/assembly controls now pass
+91/91 after the inert target JSON copy fix. Composed platform selection, pack,
+import and mounted-form controls pass 341/341; server noemit, maps and token gates
+pass. Native declarations match the release manifest without regeneration.
+
+Database-backed lifecycle, connection-pool and controlled catalog cases pass
+121/121 on the behavior branch. Qualified platform onboarding/built-in/catalog
+fixtures now assert native Claude directly, including preserved Haiku and role
+skills. Their local database initialization hit hook timeouts; the existing fresh
+cluster fallback skipped those suites. Neither result is an execution pass, and
+full cloud execution must validate them. Custom ACP Stop/recovery browser fixtures
+explicitly select Legacy for their custom commands/state paths; latest cloud
+browser execution remains required. No provider turns or local native/Docker
+builds were added by these corrections.
