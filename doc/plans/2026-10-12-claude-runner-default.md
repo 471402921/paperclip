@@ -307,3 +307,46 @@ allocation; the fresh ARM pair uses $2. Original $17/$9/$16 allocations and the
 failed prelaunch ARM fixture's $1 unknown reservation remain. The Linux x64
 fixture has $4, making aggregate allocated caps $50. No automatic paid retries
 or timer heartbeats are enabled; remaining acceptance uses API keys per the user.
+
+## Linux x64 task and cold-controller revision — 2026-10-12
+
+The [Linux x64 acceptance task](http://127.0.0.1:3105/CLAAAAAAA/issues/CLAAAAAAA-1)
+and follow-up succeeded on the immutable 557 cloud image through the existing
+Daytona integration. Runs `ba8ff6f0-d88d-4369-b03e-a88cf2a3dafa` and
+`f9675055-6f9f-4ec2-aa7c-31b3a784dffc` used Opus 5.5, acknowledged high
+effort and the fixture's selected API-key connection. Accounting completed:
+estimates $0.178204600 and $0.135639200. The controller restarted between
+turns; private task/provider/backend session IDs matched. Both versions passed
+independent exact byte/hash checks after the revision and persisted after reload.
+
+- [v1](http://127.0.0.1:3105/api/attachments/b7ebc13d-a09f-414f-84fc-a36d0dac9975/content?download=1):
+  176 bytes, SHA256 `97d7ddbea0d3d1a1aad23673692ff3719fc83d8b8e7c66da4fc1f70af79d9672`.
+- [v2](http://127.0.0.1:3105/api/attachments/e238108d-3a61-42c7-a305-b2199b97a291/content?download=1):
+  230 bytes, SHA256 `426e41d0c76b037322aec212c60ece80d91b05ca9064aaab17a7e7950dc9416f`.
+- [Sanitized report](http://127.0.0.1:3105/api/attachments/9f619e2f-6bca-4059-9a35-7e1651863395/content?download=1)
+  and [screenshot](http://127.0.0.1:3105/api/attachments/3eb53a63-f8fc-483e-8b53-18439b87185b/content?download=1)
+  are attached work products.
+
+The pinned official Daytona package `2026.1005.0` (manifest version `0.1.8`,
+SDK `0.203.0`) is registered from the private qualification installation.
+The first existing installer request used its shared package directory and
+failed to resolve a version-suffixed package name; no global plugin record was
+adopted for this fixture. Shared package files were left intact. Subsequent
+installation disabled lifecycle scripts and uses the private directory.
+Company-scoped Daytona and Anthropic secrets remain separate, with Anthropic
+connection installation restricted to the qualification agent.
+
+This proof uses the exact 557 installed controller plus its recorded overlays
+and image/pack identities; it does not qualify an unmodified final release.
+Known Claude API estimates now total $2.2465814, excluding earlier unknown
+charges. Aggregate allocated company caps remain $50; holds/reservations and
+failed records are preserved. No automatic paid retries or local Docker/Rust
+builds occurred.
+
+The source owner is correcting additional shared review findings and will
+provide the next source freeze. Final packaging waits for that freeze. The
+platform PR can now apply the additional target default changes using the
+passing package/clean-install and API execution evidence, while final packaged
+runtime, current-source required checks and exact-head reviews remain handoff
+gates. Subscription follow-up remains unverified under the user's API-key
+steering; Intel Mac requires clean installation, not attended provider turns.
