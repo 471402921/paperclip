@@ -12218,10 +12218,8 @@ describe("runnerd provider runtime wiring", () => {
     // The mocked remote executes metadata probes; artifact staging only needs bytes.
     // Keep this regression independent of a locally compiled Rust runner binary.
     const controllerArtifact = join(isolatedStateDirectory, "paperclip-runnerd");
-    if (needsReplacement || retained || image === "preinstalled-exact") {
-      await writeFile(controllerArtifact, "fixture runner artifact");
-      state.resolveRunnerBinary.mockReturnValueOnce(controllerArtifact);
-    }
+    await writeFile(controllerArtifact, "fixture runner artifact");
+    state.resolveRemoteRunnerBinary.mockResolvedValue(controllerArtifact);
     const onLog = vi.fn(async () => undefined);
     const syncIn = vi.fn(async () => undefined);
     const remoteExecute = vi.fn(
@@ -12430,21 +12428,27 @@ describe("runnerd provider runtime wiring", () => {
 
   });
 
-  it.each(["explicit", "linux-arm64", "linux-x64"])("binds an SSH launch to the selected controller-owned runner artifact (%s)", async mode => {
+  it.each(["ssh", "sandbox"].flatMap(transport => ["explicit", "linux-arm64", "linux-x64", "missing", "mismatch"].map(mode => ({ transport, mode }))))
+  ("binds a $transport launch to the selected controller-owned runner artifact ($mode)", async ({ transport, mode }) => {
     const remoteCwd = "/home/daytona/paperclip-workspace";
     const controllerArtifact = `/controller/artifacts/${mode}/paperclip-runnerd`;
-    state.resolveRemoteRunnerBinary.mockResolvedValue(controllerArtifact);
+    const explicit = mode === "explicit" || mode === "missing" || mode === "mismatch";
+    const error = mode === "missing" ? "runner_remote_artifact_unavailable" : mode === "mismatch" ? "runner_remote_artifact_platform_mismatch" : null;
+    if (error) state.resolveRemoteRunnerBinary.mockRejectedValue(new Error(error));
+    else state.resolveRemoteRunnerBinary.mockResolvedValue(controllerArtifact);
     const remoteExecution = {
       ...execution,
       binding: { ...execution.binding, runId: "run-remote-runner-artifact" },
       workspace: { ...execution.workspace, cwd: "/host/paperclip-workspace" },
     } as NativeExecutionInputV1;
 
-    await createRunnerdBackend({
+    const backend = createRunnerdBackend({
       db: leaseDb(remoteExecution),
       execution: remoteExecution,
       runnerInstanceId: "runner",
-      runnerExecutionTarget: {
+      runnerExecutionTarget: transport === "sandbox" ? {
+        kind: "remote", transport: "sandbox", providerKey: "test", remoteCwd, runner: { execute: vi.fn() },
+      } : {
         kind: "remote",
         transport: "ssh",
         remoteCwd,
@@ -12459,15 +12463,25 @@ describe("runnerd provider runtime wiring", () => {
           strictHostKeyChecking: true,
         },
       },
-      ...(mode === "explicit" ? { runnerRemoteBinaryPath: controllerArtifact } : {}),
+      ...(explicit ? { runnerRemoteBinaryPath: controllerArtifact } : {}),
     });
+
+    if (error) {
+      await expect(backend).rejects.toThrow(error);
+      expect(state.resolveRemoteRunnerBinary).toHaveBeenCalledWith(expect.objectContaining({ remoteCwd, configuredPath: controllerArtifact }));
+      expect(state.resolveRunnerBinary).not.toHaveBeenCalled();
+      expect(state.createBackend).not.toHaveBeenCalled();
+      expect(state.createTransport).not.toHaveBeenCalled();
+      return;
+    }
+    await backend;
 
     state.createTransport.mockClear();
     state.createBackend.mock.calls.at(-1)![1].codexTransportFactory!();
     expect(state.createTransport).toHaveBeenCalledWith(
       expect.objectContaining({ runnerBinary: controllerArtifact }),
     );
-    expect(state.resolveRemoteRunnerBinary).toHaveBeenCalledWith(expect.objectContaining({ remoteCwd, configuredPath: mode === "explicit" ? controllerArtifact : undefined }));
+    expect(state.resolveRemoteRunnerBinary).toHaveBeenCalledWith(expect.objectContaining({ remoteCwd, configuredPath: explicit ? controllerArtifact : undefined }));
     expect(state.resolveRunnerBinary).not.toHaveBeenCalled();
   });
 

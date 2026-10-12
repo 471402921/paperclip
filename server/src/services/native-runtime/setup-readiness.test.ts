@@ -35,6 +35,7 @@ describe("Codex selected native account verification", () => {
     vi.stubEnv("PAPERCLIP_RUNNER_REMOTE_BINARY_PATH", "");
   });
   afterEach(async () => {
+    vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     for (const [input] of nativeProbe.mock.calls) if (input.runtimeDirectory) await rm(input.runtimeDirectory, { recursive: true, force: true });
   });
@@ -238,7 +239,12 @@ describe("Codex selected native account verification", () => {
     if (confirmed) await expect(stat(root)).rejects.toThrow();
     else expect((await stat(root)).isDirectory()).toBe(true);
   });
-  it("uses the same preparation and controller PRP for a sandbox, without a guest provider pack", async () => {
+  it.each(["arm64", "x64"].flatMap(controllerArch => ["arm64", "x64"].flatMap(targetArch => [false, true].map(explicit => ({ controllerArch, targetArch, explicit })))))
+  ("uses target $targetArch artifacts and controller PRP from Mac $controllerArch for sandbox setup (override=$explicit)", async ({ controllerArch, targetArch, explicit }) => {
+    vi.stubGlobal("process", { ...process, platform: "darwin", arch: controllerArch });
+    const selectedBinary = `/controller/artifacts/linux-${targetArch}/paperclip-runnerd`;
+    selectedRemoteRunner.mockResolvedValue(selectedBinary);
+    if (explicit) vi.stubEnv("PAPERCLIP_RUNNER_REMOTE_BINARY_PATH", selectedBinary);
     nativeProbe.mockImplementation(async input => {
       const registration = await input.transportOptions.controlPlaneRegistration({});
       expect(registration.connection.mode).toBe("connect");
@@ -248,8 +254,21 @@ describe("Codex selected native account verification", () => {
     const target = { ...context.executionTarget, runner: { execute: sshExecute } };
     expect((await testNativeRunnerAuthentication({ ...context, executionTarget: target }, "codex", "gpt-6.1-sol")).status).toBe("pass");
     expect(sshRunner).not.toHaveBeenCalled();
-    expect(nativeArtifacts).toHaveBeenCalledWith(expect.objectContaining({ target, runner: target.runner }));
+    expect(selectedRemoteRunner).toHaveBeenCalledExactlyOnceWith({ runner: target.runner, remoteCwd: target.remoteCwd, configuredPath: explicit ? selectedBinary : null });
+    expect(selectedRunner).not.toHaveBeenCalled();
+    expect(nativeArtifacts).toHaveBeenCalledWith(expect.objectContaining({ target, runner: target.runner, controllerRunnerBinary: selectedBinary, targetPlatformArtifactVerified: true }));
+    expect(nativeProbe.mock.calls[0][0].transportOptions.runnerBinary).toBe(selectedBinary);
     expect(nativeArtifacts.mock.results[0].value.prepare).toHaveBeenCalledWith("dial_wss");
+    expect(execute).not.toHaveBeenCalled();
+  });
+  it.each(["runner_remote_artifact_unavailable", "runner_remote_artifact_platform_mismatch"])("fails sandbox %s before setup or a controller fallback", async code => {
+    selectedRemoteRunner.mockRejectedValue(new Error(code));
+    const target = { ...context.executionTarget, runner: { execute: sshExecute } };
+    const result = await testNativeRunnerAuthentication({ ...context, executionTarget: target }, "codex", "gpt-6.1-sol");
+    expect(result.status).toBe("fail");
+    expect(result.checks[0].message).toContain(code);
+    expect(selectedRunner).not.toHaveBeenCalled(); expect(nativeArtifacts).not.toHaveBeenCalled();
+    expect(nativeProbe).not.toHaveBeenCalled(); expect(sshExecute).not.toHaveBeenCalled();
     expect(execute).not.toHaveBeenCalled();
   });
   it("prepares listener artifacts before acquiring sandbox ingress and owns its release", async () => {
