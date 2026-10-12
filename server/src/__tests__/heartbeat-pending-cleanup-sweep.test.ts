@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  costEvents,
+  activityLog,
   agents,
+  heartbeatRuns,
   companies,
   createDb,
   environmentLeases,
@@ -49,6 +52,8 @@ if (!embeddedPostgresSupport.supported) {
 const ATTEMPTS_KEY = "pendingCleanupRetryAttempts";
 const CAP_WARNED_KEY = "pendingCleanupRetryCapWarned";
 const ATTEMPT_CAP = 5;
+// The sweep reads at most this many oldest pending_cleanup rows per tick.
+const SWEEP_PAGE_SIZE = 20;
 
 describeEmbeddedPostgres("heartbeat sweepPendingCleanupLeases", () => {
   let db!: ReturnType<typeof createDb>;
@@ -65,7 +70,10 @@ describeEmbeddedPostgres("heartbeat sweepPendingCleanupLeases", () => {
   });
 
   afterEach(async () => {
+    await db.delete(activityLog);
     await db.delete(environmentLeases);
+    await db.delete(costEvents);
+    await db.delete(heartbeatRuns);
     await db.delete(environments);
     await db.delete(agents);
     await db.delete(companies);
@@ -98,7 +106,7 @@ describeEmbeddedPostgres("heartbeat sweepPendingCleanupLeases", () => {
 
   async function insertPendingCleanupLease(input: {
     companyId: string;
-    environmentId: string;
+    environmentId: string | null;
     updatedAt: Date;
     metadata?: Record<string, unknown>;
   }): Promise<string> {
@@ -126,6 +134,34 @@ describeEmbeddedPostgres("heartbeat sweepPendingCleanupLeases", () => {
     destroyRunLease: HeartbeatEnvironmentRuntime["destroyRunLease"],
   ): HeartbeatEnvironmentRuntime {
     return { destroyRunLease } as unknown as HeartbeatEnvironmentRuntime;
+  }
+
+  // An orphan ephemeral lease that a failed acquire records. The sweep tears it
+  // down through retryPendingSandboxTeardown, not through destroyRunLease.
+  async function insertOrphanEphemeralLease(input: {
+    companyId: string;
+    environmentId: string | null;
+    updatedAt: Date;
+    metadata?: Record<string, unknown>;
+  }): Promise<string> {
+    const id = randomUUID();
+    await db.insert(environmentLeases).values({
+      id,
+      companyId: input.companyId,
+      environmentId: input.environmentId,
+      status: "pending_cleanup",
+      leasePolicy: "ephemeral",
+      provider: "fake",
+      providerLeaseId: `sandbox://fake/${id}`,
+      cleanupStatus: "failed",
+      metadata: { driver: "sandbox", provider: "fake", ...(input.metadata ?? {}) },
+      acquiredAt: input.updatedAt,
+      lastUsedAt: input.updatedAt,
+      releasedAt: input.updatedAt,
+      createdAt: input.updatedAt,
+      updatedAt: input.updatedAt,
+    });
+    return id;
   }
 
   it("test_pending_cleanup_sweep_retries_and_destroys_lease", async () => {
@@ -203,7 +239,7 @@ describeEmbeddedPostgres("heartbeat sweepPendingCleanupLeases", () => {
     expect(destroyRunLease).toHaveBeenCalledTimes(20);
   });
 
-  it("test_pending_cleanup_sweep_stops_at_attempt_cap_and_warns_once", async () => {
+  it("test_pending_cleanup_sweep_continues_after_escalation_with_durable_backoff", async () => {
     const { companyId, environmentId } = await seedCompanyAndEnvironment();
     const leaseId = await insertPendingCleanupLease({
       companyId,
@@ -219,8 +255,8 @@ describeEmbeddedPostgres("heartbeat sweepPendingCleanupLeases", () => {
 
     const first = await heartbeat.sweepPendingCleanupLeases({ backoffMs: 0 });
     expect(first).toEqual({ swept: 1, destroyed: 0, capped: 1 });
-    // A capped lease is not retried.
-    expect(destroyRunLease).not.toHaveBeenCalled();
+    // Escalation never abandons a possibly running sandbox.
+    expect(destroyRunLease).toHaveBeenCalledTimes(1);
 
     const metadataAfterFirst = await db
       .select({ metadata: environmentLeases.metadata })
@@ -232,9 +268,236 @@ describeEmbeddedPostgres("heartbeat sweepPendingCleanupLeases", () => {
 
     // A second sweep warns no more; the lease keeps its warned flag.
     const second = await heartbeat.sweepPendingCleanupLeases({ backoffMs: 0 });
-    expect(second).toEqual({ swept: 1, destroyed: 0, capped: 1 });
-    expect(destroyRunLease).not.toHaveBeenCalled();
+    expect(second).toEqual({ swept: 0, destroyed: 0, capped: 0 });
+    expect(destroyRunLease).toHaveBeenCalledTimes(1);
     expect(vi.mocked(logger.warn)).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let malformed provider metadata defer cleanup forever", async () => {
+    const { companyId, environmentId } = await seedCompanyAndEnvironment();
+    await insertPendingCleanupLease({ companyId, environmentId,
+      updatedAt: new Date(Date.now() - 60 * 60_000), metadata: { pendingCleanupRetryAfterMs: 1e300 } });
+    const destroy = vi.fn(async () => null);
+    await heartbeatService(db, { environmentRuntime: fakeRuntime(destroy) }).sweepPendingCleanupLeases();
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([false, true])("uses the ownership deadline while cleanup is in flight (expired: %s)", async expired => {
+    const { companyId, environmentId } = await seedCompanyAndEnvironment();
+    await insertOrphanEphemeralLease({ companyId, environmentId, updatedAt: new Date(0), metadata: {
+      pendingCleanupAttemptId: "previous-boot", pendingCleanupInFlight: true,
+      pendingCleanupLeaseExpiresAtMs: Date.now() + (expired ? -60_000 : 60_000),
+      pendingCleanupRetryAfterMs: Date.now() + (expired ? 60_000 : -60_000),
+    } });
+    const teardown = vi.fn(async () => {});
+    const service = heartbeatService(db, { environmentRuntime: {
+      retryPendingSandboxTeardown: teardown,
+    } as unknown as HeartbeatEnvironmentRuntime });
+    expect((await service.sweepPendingCleanupLeases()).destroyed).toBe(expired ? 1 : 0);
+    expect(teardown).toHaveBeenCalledTimes(expired ? 1 : 0);
+  });
+
+  it("starts escalation and the long cooldown on the fifth failed attempt", async () => {
+    const { companyId, environmentId } = await seedCompanyAndEnvironment();
+    const leaseId = await insertPendingCleanupLease({ companyId, environmentId,
+      updatedAt: new Date(Date.now() - 60 * 60_000), metadata: { [ATTEMPTS_KEY]: ATTEMPT_CAP - 1 } });
+    const runtime = fakeRuntime(vi.fn(async () => null));
+    await heartbeatService(db, { environmentRuntime: runtime }).sweepPendingCleanupLeases();
+    const [saved] = await db.select().from(environmentLeases).where(eq(environmentLeases.id, leaseId));
+    expect(saved.metadata?.[CAP_WARNED_KEY]).toBe(true);
+    expect(Number(saved.metadata?.pendingCleanupRetryAfterMs)).toBeGreaterThan(Date.now() + 29 * 60_000);
+  });
+
+  it("retries after a restart and cooldown when the provider recovers", async () => {
+    const { companyId, environmentId } = await seedCompanyAndEnvironment();
+    const leaseId = await insertOrphanEphemeralLease({ companyId, environmentId,
+      updatedAt: new Date(Date.now() - 60 * 60_000),
+      metadata: { [ATTEMPTS_KEY]: ATTEMPT_CAP, pendingCleanupRetryAfterMs: Date.now() - 1 },
+    });
+    const failing = vi.fn(async () => { throw new Error("provider unavailable"); });
+    const first = heartbeatService(db, { environmentRuntime: {
+      retryPendingSandboxTeardown: failing,
+    } as unknown as HeartbeatEnvironmentRuntime });
+    await first.sweepPendingCleanupLeases();
+    expect(failing).toHaveBeenCalledTimes(1);
+    const recovered = vi.fn(async ({ lease }) => ({ providerLeaseId: lease.providerLeaseId, state: "destroyed" }));
+    const restarted = heartbeatService(db, { environmentRuntime: {
+      retryPendingSandboxTeardown: recovered,
+    } as unknown as HeartbeatEnvironmentRuntime });
+    await restarted.sweepPendingCleanupLeases();
+    expect(recovered).not.toHaveBeenCalled();
+    await db.update(environmentLeases).set({ metadata: sql`${environmentLeases.metadata} || '{"pendingCleanupRetryAfterMs":0}'::jsonb` })
+      .where(eq(environmentLeases.id, leaseId));
+    expect((await restarted.sweepPendingCleanupLeases()).destroyed).toBe(1);
+    expect(recovered).toHaveBeenCalledTimes(1);
+    const [saved] = await db.select().from(environmentLeases).where(eq(environmentLeases.id, leaseId));
+    expect(saved.cleanupStatus).toBe("success");
+    expect(saved.status).toBe("expired");
+  });
+
+  it("does not start another cleanup while a previous attempt remains in flight", async () => {
+    const { companyId, environmentId } = await seedCompanyAndEnvironment();
+    const leaseId = await insertOrphanEphemeralLease({ companyId, environmentId,
+      updatedAt: new Date(Date.now() - 60 * 60_000),
+      metadata: { [ATTEMPTS_KEY]: ATTEMPT_CAP },
+    });
+    let finish!: () => void;
+    const started = Promise.withResolvers<void>();
+    const teardown = vi.fn(async () => { started.resolve(); await new Promise<void>(resolve => { finish = resolve; }); });
+    const first = heartbeatService(db, { environmentRuntime: { retryPendingSandboxTeardown: teardown } as unknown as HeartbeatEnvironmentRuntime });
+    const second = heartbeatService(db, { environmentRuntime: { retryPendingSandboxTeardown: teardown } as unknown as HeartbeatEnvironmentRuntime });
+    const running = first.sweepPendingCleanupLeases();
+    await started.promise;
+    try {
+      await db.update(environmentLeases).set({
+        metadata: sql`${environmentLeases.metadata} || ${JSON.stringify({ pendingCleanupLeaseExpiresAtMs: Date.now() - 1 })}::jsonb`,
+      }).where(eq(environmentLeases.id, leaseId));
+      await second.sweepPendingCleanupLeases();
+      expect(teardown).toHaveBeenCalledTimes(1);
+      const [saved] = await db.select().from(environmentLeases).where(eq(environmentLeases.id, leaseId));
+      expect(saved.metadata?.pendingCleanupInFlight).toBe(true);
+    } finally { finish(); await running; }
+  });
+
+  it.each([false, true])("explicit Retry bypasses cooldown but preserves in-flight ownership (%s)", async inFlight => {
+    const { companyId, environmentId } = await seedCompanyAndEnvironment();
+    const agentId = randomUUID(), runId = randomUUID();
+    await db.insert(agents).values({ id: agentId, companyId, name: "Cleanup owner" });
+    await db.insert(heartbeatRuns).values({ id: runId, companyId, agentId, status: "failed" });
+    const leaseId = await insertOrphanEphemeralLease({ companyId, environmentId, updatedAt: new Date(0),
+      metadata: { [ATTEMPTS_KEY]: ATTEMPT_CAP, pendingCleanupInFlight: inFlight,
+        pendingCleanupAttemptId: "previous-attempt", pendingCleanupRetryAfterMs: Date.now() + 15 * 60_000 },
+    });
+    await db.update(environmentLeases).set({ heartbeatRunId: runId }).where(eq(environmentLeases.id, leaseId));
+    const unrelatedLease = await insertOrphanEphemeralLease({ companyId, environmentId, updatedAt: new Date(0) });
+    const teardown = vi.fn(async () => {});
+    const service = heartbeatService(db, { environmentRuntime: {
+      retryPendingSandboxTeardown: teardown,
+    } as unknown as HeartbeatEnvironmentRuntime });
+    const result = await service.sweepPendingCleanupLeases({ explicitRetry: {
+      companyId, runId, actorId: "cleanup-reviewer",
+    } });
+    expect(result.destroyed).toBe(inFlight ? 0 : 1);
+    expect(teardown).toHaveBeenCalledTimes(inFlight ? 0 : 1);
+    expect((await db.select().from(environmentLeases).where(eq(environmentLeases.id, unrelatedLease)))[0].status).toBe("pending_cleanup");
+    const metadata = await readMetadata(leaseId);
+    if (inFlight) expect(metadata?.pendingCleanupAttemptId).toBe("previous-attempt");
+    else {
+      expect(metadata?.pendingCleanupManualAttemptId).toEqual(expect.any(String));
+      expect(metadata?.pendingCleanupAttemptId).not.toBe("previous-attempt");
+      const events = await db.select().from(activityLog).where(eq(activityLog.runId, runId));
+      expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ action: "environment_lease.cleanup_retried" })]));
+    }
+  });
+
+  it("renews cleanup ownership while the provider remains blocked", async () => {
+    const { companyId, environmentId } = await seedCompanyAndEnvironment();
+    const leaseId = await insertOrphanEphemeralLease({ companyId, environmentId, updatedAt: new Date(0) });
+    const started = Promise.withResolvers<void>(), finish = Promise.withResolvers<void>();
+    const service = heartbeatService(db, { environmentRuntime: { retryPendingSandboxTeardown: async () => {
+      started.resolve(); await finish.promise;
+    } } as unknown as HeartbeatEnvironmentRuntime });
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const running = service.sweepPendingCleanupLeases();
+    await started.promise;
+    try {
+      await db.update(environmentLeases).set({ metadata: sql`${environmentLeases.metadata} || '{"pendingCleanupLeaseExpiresAtMs":1}'::jsonb` }).where(eq(environmentLeases.id, leaseId));
+      await vi.advanceTimersByTimeAsync(30000);
+      await vi.waitFor(async () => expect((await readMetadata(leaseId))?.pendingCleanupLeaseExpiresAtMs).toBeGreaterThan(Date.now() + 14 * 60_000));
+    } finally { finish.resolve(); await running; vi.useRealTimers(); }
+  });
+
+  it.each([
+    { renewalFails: false, retryBeforeSettlement: false },
+    { renewalFails: true, retryBeforeSettlement: false },
+    { renewalFails: false, retryBeforeSettlement: true },
+    { renewalFails: true, retryBeforeSettlement: true },
+  ])("preserves progress and cooldown with hung renewal (fails: $renewalFails, retry first: $retryBeforeSettlement)", async ({ renewalFails, retryBeforeSettlement }) => {
+    const { companyId, environmentId } = await seedCompanyAndEnvironment();
+    const leaseId = await insertOrphanEphemeralLease({ companyId, environmentId, updatedAt: new Date(0),
+      metadata: { [ATTEMPTS_KEY]: ATTEMPT_CAP - 1, [CAP_WARNED_KEY]: true },
+    });
+    const providerStarted = Promise.withResolvers<void>(), providerFinished = Promise.withResolvers<void>();
+    const renewalStarted = Promise.withResolvers<void>(), releaseRenewal = Promise.withResolvers<void>();
+    const renewalFinished = Promise.withResolvers<void>();
+    let holdNextRenewal = false, renewalSettled = false;
+    const realUpdate = db.update.bind(db);
+    const updateSpy = vi.spyOn(db, "update").mockImplementation(((table: unknown) => {
+      const builder = (realUpdate as (t: unknown) => unknown)(table) as { set: (values: Record<string, unknown>) => unknown };
+      const realSet = builder.set.bind(builder);
+      builder.set = values => {
+        const query = realSet(values) as { where: (predicate: unknown) => unknown };
+        if (table === environmentLeases && Object.keys(values).length === 1 && values.metadata && holdNextRenewal) {
+          holdNextRenewal = false;
+          const realWhere = query.where.bind(query);
+          query.where = predicate => (async () => {
+            renewalStarted.resolve();
+            await releaseRenewal.promise;
+            try {
+              if (renewalFails) throw new Error("renewal connection failed");
+              return await realWhere(predicate);
+            } finally { renewalSettled = true; renewalFinished.resolve(); }
+          })();
+        }
+        return query;
+      };
+      return builder;
+    }) as unknown as typeof db.update);
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    const teardown = vi.fn(async () => {
+      providerStarted.resolve(); await providerFinished.promise; throw new Error("provider unavailable");
+    });
+    const service = heartbeatService(db, { environmentRuntime: {
+      retryPendingSandboxTeardown: teardown,
+    } as unknown as HeartbeatEnvironmentRuntime });
+    const running = service.sweepPendingCleanupLeases();
+    try {
+      await providerStarted.promise;
+      holdNextRenewal = true;
+      await vi.advanceTimersByTimeAsync(30_000);
+      await renewalStarted.promise;
+      providerFinished.resolve();
+      await running;
+      expect(renewalSettled).toBe(false);
+      const metadata = await readMetadata(leaseId);
+      expect(metadata?.pendingCleanupInFlight).toBe(false);
+      expect(metadata?.pendingCleanupRetryAfterMs).toBeGreaterThan(Date.now() + 29 * 60_000);
+      expect((await service.sweepPendingCleanupLeases()).swept).toBe(0);
+      if (retryBeforeSettlement) {
+        // Advance only the clock: renewal remains blocked across another attempt.
+        vi.setSystemTime(Date.now() + 31 * 60_000);
+        expect((await service.sweepPendingCleanupLeases()).swept).toBe(1);
+        expect(teardown).toHaveBeenCalledTimes(2);
+        expect(renewalSettled).toBe(false);
+      }
+      const afterRetry = await readMetadata(leaseId);
+      releaseRenewal.resolve();
+      await renewalFinished.promise;
+      expect(await readMetadata(leaseId)).toEqual(afterRetry);
+    } finally {
+      providerFinished.resolve(); releaseRenewal.resolve(); await running;
+      await renewalFinished.promise;
+      vi.useRealTimers(); updateSpy.mockRestore();
+    }
+  });
+
+  it.each([false, true])("ignores a superseded cleanup completion (throws: %s)", async throws => {
+    const { companyId, environmentId } = await seedCompanyAndEnvironment();
+    const leaseId = await insertOrphanEphemeralLease({ companyId, environmentId, updatedAt: new Date(0) });
+    const started = Promise.withResolvers<void>(), finish = Promise.withResolvers<void>();
+    const service = heartbeatService(db, { environmentRuntime: { retryPendingSandboxTeardown: async () => {
+      started.resolve(); await finish.promise; if (throws) throw new Error("old attempt failed");
+    } } as unknown as HeartbeatEnvironmentRuntime });
+    const running = service.sweepPendingCleanupLeases();
+    await started.promise;
+    try {
+      await db.update(environmentLeases).set({ status: "expired", cleanupStatus: "success",
+        metadata: { pendingCleanupAttemptId: "newer-attempt", remoteExecutionTermination: { proof: "newer-receipt" } },
+      }).where(eq(environmentLeases.id, leaseId));
+    } finally { finish.resolve(); await running; }
+    const [saved] = await db.select().from(environmentLeases).where(eq(environmentLeases.id, leaseId));
+    expect(saved.status).toBe("expired");
+    expect(saved.metadata?.remoteExecutionTermination).toEqual({ proof: "newer-receipt" });
   });
 
   // Two sweep ticks can overlap. Without an atomic claim, both read the same
@@ -299,6 +562,345 @@ describeEmbeddedPostgres("heartbeat sweepPendingCleanupLeases", () => {
       .then((rows) => rows[0]);
     expect((metadata?.metadata as Record<string, unknown> | null)?.[ATTEMPTS_KEY]).toBe(1);
     expect(metadata?.status).toBe("pending_cleanup");
+  });
+
+  // Two unified sweeps can overlap on one orphan ephemeral lease. The master
+  // sweep is the single owner of the pending_cleanup rows. Its atomic per-attempt
+  // claim must let only one sweep tear the sandbox down, and the winning sweep
+  // must leave the lease in a final successful state.
+  it("test_concurrent_unified_sweeps_tear_an_orphan_down_once", async () => {
+    const { companyId, environmentId } = await seedCompanyAndEnvironment();
+    const leaseId = await insertOrphanEphemeralLease({
+      companyId,
+      environmentId,
+      updatedAt: new Date(Date.now() - 60 * 60 * 1000),
+    });
+
+    // The orphan teardown succeeds and does not release the lease; the sweep
+    // releases it. The counter records how many sweeps reached the teardown.
+    let teardownCount = 0;
+    const retryPendingSandboxTeardown = vi.fn(async () => {
+      teardownCount += 1;
+    });
+    const runtime = { retryPendingSandboxTeardown } as unknown as HeartbeatEnvironmentRuntime;
+
+    // Two sweeps run on two separate database clients, so they truly overlap.
+    // A single client serializes the queries on one connection and hides the
+    // race. The second client connects to the same embedded database.
+    const dbB = createDb(tempDb!.connectionString);
+    try {
+      // Warm up the second connection first, so the two sweeps start together.
+      await dbB.select({ id: environmentLeases.id }).from(environmentLeases).limit(1);
+
+      const heartbeatA = heartbeatService(db, { environmentRuntime: runtime });
+      const heartbeatB = heartbeatService(dbB, { environmentRuntime: runtime });
+
+      const backoffMs = 5 * 60 * 1000;
+      const [first, second] = await Promise.all([
+        heartbeatA.sweepPendingCleanupLeases({ backoffMs }),
+        heartbeatB.sweepPendingCleanupLeases({ backoffMs }),
+      ]);
+
+      // Only one sweep claimed the attempt and tore the sandbox down.
+      expect(teardownCount).toBe(1);
+      expect(first.destroyed + second.destroyed).toBe(1);
+    } finally {
+      await (dbB as unknown as { $client: { end: () => Promise<void> } }).$client.end();
+    }
+
+    // The winning sweep left the lease in a final successful state and advanced
+    // the attempt count by exactly one.
+    const finalRow = await db
+      .select({
+        status: environmentLeases.status,
+        cleanupStatus: environmentLeases.cleanupStatus,
+        metadata: environmentLeases.metadata,
+      })
+      .from(environmentLeases)
+      .where(eq(environmentLeases.id, leaseId))
+      .then((rows) => rows[0]);
+    expect(finalRow?.status).toBe("expired");
+    expect(finalRow?.cleanupStatus).toBe("success");
+    expect((finalRow?.metadata as Record<string, unknown> | null)?.[ATTEMPTS_KEY]).toBe(1);
+  });
+
+  it("test_pending_cleanup_sweep_tears_down_reusable_lease_after_environment_delete", async () => {
+    const { companyId } = await seedCompanyAndEnvironment();
+    // A reuse_by_environment lease whose environment a delete removed. The
+    // schema sets the environment reference to null and preserves the
+    // pending_cleanup row, so the lease still points at a live provider sandbox.
+    const leaseId = await insertPendingCleanupLease({
+      companyId,
+      environmentId: null,
+      updatedAt: new Date(Date.now() - 60 * 60 * 1000),
+    });
+
+    // The environment row is gone, so the sweep must tear the sandbox down from
+    // the recorded lease data through retryPendingSandboxTeardown. It must not
+    // call destroyRunLease, which needs the environment. The teardown succeeds
+    // and does not release the lease; the sweep releases it.
+    const retryPendingSandboxTeardown = vi.fn(async (input: { environment: unknown }) => {
+      expect(input.environment).toBeNull();
+    });
+    const destroyRunLease = vi.fn(async () => null);
+    const runtime = { retryPendingSandboxTeardown, destroyRunLease } as unknown as HeartbeatEnvironmentRuntime;
+    const heartbeat = heartbeatService(db, { environmentRuntime: runtime });
+
+    const result = await heartbeat.sweepPendingCleanupLeases({ backoffMs: 0 });
+
+    expect(result).toEqual({ swept: 1, destroyed: 1, capped: 0 });
+    expect(retryPendingSandboxTeardown).toHaveBeenCalledTimes(1);
+    expect(retryPendingSandboxTeardown.mock.calls[0]?.[0]).toMatchObject({
+      lease: expect.objectContaining({ id: leaseId }),
+    });
+    expect(destroyRunLease).not.toHaveBeenCalled();
+
+    const finalRow = await db
+      .select({ status: environmentLeases.status, cleanupStatus: environmentLeases.cleanupStatus })
+      .from(environmentLeases)
+      .where(eq(environmentLeases.id, leaseId))
+      .then((rows) => rows[0]);
+    expect(finalRow?.status).toBe("expired");
+    expect(finalRow?.cleanupStatus).toBe("success");
+  });
+
+  it("test_pending_cleanup_sweep_keeps_reusable_lease_when_recorded_teardown_fails", async () => {
+    const { companyId } = await seedCompanyAndEnvironment();
+    const leaseId = await insertPendingCleanupLease({
+      companyId,
+      environmentId: null,
+      updatedAt: new Date(Date.now() - 60 * 60 * 1000),
+    });
+
+    // The recorded-data teardown throws, so the sweep reverts the lease to
+    // pending_cleanup for a later retry. The claimed attempt still counts
+    // against the cap, so the retries stay bounded.
+    const retryPendingSandboxTeardown = vi.fn(async () => {
+      throw new Error("provider teardown failed");
+    });
+    const destroyRunLease = vi.fn(async () => null);
+    const runtime = { retryPendingSandboxTeardown, destroyRunLease } as unknown as HeartbeatEnvironmentRuntime;
+    const heartbeat = heartbeatService(db, { environmentRuntime: runtime });
+
+    const result = await heartbeat.sweepPendingCleanupLeases({ backoffMs: 0 });
+
+    expect(result).toEqual({ swept: 1, destroyed: 0, capped: 0 });
+    expect(retryPendingSandboxTeardown).toHaveBeenCalledTimes(1);
+    expect(destroyRunLease).not.toHaveBeenCalled();
+
+    const finalRow = await db
+      .select({
+        status: environmentLeases.status,
+        cleanupStatus: environmentLeases.cleanupStatus,
+        metadata: environmentLeases.metadata,
+      })
+      .from(environmentLeases)
+      .where(eq(environmentLeases.id, leaseId))
+      .then((rows) => rows[0]);
+    expect(finalRow?.status).toBe("pending_cleanup");
+    expect(finalRow?.cleanupStatus).toBe("failed");
+    expect((finalRow?.metadata as Record<string, unknown> | null)?.[ATTEMPTS_KEY]).toBe(1);
+  });
+
+  it("test_pending_cleanup_sweep_skips_lease_while_plugin_worker_down_then_retries", async () => {
+    const { companyId } = await seedCompanyAndEnvironment();
+    // An orphan ephemeral lease that a failed plugin acquire recorded. The sweep
+    // tears it down through retryPendingSandboxTeardown.
+    const leaseId = await insertOrphanEphemeralLease({
+      companyId,
+      environmentId: null,
+      updatedAt: new Date(Date.now() - 60 * 60 * 1000),
+    });
+
+    // The plugin worker is down at first, then recovers on the second sweep.
+    let workerReady = false;
+    const isPendingCleanupWorkerReady = vi.fn(async () => workerReady);
+    const retryPendingSandboxTeardown = vi.fn(async () => {});
+    const destroyRunLease = vi.fn(async () => null);
+    const runtime = {
+      isPendingCleanupWorkerReady,
+      retryPendingSandboxTeardown,
+      destroyRunLease,
+    } as unknown as HeartbeatEnvironmentRuntime;
+    const heartbeat = heartbeatService(db, { environmentRuntime: runtime });
+
+    // First sweep: the worker is down, so the sweep skips the lease. It never
+    // claims an attempt and never runs the teardown.
+    const first = await heartbeat.sweepPendingCleanupLeases({ backoffMs: 0 });
+    expect(first).toEqual({ swept: 1, destroyed: 0, capped: 0 });
+    expect(isPendingCleanupWorkerReady).toHaveBeenCalledTimes(1);
+    expect(retryPendingSandboxTeardown).not.toHaveBeenCalled();
+    // The skipped lease consumed no finite attempt.
+    expect(await readAttempts(leaseId)).toBe(0);
+    const afterSkip = await db
+      .select({ status: environmentLeases.status })
+      .from(environmentLeases)
+      .where(eq(environmentLeases.id, leaseId))
+      .then((rows) => rows[0]?.status);
+    expect(afterSkip).toBe("pending_cleanup");
+
+    // Second sweep: the worker recovered, so the sweep claims an attempt and
+    // tears the sandbox down.
+    workerReady = true;
+    const second = await heartbeat.sweepPendingCleanupLeases({ backoffMs: 0 });
+    expect(second).toEqual({ swept: 1, destroyed: 1, capped: 0 });
+    expect(retryPendingSandboxTeardown).toHaveBeenCalledTimes(1);
+
+    const finalRow = await db
+      .select({ status: environmentLeases.status, cleanupStatus: environmentLeases.cleanupStatus })
+      .from(environmentLeases)
+      .where(eq(environmentLeases.id, leaseId))
+      .then((rows) => rows[0]);
+    expect(finalRow?.status).toBe("expired");
+    expect(finalRow?.cleanupStatus).toBe("success");
+  });
+
+  it("test_pending_cleanup_sweep_never_caps_while_provider_unavailable_then_cleans_up", async () => {
+    const { companyId } = await seedCompanyAndEnvironment();
+    // An orphan ephemeral lease that a failed plugin acquire recorded. The sweep
+    // tears it down through retryPendingSandboxTeardown.
+    const leaseId = await insertOrphanEphemeralLease({
+      companyId,
+      environmentId: null,
+      updatedAt: new Date(Date.now() - 60 * 60 * 1000),
+    });
+
+    // The provider stays unavailable for more sweeps than the finite attempt
+    // cap. A long plugin reload or a long worker restart looks like this. The
+    // probe reports not ready every time, so no sweep claims an attempt.
+    let providerReady = false;
+    const isPendingCleanupWorkerReady = vi.fn(async () => providerReady);
+    const retryPendingSandboxTeardown = vi.fn(async () => {});
+    const runtime = {
+      isPendingCleanupWorkerReady,
+      retryPendingSandboxTeardown,
+    } as unknown as HeartbeatEnvironmentRuntime;
+    const heartbeat = heartbeatService(db, { environmentRuntime: runtime });
+
+    // Run one more sweep than the cap. A per-sweep claim would exhaust the cap
+    // and strand the sandbox, so this proves the unavailable provider never
+    // burns an attempt.
+    for (let sweep = 0; sweep < ATTEMPT_CAP + 1; sweep += 1) {
+      const result = await heartbeat.sweepPendingCleanupLeases({ backoffMs: 0 });
+      // The lease is swept and skipped every time; it never caps and never
+      // tears down while the provider is unavailable.
+      expect(result).toEqual({ swept: 1, destroyed: 0, capped: 0 });
+    }
+    expect(retryPendingSandboxTeardown).not.toHaveBeenCalled();
+    // The unavailable provider consumed no finite attempt across every sweep.
+    expect(await readAttempts(leaseId)).toBe(0);
+    const afterUnavailable = await db
+      .select({ status: environmentLeases.status })
+      .from(environmentLeases)
+      .where(eq(environmentLeases.id, leaseId))
+      .then((rows) => rows[0]?.status);
+    expect(afterUnavailable).toBe("pending_cleanup");
+
+    // The provider recovers, so the next sweep claims the first attempt and
+    // tears the sandbox down.
+    providerReady = true;
+    const recovered = await heartbeat.sweepPendingCleanupLeases({ backoffMs: 0 });
+    expect(recovered).toEqual({ swept: 1, destroyed: 1, capped: 0 });
+    expect(retryPendingSandboxTeardown).toHaveBeenCalledTimes(1);
+
+    const finalRow = await db
+      .select({ status: environmentLeases.status, cleanupStatus: environmentLeases.cleanupStatus })
+      .from(environmentLeases)
+      .where(eq(environmentLeases.id, leaseId))
+      .then((rows) => rows[0]);
+    expect(finalRow?.status).toBe("expired");
+    expect(finalRow?.cleanupStatus).toBe("success");
+  });
+
+  it("test_pending_cleanup_sweep_does_not_let_unavailable_leases_starve_ready_leases", async () => {
+    const { companyId, environmentId } = await seedCompanyAndEnvironment();
+
+    // Fill one whole page with the oldest leases, and make every one of them
+    // unavailable. Their providers are not ready, so the sweep must not tear
+    // them down.
+    const unavailableIds = new Set<string>();
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    for (let index = 0; index < SWEEP_PAGE_SIZE; index += 1) {
+      const id = await insertOrphanEphemeralLease({
+        companyId,
+        environmentId: null,
+        updatedAt: twoHoursAgo,
+      });
+      unavailableIds.add(id);
+    }
+
+    // Add one newer lease with a ready provider. It sorts after the page of
+    // unavailable leases, so the first sweep never reaches it.
+    const readyLeaseId = await insertPendingCleanupLease({
+      companyId,
+      environmentId,
+      updatedAt: new Date(Date.now() - 30 * 60 * 1000),
+    });
+
+    // The probe reports the ready lease's provider ready and every unavailable
+    // lease's provider not ready.
+    const isPendingCleanupWorkerReady = vi.fn(
+      async ({ lease }: { lease: { id: string } }) => !unavailableIds.has(lease.id),
+    );
+    const retryPendingSandboxTeardown = vi.fn(async () => {});
+    const destroyRunLease = vi.fn(async ({ lease }: { lease: { id: string } }) => {
+      const now = new Date();
+      const row = await db
+        .update(environmentLeases)
+        .set({ status: "expired", cleanupStatus: "success", updatedAt: now })
+        .where(eq(environmentLeases.id, lease.id))
+        .returning()
+        .then((rows) => rows[0] ?? null);
+      return row ? { ...row, status: "expired" as const } : null;
+    });
+    const runtime = {
+      isPendingCleanupWorkerReady,
+      retryPendingSandboxTeardown,
+      destroyRunLease,
+    } as unknown as HeartbeatEnvironmentRuntime;
+    const heartbeat = heartbeatService(db, { environmentRuntime: runtime });
+
+    // A five-minute backoff keeps every seeded lease eligible, because each one
+    // is older than the backoff. A deferred lease bumps its updatedAt to now,
+    // so the backoff then excludes it from the next page.
+    const backoffMs = 5 * 60 * 1000;
+
+    // First sweep: the page holds only the unavailable leases. The sweep defers
+    // all of them and tears none down. The ready lease is not in this page.
+    const first = await heartbeat.sweepPendingCleanupLeases({ backoffMs });
+    expect(first).toEqual({ swept: SWEEP_PAGE_SIZE, destroyed: 0, capped: 0 });
+    expect(retryPendingSandboxTeardown).not.toHaveBeenCalled();
+    expect(destroyRunLease).not.toHaveBeenCalled();
+    // The deferred leases consumed no finite attempt.
+    for (const id of unavailableIds) {
+      expect(await readAttempts(id)).toBe(0);
+    }
+
+    // Second sweep: the deferred unavailable leases now sit inside the backoff
+    // window, so the sweep skips them. The ready lease takes the page slot and
+    // tears down. This proves the unavailable leases never starve the ready
+    // lease.
+    const second = await heartbeat.sweepPendingCleanupLeases({ backoffMs });
+    expect(second.destroyed).toBe(1);
+    expect(destroyRunLease).toHaveBeenCalledTimes(1);
+    expect(destroyRunLease.mock.calls[0]?.[0]).toMatchObject({
+      lease: expect.objectContaining({ id: readyLeaseId }),
+    });
+
+    const readyStatus = await db
+      .select({ status: environmentLeases.status })
+      .from(environmentLeases)
+      .where(eq(environmentLeases.id, readyLeaseId))
+      .then((rows) => rows[0]?.status);
+    expect(readyStatus).toBe("expired");
+
+    // The unavailable leases stay in pending_cleanup for a later retry.
+    const stillPending = await db
+      .select({ id: environmentLeases.id })
+      .from(environmentLeases)
+      .where(eq(environmentLeases.status, "pending_cleanup"))
+      .then((rows) => rows.map((row) => row.id));
+    expect(new Set(stillPending)).toEqual(unavailableIds);
   });
 
   // Read the current retry attempt count from a lease's metadata.
@@ -403,7 +1005,7 @@ describeEmbeddedPostgres("heartbeat sweepPendingCleanupLeases", () => {
       .mocked(logger.warn)
       .mock.calls.filter(
         (call) =>
-          call[1] === "environment lease reached the pending_cleanup retry cap; left for manual cleanup",
+          call[1] === "environment lease needs operator attention; automatic cleanup continues with backoff",
       );
     expect(capWarnings.length).toBeLessThanOrEqual(1);
   });
@@ -700,7 +1302,7 @@ describeEmbeddedPostgres("heartbeat sweepPendingCleanupLeases", () => {
       .mocked(logger.warn)
       .mock.calls.filter(
         (call) =>
-          call[1] === "environment lease reached the pending_cleanup retry cap; left for manual cleanup",
+          call[1] === "environment lease needs operator attention; automatic cleanup continues with backoff",
       );
     expect(capWarnings.length).toBe(0);
 
@@ -710,7 +1312,7 @@ describeEmbeddedPostgres("heartbeat sweepPendingCleanupLeases", () => {
       companyId,
       environmentId,
       updatedAt: new Date(Date.now() - 60 * 60 * 1000),
-      metadata: { [ATTEMPTS_KEY]: ATTEMPT_CAP - 1 },
+      metadata: { [ATTEMPTS_KEY]: ATTEMPT_CAP - 2 },
     });
     await heartbeat.sweepPendingCleanupLeases({ backoffMs: 0 });
     const belowCapMetadata = await readMetadata(belowCapLeaseId);
@@ -829,7 +1431,7 @@ describeEmbeddedPostgres("heartbeat sweepPendingCleanupLeases", () => {
     // The value clamped to the cap, so the lease took the cap branch, not a
     // destroy. The warn-once flag is set exactly once.
     expect(result.capped).toBe(1);
-    expect(destroyedLeaseIds).not.toContain(outOfRangeLeaseId);
+    expect(destroyedLeaseIds).toContain(outOfRangeLeaseId);
     const outOfRangeMetadata = await readMetadata(outOfRangeLeaseId);
     expect(outOfRangeMetadata?.[CAP_WARNED_KEY]).toBe(true);
 
@@ -937,5 +1539,41 @@ describeEmbeddedPostgres("heartbeat sweepPendingCleanupLeases", () => {
     // The claim replaced the array root with an object that holds one attempt.
     const arrayMetadata = await readMetadata(arrayLeaseId);
     expect(arrayMetadata?.[ATTEMPTS_KEY]).toBe(1);
+  });
+
+  it("flushes the in-process orphan buffer before the read, so a freshly landed row is swept the same tick", async () => {
+    const { companyId, environmentId } = await seedCompanyAndEnvironment();
+
+    // The flush lands one durable orphan row, exactly as the runtime buffer does
+    // after the database recovers. The sweep must run this flush before it reads
+    // the rows, so the same tick tears the freshly-landed orphan down.
+    const flushDeferredOrphanCleanups = vi.fn(async () => {
+      await insertOrphanEphemeralLease({
+        companyId,
+        environmentId,
+        updatedAt: new Date(Date.now() - 60 * 60 * 1000),
+      });
+      return { recovered: 1, pending: 0 };
+    });
+    // The recorded-data teardown succeeds, so the sweep releases the lease.
+    const retryPendingSandboxTeardown = vi.fn(async () => {});
+    const runtime = {
+      flushDeferredOrphanCleanups,
+      retryPendingSandboxTeardown,
+    } as unknown as HeartbeatEnvironmentRuntime;
+    const heartbeat = heartbeatService(db, { environmentRuntime: runtime });
+
+    const result = await heartbeat.sweepPendingCleanupLeases({ backoffMs: 0 });
+
+    // The flush ran once before the read, so the row it landed is visible to the
+    // same sweep and tears down through the recorded-data teardown path.
+    expect(flushDeferredOrphanCleanups).toHaveBeenCalledTimes(1);
+    expect(retryPendingSandboxTeardown).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ swept: 1, destroyed: 1, capped: 0 });
+
+    const rows = await db.select().from(environmentLeases);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("expired");
+    expect(rows[0]?.cleanupStatus).toBe("success");
   });
 });
