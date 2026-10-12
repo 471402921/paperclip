@@ -121,3 +121,56 @@ a unique workspace/session per case fixed the fixture. No product guard was
 removed. Platform TypeScript build passed. Cloud package and actual Linux task
 pairs remain required. Current behavior package campaign:
 https://github.com/paperclipai/paperclip/actions/runs/38284813521 .
+
+## Review and qualification update after the prerequisite split
+
+Review stack: [protocol #15994](https://github.com/paperclipai/paperclip/pull/15994),
+[behavior #15993](https://github.com/paperclipai/paperclip/pull/15993),
+[platform #15997](https://github.com/paperclipai/paperclip/pull/15997).
+Before the latest dependency reconciliation, protocol `33c9216614` and behavior
+`23d834fc0a` each received 5/5 with their findings resolved. Platform pack parity
+was corrected in `4dc13aa32c`; its review still requires refresh. All remain
+unmerged drafts pending checks and final qualification.
+
+Further fixes keep explicit Auto effort cleared through native imports and use
+the resolved Claude harness for task model/effort overrides and compatibility
+validation, including saved profiles without `acpxAgent`. Builder/provider88,
+import52 and server noemit passed. Native v7 answered-question constraints now
+point to the compact envelope; native contracts/runtime-context58 passed. The
+clean-install Pi probe now binds both v23 and its exact digest. Install-sandbox
+controls21 passed.
+
+Native Linux producer packs previously contained a daemon under `dist/bin`
+that was absent from image packs. Both builders now exclude controller binaries
+and remote-pack identities before hashing their provider tree. Parity/integrity13
+and image content9 controls passed. Actual rebuilt pack/image identity and paid
+remote execution remain gates. No provider boundary was widened by this fix.
+
+Candidate campaigns `38284813521` (8d07b409) and `38285667342` (d0da37c2)
+completed all four daemon producers and both Mac clean-install consumers.
+Linux assembly retained package bytes but failed the stale Pi install-probe
+assertion, now fixed. ARM host startup exposed the precise Codex prerequisite
+error: stock Bubblewrap's network namespace was denied by the host AppArmor
+policy. The latest dependency `665c155472` supplies verified stock distro
+prerequisites and retains the host restriction values before and after setup.
+The stack is reconciled with that branch, including its master fixes and cached
+build preparation. Reconciled Pi evidence/installed controls87 passed.
+
+The cloud ARM pack from d0da37c2 passed GitHub ZIP digest validation,
+bounded archive extraction, recorded artifact hashes, relocated Node/Claude
+version launches and the shipped no-follow Claude admission probe. ZIP digest:
+`9589de44e923b336e6a4b09bacbfd8ae66de1473577197731bc85e8eefd174a0`;
+pack identity: `sha256:6e283f3069e38a2f00cd1b752f10d8147f633dc5be4b60e85ae15a1b762bcfd1`;
+daemon: `sha256:0adbf14efb2b5b2826044aa0f55f50a0a779d0f5751d7a7a2526f494ffb9e1bc`.
+The pack is installed at the authorized SSH host's standard runtime location;
+an ownership receipt records this disposable qualification installation. No
+existing pack was replaced. These software checks submitted zero prompts and
+used no API key. Pack-parity changes require a new identity before final proof.
+
+The hash-verified 8d07b409 public packages were installed without lifecycle
+scripts into `/private/tmp/claude-installed-8d07-preview/consumer` for an actual
+installed preview. This is preparation, not a passing installed task claim.
+The existing successful preview/data and all unknown-charge holds remain.
+No additional paid turns occurred during this review/packaging work; aggregate
+active company caps remain $42 of the $50 Claude ceiling. Remaining live checks
+use API keys per the user's steering. No Docker or Rust build ran locally.
