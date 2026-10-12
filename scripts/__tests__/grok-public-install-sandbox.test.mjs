@@ -7,12 +7,29 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { isWorkspacePackage, parseWorkspaceEntries } from '../build-standalone-public-packages.mjs';
-import { GROK_PUBLIC_INSTALL_IMAGE, GROK_PUBLIC_INSTALL_LIFECYCLE, assertInstalledCodexPlatformProvenance, assertInstalledNativeConsumerContinuity, assertNoBundledCodexPayloads, grokConsumerDockerArgs, installedCodexProbeSource, installedDaemonProbeSource, macNodeHeadersDirectory, macPublicInstallLifecycleProfile, macInstalledStartupProbeSource } from '../grok-public-install-sandbox.mjs';
+import { GROK_PUBLIC_INSTALL_IMAGE, GROK_PUBLIC_INSTALL_LIFECYCLE, assertInstalledCodexPlatformProvenance, assertInstalledNativeConsumerContinuity, assertNoBundledCodexPayloads, grokConsumerDockerArgs, installedClaudeProbeSource, installedCodexProbeSource, installedDaemonProbeSource, macNodeHeadersDirectory, macPublicInstallLifecycleProfile, macInstalledStartupProbeSource } from '../grok-public-install-sandbox.mjs';
 import { verifyPiPackagedDaemon } from '../pi-public-install-probe.mjs';
 import { runnerBinaryTarget } from '../../packages/paperclip-runner/src/live/runner-binary.ts';
 
 const paths = { assets: '/private/staging/assets', consumer: '/private/staging/consumer', cache: '/private/staging/cache', uid: 1001, gid: 1001 };
 const values = (args, flag) => args.flatMap((value, index) => value === flag ? [args[index + 1]] : []);
+
+test('installed Claude admission propagates failure without emitting a passing receipt', () => {
+  const root = mkdtempSync(join(tmpdir(), 'installed-claude-admission-'));
+  try {
+    const fixture = join(root, 'runner.mjs'), probe = join(root, 'probe.mjs');
+    writeFileSync(probe, installedClaudeProbeSource(fixture, root));
+    writeFileSync(fixture, "export async function probeAcpxClaudeInstallation(model) { if (model !== 'claude-opus-5-5') throw Error('wrong model'); }\n");
+    const accepted = spawnSync(process.execPath, [probe], { encoding: 'utf8', timeout: 5000 });
+    assert.equal(accepted.status, 0, accepted.stderr);
+    assert.equal(JSON.parse(accepted.stdout).packageIntegrityAndNoFollowLease, 'passed');
+    assert.equal(JSON.parse(accepted.stdout).providerCalls, 0);
+    writeFileSync(fixture, "export async function probeAcpxClaudeInstallation() { throw Error('integrity rejected'); }\n");
+    const rejected = spawnSync(process.execPath, [probe], { encoding: 'utf8', timeout: 5000 });
+    assert.notEqual(rejected.status, 0);
+    assert.equal(rejected.stdout, '');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 test('native host startup preserves the consumer lock and both executable byte identities', () => {
   const before = { lockSha256: 'a'.repeat(64), runnerSha256: 'b'.repeat(64), codexCommandSha256: 'c'.repeat(64), codexNativeExecutableSha256: 'e'.repeat(64) };

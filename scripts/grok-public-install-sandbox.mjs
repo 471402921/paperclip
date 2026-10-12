@@ -87,6 +87,20 @@ export function assertInstalledCodexPlatformProvenance(lock, installed, target) 
 
 // Execute this in the existing offline public consumer, never in the checkout.
 // The public index and returned command must both come from the installed graph.
+export function installedClaudeProbeSource(indexPath, serverRoot) {
+  return `
+    import { pathToFileURL } from 'node:url';
+    // Match the production sidecar's published-server package authority.
+    process.env.PAPERCLIP_ACPX_PROVIDER_PACKAGE_ROOT = ${JSON.stringify(serverRoot)};
+    process.env.PAPERCLIP_ACPX_PROVIDER_PACKAGE_MANIFEST = ${JSON.stringify(join(serverRoot, 'package.json'))};
+    const { probeAcpxClaudeInstallation } = await import(pathToFileURL(${JSON.stringify(indexPath)}).href);
+    await probeAcpxClaudeInstallation('claude-opus-5-5');
+    console.log(JSON.stringify({ schema: 'paperclip.claude-installed-admission.v1',
+      platform: process.platform, architecture: process.arch, model: 'claude-opus-5-5',
+      packageIntegrityAndNoFollowLease: 'passed', providerCalls: 0 }));
+  `;
+}
+
 export function installedCodexProbeSource(indexPath, consumerRoot, expectedVersion, { nativeCodex = false } = {}) {
   return `
     import assert from 'node:assert/strict';
