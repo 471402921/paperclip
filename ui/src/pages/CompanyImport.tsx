@@ -1724,7 +1724,9 @@ export function CompanyImport() {
       const selectedType = effectiveAdapterType(agent);
       const configVals = adapterConfigValues[agent.slug];
       if (selectedType === agent.adapterChoice && !configVals) continue;
-      const apiType = selectedType === "openai_dot" ? "paperclip_runner" : selectedType;
+      const retainsNativeHarness = agent.adapterType === "paperclip_runner"
+        && selectedType === agent.adapterChoice && ["codex_local", "claude_local"].includes(selectedType);
+      const apiType = selectedType === "openai_dot" || retainsNativeHarness ? "paperclip_runner" : selectedType;
       const override: CompanyPortabilityAdapterOverride = { adapterType: apiType };
       if (configVals?.runner !== undefined) override.runner = configVals.runner;
       if (configVals && (selectedType !== agent.adapterChoice || adapterConfigEditedSlugs.has(agent.slug))) {
@@ -1735,8 +1737,6 @@ export function CompanyImport() {
         if (selectedType === "openai_dot" && configVals.adapterSchemaValues?.allowUnmeteredProvider !== true) {
           throw new Error("OpenAI Dot requires acknowledgement of external billing. Configure the Dot adapter and enable Allow externally billed provider.");
         }
-        const retainsNativeHarness = agent.adapterType === "paperclip_runner"
-          && selectedType === agent.adapterChoice && ["codex_local", "claude_local"].includes(selectedType);
         override.adapterConfig = getUIAdapter(retainsNativeHarness ? "paperclip_runner" : configVals.adapterType).buildAdapterConfig(configVals);
       }
       overrides[agent.slug] = override;

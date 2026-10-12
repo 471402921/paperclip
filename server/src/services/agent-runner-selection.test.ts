@@ -219,6 +219,21 @@ describe("Claude runner defaults", () => {
     expect(resolveNewAgentRunner(legacy)).toEqual({ adapterType: legacy.adapterType, adapterConfig: legacy.adapterConfig });
     expect(resolveNewAgentRunner({ adapterType: "claude_local", target: mac, adapterConfig: { model: "custom" } }).adapterConfig.model).toBe("custom");
   });
+  it.each(["claude-sonnet-5-5", "custom-model"])("preserves the plain environment model binding %s", model => {
+    const env = { ANTHROPIC_MODEL: { type: "plain", value: model } };
+    const native = resolveNewAgentRunner({ adapterType: "claude_local", target: mac, adapterConfig: { env } });
+    expect(native.adapterConfig.model).toBe(model);
+    expect(native.adapterConfig.env).toEqual(env);
+  });
+  it.each(["ANTHROPIC_MODEL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "ANTHROPIC_BEDROCK_BASE_URL"])("rejects unresolved %s before choosing a default", key => {
+    const env = { [key]: { type: "secret_ref", secretId: "override" } };
+    expect(() => resolveNewAgentRunner({ adapterType: "claude_local", target: mac, adapterConfig: { env } })).toThrow(`env.${key}`);
+    expect(resolveNewAgentRunner({ adapterType: "claude_local", target: mac, adapterConfig: { env, model: "custom-model" } }).adapterConfig.model).toBe("custom-model");
+  });
+  it("does not pin the ordinary model over a plain provider-routing binding", () => {
+    expect(() => resolveNewAgentRunner({ adapterType: "claude_local", target: mac,
+      adapterConfig: { env: { CLAUDE_CODE_USE_BEDROCK: { type: "plain", value: "1" } } } })).toThrow("Legacy runner");
+  });
   it.each(["permissionMode", "acpPermissionMode"])("translates the legacy Claude %s without granting broader permissions", key => {
     for (const mode of ["deny-all", "approve-reads", "approve-all"]) {
       const native = resolveNewAgentRunner({ adapterType: "claude_local", target: mac, adapterConfig: { engine: "acp", [key]: mode } });

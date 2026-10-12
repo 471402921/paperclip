@@ -1776,8 +1776,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   }
                   mark("adapterConfig", "model", connectionModels?.resolveModel(v) || v || undefined);
                   if (clearUnsupportedEffort) {
-                    mark("adapterConfig", thinkingEffortKey, undefined);
-                    mark("adapterConfig", "reasoningEffort", undefined);
+                    for (const key of ["modelReasoningEffort", "reasoningEffort", "effort"]) mark("adapterConfig", key, undefined);
                   }
                 }}
                 open={modelOpen}
