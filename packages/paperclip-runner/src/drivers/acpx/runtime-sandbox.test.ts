@@ -98,6 +98,7 @@ describe("ACPX runtime sandbox", () => {
         binding: { ...fixture.binding, requestedModel: model },
         agent: "claude",
       });
+      await sandbox.initializeOwnedConfiguration?.();
       const settingsPath = join(sandbox.agentHomeDirectory, "settings.json");
       expect(JSON.parse(await readFile(settingsPath, "utf8"))).toMatchObject({
         model,
@@ -113,6 +114,7 @@ describe("ACPX runtime sandbox", () => {
       const binding = { ...fixture.binding, requestedModel: model, effectiveModel: model };
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const sandbox = await prepareAcpxRuntimeSandbox({ binding, agent: "claude" });
+        await sandbox.initializeOwnedConfiguration?.();
         const settings = JSON.parse(await readFile(join(sandbox.agentHomeDirectory, "settings.json"), "utf8"));
         expect(settings).toMatchObject({ model, availableModels: [model] });
       }
@@ -125,11 +127,13 @@ describe("ACPX runtime sandbox", () => {
       const binding = { ...fixture.binding, claudeEffort };
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const sandbox = await prepareAcpxRuntimeSandbox({ binding, agent: "claude" });
+        await sandbox.initializeOwnedConfiguration?.();
         const settings = JSON.parse(await readFile(join(sandbox.agentHomeDirectory, "settings.json"), "utf8"));
         expect(settings.effortLevel).toBe(claudeEffort);
       }
     }
     const sandbox = await prepareAcpxRuntimeSandbox({ binding: fixture.binding, agent: "claude" });
+    await sandbox.initializeOwnedConfiguration?.();
     expect(JSON.parse(await readFile(join(sandbox.agentHomeDirectory, "settings.json"), "utf8"))).not.toHaveProperty("effortLevel");
   });
 
