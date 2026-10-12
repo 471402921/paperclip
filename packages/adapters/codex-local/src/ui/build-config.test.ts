@@ -220,6 +220,10 @@ describe("buildPaperclipRunnerConfig", () => {
     });
   });
 
+  it.each(["modelReasoningEffort", "reasoningEffort", "effort"])("keeps explicit Auto Claude effort cleared over saved %s", key => {
+    const config = buildPaperclipRunnerConfig(makeValues({ thinkingEffort: "", adapterSchemaValues: { provider: "acpx", acpxAgent: "claude", [key]: "high" } }));
+    for (const effortKey of ["modelReasoningEffort", "reasoningEffort", "effort"]) expect(config).not.toHaveProperty(effortKey);
+  });
   it.each(["claude-opus-5", "my-custom-model"])("preserves the selected ACPX Claude model %s", (model) => {
     expect(buildPaperclipRunnerConfig(makeValues({ model, adapterSchemaValues: { provider: "acpx" } })))
       .toMatchObject({ provider: "acpx", acpxAgent: "claude", model });
