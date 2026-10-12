@@ -2,6 +2,47 @@
 
 Updated 2026-10-12.
 
+## Latest checkpoint: ARM qualification tooling provenance
+
+Production code remains frozen at `a200495cc7488f4d59da570407e516cf702e5af8`.
+Subsequent changes are QA tooling and documentation. The verified 18-package
+archive retains that literal source. All four hosted native producers, Linux x64
+clean installation, and both Mac installed startup/cleanup consumers pass.
+The qualified ARM native startup passes with stock scoped OS prerequisites;
+the original unprepared-host failure remains recorded below.
+
+At `0690801`, fresh review found one valid workflow compatibility defect: an
+older frozen product source does not contain the new prerequisite helper. The
+existing native qualification job now obtains only that helper through a sparse
+checkout pinned to `job.workflow_repository` and `job.workflow_sha`. These
+identify the workflow defining the current job, including reusable calls. The
+product checkout, archive guards, and original native consumer remain unchanged.
+Both checkout identities and the helper hash enter the existing diagnostic
+artifact. No mutable branch or caller-source fallback is used.
+
+Five focused controls pass, including execution with a product source that lacks
+the helper and rejection of mismatched checkout identities. Syntax/YAML checks
+pass. The full affected workflow suite passes all 70 controls with localhost
+fixture access; it runs no native or Docker builds. Receipt:
+`/private/tmp/codex-default-arm-immutable-tooling-fix-receipt.json`.
+The [committed-helper consumer](https://github.com/paperclipai/paperclip/actions/runs/38290234153)
+checks tooling `0690801` against literal `a200495` packages with no diagnostic
+overlay, no native rebuild, and no provider turns. Final results and latest-head
+CI/review remain required before sign-off.
+
+The local preview serves `2026.1005.0+352.git.0690801f13` at
+[3125](http://127.0.0.1:3125/COD/agents/all). All four complete agent configurations
+and both historical native runs remain unchanged after restart. The downloaded
+Apple Silicon daemon is verified; `needsBuild` and `sourceBuild` are false.
+No local Dockerfile/native build or provider call ran.
+
+Next action: freeze the workflow-only correction, prove its actual sparse
+checkout on hosted ARM against the unchanged verified package archive, and
+require fresh CI/review. Refresh the preview and PR evidence at that candidate.
+Human code-owner approval, managed staging onboarding, and actual post-merge
+Cloud composition remain outstanding. No merge or production deployment is
+authorized. Historical unknown costs and cleanup holds remain reserved.
+
 ## Current amendment: remote build performance and Linux baseline
 
 The user requires Cargo dependency caching and overlapping JavaScript/native

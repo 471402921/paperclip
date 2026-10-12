@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -967,11 +968,62 @@ test("native ARM qualification prepares its scoped distro sandbox before the exi
   const preparation = native.split("      - name: Prepare Linux ARM sandbox prerequisites\n")[1].split("\n      - ")[0];
   assert.match(preparation, /if: \$\{\{ matrix\.target == 'linux-arm64' \}\}/);
   assert.match(preparation, /timeout-minutes: 5/);
-  assert.match(preparation, /run: bash scripts\/prepare-linux-arm64-qualification\.sh/);
+  assert.match(preparation, /bash \.qualification-tooling\/scripts\/prepare-linux-arm64-qualification\.sh/);
+  const tooling = native.split("      - name: Checkout immutable ARM qualification tooling\n")[1].split("\n      - ")[0];
+  assert.match(tooling, /if: \$\{\{ matrix\.target == 'linux-arm64' \}\}/);
+  assert.match(tooling, /repository: \$\{\{ job\.workflow_repository \}\}/);
+  assert.match(tooling, /ref: \$\{\{ job\.workflow_sha \}\}/);
+  assert.match(tooling, /sparse-checkout: scripts\/prepare-linux-arm64-qualification\.sh/);
+  assert.match(tooling, /sparse-checkout-cone-mode: false/);
+  assert.match(tooling, /persist-credentials: false/);
+  assert.doesNotMatch(tooling + preparation, /github\.workflow_sha|github\.sha|ref: (?:master|main)|ref: \$\{\{ inputs\.qualification_source_sha/);
+  assert.ok(native.indexOf("Checkout immutable ARM qualification tooling") < native.indexOf("Prepare Linux ARM sandbox prerequisites"));
   assert.ok(native.indexOf("Prepare Linux ARM sandbox prerequisites") < native.indexOf("Verify host identity and actual clean npm consumer"));
   assert.match(native, /path: \|\n\s+\$\{\{ runner\.temp \}\}\/native-public-install\.json\n\s+\$\{\{ runner\.temp \}\}\/paperclip-arm-bwrap-prerequisite\//);
   assert.doesNotMatch(smoke.split("  qualification_daemons:\n")[0], /prepare-linux-arm64-qualification/,
     "ordinary service and Docker smoke keep their existing setup");
+});
+
+test("ARM qualification binds separate product and reusable-workflow revisions even when the product lacks the helper", { skip: process.platform === "win32" }, () => {
+  const native = readWorkflow("release-smoke.yml").split("  qualification_native:\n")[1];
+  const step = native.split("      - name: Prepare Linux ARM sandbox prerequisites\n")[1].split("\n      - ")[0];
+  const script = step.split("        run: |\n")[1].split("\n").map(line => line.startsWith("          ") ? line.slice(10) : line).join("\n");
+  const root = mkdtempSync(path.join(tmpdir(), "arm-separate-tooling-"));
+  try {
+    const tools = path.join(root, "tools"); mkdirSync(tools);
+    const tooling = path.join(root, ".qualification-tooling", "scripts"); mkdirSync(tooling, { recursive: true });
+    const helper = 'printf "%s\\n" "$TOOLING_SHA" > "$FIXTURE_PREPARED"\n';
+    writeFileSync(path.join(tooling, "prepare-linux-arm64-qualification.sh"), helper);
+    writeFileSync(path.join(tools, "git"), '#!/bin/bash\nif [[ "$1" == -C ]]; then printf "%s\\n" "$FIXTURE_TOOLING_HEAD"; else printf "%s\\n" "$FIXTURE_PRODUCT_HEAD"; fi\n', { mode: 0o755 });
+    const productSha = "a".repeat(40), toolingSha = "b".repeat(40);
+    for (const [productHead, toolingHead, expectedStatus] of [[productSha, toolingSha, 0], ["c".repeat(40), toolingSha, 1], [productSha, "c".repeat(40), 1], [productSha, "invalid", 1]]) {
+      const report = path.join(root, "report"); mkdirSync(report);
+      const prepared = path.join(root, "prepared");
+      const result = spawnSync("/bin/bash", ["-c", script], { cwd: root, encoding: "utf8", env: {
+        PATH: `${tools}:${path.dirname(process.execPath)}:/usr/bin:/bin`, RUNNER_TEMP: report,
+        SOURCE_SHA: productSha, TOOLING_SHA: toolingSha, TOOLING_REPOSITORY: "paperclipai/paperclip",
+        TOOLING_WORKFLOW_REF: "paperclipai/paperclip/.github/workflows/release-smoke.yml@refs/heads/qualification",
+        TOOLING_WORKFLOW_PATH: ".github/workflows/release-smoke.yml",
+        FIXTURE_PRODUCT_HEAD: productHead, FIXTURE_TOOLING_HEAD: toolingHead, FIXTURE_PREPARED: prepared,
+        // Reusable calls retain the caller context; it must not select tooling.
+        GITHUB_REPOSITORY: "different/caller", GITHUB_SHA: "d".repeat(40),
+      } });
+      assert.equal(result.status, expectedStatus, result.stderr);
+      assert.equal(existsSync(path.join(root, "scripts", "prepare-linux-arm64-qualification.sh")), false);
+      assert.equal(existsSync(prepared), expectedStatus === 0);
+      if (expectedStatus === 0) {
+        assert.equal(readFileSync(prepared, "utf8").trim(), toolingSha);
+        const identity = JSON.parse(readFileSync(path.join(report, "paperclip-arm-bwrap-prerequisite", "qualification-identity.json"), "utf8"));
+        assert.equal(identity.productSourceSha, productSha);
+        assert.equal(identity.toolingSourceSha, toolingSha);
+        assert.equal(identity.toolingRepository, "paperclipai/paperclip");
+        assert.equal(identity.toolingWorkflowPath, ".github/workflows/release-smoke.yml");
+        assert.equal(identity.helperSha256, createHash("sha256").update(helper).digest("hex"));
+      }
+      rmSync(report, { recursive: true, force: true });
+      rmSync(prepared, { force: true });
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test("Linux ARM prerequisite setup rejects other hosts before invoking tools and preserves scoped security", { skip: process.platform === "win32" }, () => {
