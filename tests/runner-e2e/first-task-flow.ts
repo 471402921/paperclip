@@ -241,6 +241,7 @@ export async function setupFirstTaskFixtures(input: {
   if (execution.profile.id === "runner-acpx-claude") {
     expect(agents[0].adapterConfig?.provider).toBe("acpx");
     expect(agents[0].adapterConfig?.acpxAgent).toBe("claude");
+    expect(agents[0].adapterConfig?.model).toBe("claude-opus-5-5");
   }
   fixtures.agent = {
     id: agents[0].id,
