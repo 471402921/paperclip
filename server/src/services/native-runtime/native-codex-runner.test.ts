@@ -12,7 +12,7 @@ import {
   resolveRemotePaperclipRunnerBinary,
 } from "./native-codex-runner.js";
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("installed runner selection", () => {
   it("uses the runner's platform-aware packaged selection", async () => {
@@ -46,7 +46,7 @@ describe("installed runner selection", () => {
   });
 });
 
-describe("selected SSH daemon target", () => {
+describe("selected remote daemon target", () => {
   function header(target: string) {
     const bytes = Buffer.alloc(64);
     if (target.startsWith("darwin")) {
@@ -72,6 +72,21 @@ describe("selected SSH daemon target", () => {
       expect(target.execute).toHaveBeenCalledExactlyOnceWith({ command: "sh", args: ["-c", "uname -s; uname -m"], cwd: "/selected-workspace", bypassSession: true, timeoutMs: 10_000 });
     } finally { await rm(root, { recursive: true, force: true }); }
   });
+  it.each(["arm64", "x64"].flatMap(controllerArch => ["arm64", "x64"].map(targetArch => ({ controllerArch, targetArch }))))(
+    "selects the actual Linux $targetArch sandbox bytes on a Mac $controllerArch controller", async ({ controllerArch, targetArch }) => {
+      const root = await mkdtemp(join(tmpdir(), "paperclip-sandbox-daemon-"));
+      const binary = join(root, "paperclip-runnerd");
+      try {
+        vi.stubGlobal("process", { ...process, platform: "darwin", arch: controllerArch });
+        await writeFile(binary, header(`linux-${targetArch}`));
+        const select = vi.spyOn(runner, "defaultCapabilityRunnerdBinary").mockReturnValue(binary);
+        const target = remote(`Linux\n${targetArch === "arm64" ? "aarch64" : "x86_64"}\n`);
+        expect(await resolveRemotePaperclipRunnerBinary({ runner: target, remoteCwd: "/sandbox-workspace" })).toBe(binary);
+        expect(select).toHaveBeenCalledExactlyOnceWith("linux", targetArch);
+        expect(target.execute).toHaveBeenCalledExactlyOnceWith({ command: "sh", args: ["-c", "uname -s; uname -m"], cwd: "/sandbox-workspace", bypassSession: true, timeoutMs: 10_000 });
+      } finally { await rm(root, { recursive: true, force: true }); }
+    },
+  );
   it.each(["matching", "wrong-architecture", "malformed", "missing"])("verifies an explicit controller-owned remote artifact (%s)", async scenario => {
     const root = await mkdtemp(join(tmpdir(), "paperclip-ssh-daemon-"));
     const binary = join(root, "configured-runnerd");

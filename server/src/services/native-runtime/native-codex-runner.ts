@@ -208,7 +208,7 @@ export function resolvePaperclipRunnerBinary(
   );
 }
 
-/** Select controller-owned bytes for the selected SSH host, never its controller. */
+/** Select controller-owned bytes for the actual remote host, never its controller. */
 export async function resolveRemotePaperclipRunnerBinary(input: {
   runner: CommandManagedRuntimeRunner;
   remoteCwd: string;
@@ -220,7 +220,7 @@ export async function resolveRemotePaperclipRunnerBinary(input: {
   const platform = os === "Linux" ? "linux" : os === "Darwin" ? "darwin" : null;
   const architecture = arch === "x86_64" ? "x64" : arch === "aarch64" || arch === "arm64" ? "arm64" : null;
   if (probe.exitCode !== 0 || probe.timedOut || !platform || !architecture) {
-    throw new Error("runner_remote_artifact_platform_mismatch: could not identify a supported remote OS and architecture; check the SSH host and retry");
+    throw new Error("runner_remote_artifact_platform_mismatch: could not identify a supported remote OS and architecture; check the selected execution environment and retry");
   }
   const configured = input.configuredPath?.trim();
   if (configured && !isAbsolute(configured)) throw new Error("PAPERCLIP_RUNNER_REMOTE_BINARY_PATH must be an absolute path");

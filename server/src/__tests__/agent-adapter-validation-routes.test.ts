@@ -657,6 +657,78 @@ describe("agent routes adapter validation", () => {
     expect(res.status, JSON.stringify(res.body)).toBe(200);
   });
 
+  it.each(["pass", "fail"] as const)("tests saved legacy Codex on a disabled adapter and retains its %s runtime verdict", async (status) => {
+    const adapterConfig = { model: "gpt-5.4", extraArgs: ["--legacy-setting"], env: { CODEX_HOME: "/saved-codex-home" } };
+    mockAgentService.getById.mockResolvedValue({ ...(await mockAgentService.getById()), adapterConfig });
+    mockAdapterPluginStore.getDisabledAdapterTypes.mockReturnValue(["codex_local"]);
+    const probe = vi.fn(async () => ({ adapterType: "codex_local", status, testedAt: new Date(0).toISOString(),
+      checks: status === "fail" ? [{ code: "adapter_auth_missing", level: "error" as const, message: "Sign in to the saved Codex account." }] : [] }));
+    const { registerServerAdapter } = await import("../adapters/index.js");
+    registerServerAdapter({ ...externalAdapter, type: "codex_local", testEnvironment: probe });
+    try {
+      const app = await createApp();
+      const res = await requestApp(app, baseUrl => request(baseUrl)
+        .post("/api/companies/company-1/adapters/codex_local/test-environment")
+        .send({ agentId: "11111111-1111-4111-8111-111111111111", adapterConfig: {
+          ...adapterConfig, env: { CODEX_HOME: { type: "plain", value: "***REDACTED***" } },
+        } }));
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(res.body).toMatchObject({ adapterType: "codex_local", status });
+      expect(probe).toHaveBeenCalledOnce();
+      expect(probe).toHaveBeenCalledWith(expect.objectContaining({ adapterType: "codex_local", config: adapterConfig }));
+      expect(mockSecretService.normalizeAdapterConfigForPersistence).toHaveBeenCalledWith("company-1", adapterConfig, expect.objectContaining({ adapterType: "codex_local" }));
+      expect(mockAgentService.create).not.toHaveBeenCalled();
+      expect(mockAgentService.update).not.toHaveBeenCalled();
+    } finally { await unregisterTestAdapter("codex_local"); }
+  });
+
+  it.each(["draft", "explicit legacy", "explicit auto", "explicit native", "changed harness"] as const)("rejects a disabled Codex setup selection for %s", async (mode) => {
+    mockAdapterPluginStore.getDisabledAdapterTypes.mockReturnValue(["codex_local"]);
+    if (mode === "changed harness") mockAgentService.getById.mockResolvedValue({ ...(await mockAgentService.getById()), adapterType: "external_test" });
+    const probe = vi.fn();
+    const { registerServerAdapter } = await import("../adapters/index.js");
+    registerServerAdapter({ ...externalAdapter, type: "codex_local", testEnvironment: probe });
+    try {
+      const runner = mode === "explicit legacy" ? "legacy" : mode === "explicit auto" ? "auto" : mode === "explicit native" ? "paperclip" : undefined;
+      const app = await createApp();
+      const res = await requestApp(app, baseUrl => request(baseUrl)
+        .post("/api/companies/company-1/adapters/codex_local/test-environment")
+        .send({ adapterConfig: {}, ...(mode === "draft" ? {} : { agentId: "11111111-1111-4111-8111-111111111111" }), ...(runner ? { runner } : {}) }));
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      expect(res.body.details).toMatchObject({ code: "agent_runner_unavailable" });
+      expect(probe).not.toHaveBeenCalled();
+      expect(mockSecretService.normalizeAdapterConfigForPersistence).not.toHaveBeenCalled();
+    } finally { await unregisterTestAdapter("codex_local"); }
+  });
+
+  it("still rejects new Codex creation when its adapter is disabled", async () => {
+    mockAdapterPluginStore.getDisabledAdapterTypes.mockReturnValue(["codex_local"]);
+    const app = await createApp();
+    const res = await requestApp(app, baseUrl => request(baseUrl)
+      .post("/api/companies/company-1/agents").send({ name: "New Codex", adapterType: "codex_local" }));
+    expect(res.status, JSON.stringify(res.body)).toBe(422);
+    expect(res.body.details).toMatchObject({ code: "agent_runner_unavailable" });
+    expect(mockAgentService.create).not.toHaveBeenCalled();
+  });
+
+  it("rechecks selection policy when a saved native adapter switches its underlying harness", async () => {
+    mockAgentService.getById.mockResolvedValue({ ...(await mockAgentService.getById()), adapterType: "paperclip_runner", adapterConfig: { provider: "codex" } });
+    mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableNativeRunner: false });
+    const probe = vi.fn();
+    const { registerServerAdapter } = await import("../adapters/index.js");
+    registerServerAdapter({ ...externalAdapter, type: "paperclip_runner", testEnvironment: probe });
+    try {
+      const app = await createApp();
+      const res = await requestApp(app, baseUrl => request(baseUrl)
+        .post("/api/companies/company-1/adapters/paperclip_runner/test-environment")
+        .send({ agentId: "11111111-1111-4111-8111-111111111111", adapterConfig: { provider: "acpx", acpxAgent: "claude" } }));
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      expect(res.body.details).toMatchObject({ code: "paperclip_runner_rollout_disabled" });
+      expect(probe).not.toHaveBeenCalled();
+      expect(mockSecretService.normalizeAdapterConfigForPersistence).not.toHaveBeenCalled();
+    } finally { await unregisterTestAdapter("paperclip_runner"); }
+  });
+
   it("still creates an agent on an adapter that is registered and enabled", async () => {
     const { registerServerAdapter } = await import("../adapters/index.js");
     registerServerAdapter(externalAdapter);

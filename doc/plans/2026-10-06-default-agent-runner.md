@@ -4,7 +4,7 @@ Updated 2026-10-12.
 
 ## Latest checkpoint: ARM qualification and master integration
 
-The native runtime, protocol, Codex adapter/driver, selection code, and provider
+The Rust daemon, protocol, Codex driver, creation policy, and provider
 requirements remain unchanged from qualified source
 `a200495cc7488f4d59da570407e516cf702e5af8`. Its verified 18-package archive
 retains that literal identity. All four hosted daemon producers, Linux x64 clean
@@ -53,7 +53,32 @@ The last verified preview restart serves `2026.1005.0+352.git.0690801f13` at
 configurations and both historical native runs. The downloaded Apple Silicon
 daemon requires no source build or binary override.
 
-Next action: require fresh CI/review on the integrated candidate, refresh the
+Fresh review at `665c155` reports three valid findings. Remote sandbox setup and
+execution now share the existing actual-target OS/architecture resolver rather
+than selecting the Mac controller's daemon. Thirteen new baseline failures
+reproduce the issue; 124 target/setup/backend and retained-artifact/version
+controls pass after the fix, with server typecheck. Header, digest, preinstalled
+artifact, and remote build-metadata verification stay strict. Foreign artifacts
+are read/hashed on the controller and executed through the remote launcher.
+Local and non-Codex paths remain unchanged. Receipt:
+`/private/tmp/codex-default-sandbox-target-fix-receipt.json`.
+
+Unchanged saved setup choices now bypass only new-selection resolution, retaining
+later secret, company/environment, authentication, and runtime validation. The
+actual disabled legacy baseline returned 422 before its probe. Treatment passes
+175 existing controls plus a native-provider switch negative, with server
+typecheck. New, explicit, draft, and changed-harness choices keep the disabled
+adapter policy. Receipt: `/private/tmp/pr2-disabled-saved-codex-owned-receipt.json`.
+
+The actual served Codex guide reproduces stale Mac/ARM legacy text at `665c155`.
+It now uses the shared GNU libc floor, lists qualified Linux/Mac architectures,
+distinguishes legacy fields, and preserves existing-runner and failure semantics.
+Adapter typecheck passes; the updated served guide needs final-preview proof.
+These corrections update server setup/execution and guide source. The qualified
+`a200495` package startup and historical task evidence retain their literal
+component boundaries; no new managed live proof or paid turn is claimed.
+
+Next action: require fresh CI/review on the corrected integrated candidate, refresh the
 matched preview, and publish final conclusions in the canonical PR's evidence
 index. Human code-owner approval, managed staging onboarding, and actual
 post-merge Cloud composition remain outstanding. No merge or production
