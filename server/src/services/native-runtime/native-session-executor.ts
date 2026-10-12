@@ -5,7 +5,7 @@ import { isCloudManagedInstance } from "../cloud-instance.js";
 import { dotRunnerBroker } from "../dot-runner-broker.js";
 import { CURSOR_DISTRIBUTION_PINS, QUALIFIED_ACPX_PROFILES, QUALIFIED_ACPX_VERSION } from "../../vendor/paperclip-runner/index.js";
 import { isProviderMode } from "../../vendor/paperclip-runner/index.js";
-import { bundledRemoteProviderPackManifestPath, bundledRemoteRunnerBinary } from "../../vendor/paperclip-runner/index.js";
+import { bundledRemoteProviderPackManifestPath, bundledRemoteRunnerBinary, runnerBinaryTarget } from "../../vendor/paperclip-runner/index.js";
 import { nativeRetryCancellationEligible, rethrowNativeCancellationLockConflict, assertCancellationRequest, cancellationIntentId as callerCancellationIntentId, cancellationRequestId } from "./native-cancellation-request.js";
 import { readNativePlanWait } from "./native-plan-wait.js";
 import { nativeProviderLifecycle } from "./provider-lifecycle.js";
@@ -9994,10 +9994,10 @@ export function readRemoteProviderPackManifest(packRoot: string): RemoteProvider
   return readRemoteProviderPackIdentity(packRoot, true);
 }
 
-export function readBundledRemoteProviderPackManifest(manifestPath = bundledRemoteProviderPackManifestPath()): RemoteProviderPackManifest {
+export function readBundledRemoteProviderPackManifest(manifestPath = bundledRemoteProviderPackManifestPath(), target: "linux-x64" | "linux-arm64" = "linux-x64"): RemoteProviderPackManifest {
   const manifest = readRemoteProviderPackIdentity(dirname(manifestPath), false);
-  if (manifest.payload.target.platform !== "linux" || manifest.payload.target.architecture !== "x64") {
-    throw new Error("runner_remote_provider_artifact_incompatible: bundled image pack must target Linux x64");
+  if (`${manifest.payload.target.platform}-${manifest.payload.target.architecture}` !== target) {
+    throw new Error(`runner_remote_provider_artifact_incompatible: bundled image pack must target ${target}`);
   }
   return manifest;
 }
@@ -11518,6 +11518,18 @@ async function createRunnerdBackendWithinSessionClaim(
     remoteTarget !== null &&
     (input.execution.provider.kind === "opencode" ||
       input.execution.provider.kind === "acpx");
+  const remoteClaude = remoteTarget !== null && input.execution.provider.kind === "acpx" && input.execution.provider.agent === "claude";
+  const remoteClaudeRunnerBinary = remoteClaude
+    ? await resolveRemotePaperclipRunnerBinary({ runner: remoteCommandRunner!, remoteCwd: remoteTarget!.remoteCwd, configuredPath: input.runnerRemoteBinaryPath })
+    : null;
+  const remoteClaudeTarget = remoteClaudeRunnerBinary ? runnerBinaryTarget(readFileSync(remoteClaudeRunnerBinary)) : null;
+  if (remoteClaude && remoteClaudeTarget !== "linux-x64" && remoteClaudeTarget !== "linux-arm64") {
+    throw new Error("runner_remote_provider_artifact_incompatible: Claude remote provider packs require a qualified Linux target");
+  }
+  const bundledClaudeManifest = remoteClaudeTarget === "linux-x64" || remoteClaudeTarget === "linux-arm64"
+    ? bundledRemoteProviderPackManifestPath(undefined, remoteClaudeTarget) : null;
+  const bundledClaudeRoot = bundledClaudeManifest && existsSync(join(dirname(bundledClaudeManifest), "node_modules"))
+    ? dirname(bundledClaudeManifest) : null;
   // Pi's explicit operator import supplies the target-platform authority. Never
   // substitute a Mac controller daemon or trust an image's self-reported hashes.
   // Existing explicit overrides and every other provider keep their old path.
@@ -11527,13 +11539,15 @@ async function createRunnerdBackendWithinSessionClaim(
     workspaceRoot: input.execution.workspace.cwd,
   });
   const configuredProviderPackRoot =
-    input.runnerRemoteProviderPackPath?.trim() || remotePiCompanion?.providerPack || null;
+    input.runnerRemoteProviderPackPath?.trim() || remotePiCompanion?.providerPack || bundledClaudeRoot || null;
   let expectedProviderPackManifest: RemoteProviderPackManifest | null = null;
   const useBundledRemoteImageAssets = requiresRemoteProviderPack && !configuredProviderPackRoot &&
     (input.execution.provider.kind === "opencode" ||
-      (input.execution.provider.kind === "acpx" && input.execution.provider.agent === "cursor"));
+      (input.execution.provider.kind === "acpx" && (input.execution.provider.agent === "cursor" || remoteClaude)));
   if (useBundledRemoteImageAssets) {
-    expectedProviderPackManifest = readBundledRemoteProviderPackManifest();
+    expectedProviderPackManifest = bundledClaudeManifest && (remoteClaudeTarget === "linux-x64" || remoteClaudeTarget === "linux-arm64")
+      ? readBundledRemoteProviderPackManifest(bundledClaudeManifest, remoteClaudeTarget)
+      : readBundledRemoteProviderPackManifest();
   } else if (requiresRemoteProviderPack) {
     if (
       !configuredProviderPackRoot ||
@@ -11564,7 +11578,7 @@ async function createRunnerdBackendWithinSessionClaim(
   const controllerRunnerBinary = targetMatchedCodexArtifact
     ? await resolveRemotePaperclipRunnerBinary({ runner: remoteCommandRunner!, remoteCwd: remoteTarget.remoteCwd, configuredPath: input.runnerRemoteBinaryPath })
     : remoteTarget
-    ? input.runnerRemoteBinaryPath?.trim() || remotePiCompanion?.runnerBinary || (useBundledRemoteImageAssets ? bundledRemoteRunnerBinary() : resolvePaperclipRunnerBinary())
+    ? remoteClaudeRunnerBinary || input.runnerRemoteBinaryPath?.trim() || remotePiCompanion?.runnerBinary || (useBundledRemoteImageAssets ? bundledRemoteRunnerBinary() : resolvePaperclipRunnerBinary())
     : resolvePaperclipRunnerBinary();
   const explicitRemoteCodex = input.runnerRemoteCodexPath?.trim() || null;
   const remoteCodexNpmSpec = input.runnerRemoteCodexNpmSpec?.trim() || null;
@@ -11744,7 +11758,7 @@ async function createRunnerdBackendWithinSessionClaim(
         remoteRuntimeRoot, remoteCodexBinary, runnerRemoteBinaryPath: input.runnerRemoteBinaryPath,
         runnerRemoteCodexPath: input.runnerRemoteCodexPath, runnerRemoteCodexNpmSpec: input.runnerRemoteCodexNpmSpec,
         model: input.execution.provider.kind === "codex" ? input.execution.provider.model : null,
-        reuseRetainedRunner: sandboxLeaseAcquisition?.outcome === "resumed", targetPlatformArtifactVerified: remotePiCompanion !== null || useBundledRemoteImageAssets || targetMatchedCodexArtifact,
+        reuseRetainedRunner: sandboxLeaseAcquisition?.outcome === "resumed", targetPlatformArtifactVerified: remotePiCompanion !== null || useBundledRemoteImageAssets || targetMatchedCodexArtifact || remoteClaude,
         trace: input.trace, onLog: input.onLog,
       })
     : null;

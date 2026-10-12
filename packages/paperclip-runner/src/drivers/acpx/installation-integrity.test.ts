@@ -54,7 +54,7 @@ afterEach(async () => {
 });
 
 describe("ACPX installation integrity", () => {
-  it.each([["linux", "x64"], ["darwin", "arm64"], ["darwin", "x64"]] as const)(
+  it.each([["linux", "x64"], ["linux", "arm64"], ["darwin", "arm64"], ["darwin", "x64"]] as const)(
     "retains Claude executable admission for a published bundle on %s %s", async (os, cpu) => {
       const parent = await realpath(await mkdtemp(join(tmpdir(), "paperclip-claude-npm-admission-")));
       temporaryDirectories.push(parent);
@@ -223,7 +223,7 @@ describe("ACPX installation integrity", () => {
     }
   });
 
-  it.each([["linux", "arm64"], ["darwin", "ia32"], ["freebsd", "x64"]] as const)(
+  it.each([["linux", "ia32"], ["darwin", "ia32"], ["freebsd", "x64"]] as const)(
     "rejects the actual Claude runtime probe on unsupported %s %s",
     async (platform, arch) => {
       const platformSpy = vi.spyOn(process, "platform", "get").mockReturnValue(platform);
