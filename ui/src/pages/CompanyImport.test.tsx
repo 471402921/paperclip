@@ -1214,10 +1214,14 @@ describe("CompanyImport", () => {
   });
 
   it.each([
-    { sourceType: "codex_local", sourceRunner: "legacy" as const, runner: "paperclip" as const },
-    { sourceType: "codex_local", sourceRunner: undefined, runner: "legacy" as const },
-    { sourceType: "paperclip_runner", sourceRunner: "paperclip" as const, runner: "legacy" as const },
-  ])("submits the explicit $runner import override from $sourceType without replacing saved settings", async ({ sourceType, sourceRunner, runner }) => {
+    { sourceType: "codex_local", sourceRunner: "legacy" as const, runner: "paperclip" as const, sourcePolicy: {}, expectedBypass: undefined },
+    { sourceType: "codex_local", sourceRunner: undefined, runner: "legacy" as const, sourcePolicy: { dangerouslyBypassApprovalsAndSandbox: false }, expectedBypass: false },
+    { sourceType: "paperclip_runner", sourceRunner: "paperclip" as const, runner: "legacy" as const, sourcePolicy: { codexPermissionMode: "never" }, expectedBypass: true },
+    { sourceType: "paperclip_runner", sourceRunner: "paperclip" as const, runner: "legacy" as const, sourcePolicy: {}, expectedBypass: true },
+    { sourceType: "paperclip_runner", sourceRunner: "paperclip" as const, runner: "legacy" as const, sourcePolicy: { codexPermissionMode: "never", dangerouslyBypassApprovalsAndSandbox: false }, expectedBypass: false },
+    { sourceType: "codex_local", sourceRunner: undefined, runner: "legacy" as const, sourcePolicy: { dangerouslyBypassSandbox: false }, expectedBypass: false },
+    { sourceType: "codex_local", sourceRunner: undefined, runner: "legacy" as const, sourcePolicy: { dangerouslyBypassApprovalsAndSandbox: true }, expectedBypass: true },
+  ])("submits $runner from $sourceType with visible bypass=$expectedBypass while preserving saved policy", async ({ sourceType, sourceRunner, runner, sourcePolicy, expectedBypass }) => {
     mockOptionalCompany.mockReturnValue({ selectedCompanyId: "company-1" });
     mockAdaptersApi.list.mockResolvedValue([
       { type: "claude_local", disabled: false },
@@ -1230,7 +1234,9 @@ describe("CompanyImport", () => {
     preview.manifest.agents[0]!.adapterConfig = {
       ...(sourceType === "paperclip_runner" ? { provider: "codex" } : {}),
       model: "gpt-5.6-sol", modelReasoningEffort: "high", env: { CODEX_HOME: "/saved/account" },
+      ...sourcePolicy,
     };
+    const savedSourceConfig = structuredClone(preview.manifest.agents[0]!.adapterConfig);
     mockCompaniesApi.importPreview.mockResolvedValue(preview);
     await renderPage();
     await enterGithubUrl();
@@ -1245,9 +1251,14 @@ describe("CompanyImport", () => {
     expect(option!.disabled).toBe(false);
     await act(async () => option!.click());
     await flushReact();
+    if (expectedBypass !== undefined) {
+      expect(container.querySelector('[role="switch"][aria-label="Bypass sandbox"]')?.getAttribute("aria-checked"))
+        .toBe(String(expectedBypass));
+    }
     await clickButton(text => text.startsWith("Import 3 file"));
     await settle();
     expect(lastImportMeta().adapterOverrides).toEqual({ coder: { adapterType: "codex_local", runner } });
+    expect(preview.manifest.agents[0]!.adapterConfig).toEqual(savedSourceConfig);
   });
 
   it("does not reinterpret an unknown native provider as Codex when its configuration is edited", async () => {

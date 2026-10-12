@@ -42,7 +42,8 @@ import { Field, adapterLabels } from "../components/agent-config-primitives";
 import { getAdapterLabel } from "../adapters/adapter-display-registry";
 import { defaultCreateValues } from "../components/agent-config-defaults";
 import { getUIAdapter, listUIAdapters } from "../adapters";
-import { isPaperclipRunnerProvider, type CreateConfigValues } from "@paperclipai/adapter-utils";
+import { isPaperclipRunnerProvider, PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES, type CreateConfigValues } from "@paperclipai/adapter-utils";
+import { DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX } from "@paperclipai/adapter-codex-local";
 import {
   type FileTreeNode,
   type FrontmatterData,
@@ -575,6 +576,8 @@ function importAdapterValues(
   runner?: AgentRunnerChoice,
 ): CreateConfigValues {
   const nativeCodex = sourceAdapterType === "paperclip_runner" && choice === "codex_local";
+  const savedBypass = sourceConfig?.dangerouslyBypassApprovalsAndSandbox
+    ?? (nativeCodex ? undefined : sourceConfig?.dangerouslyBypassSandbox);
   return {
     ...defaultCreateValues,
     adapterType: choice === "openai_dot" ? "paperclip_runner" : choice,
@@ -582,6 +585,11 @@ function importAdapterValues(
     ...(sourceConfig && choice === "codex_local" ? {
       model: typeof sourceConfig.model === "string" ? sourceConfig.model : "",
       thinkingEffort: String(sourceConfig.reasoningEffort ?? sourceConfig.modelReasoningEffort ?? ""),
+      // Runner-only imports preserve server-translated policy; display that policy too.
+      dangerouslyBypassSandbox: typeof savedBypass === "boolean" ? savedBypass
+        : nativeCodex
+          ? (sourceConfig.codexPermissionMode ?? PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES.codex.defaultMode) === "never"
+          : DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX,
     } : {}),
     ...(sourceAdapterType === "paperclip_runner" && choice !== "openai_dot"
       ? { adapterSchemaValues: { ...sourceConfig } } : {}),

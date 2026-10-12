@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
 import { copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -8,7 +8,8 @@ import path from "node:path";
 import { test } from "node:test";
 import { stageBuiltRunnerBinary, stageRunnerBinary } from "./stage-runner-binary.mjs";
 import { RELEASE_RUNNER_TARGETS, releaseDaemonManifest, verifyReleaseRunnerMetadata } from "./stage-release-runner-binaries.mjs";
-import { paperclipRunnerBinaryNeedsBuild } from "../../../scripts/dev-runner-native-binary.mjs";
+import { paperclipRunnerBinaryNeedsBuild, resolveNativeRunnerDevBinary } from "../../../scripts/dev-runner-native-binary.mjs";
+import { resolvePackagedRunnerBinary } from "../src/live/runner-binary.ts";
 
 const contract = { package: { name: "@paperclipai/paperclip-runner", version: "0.0.0" },
   contracts: { runnerdArtifact: 2, nativeExecution: 1, harnessDriver: 1 }, prp: { name: "paperclip.runner", minimumVersion: 1, maximumVersion: 3 } };
@@ -109,27 +110,56 @@ test("atomically publishes while the previous executable is running", { skip: pr
   });
 });
 
-test("a source rebuild refreshes the preferred host target without replacing another architecture", { skip: process.platform === "win32", timeout: 15_000 }, async () => {
+test("a source rebuild selects fresh dev bytes while preserving release binaries and their manifest", { skip: process.platform === "win32", timeout: 15_000 }, async () => {
   const root = await mkdtemp(path.join(tmpdir(), "runnerd-stage-rebuild-"));
   const packageRoot = path.join(root, "packages", "paperclip-runner");
   const binaryRoot = path.join(packageRoot, "dist", "bin");
   const hostTarget = path.join(binaryRoot, `${process.platform}-${process.arch}`, "paperclip-runnerd");
-  const otherTarget = path.join(binaryRoot, `${process.platform}-${process.arch === "x64" ? "arm64" : "x64"}`, "paperclip-runnerd");
   const source = path.join(packageRoot, "runner", "crates", "runner-core", "src", "main.rs");
   const built = path.join(packageRoot, "runner", "target", "release", "paperclip-runnerd");
   await withOwnedChildren(root, async start => {
+    const copyHostFixture = async (input, output) => {
+      await copyFile(input, output);
+      if (process.platform === "darwin") {
+        // System fixtures can be universal; Cargo release daemons are thin.
+        // Extract only this host slice before exercising the native header gate.
+        const slices = execFileSync("/usr/bin/lipo", ["-archs", input], { encoding: "utf8" }).trim().split(/\s+/);
+        const architecture = slices.find(value => process.arch === "arm64" ? value.startsWith("arm64") : value === "x86_64");
+        assert.ok(architecture);
+        if (slices.length > 1) execFileSync("/usr/bin/lipo", [input, "-thin", architecture, "-output", output]);
+      }
+    };
     await mkdir(path.dirname(source), { recursive: true });
     await writeFile(source, "fn main() {}\n");
     await mkdir(path.dirname(built), { recursive: true });
-    await copyFile("/bin/echo", built);
-    await stageRunnerBinary("/bin/sleep", hostTarget);
-    await stageRunnerBinary("/bin/echo", path.join(binaryRoot, "paperclip-runnerd"));
-    await mkdir(path.dirname(otherTarget), { recursive: true });
-    await writeFile(otherTarget, "other architecture artifact");
+    await copyHostFixture("/bin/echo", built);
+    const previousBuild = path.join(root, "previous-build");
+    await copyHostFixture("/bin/sleep", previousBuild);
+    await stageRunnerBinary(previousBuild, hostTarget);
+    await stageRunnerBinary(built, path.join(binaryRoot, "paperclip-runnerd"));
+    const platforms = {}, releaseBytes = new Map();
+    for (const target of RELEASE_RUNNER_TARGETS) {
+      const artifact = path.join(binaryRoot, target, "paperclip-runnerd");
+      if (artifact !== hostTarget) {
+        const header = Buffer.alloc(64);
+        if (target === "linux-x64") {
+          header.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]); header.writeUInt16LE(62, 18);
+        } else { header.writeUInt32LE(0xfeedfacf); header.writeUInt32LE(target === "darwin-x64" ? 0x01000007 : 0x0100000c, 4); }
+        await mkdir(path.dirname(artifact), { recursive: true });
+        await writeFile(artifact, header);
+      }
+      const bytes = await readFile(artifact);
+      releaseBytes.set(artifact, bytes);
+      platforms[target] = { path: `${target}/paperclip-runnerd`, sha256: "sha256:" + createHash("sha256").update(bytes).digest("hex") };
+    }
     const oldTime = new Date(Date.now() - 10_000);
     await utimes(hostTarget, oldTime, oldTime);
+    await utimes(path.join(binaryRoot, "paperclip-runnerd"), oldTime, oldTime);
     const oldArtifact = await readFile(hostTarget);
     const oldIdentity = await stat(hostTarget);
+    const manifestPath = path.join(binaryRoot, "release-manifest.json");
+    const manifest = JSON.stringify({ schema: "paperclip.runner.release-binaries.v1", sourceRevision: "a".repeat(40), platforms });
+    await writeFile(manifestPath, manifest);
     const old = start(hostTarget, ["30"]);
     await old.spawned;
     const requirement = { repoRoot: root, nativeRunnerRequired: true };
@@ -137,16 +167,20 @@ test("a source rebuild refreshes the preferred host target without replacing ano
 
     await stageBuiltRunnerBinary(packageRoot);
 
-    const published = await stat(hostTarget);
-    assert.notEqual(published.ino, oldIdentity.ino);
+    const selected = resolveNativeRunnerDevBinary(requirement);
+    assert.deepEqual(selected, { binary: path.join(binaryRoot, "paperclip-runnerd"), sourceBuild: true });
+    const published = await stat(selected.binary);
     assert.equal(published.mode & 0o777, 0o755);
-    assert.notDeepEqual(await readFile(hostTarget), oldArtifact);
-    assert.deepEqual(await readFile(hostTarget), await readFile(path.join(binaryRoot, "paperclip-runnerd")));
-    assert.equal(await readFile(otherTarget, "utf8"), "other architecture artifact");
+    assert.notDeepEqual(await readFile(selected.binary), oldArtifact);
+    assert.equal((await stat(hostTarget)).ino, oldIdentity.ino);
+    assert.deepEqual(await readFile(hostTarget), oldArtifact);
+    assert.equal(await readFile(manifestPath, "utf8"), manifest);
+    for (const [artifact, bytes] of releaseBytes) assert.deepEqual(await readFile(artifact), bytes);
+    assert.equal(resolvePackagedRunnerBinary(path.join(packageRoot, "dist")), hostTarget);
     assert.equal(paperclipRunnerBinaryNeedsBuild(requirement), false);
     assert.equal(old.child.exitCode, null);
     assert.equal(old.child.signalCode, null);
-    const next = start(hostTarget, ["rebuilt"]);
+    const next = start(selected.binary, ["rebuilt"]);
     await next.spawned; await next.closed;
     assert.equal(next.child.exitCode, 0);
   });

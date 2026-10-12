@@ -14,20 +14,24 @@ an attended Intel provider journey is not required. Reuse the healthy test drive
 and the existing Product E2E helpers rather than create another test system.
 
 Keep the current PR and branch: [#15683](https://github.com/paperclipai/paperclip/pull/15683),
-`codex/codex-runner-default`. The last pushed source is
-`dc7304d7c4db1c9c9ee2ed80a98d004371372771`; its ordinary CI is green.
+`codex/codex-runner-default`. The Mac qualification source is
+`d522822a5daeb72d124360b576b82a8bb52b43f4`; its
+[ordinary CI](https://github.com/paperclipai/paperclip/actions/runs/38259205327)
+is green. Fresh automated review is 5/5. The development release-manifest
+finding is fixed with focused tests and awaits fresh final-head review.
 Earlier Linux-only source `6ca302426b768791b499d2d563bbca4276f2c908` had fresh
 5/5 review and eight resolved threads. That historical review does not qualify
 the macOS amendment. Master integration conflicts are resolved.
 
 The [test-drive server](http://127.0.0.1:3125/COD/agents/all) is running through
-the normal dev supervisor at the pushed source. Health and bootstrap are ready;
-the actual listener belongs to this worktree. The preserved Codex QA agent is
-idle on `codex_local`, with its saved unrelated title edit intact. Dependencies
+the normal dev supervisor at the Mac qualification source. Health and bootstrap
+are ready; the actual listener belongs to this worktree. The preserved legacy
+and new native Codex QA agents are idle, with unrelated title edits intact. Dependencies
 and ignored configuration had been cleared, so startup restored them and the
 normal CLI signing keys while retaining the database and encrypted account key.
-The existing cached development daemon is from a different Rust tree. It avoids
-a local Rust build and is not macOS qualification evidence for this candidate.
+The initial borrowed development daemon was removed before paid testing.
+The production resolver selects the source-bound CI arm64 daemon. Both native
+task runs and restart preservation use the verified runtime below.
 
 Implementation ownership:
 
@@ -91,6 +95,36 @@ and reload preserved complete legacy/native execution digests; the shared runner
 picker passed light/dark, mobile and keyboard checks. Screenshots and sanitized
 receipts are under `/private/tmp/pr2-f4-mac-ui/`.
 
+The corrected qualifier's exact `d522822` Apple Silicon artifact independently
+matches those same bytes and metadata. Artifact `11752770004` passed native
+header, source receipt and strict ad-hoc signature checks. Rust tree
+`6ca713d5f1f0a059c7f01a37d21f268817e0c93c` and runner TypeScript tree
+`ba9744db7fe79301cb0ab442e9546de3282a4bf4` are identical to the paid-task source.
+The receipt is `/private/tmp/pr2-d522-mac-remote-daemon/sanitized-verification-receipt.json`.
+Restarting the test-drive at `d522822` preserved both complete execution digests,
+titles and both native run records, with no additional provider calls.
+
+The deprecated `enableNativeRunner` field is now false on this QA instance.
+The native export/import UI journey passes with that field disabled. Import
+submission omitted adapter overrides, preserved native Codex/model identity,
+and left the new agent paused with its import hold. The explicit Legacy round
+trip also passes: the request sends `runner: legacy` without replacing source
+configuration, and the saved agent is `codex_local` with the import hold intact.
+Both survive reload; the source agent remains unchanged. These imports do not
+run setup probes or provider turns.
+Evidence is under `/private/tmp/codex-default-dc-import-live/`.
+
+The live import journey found one incorrect policy display. Native Codex's
+preserved `never` policy translated to Legacy bypass true, while its checkbox
+showed false. A narrow hydration fix uses the existing policy defaults and
+canonical booleans; it does not change server permission translation. Against
+the pre-fix page, three display cases fail and four safe controls pass. The
+fixed page passes 42 component cases and 40 selection controls. The no-provider
+preview check passes: the corrected control matches the already-saved paused
+agent. Exactly two paused imports were submitted, with no third Apply. The
+combined receipt is `/private/tmp/codex-default-dc-import-live/receipt.json`;
+it separates `d522822` persistence proof from the corrected UI's content hashes.
+
 [Three-target qualification](https://github.com/paperclipai/paperclip/actions/runs/38252137381)
 built all three daemons, including actual Intel Mac. Its clean Linux consumer
 passed the 18-package installation and Codex ownership controls, then a Pi probe
@@ -118,9 +152,35 @@ The complete $3 setup/task hold remains reserved as unpriced. No historical
 unknown or cleanup hold was released, no automatic retry ran, and no additional
 paid Linux campaign started. The aggregate ceiling remains $250.
 
-Next action: commit the verified import, dev-stager and installation-probe fixes
-together, then run the existing three-target qualifier once for the frozen head.
-Verify restart preservation and update the same PR with its final evidence.
+The import, dev-stager and installation-probe fixes are pushed at `d522822`.
+The [corrected three-target qualifier](https://github.com/paperclipai/paperclip/actions/runs/38259364638)
+has passed all three daemon producers and the real Linux clean installation,
+including the corrected Pi probe. Both Mac consumers are checking the same
+18 tarballs. Ordinary CI reports 53 successful check runs, Snyk success and four
+conditional skips. Fresh review reports 5/5, with one new development-only
+manifest issue: rebuilding a host daemon must not corrupt released artifact
+identity. Its fix separates local development selection from release assets;
+it does not alter the Rust runner, production selector or release assembler.
+Fourteen focused controls prove preserved release targets/hash manifest, running
+old inodes, correct Mac host selection and future source freshness. Independent
+review verifies that the atomic flat publisher and qualified release components
+remain unchanged. The actual Mac still selects the verified release target and
+does not require Cargo. Receipts are
+`/private/tmp/pr2-dev-release-preservation-checkpoint.json` and
+`/private/tmp/ci-final-d522-dev-equivalence-audit.json`.
+
+Next action: commit the verified development/import display fixes and this state
+record together. Run fresh final-head CI/review in parallel with the remaining
+clean package consumers, then record their exact conclusions in the PR evidence
+index. Keep `d522822` as the qualification source; subsequent UI/development
+checks have their own source identity. Keep exact sources in every receipt.
+Do not repeat unchanged paid task turns or qualification components merely for
+the development-only fix.
+
+This is the 2026-10-12 source-freeze snapshot. The PR verification section is
+the linked evidence index for final CI, review and consumer conclusions. Current
+qualification links above retain their literal tested source rather than claim
+that an earlier workflow ran on a later development/UI commit.
 Managed staging execution/access renewal, code-owner approval and actual
 post-merge Cloud composition remain unverified. Prior staging preflight evidence
 is retained at [37962635959](https://github.com/paperclipai/paperclip/actions/runs/37962635959)
