@@ -403,6 +403,10 @@ export async function prepareAcpxRuntimeSandbox(input: {
       `${JSON.stringify({
         model: input.binding.requestedModel,
         availableModels: [input.binding.requestedModel],
+        // Claude reloads effort from settings on a new ACP connection. Keep
+        // the bound choice available during model verification and resume;
+        // the protocol guard still requires a provider acknowledgement.
+        ...(input.binding.claudeEffort ? { effortLevel: input.binding.claudeEffort } : {}),
         ...((input.binding.permissionMode === "approve-reads" || input.binding.permissionMode === "approve-paperclip")
           ? { permissions: { allow: claudePaperclipPermissionRules(input.tools ?? [], input.binding.permissionMode) } }
           : {}),
