@@ -368,6 +368,7 @@ function Setup({
       ...defaultCreateValues,
       adapterType,
       runner,
+      resolvedRunner: runner === "auto" ? defaultRunner : runner,
       model:
         model || (brandType === "codex_local" ? DEFAULT_CODEX_LOCAL_MODEL : ""),
       thinkingEffort: effort,
