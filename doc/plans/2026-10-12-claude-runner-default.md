@@ -260,3 +260,50 @@ Known estimates remain $1.331719, excluding unknown charges.
 passed authorization and await a build worker. Current-source full checks,
 latest reviews, useful remote task/follow-up pairs, additional platform defaults,
 and final package qualification remain gates. No local Docker or Rust build.
+
+## SSH cold-controller acceptance — 2026-10-12
+
+The first repaired SSH task `9a6c3417-b961-47fb-bd25-06847d82e2e6`
+succeeded with a checked file, admitted high effort, and completed API accounting
+($0.195194600 estimate). Its follow-up failed before provider startup with
+`prior_owner_terminal_state_indeterminate`; accounting completed without a
+pending charge. The successful remote turn had already persisted a suspended
+verified backup, but two controller migration callers allowed that backup only
+for sandbox transport. The existing quarantine and task records remain intact.
+
+Shared repair `e833e1d6c1cac6017f4effb59fbe0d22f0a9fcf2` allows selected
+SSH remote targets to use the same integrity/full-scope/suspended-owner checks.
+Two positive SSH regression cases fail before the repair; all 14 sandbox/SSH
+backup scenarios pass after, including corrupt, conflicting and active state
+rejection. Additional active-owner/full-scope controls bring focused coverage to
+16 passing tests. Server typecheck passes. The source owner lifted both shared
+repairs into prerequisite `00ac509b0a85336e4948a325dbde1cbf09378572`, composed
+Codex `8de43be4cd7e71e7833ea268d9e6e59e77cde381`; our stack coalesces them.
+
+A fresh bounded [ARM task and revision](http://127.0.0.1:3105/CLAAAAAA/issues/CLAAAAAA-1)
+now passed. Runs `3c297604-23b4-4a42-a0af-185af05aad01` and
+`09bae36d-32a5-4634-a0b8-0349cf405dc9` succeeded with Opus 5.5,
+requested/admitted high effort, metered Anthropic API billing and completed
+accounting: estimates $0.219495400 and $0.186328600. The controller boot changed;
+task, provider and backend session identities matched privately. Both exact
+oracles passed independent downloads after the revision; v1 stayed unchanged.
+
+- [v1](http://127.0.0.1:3105/api/attachments/e94f7320-1197-4a4a-b27e-4447a9ecc58c/content?download=1):
+  166 bytes, SHA256 `6263758fb2009dd6b70df03b1c3aa314a865ba1b2b81d5bda5cc6c079a17b7ab`.
+- [v2](http://127.0.0.1:3105/api/attachments/a536415a-91c3-4e7f-8b45-46b09d5520bb/content?download=1):
+  220 bytes, SHA256 `b7229581fb2b566485a023ed6b016e556e6bc66f3ab4d1bcf7b81c6abf61f9f4`.
+- [Sanitized report](http://127.0.0.1:3105/api/attachments/5db4c71b-cb01-4a91-972d-49bcec527d7f/content?download=1)
+  and [screenshot](http://127.0.0.1:3105/api/attachments/998dac47-837f-46a9-b821-a77499809031/content?download=1)
+  are attached artifact work products. Uploading them left the run count at two.
+
+This proof uses public package source 557 with the recorded setup/argv/cold-resume
+controller overlays and the verified standard installed ARM pack. It is not an
+unmodified-final-package claim. The cold-resume compiled module changed from
+`205e27e8a0dda494585600d87b98545d5601822e5bd77c79505101419719a1b7` to
+`1c75aa00142f5657a416debba44717548ad5106a763821ed1f8cb0309167ab71`.
+
+The prior successful-but-failed-resume fixture is paused with a conservative $1
+allocation; the fresh ARM pair uses $2. Original $17/$9/$16 allocations and the
+failed prelaunch ARM fixture's $1 unknown reservation remain. The Linux x64
+fixture has $4, making aggregate allocated caps $50. No automatic paid retries
+or timer heartbeats are enabled; remaining acceptance uses API keys per the user.
