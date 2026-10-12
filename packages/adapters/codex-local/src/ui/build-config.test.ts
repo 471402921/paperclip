@@ -121,7 +121,9 @@ describe("buildPaperclipRunnerConfig", () => {
   it.each(["codex", "claude"])("preserves, overrides and explicitly clears saved %s reasoning effort", harness => {
     const profile = harness === "codex" ? { provider: "codex" } : { provider: "acpx", acpxAgent: "claude" };
     const values = makeValues({ adapterSchemaValues: { ...profile, modelReasoningEffort: "high", reasoningEffort: "low", effort: "low" } });
-    expect(buildPaperclipRunnerConfig({ ...values, thinkingEffort: undefined }).modelReasoningEffort).toBe("high");
+    const unhydrated = { ...values };
+    Reflect.deleteProperty(unhydrated, "thinkingEffort");
+    expect(buildPaperclipRunnerConfig(unhydrated).modelReasoningEffort).toBe("high");
     expect(buildPaperclipRunnerConfig({ ...values, thinkingEffort: "max" }).modelReasoningEffort).toBe("max");
     const cleared = buildPaperclipRunnerConfig({ ...values, thinkingEffort: "" });
     for (const key of ["modelReasoningEffort", "reasoningEffort", "effort"]) expect(cleared).not.toHaveProperty(key);
