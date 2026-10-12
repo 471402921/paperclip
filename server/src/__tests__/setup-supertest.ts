@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { Server as TlsServer } from "node:tls";
 
+import { removeTestHome } from "./remove-test-home.js";
+
 type SupertestServer = NetServer & {
   address(): ReturnType<NetServer["address"]>;
   listen(port: number): NetServer;
@@ -27,20 +29,11 @@ process.env.PAPERCLIP_TEST_HOST_HOME ??= process.env.PAPERCLIP_HOME?.trim() || p
 // Receipt-spool recovery must never scan a developer's instance during tests.
 const paperclipTestHome = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-vitest-home-"));
 process.env.PAPERCLIP_HOME = paperclipTestHome;
-// Runtime-context bundles are published read-only (0o555 directories), so
-// restore owner write access on directories before removing the tree.
-function restoreDirectoryWriteAccess(target: string): void {
-  const stat = fs.lstatSync(target, { throwIfNoEntry: false });
-  if (!stat?.isDirectory()) return;
-  fs.chmodSync(target, 0o700);
-  for (const entry of fs.readdirSync(target)) restoreDirectoryWriteAccess(path.join(target, entry));
-}
 // Setup-file afterAll hooks run before suites drain asynchronous heartbeats.
 // Cleanup at worker exit, after all suite teardown, avoids deleting live state.
-process.once("exit", () => {
-  restoreDirectoryWriteAccess(paperclipTestHome);
-  fs.rmSync(paperclipTestHome, { recursive: true, force: true, maxRetries: 8, retryDelay: 50 });
-});
+// A run still finishing at exit can leave a read-only runtime-context bundle
+// under this home, which a plain recursive rm cannot remove.
+process.once("exit", () => removeTestHome(paperclipTestHome));
 
 const require = createRequire(import.meta.url);
 const SupertestTest = require("supertest/lib/test.js") as SupertestTestConstructor;
