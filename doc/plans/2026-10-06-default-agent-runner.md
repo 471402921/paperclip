@@ -2,7 +2,60 @@
 
 Updated 2026-10-12.
 
-## Latest checkpoint: ARM qualification and master integration
+## Latest checkpoint: runtime prerequisite and authorized merges
+
+The user authorizes preparing and merging ready PRs in dependency order.
+Production deployment and provisioning-default promotion remain separate actions.
+The Codex-default candidate is preserved at
+`bb7591dfd0c4c8569e2a0b4303ff06de8ca3e9e2`; its running test-drive remains at
+[3125](http://127.0.0.1:3125/COD/agents/all). No existing agent changes runner.
+
+Its qualification work grew the review to 135 files. Extract the independent
+runtime, installed-package and hosted-build changes onto
+`codex/runner-native-platform-prerequisites`, based on master
+`7d9b93aee2b79b2f035c5838741ce0b94168ec83`. This prerequisite contains 39 source
+files and this record. Creation policy and experimental gates remain identical
+to that master. README activation text and eight existing default-selection
+controls stay in the dependent [Codex PR #15683](https://github.com/paperclipai/paperclip/pull/15683),
+whose expected review is 98 files. Preserve all work and both branches.
+
+The isolated extraction passes 276 existing focused controls. Runner no-emit
+passes. The standard server no-emit initially finds a linked dependency-output
+skew: the new master's ACP constants are absent from the old checkout's compiled
+adapter-utils. A source-aware diagnostic passes; canonical verification remains
+pending until its matching JavaScript dependency is prepared. Full hosted CI,
+native compilation and fresh review are still required for the extracted head.
+Do not count the diagnostic as a passing standard command.
+
+Retained qualification keeps literal identities: four producers and Linux x64
+and both Mac consumers pass at `a200495`; installed ARM native startup passes
+with scoped stock Ubuntu prerequisites in
+[38291535914](https://github.com/paperclipai/paperclip/actions/runs/38291535914).
+Those artifacts are not relabeled as the extracted source. The Linux baseline
+is GNU libc 2.39+, on x64/AArch64. Windows and Alpine remain deferred.
+Cargo caches and overlapping JavaScript/native preparation use existing hosted
+workflows. No local Docker/Rust builds or bundled Codex payloads are introduced.
+
+Merge order is runtime prerequisite, Codex defaults, then the existing Claude
+[protocol #15994](https://github.com/paperclipai/paperclip/pull/15994),
+[default #15993](https://github.com/paperclipai/paperclip/pull/15993), and
+[platform #15997](https://github.com/paperclipai/paperclip/pull/15997) PRs.
+The authorized Claude chat owns its verification and fixes; this task coordinates
+normal squash merges after applicable gates. The older Grok Cloud PR is an
+independent lane, with its own missing snapshot-cleanup access and live proof.
+
+The extracted [runtime prerequisite #16028](https://github.com/paperclipai/paperclip/pull/16028)
+is open at `ddcd746eb6a01f2bbe9b4adeec238ba35bde5adb`. The default branch is
+composed on it with all 134 owned implementation/test files identical to
+`bb7591dfd0`; this record retains every historical checkpoint.
+Next action: require current-source CI/review and remotely prepare the exact
+composed Codex staging image and DB/shared pair. The existing QA tenant remains pinned to
+old `2dbe43a4`. Managed Codex retains its $2.50 setup/task envelope and $2 cleanup;
+historical unknown holds remain within the original $250 ceiling. Claude has
+its separately authorized $50 ceiling. Missing live proof remains unresolved.
+
+
+## Retained checkpoint: ARM qualification and master integration
 
 The Rust daemon, protocol, Codex driver, creation policy, and provider
 requirements remain unchanged from qualified source

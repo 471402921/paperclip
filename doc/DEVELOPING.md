@@ -495,10 +495,16 @@ npx paperclipai allowed-hostname dotta-macbook-pro
 
 ## Test Commands
 
-The [feature map](../feature-map/README.md) is an optional reference for user
+The [feature map](../maps/feature-map/README.md) is an optional reference for user
 entry points, targeted tests, manual verification recipes, and coverage gaps.
 Its page inventory is a source snapshot. The documented journeys have separate
 verification steps and do not run automatically from the map.
+
+The sibling [agent access map](../maps/agent-access-map/README.md) describes API
+and agent reachability for the same capabilities. The [map contract](../maps/README.md)
+defines synchronization, permissions and evidence. After map edits, run
+`node scripts/check-maps.mjs` for structural/reference checks; it does not start an
+instance or qualify access as an agent.
 
 Use the cheap local default unless you are specifically working on browser flows:
 
