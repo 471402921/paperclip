@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { agentHarnessType, agentRunner, paperclipRunnerProfileForHarness, paperclipRunnerSupportsPlatform, PAPERCLIP_RUNNER_MINIMUM_GLIBC_VERSION, createAgentSchema, updateAgentSchema, testAdapterEnvironmentSchema } from "@paperclipai/shared";
-const state = vi.hoisted(() => ({ disabled: [] as string[], overridden: new Set<string>(), settings: {} as Record<string, unknown>, getEnvironment: vi.fn(), bindings: vi.fn(), managedEnvironment: vi.fn(), ssh: vi.fn(), resolveEnvironment: vi.fn() }));
+const state = vi.hoisted(() => ({ disabled: [] as string[], overridden: new Set<string>(), settings: {} as Record<string, unknown>, getEnvironment: vi.fn(), bindings: vi.fn(), managedEnvironment: vi.fn(), ssh: vi.fn(), resolveEnvironment: vi.fn(), sandboxQualification: vi.fn() }));
 vi.mock("../adapters/registry.js", () => ({ findActiveServerAdapter: (type: string) => ({ type }), hasActiveAdapterOverride: (type: string) => state.overridden.has(type), waitForExternalAdapters: async () => {} }));
 vi.mock("./adapter-plugin-store.js", () => ({ getDisabledAdapterTypes: () => state.disabled }));
 vi.mock("./instance-settings.js", () => ({ instanceSettingsService: () => ({ get: async () => state.settings }) }));
 vi.mock("./environments.js", () => ({ environmentService: () => ({ getById: state.getEnvironment, listBoundCompanyIds: state.bindings, findManagedSandboxEnvironment: state.managedEnvironment, findKubernetesEnvironment: state.managedEnvironment }) }));
+vi.mock("./environment-probe.js", () => ({ readSandboxPlatformQualification: state.sandboxQualification }));
 vi.mock("./environment-config.js", () => ({ resolveEnvironmentDriverConfigForRuntime: state.resolveEnvironment }));
 vi.mock("@paperclipai/adapter-utils/ssh", () => ({ runSshCommand: state.ssh }));
 import { AGENT_RUNNER_SSH_PLATFORM_COMMAND, agentRunnerAvailability, resolveAgentRunnerTargetForCompany, resolveNewAgentRunner, resolveNewAgentRunnerForCompany } from "./agent-runner-selection.js";
@@ -16,7 +17,7 @@ const originalArchitecture = Object.getOwnPropertyDescriptor(process, "arch")!;
 afterEach(() => { vi.restoreAllMocks(); Object.defineProperty(process, "platform", originalPlatform); Object.defineProperty(process, "arch", originalArchitecture); });
 
 describe("server-owned Codex runner selection", () => {
-  beforeEach(() => { state.disabled = []; state.overridden.clear(); state.settings = {}; state.getEnvironment.mockReset(); state.bindings.mockReset().mockResolvedValue([]); state.managedEnvironment.mockReset(); state.ssh.mockReset().mockResolvedValue({ stdout: "Linux\nx86_64\n" }); state.resolveEnvironment.mockReset().mockResolvedValue({ driver: "ssh", config: {} }); });
+  beforeEach(() => { state.disabled = []; state.overridden.clear(); state.settings = {}; state.getEnvironment.mockReset(); state.bindings.mockReset().mockResolvedValue([]); state.managedEnvironment.mockReset(); state.ssh.mockReset().mockResolvedValue({ stdout: "Linux\nx86_64\n" }); state.sandboxQualification.mockReset().mockResolvedValue(null); state.resolveEnvironment.mockReset().mockResolvedValue({ driver: "ssh", config: {} }); });
   it.each(["x64", "arm64"])("keeps detected musl/unknown Linux %s legacy and preserves saved execution", architecture => {
     for (const libc of ["musl", "unknown"] as const) {
       const target = { driver: "local", platform: "linux", architecture, libc };
@@ -166,10 +167,30 @@ describe("server-owned Codex runner selection", () => {
     expect(state.getEnvironment).not.toHaveBeenCalled();
     expect(state.ssh).not.toHaveBeenCalled();
   });
+  it.each([
+    [{ platform: "linux", architecture: "x64", libc: "glibc", glibcVersion: "2.39" }, "paperclip_runner"],
+    [{ platform: "linux", architecture: "arm64", libc: "glibc", glibcVersion: "3.0" }, "paperclip_runner"],
+    [{ platform: "linux", architecture: "arm64", libc: "glibc", glibcVersion: "2.38" }, "codex_local"],
+    [{ platform: "linux", architecture: "x64", libc: "glibc" }, "codex_local"],
+    [{ platform: "linux", architecture: "arm64", libc: "musl" }, "codex_local"],
+    [{ platform: "linux", architecture: "unknown", libc: "glibc", glibcVersion: "2.39" }, "codex_local"],
+  ])("uses cached selected-image measurements for sandbox creation/discovery (%j)", async (facts, expected) => {
+    state.getEnvironment.mockResolvedValue({ id: "sandbox", driver: "sandbox", status: "active", config: { provider: "daytona" } });
+    state.sandboxQualification.mockResolvedValue(facts);
+    const selectedTarget = await resolveAgentRunnerTargetForCompany({} as never, "company", "sandbox");
+    expect(agentRunnerAvailability("codex_local", selectedTarget).defaultRunner).toBe(expected === "paperclip_runner" ? "paperclip" : "legacy");
+    const result = await resolveNewAgentRunnerForCompany({} as never, "company", { adapterType: "codex_local", defaultEnvironmentId: "sandbox" });
+    expect(result.adapterType).toBe(expected);
+    expect(state.ssh).not.toHaveBeenCalled();
+    expect(state.resolveEnvironment).not.toHaveBeenCalled();
+    if (expected === "codex_local") await expect(resolveNewAgentRunnerForCompany({} as never, "company", { adapterType: "codex_local", runner: "paperclip", defaultEnvironmentId: "sandbox" })).rejects.toMatchObject({ status: 422 });
+  });
   it("does not infer a sandbox image architecture from its driver", async () => {
     state.getEnvironment.mockResolvedValue({ id: "sandbox", driver: "sandbox", status: "active", config: { provider: "daytona" } });
     const result = await resolveNewAgentRunnerForCompany({} as never, "company", { adapterType: "codex_local", defaultEnvironmentId: "sandbox" });
-    expect(result.adapterType).toBe("paperclip_runner"); expect(state.ssh).not.toHaveBeenCalled();
+    expect(result.adapterType).toBe("codex_local"); expect(state.ssh).not.toHaveBeenCalled();
+    expect(state.sandboxQualification).toHaveBeenCalledWith({}, expect.objectContaining({ id: "sandbox" }), "company");
+    await expect(resolveNewAgentRunnerForCompany({} as never, "company", { adapterType: "codex_local", runner: "paperclip", defaultEnvironmentId: "sandbox" })).rejects.toMatchObject({ status: 422, details: { code: "agent_runner_unavailable" } });
   });
 });
 

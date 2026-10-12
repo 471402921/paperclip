@@ -586,6 +586,7 @@ function importAdapterValues(
     ...(sourceConfig && choice === "codex_local" ? {
       model: typeof sourceConfig.model === "string" ? sourceConfig.model : "",
       thinkingEffort: String(sourceConfig.reasoningEffort ?? sourceConfig.modelReasoningEffort ?? ""),
+      ...(typeof savedBypass === "boolean" ? { codexLegacySandboxBypass: savedBypass } : {}),
       // Runner-only imports preserve server-translated policy; display that policy too.
       dangerouslyBypassSandbox: typeof savedBypass === "boolean" ? savedBypass
         : nativeCodex

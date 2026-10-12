@@ -1328,6 +1328,38 @@ describe("CompanyImport", () => {
     expect(preview.manifest.agents[0]!.adapterConfig).toEqual(source);
   });
 
+  it.each([
+    { dangerouslyBypassApprovalsAndSandbox: false },
+    { dangerouslyBypassSandbox: false },
+    { dangerouslyBypassApprovalsAndSandbox: false, dangerouslyBypassSandbox: true },
+  ])("keeps saved restrictive Legacy policy during an automatic import model edit (%j)", async policy => {
+    mockOptionalCompany.mockReturnValue({ selectedCompanyId: "company-1" });
+    mockAdaptersApi.list.mockResolvedValue([
+      { type: "codex_local", disabled: false, supportedRunners: ["legacy"], defaultRunner: "legacy" },
+    ]);
+    const preview = buildPreviewResult();
+    preview.manifest.agents[0]!.adapterType = "codex_local";
+    preview.manifest.agents[0]!.adapterConfig = { model: "gpt-5.6-sol", ...policy };
+    mockCompaniesApi.importPreview.mockResolvedValue(preview);
+    await renderPage();
+    await enterGithubUrl();
+    await clickButton(text => text === "Preview import");
+    await clickButton(text => text.includes("configure adapter"));
+    await clickButton(text => text.includes("Advanced"));
+    expect(container.querySelector('[aria-label="Bypass sandbox"]')?.getAttribute("aria-checked")).toBe("false");
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Model"]')!.click());
+    const defaultModel = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(option => option.textContent?.trim() === "Default");
+    expect(defaultModel).toBeTruthy();
+    await act(async () => defaultModel!.click());
+    await clickButton(text => text.startsWith("Import 3 file"));
+    await settle();
+    expect(lastImportMeta().adapterOverrides?.coder).toMatchObject({
+      adapterType: "codex_local", adapterConfig: { dangerouslyBypassApprovalsAndSandbox: false },
+    });
+    expect(lastImportMeta().adapterOverrides?.coder?.adapterConfig).not.toHaveProperty("model");
+    expect(lastImportMeta().adapterOverrides?.coder?.adapterConfig).not.toHaveProperty("codexLegacySandboxBypass");
+  });
+
   it("does not reinterpret an unknown native provider as Codex when its configuration is edited", async () => {
     mockAdaptersApi.list.mockResolvedValue([{ type: "paperclip_runner", disabled: false }]);
     const preview = buildPreviewResult();

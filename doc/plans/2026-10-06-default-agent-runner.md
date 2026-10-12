@@ -2,6 +2,140 @@
 
 Updated 2026-10-12.
 
+## Metadata review closure checkpoint
+
+Runtime prerequisite source is `cae179c21412048d08aeb94e0fe8b0f7844119de`,
+with 55 changed files; Codex remains 99 files. Two fresh metadata review P2s
+are fixed: explicit null clears user metadata, and saves preserve only the
+latest private platform proof through an atomic database update. Config/driver
+updates invalidate proof in the same write; status cleanup retains its existing
+archive-token behavior. Public callers cannot supply the proof.
+
+The three existing environment suites pass 83 controls. Seven focused tests
+exercise real PostgreSQL writes between request preparation and save; there are
+42 name-filter exclusions and zero host-guard skips. Both canonical server
+no-emit commands pass. Source hashes match in both worktrees and independent
+review is clear. A separate read-only audit confirms no actual company/team
+import bypass or proof export: portability does not copy environment rows, and
+environment API responses strip the private subtree. No new infrastructure,
+provider turn, Docker/Rust build or schema/API change was introduced.
+
+Fresh exact-head full CI/review remain required. The verified Mac preview restart
+at `64d0746f8a` preserved four execution configurations and two historical native
+runs with the deprecated flag false and no provider actions. Refresh the idle
+preview to the next recorded head; old measurements retain their literal source.
+Merge the qualified prerequisite first, then reconcile Codex with actual master
+before the final remote image and managed acceptance. No merge has occurred.
+
+## Fixture closure checkpoint
+
+The runtime prerequisite advances to `093b97aa12` with 54 files. The Codex
+review remains 99 files. Existing managed fixtures now run the saved environment
+probe before native-generation Codex creation and inspect server defaults only
+for automatic requests. The owned setup probe lease joins the existing runtime
+estimator, with unrelated leases excluded from task attribution. The fixture
+contract records one setup lease per eligible cell, zero provider turns, zero
+retries, a 330-second HTTP deadline and a 10-second platform command deadline.
+Archive/release, expiry and failure-cost holds remain unchanged.
+
+Both worktrees pass 36 existing fixture/billing controls and canonical E2E
+no-emit. Existing catalog/report controls pass 46 cases, and core compatibility
+discovery succeeds. Affected adapter discovery/setup routes pass 69 controls.
+Unknown sandbox facts now expect Legacy; measured GNU2.39 ARM64 expects native.
+All checks use fixtures, not paid provider proof. Exact-head hosted CI/review and
+real managed onboarding/task/follow-up remain pending. No merge has occurred.
+
+## Corrective source checkpoint: ready for fresh CI and review
+
+Runtime prerequisite source is `cf19e086ae4a0142c8b4314771c55f73b294805b`
+on `codex/runner-native-platform-prerequisites`, with 50 changed files. The
+Codex-default branch `codex/codex-runner-default` is composed on it and retains
+99 changed files. Both reviews remain under 100 files. All four original review
+findings and the relevant independent-review follow-ups are fixed.
+
+Existing controls pass: release workflow 70, assembly 7, registration 15,
+measured environment/probe routes 32, UI permission/forms 207, and selection/import
+140. Counts describe separate runs and can overlap. Canonical server, runner and
+UI no-emit checks and token gates pass. Source-matching independent reviews
+confirm cleanup, immutable-image binding and saved Legacy permission handling.
+No local Docker/Rust build, new provider turn, or agent migration was used.
+
+Remaining gates are fresh exact-head full CI/review and managed Codex acceptance.
+The existing managed eval catalog already requires OCI digests. Its image-backed
+fixture helper must use the existing explicit environment probe before automatic
+Codex creation and inspect the stored default; explicit-runner coverage remains
+separate. First-task onboarding fixtures are local-only, so fresh managed
+onboarding still requires live proof. The pinned fleet tenant currently uses a
+name-only snapshot and cannot establish native-default compatibility. Use a
+qualified immutable image-backed QA environment, preserve the tenant pin, and
+verify the serving commit and independently checked task/follow-up artifacts.
+
+Merge the prerequisite after its applicable checks pass. Then reconcile the
+Codex PR with actual master, verify its final source, and build the immutable
+preview and DB/shared pair remotely once. All three cancelled previews remain
+excluded. The original budget and cleanup holds remain unchanged. Claude owns
+its separate bounded proof and downstream attestation reconciliation. No merge
+or production deployment has occurred at this checkpoint.
+
+## Final review checkpoint: shared fixes and sandbox qualification
+
+The user authorizes normal sequential merges after the applicable gates pass.
+Runtime prerequisite [#16028](https://github.com/paperclipai/paperclip/pull/16028)
+and Codex defaults [#15683](https://github.com/paperclipai/paperclip/pull/15683)
+remain draft. Their pre-fix sources are `00ac509b0a` and `8de43be4cd`.
+The shared SSH argv and verified cold-resume corrections are already composed.
+Six argv controls, fourteen recovery controls, and actual SSH subprocess checks
+pass. The separate Claude owner reports real ARM and Linux x64 task/follow-up
+pairs across controller restarts on its literal installed-package overlays;
+those results do not qualify an unmodified final Codex package.
+
+The Mac test-drive serves `8de43be4cd` at port 3125. A read-only restart comparison
+preserves four full legacy/native execution configurations and two historical
+native runs with the deprecated native flag false. Zero provider turns and
+zero local native/Docker builds were used. The canonical server no-emit passes
+on the composed root and actual prerequisite worktree.
+
+Both shared fixes are implemented and frozen. The actual workflow selector
+rejects candidate execution/output injection in real Git fixtures. Its full
+existing release-workflow suite passes 70 tests; existing target assembly passes
+7 tests. Registration passes 15 focused controls and canonical runner no-emit.
+An independent scoped review confirms bounded teardown and retained private
+state on unconfirmed release. The first broader local workflow attempt failed
+only because mock loopback listeners were sandbox-blocked; its loopback-enabled
+rerun passes. No daemon/provider execution was used by these controls.
+
+The generic sandbox qualification support passes 30 existing probe and route
+controls plus the canonical server no-emit command. It accepts only OCI digest
+images, checks the returned cleanup receipt, and reports conditional-update races
+without claiming a record. Mutable or name-only configurations retain existing
+connection behavior and receive no native compatibility credit. The default
+consumer and explicit-permission/import controls are being composed next.
+
+Fresh review found four source defects: candidate-code execution during CI runner
+selection, unbounded registration teardown, a lost explicit Codex permission
+setting on automatic Legacy selection, and missing sandbox platform/libc facts.
+Existing subagents own narrow fixes in parallel. Use inert target data and
+workflow-owned public labels; preserve primary failures and private state on
+unconfirmed cleanup; preserve explicit permissions; and use server-measured
+sandbox qualification bound to its effective image/config and company scope.
+The existing explicit environment-probe/setup flow owns qualification. Saving
+and discovery must not provision resources or accept client-authored evidence.
+Unknown targets retain automatic Legacy with an actionable explicit-native error.
+No new product API or database migration is planned.
+
+Preview runs [38303434211](https://github.com/paperclipai/paperclip/actions/runs/38303434211),
+[38304889308](https://github.com/paperclipai/paperclip/actions/runs/38304889308), and
+[38306885592](https://github.com/paperclipai/paperclip/actions/runs/38306885592)
+were cancelled as shared source defects changed their candidates. They are
+excluded from final qualification. Preserve historical evidence and all cost
+and cleanup holds. The next action is to finish the four fixes, run affected
+controls, obtain fresh exact-source checks/review, then build the final immutable
+preview and matching DB/shared pair remotely for the pinned QA tenant.
+Managed Codex retains its $2.50 setup/task envelope and $2 cleanup within the
+original $250 ceiling. Claude retains its separate $50 ceiling. No merge or
+production deployment has occurred.
+
+
 ## Latest checkpoint: runtime prerequisite and authorized merges
 
 The user authorizes preparing and merging ready PRs in dependency order.

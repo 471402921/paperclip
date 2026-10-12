@@ -660,6 +660,39 @@ async function flushUntil(check: () => boolean, timeoutMs = 4000) {
 describe("AgentConfigForm environment selector", () => {
   let roots: Root[] = [];
 
+  it("keeps an explicit Codex draft policy until a harness reset clears it", async () => {
+    mockEnvironmentsApi.list.mockResolvedValue([]);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    let current = { ...defaultCreateValues, adapterType: "codex_local", runner: "auto" as const,
+      dangerouslyBypassSandbox: false, codexLegacySandboxBypass: false };
+    function Fixture() {
+      const [values, setValues] = useState<typeof defaultCreateValues>(current);
+      current = values as typeof current;
+      return <AgentConfigForm mode="create" values={values}
+        onChange={patch => setValues(prev => ({ ...prev, ...patch }))} showAdapterTypeField hidePromptTemplate />;
+    }
+    try {
+      await act(async () => root.render(<QueryClientProvider client={queryClient}><ToastProvider><TooltipProvider>
+        <Fixture />
+      </TooltipProvider></ToastProvider></QueryClientProvider>));
+      await flushReact();
+      expect(current.codexLegacySandboxBypass).toBe(false);
+      for (const harness of ["claude_local", "codex_local"]) {
+        await clickElement(container.querySelector('[aria-label="Harness"]'));
+        await clickElement(document.querySelector(`[role="option"][data-value="${harness}"]`));
+        await flushReact();
+        expect(current.adapterType).toBe(harness);
+        expect(current).toHaveProperty("codexLegacySandboxBypass", undefined);
+      }
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  });
+
   it.each(["codex_local", "paperclip_runner"])("keeps a saved %s runner during unrelated edits", async adapterType => {
     const adapterConfig = { model: "gpt-5.6-sol", ...(adapterType === "paperclip_runner" ? { provider: "codex", reasoningEffort: "high" } : { modelReasoningEffort: "high" }) };
     const result = await renderForm([], { adapterType, adapterConfig }, { showAdapterTypeField: true });

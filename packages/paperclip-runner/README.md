@@ -203,6 +203,16 @@ Apple Silicon and Intel hosts. Actual task and follow-up acceptance is performed
 on Apple Silicon; Intel qualification covers build, installation, and protocol
 startup.
 
+For sandbox environments, the existing explicit environment probe can measure
+OS, architecture and libc from its allocated lease. It records those facts only
+for an image pinned with `@sha256`, after confirmed lease cleanup. The record is
+server-owned and bound to the company, effective provider/image configuration
+and active custom-image identity. Creation and discovery read this record without
+allocating a sandbox. Configuration or image changes invalidate it. Mutable tags,
+provider defaults and name-only snapshots do not establish compatibility; they
+keep automatic Legacy selection until there is verifiable immutable image evidence.
+A connection-only success does not establish native readiness.
+
 On Linux, Codex's sandboxed filesystem modes also require the host to permit its
 unprivileged namespaces. A no-privilege Docker container can prohibit nested
 namespace creation even when installation and binary compatibility pass.

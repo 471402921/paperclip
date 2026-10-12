@@ -3,6 +3,8 @@ import { AdapterMark } from "../../components/AdapterMark";
 import { DotRunnerConnection } from "../../components/DotRunnerConnection";
 import { configFieldsForSection } from "../config-sections";
 import type { AdapterConfigFieldsProps } from "../types";
+import type { CreateConfigValues } from "@paperclipai/adapter-utils";
+import { buildCodexLocalConfig } from "@paperclipai/adapter-codex-local/ui";
 import {
   Field,
   ToggleField,
@@ -17,6 +19,7 @@ import {
   CODEX_LOCAL_FAST_MODE_SUPPORTED_MODELS,
   isCodexLocalFastModeSupported,
   isCodexLocalManualModel,
+  resolveCodexLocalCliPolicy,
 } from "@paperclipai/adapter-codex-local";
 import {
   PAPERCLIP_RUNNER_IDLE_TIMEOUT_DEFAULT_MS,
@@ -46,6 +49,23 @@ const runnerHarnessOptions = [
   { value: "acpx", label: "ACP agents", adapter: "acpx_local" },
   { value: "grok", label: "Grok Build", adapter: "grok_local" },
 ];
+
+/** Keep explicit Legacy policy even when the server resolves an automatic choice. */
+export function buildCodexRunnerConfig(values: CreateConfigValues): Record<string, unknown> {
+  const config = buildCodexLocalConfig(values);
+  if (values.codexLegacySandboxBypass !== undefined) {
+    config.dangerouslyBypassApprovalsAndSandbox = values.codexLegacySandboxBypass;
+  } else if (values.runner !== "legacy") {
+    // An untouched false form default is not an explicit native permission policy.
+    delete config.dangerouslyBypassApprovalsAndSandbox;
+  }
+  return {
+    ...config,
+    ...(values.codexPermissionMode !== undefined ? { codexPermissionMode: values.codexPermissionMode } : {}),
+    ...(values.paperclipRunnerLifecycleMode !== undefined ? { lifecycleMode: values.paperclipRunnerLifecycleMode } : {}),
+    ...(values.paperclipRunnerIdleTimeoutMs !== undefined ? { idleTimeoutMs: values.paperclipRunnerIdleTimeoutMs } : {}),
+  };
+}
 
 export function CodexLocalConfigFields({
   section,
@@ -149,9 +169,13 @@ export function CodexLocalConfigFields({
   const engine =
     rawEngine === "acp" || rawEngine === "cli" ? rawEngine : "auto";
   const acpSelected = engine === "acp";
-  const bypassEnabled =
-    config.dangerouslyBypassApprovalsAndSandbox === true ||
-    config.dangerouslyBypassSandbox === true;
+  const bypassEnabled = resolveCodexLocalCliPolicy({
+    ...config,
+    dangerouslyBypassApprovalsAndSandbox: eff("adapterConfig", "dangerouslyBypassApprovalsAndSandbox", config.dangerouslyBypassApprovalsAndSandbox),
+    dangerouslyBypassSandbox: eff("adapterConfig", "dangerouslyBypassSandbox", config.dangerouslyBypassSandbox),
+    extraArgs: eff("adapterConfig", "extraArgs", config.extraArgs),
+    args: eff("adapterConfig", "args", config.args),
+  }).bypass;
   const fastModeEnabled = isCreate
     ? Boolean(values!.fastMode)
     : eff("adapterConfig", "fastMode", Boolean(config.fastMode));
@@ -753,16 +777,12 @@ export function CodexLocalConfigFields({
             hint={help.dangerouslyBypassSandbox}
             checked={
               isCreate
-                ? values!.dangerouslyBypassSandbox
-                : eff(
-                    "adapterConfig",
-                    "dangerouslyBypassApprovalsAndSandbox",
-                    bypassEnabled,
-                  )
+                ? resolveCodexLocalCliPolicy(buildCodexRunnerConfig(values!)).bypass
+                : bypassEnabled
             }
             onChange={(v) =>
               isCreate
-                ? set!({ dangerouslyBypassSandbox: v })
+                ? set!({ dangerouslyBypassSandbox: v, codexLegacySandboxBypass: v })
                 : mark(
                     "adapterConfig",
                     "dangerouslyBypassApprovalsAndSandbox",

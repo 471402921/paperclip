@@ -13,6 +13,8 @@ import { readConfigValueAtPath, writeConfigValueAtPath } from "./json-schema-sec
 type TemplateRow = typeof environmentCustomImageTemplates.$inferSelect;
 
 export const ENVIRONMENT_CUSTOM_IMAGE_RUNTIME_CONFIG_BINDING_METADATA_KEY = "runtimeConfigBinding";
+/** Measured platform evidence is reserved to explicit server-side environment probes. */
+export const SANDBOX_PLATFORM_PROBE_METADATA_KEY = "paperclipSandboxPlatformProbes";
 export const ENVIRONMENT_CUSTOM_IMAGE_CONFIG_FINGERPRINT_EXCLUDED_PATHS = [
   "timeoutMs",
   "reuseLease",
@@ -557,6 +559,8 @@ export async function resolveActiveEnvironmentCustomImageTemplateForRuntime(
     runtimeConfig: SandboxEnvironmentConfig;
     secretRefExcludePaths?: Iterable<string>;
     now?: Date;
+    readOnly?: boolean;
+    onResolvedTemplate?: (identity: { id: string; capturedAt: string | null; templateKind: string; bindingField: string }) => void;
   },
 ): Promise<SandboxEnvironmentConfig> {
   const row = await db
@@ -587,7 +591,9 @@ export async function resolveActiveEnvironmentCustomImageTemplateForRuntime(
   // match. Runtime-only knobs such as lease reuse, timeouts, and resource hints
   // are excluded from the fingerprint so those edits do not discard the capture.
   const now = input.now ?? new Date();
-  await db
+  input.onResolvedTemplate?.({ id: row.id, capturedAt: row.capturedAt?.toISOString() ?? null,
+    templateKind: row.templateKind ?? "unknown", bindingField: resolveEnvironmentCustomImageRuntimeConfigBinding(row).field });
+  if (!input.readOnly) await db
     .update(environmentCustomImageTemplates)
     .set({ lastUsedAt: now, updatedAt: now })
     .where(eq(environmentCustomImageTemplates.id, active.id));
