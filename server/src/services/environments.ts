@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { SANDBOX_PLATFORM_PROBE_METADATA_KEY } from "./environment-custom-image-runtime.js";
-import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents,
@@ -1135,20 +1135,30 @@ export function environmentService(db: Db) {
       if ("envVars" in patch && patch.envVars !== undefined) {
         values.envVars = (patch.envVars ?? {}) as Record<string, unknown>;
       }
+      const changesTarget = patch.config !== undefined || patch.driver !== undefined;
+      let metadataUpdate: SQL | undefined;
       if (patch.metadata !== undefined) {
-        values.metadata = withoutManagedEnvironmentArchiveToken(patch.metadata ?? null);
-      } else if (patch.status !== undefined) {
-        const existingMetadata = await writeDb
-          .select({ metadata: environments.metadata })
-          .from(environments)
-          .where(eq(environments.id, id))
-          .then((rows) => rows[0]?.metadata ?? null);
-        values.metadata = withoutManagedEnvironmentArchiveToken(existingMetadata);
+        const userMetadata = withoutManagedEnvironmentArchiveToken(patch.metadata ?? null);
+        if (userMetadata) delete userMetadata[SANDBOX_PLATFORM_PROBE_METADATA_KEY];
+        if (changesTarget) {
+          values.metadata = userMetadata;
+        } else {
+          const replacement = userMetadata === null ? sql`null::jsonb` : sql`${JSON.stringify(userMetadata)}::jsonb`;
+          // Preserve the current private subtree in the same statement. A route's
+          // earlier read must never replace a newer concurrent probe receipt.
+          metadataUpdate = sql`case when ${environments.metadata} ? ${SANDBOX_PLATFORM_PROBE_METADATA_KEY}
+            then coalesce(${replacement}, '{}'::jsonb) || jsonb_build_object(
+              ${SANDBOX_PLATFORM_PROBE_METADATA_KEY}::text, ${environments.metadata}->${SANDBOX_PLATFORM_PROBE_METADATA_KEY})
+            else ${replacement} end`;
+        }
+      } else if (changesTarget || patch.status !== undefined) {
+        metadataUpdate = sql`${environments.metadata} - ${MANAGED_ENVIRONMENT_ARCHIVE_TOKEN_METADATA_KEY}`;
+        if (changesTarget) metadataUpdate = sql`${metadataUpdate} - ${SANDBOX_PLATFORM_PROBE_METADATA_KEY}`;
       }
 
       const row = await writeDb
         .update(environments)
-        .set(values)
+        .set({ ...values, ...(metadataUpdate ? { metadata: metadataUpdate } : {}) })
         .where(eq(environments.id, id))
         .returning()
         .then((rows) => rows[0] ?? null)
