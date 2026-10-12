@@ -506,3 +506,36 @@ full cloud execution must validate them. Custom ACP Stop/recovery browser fixtur
 explicitly select Legacy for their custom commands/state paths; latest cloud
 browser execution remains required. No provider turns or local native/Docker
 builds were added by these corrections.
+
+
+## Lifetime ownership and resolved Legacy limit — 2026-10-12
+
+The fresh protocol review identified a real ownership violation: sandbox
+preparation rewrote active Claude settings before a contender acquired the
+provider lifetime lease. A fake-provider/real-lease regression reproduced losing
+the active owner's saved high effort and marker when the second opener was
+rejected. Repair `4cdb5ec4b38d792b432993a9a4b722090813a8ef` defers the
+Claude settings write until after lifetime ownership is acquired and before
+provider launch. Cancellation retains the lease until that filesystem write
+settles. A later legitimate owner can initialize normally. Host, sandbox and
+profile controls pass 104/104; runner noemit and unchanged declaration generation
+pass. No provider process was launched by these controls.
+
+Fresh behavior review also found the Legacy form's default 1000-turn cap was
+omitted for Auto even when the selected target resolved to Legacy. The form now
+passes a transient resolution to the builder; unknown/Legacy Auto and explicit
+Legacy retain the cap, while resolved native omits only that Legacy default.
+Explicit custom limits still reach compatibility validation. The hint is absent
+from execution config and API overrides. Onboarding uses its existing discovery;
+import excludes hint-only updates from meaningful edits. The same builder carries
+explicit native permission choices from the ordinary create form. Mounted forms,
+builder, imports and onboarding pass 298/298; adapter-utils TS build, Claude/UI
+noemit, maps and token gates pass. No local Rust or Docker build or new paid turn.
+
+The prior corrective platform source `a97a681f1caf90627505097cdcd368356811ffc1`
+passed all required cloud checks and fresh 5/5 review. Behavior and protocol
+required CI aggregates passed before these two findings. New repair heads require
+fresh exact-head CI/review. Prerequisite #16028 is not merged: normal auto-merge
+is queued for actual code-owner approval. Dependent branches have not been
+retargeted as if master contains that prerequisite. Final packaged runtime and
+source reconciliation remain gated; the source owner retains merge ownership.

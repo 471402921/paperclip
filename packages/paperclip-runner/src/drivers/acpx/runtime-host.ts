@@ -482,6 +482,11 @@ export class AcpxRuntimeHost {
             dependencies.reportRetainedCleanupFailure(failure),
         });
       }
+      options.signal?.throwIfAborted();
+      // Await this write under ownership even if cancellation arrives. Releasing
+      // the lease before it settles could let a late write affect the next owner.
+      await sandbox.initializeOwnedConfiguration?.();
+      options.signal?.throwIfAborted();
       assertAcpxProfileEnvironment(options.agent, sandbox.launchEnvironment);
       let launchEnvironment = sandbox.launchEnvironment;
       // This copy is registered by the authenticated controller for its company,

@@ -53,6 +53,8 @@ export interface AcpxRuntimeSandbox {
   cacheDirectory: string;
   agentHomeDirectory: string;
   workspaceRecordPath: string;
+  /** Mutate provider settings only while the host holds its lifetime lease. */
+  initializeOwnedConfiguration?: () => Promise<void>;
   launchEnvironment: Readonly<NodeJS.ProcessEnv>;
   persistedEnvironment: Readonly<NodeJS.ProcessEnv>;
   /** The host sandbox must protect these runtime/config paths from tools. */
@@ -394,7 +396,7 @@ export async function prepareAcpxRuntimeSandbox(input: {
     const configuration = piProviderConfiguration(input.environment);
     if (configuration) await writePrivateFile(join(agentHomeDirectory, "models.json"), configuration.json);
   }
-  if (input.agent === "claude") {
+  const initializeOwnedConfiguration = input.agent === "claude" ? async () => {
     // ACP otherwise rewrites exact IDs (including user-entered model IDs) to
     // picker aliases such as "sonnet". Its supported availableModels setting
     // preserves our requested ID through selection and model verification.
@@ -412,7 +414,7 @@ export async function prepareAcpxRuntimeSandbox(input: {
           : {}),
       })}\n`,
     );
-  }
+  } : undefined;
   if (input.agent === "grok") {
     // Native project rules merge with global rules. Ask rules win over project
     // allows, keeping operation approval at the runner's authenticated boundary.
@@ -563,6 +565,7 @@ export async function prepareAcpxRuntimeSandbox(input: {
     cacheDirectory,
     agentHomeDirectory,
     workspaceRecordPath,
+    ...(initializeOwnedConfiguration ? { initializeOwnedConfiguration } : {}),
     protectedPaths,
     launchEnvironment: Object.freeze({ ...launchEnvironment }),
     persistedEnvironment: Object.freeze(persistedEnvironment),
