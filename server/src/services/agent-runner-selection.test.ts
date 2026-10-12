@@ -9,7 +9,8 @@ vi.mock("./environment-probe.js", () => ({ readSandboxPlatformQualification: sta
 vi.mock("./environment-config.js", () => ({ resolveEnvironmentDriverConfigForRuntime: state.resolveEnvironment }));
 vi.mock("@paperclipai/adapter-utils/ssh", () => ({ runSshCommand: state.ssh }));
 import { AGENT_RUNNER_SSH_PLATFORM_COMMAND, agentRunnerAvailability, resolveAgentRunnerTargetForCompany, resolveNewAgentRunner, resolveNewAgentRunnerForCompany } from "./agent-runner-selection.js";
-import { buildCodexAcpConfig } from "@paperclipai/adapter-codex-local/server";
+import { buildCodexAcpConfig, resolveCodexExecutionEngine } from "@paperclipai/adapter-codex-local/server";
+import { secretService } from "./secrets.js";
 import { localAgentRunnerTarget } from "../lib/agent-runner-platform.js";
 const target = { driver: "local", platform: "linux", architecture: "x64" };
 const qualifiedTargets = [target, { driver: "local", platform: "linux", architecture: "arm64" }, { driver: "local", platform: "darwin", architecture: "arm64" }, { driver: "local", platform: "darwin", architecture: "x64" }];
@@ -181,6 +182,71 @@ describe("server-owned Codex runner selection", () => {
     expect(buildCodexAcpConfig(adapterConfig)).toHaveProperty("permissionMode", "deny-all");
     expect(() => resolveNewAgentRunner({ adapterType: "codex_local", adapterConfig, target }))
       .toThrow(expect.objectContaining({ status: 422, details: { code: "agent_runner_config_incompatible", fields: ["acpPermissionMode"] } }));
+  });
+
+  it.each([undefined, "acp"])("rejects effective Legacy ACP network denial for engine=%s before native selection", async engine => {
+    const adapterConfig = { ...(engine ? { engine } : {}), env: { PAPERCLIP_CODEX_ACP_NETWORK_ACCESS: "false" } };
+    expect(resolveCodexExecutionEngine(adapterConfig).engine).toBe("acp");
+    expect(buildCodexAcpConfig(adapterConfig)).toMatchObject({ env: { PAPERCLIP_CODEX_ACP_NETWORK_ACCESS: "false" } });
+    // Native permissions use a separately trusted server variable. This would
+    // enable networking despite the saved Legacy flag without admission rejection.
+    const { codexNetworkAccess } = await import(new URL(
+      "../../../packages/paperclip-runner/src/drivers/codex/codex-security-config.ts", import.meta.url,
+    ).href);
+    expect(codexNetworkAccess({ PAPERCLIP_RUNNER_NETWORK_ACCESS: "enabled", PAPERCLIP_CODEX_ACP_NETWORK_ACCESS: "false" })).toBe(true);
+    for (const runner of [undefined, "auto", "paperclip"] as const) {
+      expect(() => resolveNewAgentRunner({ adapterType: "codex_local", adapterConfig, target, runner }))
+        .toThrow(expect.objectContaining({ status: 422, details: { code: "agent_runner_config_incompatible", fields: ["env.PAPERCLIP_CODEX_ACP_NETWORK_ACCESS"] } }));
+    }
+    expect(resolveNewAgentRunner({ adapterType: "codex_local", adapterConfig, target, runner: "legacy" }))
+      .toEqual({ adapterType: "codex_local", adapterConfig });
+    expect(adapterConfig.env).toEqual({ PAPERCLIP_CODEX_ACP_NETWORK_ACCESS: "false" });
+  });
+
+  it.each([
+    { type: "plain", value: "false" },
+    { type: "secret_ref", secretId: "fixture-policy", version: "latest" },
+    { type: "user_secret_ref", key: "fixture-policy", version: "latest" },
+  ])("does not discard a bound ACP network restriction or guess its value (%j)", async binding => {
+    const adapterConfig = { engine: "acp", env: { PAPERCLIP_CODEX_ACP_NETWORK_ACCESS: binding } };
+    if (binding.type === "plain") {
+      const resolved = await secretService({} as never).resolveEnvBindings("fixture-company", adapterConfig.env);
+      expect(buildCodexAcpConfig({ ...adapterConfig, env: resolved.env }))
+        .toMatchObject({ env: { PAPERCLIP_CODEX_ACP_NETWORK_ACCESS: "false" } });
+    }
+    expect(() => resolveNewAgentRunner({ adapterType: "codex_local", adapterConfig, target }))
+      .toThrow(expect.objectContaining({ status: 422, details: { code: "agent_runner_config_incompatible", fields: ["env.PAPERCLIP_CODEX_ACP_NETWORK_ACCESS"] } }));
+    expect(resolveNewAgentRunner({ adapterType: "codex_local", adapterConfig, target, runner: "legacy" }))
+      .toEqual({ adapterType: "codex_local", adapterConfig });
+  });
+
+  it.each([
+    { extraArgs: ["-c", "sandbox_workspace_write.network_access=true"] },
+    { extraArgs: [], args: ["-c", "sandbox_workspace_write.network_access=true"] },
+  ])("retains actionable argument errors when Legacy arguments override a network flag (%j)", args => {
+    const adapterConfig = { engine: "acp", ...args, env: { PAPERCLIP_CODEX_ACP_NETWORK_ACCESS: "false" } };
+    expect(buildCodexAcpConfig(adapterConfig)).toMatchObject({ env: { PAPERCLIP_CODEX_ACP_NETWORK_ACCESS: "true" } });
+    expect(() => resolveNewAgentRunner({ adapterType: "codex_local", adapterConfig, target }))
+      .toThrow(expect.objectContaining({ status: 422, details: { code: "agent_runner_config_incompatible", fields: [args.extraArgs.length ? "extraArgs" : "args"] } }));
+  });
+
+  it.each(["true", "False", " false ", { type: "plain", value: "true" }])("keeps compatible ACP environment settings (%j) and native idempotence", value => {
+    const adapterConfig = { engine: "acp", env: { PAPERCLIP_CODEX_ACP_NETWORK_ACCESS: value, OPENAI_API_KEY: { type: "secret_ref", secretId: "fixture-api-key" } } };
+    const literal = typeof value === "string" ? value : value.value;
+    expect(buildCodexAcpConfig({ ...adapterConfig, env: { PAPERCLIP_CODEX_ACP_NETWORK_ACCESS: literal } }))
+      .toMatchObject({ env: { PAPERCLIP_CODEX_ACP_NETWORK_ACCESS: "true" } });
+    const resolved = resolveNewAgentRunner({ adapterType: "codex_local", adapterConfig, target });
+    expect(resolved.adapterType).toBe("paperclip_runner");
+    expect(resolved.adapterConfig.env).toEqual(adapterConfig.env);
+    expect(resolveNewAgentRunner(resolved)).toEqual(resolved);
+  });
+
+  it("keeps a saved native profile and an explicitly selected Legacy CLI's unused ACP flag unchanged", () => {
+    const adapterConfig = { engine: "cli", env: { PAPERCLIP_CODEX_ACP_NETWORK_ACCESS: "false" } };
+    expect(resolveCodexExecutionEngine(adapterConfig).engine).toBe("cli");
+    expect(resolveNewAgentRunner({ adapterType: "codex_local", adapterConfig, target }).adapterType).toBe("paperclip_runner");
+    const saved = { adapterType: "paperclip_runner", adapterConfig: { provider: "codex", env: adapterConfig.env } };
+    expect(resolveNewAgentRunner(saved)).toEqual(saved);
   });
 
   it("preserves explicit historical native profiles, including managed configurations", () => {

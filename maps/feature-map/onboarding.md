@@ -50,6 +50,22 @@ company's onboarding route, and finish; drafts save automatically. Follow the
 created first task, verify the selected agent and company, and inspect its output
 or explicit authentication gate. Reload both company and task.
 
+For Codex, choose the harness and leave runner selection automatic to prove the
+first-agent default. On a qualified target it saves Paperclip Runner; Advanced
+also permits Legacy. Do not switch runners after onboarding when claiming proof
+of that default. Test the selected runtime and account, then complete a bounded
+useful task and follow-up with an independently checked file artifact. Saved
+execution configuration and recorded run identity must match after reload.
+Use [runner validation](./runs-adapters.md#adapter-setup) and
+[environment qualification](./execution-environments.md#environment-settings)
+for the prerequisites; a successful login alone is insufficient.
+
+Leave and resume during harness/runner setup. Confirm the draft retains the
+explicit choice and compatible account bindings, old native Codex setup links
+recover the harness and runner, and a changed harness or runner invalidates stale
+test results. Existing Legacy agents remain Legacy when their onboarding/setup
+configuration is reopened; this journey does not migrate them.
+
 ### `cli-setup`
 
 Automated: [CLI onboarding](../../cli/src/__tests__/onboard.test.ts) and [isolated test drive](../../cli/src/__tests__/test-drive.test.ts) cover their setup contracts; they do not establish that every model account is usable.

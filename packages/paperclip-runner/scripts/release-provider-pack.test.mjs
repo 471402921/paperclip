@@ -52,7 +52,7 @@ test("release assembly rejects rehashed stale or missing packs before staging an
   const source = dirname(dirname(fileURLToPath(import.meta.url)));
   try {
     // Run the actual assembler in an isolated layout so it cannot overwrite built artifacts.
-    for (const file of ["scripts/stage-release-runner-binaries.mjs", "scripts/release-provider-pack.mjs", "src/live/runner-binary.ts", "acpx-profiles.json", "cursor-distributions.json"]) {
+    for (const file of ["scripts/stage-release-runner-binaries.mjs", "scripts/release-provider-pack.mjs", "src/live/runner-binary.ts", "acpx-profiles.json", "cursor-distributions.json", "release-runner-targets.json"]) {
       mkdirSync(dirname(join(root, file)), { recursive: true }); cpSync(join(source, file), join(root, file));
     }
     const platforms = {};
