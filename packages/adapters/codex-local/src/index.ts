@@ -1,6 +1,7 @@
 import {
   PAPERCLIP_RUNNER_DEFAULT_MODELS,
 } from "@paperclipai/adapter-utils";
+import { PAPERCLIP_RUNNER_MINIMUM_GLIBC_VERSION } from "@paperclipai/shared";
 
 export const type = "codex_local";
 export const label = "Codex";
@@ -212,7 +213,9 @@ export const models = [
 
 export const agentConfigurationDoc = `# codex_local agent configuration
 
-New agents select this Codex harness with adapterType: codex_local. On qualified Linux x64 targets, automatic selection stores adapterType: paperclip_runner with provider: codex. macOS, Windows, and Linux ARM retain legacy defaults until their runner artifacts are qualified. Other harness defaults are unchanged. Set the request-level runner: legacy to use this adapter's execution and custom settings. Existing agents and reviewed pending hires retain their saved runner; runtime errors never silently switch runners.
+New agents select the Codex harness with adapterType: codex_local and an optional request-level runner: auto, paperclip, or legacy. Automatic selection uses Paperclip Runner on qualified Linux x64/ARM64 targets with GNU libc ${PAPERCLIP_RUNNER_MINIMUM_GLIBC_VERSION} or newer and macOS arm64/x64 targets. It stores adapterType: paperclip_runner with provider: codex. Windows, 32-bit ARM, Alpine/musl, and older or unknown Linux libc retain automatic legacy selection. Qualification and artifact checks use the selected execution environment, including its architecture, rather than the controller's platform. Other harness defaults are unchanged.
+
+Set runner: legacy to retain this adapter's execution and custom settings. Explicit runner: paperclip requires a qualified target. Existing agents and reviewed pending hires retain their saved runner; authentication, model, dependency, and runtime errors never silently switch runners. The fields below describe legacy codex_local execution. Native creation translates supported settings and rejects unsupported settings with the explicit Legacy runner option.
 
 Adapter: codex_local
 

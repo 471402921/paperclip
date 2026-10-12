@@ -638,6 +638,17 @@ pending. Recent events do not prove useful progress. These fields contain only
 numbers and a boolean, never tool names, IDs, arguments, or event content, and
 do not change the execution timeout, cancellation, or recovery policy.
 
+A stopped turn (wall-clock timeout or operator stop) also records
+`acpLastEventAgeAtStopMs` and `acpOldestPendingToolAgeAtStopMs`, measured at the
+moment the stop fired. A cancel can make the agent emit closing events, so the
+finalization age alone cannot separate a turn that went silent long before its
+deadline from one that was still working. For a stopped turn, pending tools
+means the tools pending when the stop fired, so a tool the cancel closes still
+counts; `acpPendingToolCount` keeps its finalization-time meaning. When tools are
+pending, `acpPendingToolKinds` lists their ACP tool kinds as a sorted, comma-separated
+string drawn only from the closed ACP `ToolKind` enum plus `unknown`; the
+server drops the field if any other value appears.
+
 ACP and legacy OpenCode results retain the adapter's resolved wall-clock timeout as
 `adapterExecutionTimeout` in the instance run result. Finalization uses it for
 `effectiveTimeoutSec`, `timeoutSource`, and `timeoutConfigured`. Sources are

@@ -3142,15 +3142,21 @@ export function agentRoutes(
           ? restoreRedactedAgentEnv(inputAdapterConfig, savedAgent.adapterConfig)
           : inputAdapterConfig;
       }
-      const selection = await resolveNewAgentRunnerForCompany(db, companyId, {
-        adapterType: type, adapterConfig: adapterConfigForTest,
-        runner: req.body.runner ?? (savedAgent && savedAgent.adapterType === type ? (type === "paperclip_runner" ? undefined : "legacy") : undefined),
-        defaultEnvironmentId: requestedEnvironmentId,
-      });
+      const retainsSavedExecution = savedAgent && req.body.runner === undefined
+        && savedAgent.adapterType === type
+        && agentHarnessType(type, adapterConfigForTest) === agentHarnessType(savedAgent.adapterType, savedAgent.adapterConfig);
+      // Preserve saved execution; the adapter probe below still validates runtime readiness.
+      const selection = retainsSavedExecution
+        ? { adapterType: type, adapterConfig: adapterConfigForTest }
+        : await resolveNewAgentRunnerForCompany(db, companyId, {
+          adapterType: type, adapterConfig: adapterConfigForTest,
+          runner: req.body.runner,
+          defaultEnvironmentId: requestedEnvironmentId,
+        });
       type = selection.adapterType;
       adapterConfigForTest = selection.adapterConfig;
       const adapter = requireServerAdapter(type);
-      if (!savedAgent || req.body.runner !== undefined || type !== savedAgent.adapterType) await assertSelectableAdapterType(type, adapterConfigForTest);
+      if (!retainsSavedExecution) await assertSelectableAdapterType(type, adapterConfigForTest);
       if (poolBinding?.mode === "router") {
         await validateManagedAgentBinding(req, companyId, savedAgentId ?? "", type, adapterConfigForTest, poolBinding, requestedEnvironmentId, false, !savedAgentId);
         res.json({ adapterType: type, status: "warn", testedAt: new Date().toISOString(), checks: [{ code: "ai_connection_pool_task_test_required", level: "warn", message: "Pool configuration is available. Run a task to verify the selected account and harness; this preview does not allocate a task or contact a provider." }] });
