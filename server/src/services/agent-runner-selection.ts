@@ -96,6 +96,18 @@ export function resolveNewAgentRunner(input: AgentRunnerSelection): { adapterTyp
   if (config.dangerouslyBypassApprovalsAndSandbox === false) unsupported.push("dangerouslyBypassApprovalsAndSandbox");
   if (config.dangerouslyBypassSandbox === false) unsupported.push("dangerouslyBypassSandbox");
   if (unsupported.length) incompatible(unsupported.map(field => aliasSources.get(field) ?? field));
+  const env = config.env && typeof config.env === "object" && !Array.isArray(config.env)
+    ? config.env as Record<string, unknown> : {};
+  const network = env.PAPERCLIP_CODEX_ACP_NETWORK_ACCESS;
+  const binding = network && typeof network === "object" && !Array.isArray(network)
+    ? network as Record<string, unknown> : null;
+  // Native networking is server-owned. Never translate a Legacy restriction
+  // into that trusted variable, or guess the value of a deferred policy binding.
+  if (config.engine !== "cli" && (network === "false"
+    || (binding?.type === "plain" && binding.value === "false")
+    || binding?.type === "secret_ref" || binding?.type === "user_secret_ref")) {
+    incompatible(["env.PAPERCLIP_CODEX_ACP_NETWORK_ACCESS"]);
+  }
   const effort = config.modelReasoningEffort ?? config.reasoningEffort ?? config.effort;
   for (const key of ["engine", "command", "extraArgs", "args", "agentCommand", "mode", "nonInteractivePermissions", "stateDir", "warmHandleIdleMs", "dangerouslyBypassApprovalsAndSandbox", "dangerouslyBypassSandbox", "search", "fastMode", "reasoningEffort", "effort"]) delete config[key];
   if (config.model !== undefined && typeof config.model !== "string") incompatible(["model"]);
