@@ -69,7 +69,7 @@ describe("probeEnvironment", () => {
     expect(await readSandboxPlatformQualification({} as any, environment, "foreign-company")).toBeNull();
     expect(await readSandboxPlatformQualification({} as any, { ...environment, config: { ...environment.config, image: `registry.example.test/runtime@sha256:${"b".repeat(64)}` } }, "company")).toBeNull();
     vi.mocked(configRuntime.resolveEnvironmentDriverConfigForRuntime).mockImplementation(async (_db, _company, _env, options) => {
-      options?.onResolvedCustomImageTemplate?.({ id: "changed-template", capturedAt: null });
+      options?.onResolvedCustomImageTemplate?.({ id: "changed-template", capturedAt: null, templateKind: "image", bindingField: "image" });
       return { driver: "sandbox", config: environment.config };
     });
     expect(await readSandboxPlatformQualification({} as any, environment, "company")).toBeNull();
@@ -117,8 +117,23 @@ describe("probeEnvironment", () => {
     const identity = vi.fn();
     const result = await resolveActiveEnvironmentCustomImageTemplateForRuntime(db as never, { environmentId: "env", baseConfig: { provider: "daytona", reuseLease: false }, runtimeConfig: { provider: "daytona", reuseLease: false }, readOnly: true, onResolvedTemplate: identity });
     expect(result).toMatchObject({ image: row.templateRef });
-    expect(identity).toHaveBeenCalledWith({ id: "template", capturedAt: capturedAt.toISOString() });
+    expect(identity).toHaveBeenCalledWith({ id: "template", capturedAt: capturedAt.toISOString(), templateKind: "image", bindingField: "image" });
     expect(update).not.toHaveBeenCalled();
+  });
+  it.each(["provider_template", "unknown"])("does not qualify a named active %s boot binding over a pinned base image", async templateKind => {
+    const image = `registry.example.test/runtime@sha256:${"a".repeat(64)}`;
+    const environment = { id: "env", driver: "sandbox", status: "active", config: { provider: "daytona", image }, metadata: null } as any;
+    vi.spyOn(configRuntime, "resolveEnvironmentDriverConfigForRuntime").mockImplementation(async (_db, _company, _env, options) => {
+      const bindingField = templateKind === "provider_template" ? "template" : "templateRef";
+      options?.onResolvedCustomImageTemplate?.({ id: "active-template", capturedAt: null, templateKind, bindingField });
+      return { driver: "sandbox", config: { ...environment.config, [bindingField]: "mutable-template-name" } };
+    });
+    mockRuntimeAcquireRunLease.mockResolvedValue({ lease: { id: "lease", provider: "daytona", metadata: { image } } });
+    const result = await probeEnvironment({} as any, environment, { companyId: "company", acquireSandboxRuntimeLease: true });
+    expect(result.ok).toBe(true);
+    expect(result.details?.platformQualificationRecorded).toBe(false);
+    expect(mockRuntimeExecute).not.toHaveBeenCalled();
+    expect(mockRecordPlatformProbe).toHaveBeenCalledTimes(1);
   });
   it("returns false when an atomic probe record loses its config comparison", async () => {
     const { environmentService } = await vi.importActual<typeof import("../services/environments.js")>("../services/environments.js");

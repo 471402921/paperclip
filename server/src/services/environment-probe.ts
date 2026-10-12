@@ -34,15 +34,17 @@ export function parseSandboxPlatformFacts(output: string): PlatformFacts {
     ...(libc === "glibc" ? { glibcVersion: version?.trim() ?? "unknown" } : {}) };
 }
 async function sandboxBinding(db: Db, environment: Environment, companyId: string) {
-  let template: { id: string; capturedAt: string | null } | null = null;
+  const selectedTemplate: { value: { id: string; capturedAt: string | null; templateKind: string; bindingField: string } | null } = { value: null };
   const parsed = await resolveEnvironmentDriverConfigForRuntime(db, companyId, environment, {
     applyCustomImageTemplate: true, readOnlyCustomImageTemplate: true,
-    onResolvedCustomImageTemplate: identity => { template = identity; },
+    onResolvedCustomImageTemplate: identity => { selectedTemplate.value = identity; },
   });
   if (parsed.driver !== "sandbox") return null;
   const image = parsed.config.image;
   // Names, mutable tags, provider defaults and snapshot names are not immutable identities.
-  if (!isImmutableImage(image) || record(parsed.config).snapshot) return null;
+  const template = selectedTemplate.value;
+  if (!isImmutableImage(image) || ["snapshot", "template", "templateRef"].some(key => record(parsed.config)[key])
+    || (template && (template.templateKind !== "image" || template.bindingField !== "image"))) return null;
   return { baseConfigFingerprint: fingerprint(environment.config), runtimeConfigFingerprint: fingerprint(parsed.config as unknown as Record<string, unknown>), image, template };
 }
 
