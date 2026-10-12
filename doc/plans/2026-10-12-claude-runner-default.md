@@ -578,3 +578,10 @@ candidate source through the existing provider-free cloud workflow, with tooling
 and product identities recorded separately. No publication, deployment or paid
 retry is part of that campaign. The actual foundation code-owner approval and
 master reconciliation remain external prerequisites for normal merge sequencing.
+
+The first corrected candidate's cloud Docker-context check independently found
+profile 24 excluded by the existing explicit attestation allowlist. The new
+fixture now has its own exception alongside immutable prior identities; other
+fixtures remain excluded. Cloud job 115053600515 retained the exact ENOENT
+failure. No local Docker invocation was used. The next composed heads must pass
+this check before candidate package qualification.
