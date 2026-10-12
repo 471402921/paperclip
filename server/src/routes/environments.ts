@@ -1216,14 +1216,6 @@ export function environmentRoutes(
     // Persist the config change and its binding rows atomically: a binding
     // ref that fails validation (e.g. a deleted secret) must roll the whole
     // save back instead of leaving the config re-pointed with stale bindings.
-    if (changesProviderTarget || patch.metadata !== undefined) {
-      const metadata = { ...(patch.metadata ?? existing.metadata ?? {}) };
-      if (changesProviderTarget) delete metadata[SANDBOX_PLATFORM_PROBE_METADATA_KEY];
-      else if (existing.metadata?.[SANDBOX_PLATFORM_PROBE_METADATA_KEY] !== undefined) {
-        metadata[SANDBOX_PLATFORM_PROBE_METADATA_KEY] = existing.metadata[SANDBOX_PLATFORM_PROBE_METADATA_KEY];
-      }
-      patch.metadata = metadata;
-    }
     const environment = await db.transaction(async (tx) => {
       const updated = await svc.update(existing.id, patch, { db: tx });
       if (!updated) return null;
