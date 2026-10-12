@@ -10488,9 +10488,9 @@ describe("runnerd provider runtime wiring", () => {
       corrupt: true,
       accepted: false,
     },
-  ] as const)(
-    "uses remote prior-run backup when acceptance=$accepted direct=$directLifecycle backup=$backupLifecycle corrupt=$corrupt",
-    async ({ directLifecycle, backupLifecycle, corrupt, accepted }) => {
+  ].flatMap(testCase => (["sandbox", "ssh"] as const).map(transport => ({ ...testCase, transport }))))(
+    "uses $transport prior-run backup when acceptance=$accepted direct=$directLifecycle backup=$backupLifecycle corrupt=$corrupt",
+    async ({ directLifecycle, backupLifecycle, corrupt, accepted, transport }) => {
 
 
       const priorExecution = scopedNativeExecution("remote-prior-scope");
@@ -10504,7 +10504,10 @@ describe("runnerd provider runtime wiring", () => {
       const priorRunDb = priorNativeRunDb(priorExecution);
       const remoteTarget = {
         kind: "remote" as const,
-        transport: "sandbox" as const,
+        transport,
+        spec: { host: "fixture.invalid", username: "fixture", port: 22,
+          remoteCwd: "/workspace", remoteWorkspacePath: "/workspace",
+          privateKey: null, knownHosts: null, strictHostKeyChecking: true },
         providerKey: "daytona",
         leaseId: "environment-lease-remote-prior-scope",
         remoteCwd: "/home/daytona/paperclip-workspace",
