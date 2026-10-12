@@ -338,7 +338,7 @@ connection installation restricted to the qualification agent.
 
 This proof uses the exact 557 installed controller plus its recorded overlays
 and image/pack identities; it does not qualify an unmodified final release.
-Known Claude API estimates now total $2.2465814, excluding earlier unknown
+Known Claude API estimates now total $2.2465808, excluding earlier unknown
 charges. Aggregate allocated company caps remain $50; holds/reservations and
 failed records are preserved. No automatic paid retries or local Docker/Rust
 builds occurred.
@@ -350,3 +350,52 @@ passing package/clean-install and API execution evidence, while final packaged
 runtime, current-source required checks and exact-head reviews remain handoff
 gates. Subscription follow-up remains unverified under the user's API-key
 steering; Intel Mac requires clean installation, not attended provider turns.
+
+
+## Current dependency and review reconciliation — 2026-10-12
+
+Reconciled source-owner prerequisite `d16eccf109b524778ceb896f79ccb3881bc61a9b`
+and Codex `eee0534154eaf5d0d3f2bbc97c1e24d86f34a5a5`. The latest Codex
+Linux ARM64 default remains intact. Sandbox automatic selection uses the
+server-owned probe bound to effective configuration and an immutable image;
+unknown or mutable sandbox identity stays Legacy. Disabled Codex does not block
+Claude's SSH platform probe.
+
+The behavior composition preserves the shared ACP-alias rejection and imports
+saved native configuration by applying actual form changes. Explicit empty
+model/effort and account-binding removal remain removals. Mounted Codex and
+Claude import cases cover ordinary edits, model/effort clears, connection-binding
+removal, Legacy selection and harness changes. Switching a Legacy Claude import
+to Paperclip preserves deny-all/approve-reads through the native builder.
+Current import/builder controls: 123 passed; mounted existing-agent form controls:
+121 passed, including hydration and explicit Auto clearing for both harnesses
+and all three effort aliases. Server/UI noemit, token gates and capability-map
+checks passed. Profile source controls: 31 passed. The Pi install probe now
+reports the exact profile version it actually validates.
+
+Platform review repairs retain explicit supported runner choices while keeping
+Darwin SSH automatic Claude selection on Legacy until automatic Mac remote packs
+exist. Local Mac defaults and GNU/Linux defaults remain qualified. Discovery
+tries every standard preinstalled pack candidate through the full verifier; a
+stale `/opt` pack cannot hide a matching user installation. Failed verification
+still uses the existing upload/error path. These controls are separate from live
+provider execution evidence.
+
+[Cloud required-source campaign](https://github.com/paperclipai/paperclip/actions/runs/38302321706)
+completed on immutable source `b754869376e7bee831e87d879d5d89575044cb04`:
+recursive typecheck, build, token gates, Runner E2E typecheck, 124 Runner E2E
+unit files (2619 tests), and public installation verification passed. The full
+`pnpm test:run` command exceeded its 60-minute bound (exit 124); this is incomplete,
+not a passing full suite. Its artifact `11775656103` preserves source, logs and
+statuses. Final exact-head checks must use the existing complete sharded test
+coverage or finish the full command on cloud infrastructure.
+
+A read-only accounting audit records allocated caps of exactly $50 and known
+ledger estimates of $2.246580800, excluding unknown charges. The original QA
+policy retains its earlier approved `allow` setting and $8 unknown reservation
+under a hard stop; other live qualification policies block unpriced work. The
+historical candidate's $9 allocation and failed records remain reserved. Its
+port has a listener but current API health did not respond, so its current policy
+state is unconfirmed rather than asserted stopped or reverified. No accounting
+hold was cleared by this audit. Timer heartbeats and automatic paid retries remain
+disabled. No local Docker or Rust builds occurred.
