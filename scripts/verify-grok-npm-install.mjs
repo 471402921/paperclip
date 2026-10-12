@@ -166,13 +166,16 @@ async function verifyLinuxArmConsumer(packageDirectory, sourceRevision, receiptP
     const hostDaemon = () => hostProbe('host-daemon-probe.mjs', installedDaemonProbeSource(hostInstalled, consumer, sourceRevision));
     const hostCodex = () => hostProbe('host-codex-probe.mjs', installedCodexProbeSource(join(hostInstalled, 'index.js'), consumer, undefined, { nativeCodex: true }));
     const digest = value => createHash('sha256').update(value).digest('hex');
-    const before = { lockSha256: digest(lock), runnerSha256: hostDaemon().sha256.slice(7), codexCommandSha256: hostCodex().codexCommandSha256 };
+    const beforeCodex = hostCodex();
+    const before = { lockSha256: digest(lock), runnerSha256: hostDaemon().sha256.slice(7), codexCommandSha256: beforeCodex.codexCommandSha256, codexNativeExecutableSha256: beforeCodex.codexNativeExecutableSha256 };
     assert.equal(before.runnerSha256, daemon.sha256.slice(7), 'Docker and host must select the same packaged daemon bytes');
     assert.equal(before.codexCommandSha256, codex.codexCommandSha256, 'Docker and host must select the same official Codex command bytes');
+    assert.equal(before.codexNativeExecutableSha256, codex.codexNativeExecutableSha256, 'Docker and host must select the same official native Codex payload bytes');
     const hostHeader = process.report.getReport().header;
     assert.match(hostHeader.glibcVersionRuntime || '', /^\d+\.\d+$/, 'Native host startup must report its actual GNU libc ABI');
     const startup = hostProbe('host-startup-probe.mjs', macInstalledStartupProbeSource(consumer, hostServer, daemon.sha256, join(assets, 'installed-cli.ts')));
-    const after = { lockSha256: digest(readFileSync(join(consumer, 'package-lock.json'))), runnerSha256: hostDaemon().sha256.slice(7), codexCommandSha256: hostCodex().codexCommandSha256 };
+    const afterCodex = hostCodex();
+    const after = { lockSha256: digest(readFileSync(join(consumer, 'package-lock.json'))), runnerSha256: hostDaemon().sha256.slice(7), codexCommandSha256: afterCodex.codexCommandSha256, codexNativeExecutableSha256: afterCodex.codexNativeExecutableSha256 };
     assertInstalledNativeConsumerContinuity(before, after);
     assert.equal(startup.runnerSha256, before.runnerSha256);
     assert.equal(startup.codexSha256, before.codexCommandSha256);

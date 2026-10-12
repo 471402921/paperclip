@@ -93,6 +93,42 @@ Next action: freeze this corrected tooling and run one remote ARM host treatment
 against the same verified archives. Require actual host startup before the final
 four-target qualification; retain literal product/tool source identities.
 
+The [host treatment](https://github.com/paperclipai/paperclip/actions/runs/38276826878)
+at tooling `123a18837478d8cd0e2aff23f7e7aa86c9107de3` also fails native startup.
+The actual ARM host reaches the installed daemon and Codex, then bubblewrap
+fails loopback `RTM_NEWADDR` with `Operation not permitted`. No successful
+native session or after-start continuity is claimed. Docker/host installation
+identity passed. Exact upstream Codex 0.160 source places namespace creation
+before its own seccomp filter and always restricts networking for filesystem
+helpers. A Paperclip network-mode change would not solve this. Prepare one
+temporary same-policy direct Codex control plus read-only host namespace facts
+to distinguish host enforcement from native mediation. Do not alter kernel,
+Docker, or product permission policy. Receipts:
+`/private/tmp/ci-final-arm-host-diagnostic-123-receipt.json` and
+`/private/tmp/codex-default-arm-sandbox-source-diagnosis.json`.
+
+Fresh `123a188` review is 5/5 with one payload-continuity finding. The existing
+consumer now hashes the actual official Codex native executable separately
+from its launcher, checks containment/header, and compares both across Docker,
+host, and before/after. Twenty-one controls pass, including native-only mutation
+and an older supported package layout. Receipt:
+`/private/tmp/pr2-native-codex-payload-and-control-preparation-receipt.json`.
+
+Ordinary `123a188` CI found two test gaps. Nine new login fixture controls were
+shadowed by Vitest's global module bridge. The existing bounded plain-Node
+resolver seam now proves private package selection and containment before only
+fake login; all 27 login cases and typecheck pass. A repository test reloaded one
+millisecond after Save, before any update request reached the server. It now
+awaits the real saved-value render, then retains the persistence assertion after
+reload. No product repository code changes. Receipts:
+`/private/tmp/codex-default-login-resolver-isolation-receipt.json` and
+`/private/tmp/ci-final-123a188-repository-e2e-analysis.json`.
+
+Next action: freeze these review/test fixes, run the bounded direct ARM control,
+and require fresh Linux CI. Keep ARM startup sign-off unresolved until proven
+on a compatible target; package installation and direct execution alone do not
+qualify the native runner. All Docker/native builds remain remote.
+
 ## Current addition: Linux ARM64
 
 The user now requires ARM Linux support as well. Treat ARM Linux as ARM64

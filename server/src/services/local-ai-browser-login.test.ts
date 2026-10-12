@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { startLocalBrowserLogin } from "./local-ai-browser-login.js";
 import { resolveCodexCommand } from "../vendor/paperclip-runner/index.js";
 
@@ -40,6 +42,24 @@ function targetPlatform(platform: string, architecture: string, glibc = true, gl
   Object.defineProperty(process, "platform", { ...initialPlatform, value: platform });
   Object.defineProperty(process, "arch", { ...initialArchitecture, value: architecture });
   if (platform === "linux") vi.spyOn(process.report, "getReport").mockReturnValue({ header: glibc ? { glibcVersionRuntime } : {} } as never);
+}
+
+function resolveFixtureCodexCommand(home: string): string {
+  // Vitest's global dependency paths can supply a foreign bridge before the
+  // fixture wrapper. Reuse the existing Codex security test's closed Node seam.
+  const source = `
+    import { resolveCodexCommand } from ${JSON.stringify(new URL("../../../packages/paperclip-runner/src/drivers/codex/codex-command.ts", import.meta.url).href)};
+    try { console.log(JSON.stringify({ command: resolveCodexCommand(${JSON.stringify(path.join(root!, "issuer.js"))}, { PATH: "/missing-codex" }, ${JSON.stringify(home)}) })); }
+    catch (error) { console.log(JSON.stringify({ error: error.message })); }
+  `;
+  const result = JSON.parse(execFileSync(process.execPath, [
+    "--no-global-search-paths", "--import", createRequire(import.meta.url).resolve("tsx"),
+    "--input-type=module", "--eval", source,
+  ], { cwd: root, env: { PATH: "/usr/bin:/bin", NODE_PATH: "", NODE_OPTIONS: "" },
+    encoding: "utf8", timeout: 10000, maxBuffer: 16384 }));
+  if (typeof result.error === "string") throw new Error(result.error);
+  if (typeof result.command !== "string") throw new Error("Fixture resolver returned no executable");
+  return result.command;
 }
 
 describe.skipIf(process.platform === "win32")("local browser subscription login", () => {
@@ -84,15 +104,18 @@ describe.skipIf(process.platform === "win32")("local browser subscription login"
     await mkdir(path.join(dependency, "bin"), { recursive: true });
     await writeFile(path.join(dependency, "package.json"), JSON.stringify({ name: "@openai/codex", version: "0.1.0", bin: { codex: "bin/codex" } }));
     await writeFile(path.join(dependency, "bin/codex"), await readFile(path.join(root!, "bin/codex")), { mode: 0o700 });
-    const actual = await vi.importActual<Pick<typeof import("../vendor/paperclip-runner/index.js"), "resolveCodexCommand">>("../../../packages/paperclip-runner/src/drivers/codex/codex-command.ts");
-    vi.mocked(resolveCodexCommand).mockImplementation(() => actual.resolveCodexCommand(path.join(root!, "issuer.js"), process.env, home));
+    const command = resolveFixtureCodexCommand(home);
+    expect(command).toBe(await realpath(path.join(dependency, "bin/codex")));
+    vi.mocked(resolveCodexCommand).mockReturnValue(command);
     process.env.PATH = "/usr/bin:/bin";
     const login = startLocalBrowserLogin("openai", home);
-    await vi.waitFor(() => expect(login.outcome).toBeDefined(), { timeout: 5000 });
-    expect(login.outcome).toBe("success");
-    expect(await readFile(path.join(home, "owned-cli"), "utf8")).toBe("owned\n");
-    expect(resolveCodexCommand).toHaveBeenCalledOnce();
-    expect(process.report.getReport).not.toHaveBeenCalled();
+    try {
+      await vi.waitFor(() => expect(login.outcome).toBeDefined(), { timeout: 5000 });
+      expect(login.outcome).toBe("success");
+      expect(await readFile(path.join(home, "owned-cli"), "utf8")).toBe("owned\n");
+      expect(resolveCodexCommand).toHaveBeenCalledOnce();
+      expect(process.report.getReport).not.toHaveBeenCalled();
+    } finally { login.abort(); }
   });
 
   it.each(["2.38", "musl", "unknown"])("reports a real owned-dependency containment failure on Linux/%s without falling back to another CLI", async libc => {
@@ -101,15 +124,20 @@ describe.skipIf(process.platform === "win32")("local browser subscription login"
     const dependency = path.join(root!, "node_modules/@openai/codex");
     await mkdir(dependency, { recursive: true });
     await writeFile(path.join(dependency, "package.json"), JSON.stringify({ name: "@openai/codex", version: "0.1.0", bin: { codex: "../outside-codex" } }));
-    const actual = await vi.importActual<Pick<typeof import("../vendor/paperclip-runner/index.js"), "resolveCodexCommand">>("../../../packages/paperclip-runner/src/drivers/codex/codex-command.ts");
-    vi.mocked(resolveCodexCommand).mockImplementation(() => actual.resolveCodexCommand(path.join(root!, "issuer.js"), process.env, home));
+    let resolutionError: unknown;
+    try { resolveFixtureCodexCommand(home); } catch (error) { resolutionError = error; }
+    expect(resolutionError).toBeInstanceOf(Error);
+    expect((resolutionError as Error).message).toContain("executable escapes its package");
+    vi.mocked(resolveCodexCommand).mockImplementation(() => { throw resolutionError; });
     const login = startLocalBrowserLogin("openai", home);
-    await vi.waitFor(() => expect(login.outcome).toBeDefined(), { timeout: 5000 });
-    expect(login.outcome).toBe("failure");
-    expect(login.error).toMatch(/requires an installed Codex CLI.*Install Codex/);
-    expect(JSON.stringify(login)).not.toContain(root!);
-    await expect(readFile(path.join(home, "unreviewed-cli"))).rejects.toMatchObject({ code: "ENOENT" });
-    expect(resolveCodexCommand).toHaveBeenCalledOnce();
+    try {
+      await vi.waitFor(() => expect(login.outcome).toBeDefined(), { timeout: 5000 });
+      expect(login.outcome).toBe("failure");
+      expect(login.error).toMatch(/requires an installed Codex CLI.*Install Codex/);
+      expect(JSON.stringify(login)).not.toContain(root!);
+      await expect(readFile(path.join(home, "unreviewed-cli"))).rejects.toMatchObject({ code: "ENOENT" });
+      expect(resolveCodexCommand).toHaveBeenCalledOnce();
+    } finally { login.abort(); }
   });
 
   it.each([["linux", "x64"], ["linux", "arm64"], ["darwin", "arm64"], ["darwin", "x64"]] as const)("reports an unavailable Codex CLI on %s/%s without revealing private details", async (platform, architecture) => {
