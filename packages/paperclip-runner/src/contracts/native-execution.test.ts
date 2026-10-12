@@ -1,3 +1,4 @@
+import { nativeTaskConstraints } from "../backends/runtime-context.js";
 import { createHash } from "node:crypto";
 import { QUALIFIED_ACPX_PROFILES } from "../drivers/acpx/qualified-profiles.js";
 import { describe, expect, it } from "vitest";
@@ -697,6 +698,20 @@ describe("Claude effort input v7", () => {
     expect(parsed).toMatchObject({ schema: NATIVE_EXECUTION_INPUT_SCHEMA_V7, provider: { claudeEffort } });
     expect(buildNativeModelEnvelope(parsed).schema).toBe("paperclip.native-model-envelope.v3");
     expect(JSON.stringify(buildNativeModelEnvelope(parsed))).not.toContain("claudeEffort");
+  });
+  it("directs answered Claude v7 questions to the actual compact envelope on fresh and resumed turns", () => {
+    const response = { interactionId: "answer-1", kind: "ask_user_questions", response: {
+      status: "answered", result: { version: 1, answers: [{ questionId: "destination", optionIds: ["workspace"], otherText: "Use the task workspace." }] },
+    } };
+    const parsed = parseNativeExecutionInput({ ...current, provider: { ...current.provider, claudeEffort: "high" }, interactionResponses: [response] });
+    const constraint = nativeTaskConstraints(parsed).find(value => value.includes("already authoritatively answered"));
+    expect(constraint).toContain("interactionResponses[0].response.result.answers");
+    expect(constraint).not.toContain("message.interactionResponses");
+    expect(constraint).not.toContain("Use the task workspace.");
+    for (const envelope of [buildNativeModelEnvelope(parsed), buildNativeModelEnvelope(parsed, { resumedSession: true })]) {
+      expect(envelope).toHaveProperty("interactionResponses.0.response.result.answers", response.response.result.answers);
+      expect(envelope).not.toHaveProperty("message");
+    }
   });
   it("keeps historical readers closed and rejects aliases and foreign effort", () => {
     for (const schema of ["paperclip.native-execution-input.v4", NATIVE_EXECUTION_INPUT_SCHEMA]) {
