@@ -15,6 +15,8 @@ on:
     outputs:
       runner_artifact_prefix:
         value: ${{ jobs.runner_binaries.outputs.artifact_prefix }}
+      native_consumer_matrix:
+        value: ${{ jobs.runner_binary_targets.outputs.native_consumers }}
 
 # Caller-provided refs may name unmerged PR code. AWS is eligible only when
 # the caller runs on canonical master and verifies that event's exact SHA.
@@ -459,8 +461,48 @@ jobs:
       - name: Build
         run: pnpm build
 
+  runner_binary_targets:
+    if: inputs.runner_binaries_only
+    name: Read exact-source daemon targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.targets.outputs.matrix }}
+      native_consumers: ${{ steps.targets.outputs.native_consumers }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+      - name: Preserve the immutable source's platform contract
+        id: targets
+        env:
+          SOURCE_SHA: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || exit 1
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { appendFileSync } from 'node:fs';
+          import { RELEASE_RUNNER_TARGETS } from './packages/paperclip-runner/scripts/stage-release-runner-binaries.mjs';
+          const historical = ['darwin-arm64', 'darwin-x64', 'linux-x64'];
+          const current = [...historical, 'linux-arm64'];
+          const targets = [...RELEASE_RUNNER_TARGETS].sort();
+          assert.ok(JSON.stringify(targets) === JSON.stringify(historical.sort()) || JSON.stringify(targets) === JSON.stringify(current.sort()), 'Unknown exact-source daemon platform contract');
+          const hosts = { 'linux-x64': 'ubuntu-latest', 'linux-arm64': 'ubuntu-24.04-arm', 'darwin-arm64': 'macos-15', 'darwin-x64': 'macos-15-intel' };
+          const include = RELEASE_RUNNER_TARGETS.map(target => ({ target, host: hosts[target] }));
+          appendFileSync(process.env.GITHUB_OUTPUT, `matrix=${JSON.stringify({ include })}\nnative_consumers=${JSON.stringify({ include: include.filter(row => row.target !== 'linux-x64') })}\n`);
+          NODE
+
   runner_binaries:
     if: inputs.runner_binaries_only
+    needs: runner_binary_targets
     name: Release daemon (${{ matrix.target }})
     runs-on: ${{ matrix.host }}
     timeout-minutes: 30
@@ -468,14 +510,7 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - target: linux-x64
-            host: ubuntu-latest
-          - target: darwin-arm64
-            host: macos-15
-          - target: darwin-x64
-            host: macos-15-intel
+      matrix: ${{ fromJSON(needs.runner_binary_targets.outputs.matrix) }}
     outputs:
       artifact_prefix: ${{ steps.identity.outputs.artifact_prefix }}
     steps:

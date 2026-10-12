@@ -43,7 +43,7 @@ import { getAdapterLabel } from "../adapters/adapter-display-registry";
 import { defaultCreateValues } from "../components/agent-config-defaults";
 import { getUIAdapter, listUIAdapters } from "../adapters";
 import { isPaperclipRunnerProvider, PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES, type CreateConfigValues } from "@paperclipai/adapter-utils";
-import { DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX } from "@paperclipai/adapter-codex-local";
+import { resolveCodexLocalCliPolicy } from "@paperclipai/adapter-codex-local";
 import {
   type FileTreeNode,
   type FrontmatterData,
@@ -590,7 +590,7 @@ function importAdapterValues(
       dangerouslyBypassSandbox: typeof savedBypass === "boolean" ? savedBypass
         : nativeCodex
           ? (sourceConfig.codexPermissionMode ?? PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES.codex.defaultMode) === "never"
-          : DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX,
+          : resolveCodexLocalCliPolicy(sourceConfig).bypass,
     } : {}),
     ...(sourceConfig && choice === "claude_local" ? { model: typeof sourceConfig.model === "string" ? sourceConfig.model : "", thinkingEffort: String(sourceConfig.modelReasoningEffort ?? sourceConfig.reasoningEffort ?? sourceConfig.effort ?? "") } : {}),
     ...(sourceAdapterType === "paperclip_runner" && choice !== "openai_dot"

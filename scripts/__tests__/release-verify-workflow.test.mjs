@@ -746,9 +746,14 @@ test("direct protocol concurrency override only lowers the configured ceiling", 
 test("release daemon production uses exact-source native hosts and no publisher or provider permissions", () => {
   const workflow = readWorkflow("release-verify.yml");
   const producer = workflow.split("  runner_binaries:\n")[1];
-  for (const [target, host] of [["linux-x64", "ubuntu-latest"], ["darwin-arm64", "macos-15"], ["darwin-x64", "macos-15-intel"]]) {
-    assert.ok(producer.includes(`- target: ${target}\n            host: ${host}`));
+  const targets = workflow.split("  runner_binary_targets:\n")[1].split("  runner_binaries:\n")[0];
+  for (const [target, host] of [["linux-x64", "ubuntu-latest"], ["linux-arm64", "ubuntu-24.04-arm"], ["darwin-arm64", "macos-15"], ["darwin-x64", "macos-15-intel"]]) {
+    assert.ok(targets.includes(`'${target}': '${host}'`));
   }
+  assert.match(producer, /matrix: \$\{\{ fromJSON\(needs.runner_binary_targets.outputs.matrix\) \}\}/);
+  assert.match(targets, /Unknown exact-source daemon platform contract/);
+  assert.match(targets, /RELEASE_RUNNER_TARGETS/);
+  assert.doesNotMatch(targets, /secrets\.|id-token: write|contents: write|npm publish|environment:/);
   assert.match(producer, /persist-credentials: false/);
   assert.match(producer, /contents: read/);
   assert.doesNotMatch(producer, /secrets\.|id-token: write|contents: write|npm publish|environment:/);
@@ -773,7 +778,7 @@ test("release daemon production uses exact-source native hosts and no publisher 
   assert.match(script, /elif \[ "\$dry_run" = false \]; then[\s\S]*?release_fail "Public releases require/);
 });
 
-test("premerge Mac qualification consumes the same Linux-packed npm bytes without publishing", () => {
+test("premerge native qualification consumes the same Linux-packed npm bytes without publishing", () => {
   const smoke = readWorkflow("release-smoke.yml");
   assert.match(smoke, /smoke_service:\n\s+if: inputs.qualification_source_sha == ''/);
   assert.match(smoke, /smoke:\n\s+if: inputs.qualification_source_sha == ''/);
@@ -784,9 +789,44 @@ test("premerge Mac qualification consumes the same Linux-packed npm bytes withou
   assert.match(qualification, /if: \$\{\{ !cancelled\(\) && steps.pack_identity.outputs.available == 'true' \}\}/);
   assert.match(qualification, /name: \$\{\{ inputs.artifact_name \}\}-public-packages/);
   assert.match(qualification, /--mac-consumer/);
-  assert.match(qualification, /host: macos-15\n/);
-  assert.match(qualification, /host: macos-15-intel\n/);
+  assert.match(qualification, /--linux-arm64-consumer/);
+  assert.match(qualification, /fromJSON\(needs.qualification_daemons.outputs.native_consumer_matrix\)/);
   assert.match(qualification, /pnpm install --ignore-scripts --no-frozen-lockfile/);
+});
+
+test("exact-source daemon matrices preserve historical three-target sources and add native ARM only for new sources", () => {
+  const workflow = readWorkflow("release-verify.yml");
+  const step = workflow.split('      - name: Preserve the immutable source\'s platform contract')[1].split('\n  runner_binaries:')[0];
+  const script = step.split('        run: |\n')[1].split('\n').map(line => line.startsWith('          ') ? line.slice(10) : line).join('\n');
+  const root = mkdtempSync(path.join(tmpdir(), 'release-target-contract-'));
+  try {
+    const tools = path.join(root, 'tools'); mkdirSync(tools);
+    writeFileSync(path.join(tools, 'git'), '#!/bin/sh\nprintf "%s\\n" "$FIXTURE_HEAD"\n', { mode: 0o755 });
+    const source = path.join(root, 'packages/paperclip-runner/scripts/stage-release-runner-binaries.mjs');
+    mkdirSync(path.dirname(source), { recursive: true });
+    const output = path.join(root, 'outputs');
+    const historical = ['darwin-arm64', 'darwin-x64', 'linux-x64'];
+    for (const targets of [historical, [...historical, 'linux-arm64']]) {
+      writeFileSync(source, `export const RELEASE_RUNNER_TARGETS = ${JSON.stringify(targets)};`);
+      writeFileSync(output, '');
+      const result = spawnSync('bash', ['-euo', 'pipefail', '-c', script], { cwd: root, encoding: 'utf8', env: {
+        PATH: `${tools}:${path.dirname(process.execPath)}:/usr/bin:/bin`, SOURCE_SHA: 'a'.repeat(40), FIXTURE_HEAD: 'a'.repeat(40), GITHUB_OUTPUT: output,
+      } });
+      assert.equal(result.status, 0, result.stderr);
+      const data = Object.fromEntries(readFileSync(output, 'utf8').trim().split('\n').map(line => {
+        const index = line.indexOf('='); return [line.slice(0, index), JSON.parse(line.slice(index + 1))];
+      }));
+      assert.deepEqual(data.matrix.include.map(row => row.target), targets);
+      assert.deepEqual(data.native_consumers.include.map(row => row.target), targets.filter(target => target !== 'linux-x64'));
+      assert.ok(data.matrix.include.every(row => row.target !== 'linux-arm64' || row.host === 'ubuntu-24.04-arm'));
+    }
+    writeFileSync(source, 'export const RELEASE_RUNNER_TARGETS = ["linux-arm64"];'); writeFileSync(output, '');
+    const result = spawnSync('bash', ['-euo', 'pipefail', '-c', script], { cwd: root, encoding: 'utf8', env: {
+      PATH: `${tools}:${path.dirname(process.execPath)}:/usr/bin:/bin`, SOURCE_SHA: 'a'.repeat(40), FIXTURE_HEAD: 'a'.repeat(40), GITHUB_OUTPUT: output,
+    } });
+    assert.equal(result.status, 1); assert.match(result.stderr, /Unknown exact-source daemon platform contract/);
+    assert.equal(readFileSync(output, 'utf8'), '');
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 

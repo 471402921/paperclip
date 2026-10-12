@@ -1,4 +1,4 @@
-// Assemble the three independently built release daemons before npm packing.
+// Assemble the four independently built release daemons before npm packing.
 // Usage: node packages/paperclip-runner/scripts/stage-release-runner-binaries.mjs MANIFEST.json
 // Manifest: {sourceRevision, platforms: {"darwin-arm64": {path, sha256}, ...}, remoteProviderPack: {path, sha256}}.
 import { createHash } from "node:crypto";
@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { runnerBinaryTarget } from "../src/live/runner-binary.ts";
 import { verifyReleaseProviderPack } from "./release-provider-pack.mjs";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const RELEASE_RUNNER_TARGETS = Object.freeze(["darwin-arm64", "darwin-x64", "linux-x64"]);
+export const RELEASE_RUNNER_TARGETS = Object.freeze(["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"]);
 const required = RELEASE_RUNNER_TARGETS;
 const digest = bytes => "sha256:" + createHash("sha256").update(bytes).digest("hex");
 function regularFile(path, maximumSize) {
@@ -38,7 +38,7 @@ export function verifyReleaseRunnerMetadata(metadata, expected) {
 
 export function releaseDaemonManifest(artifactDirectory, sourceRevision, verifyMetadata) {
   if (!/^[a-f0-9]{40}$/.test(sourceRevision)) throw Error("Release daemons require an immutable source revision");
-  if (readdirSync(artifactDirectory).sort().join() !== [...required].sort().join()) throw Error("Release daemons require exactly the three supported target directories");
+  if (readdirSync(artifactDirectory).sort().join() !== [...required].sort().join()) throw Error("Release daemons require exactly the four supported target directories");
   const platforms = {};
   for (const target of required) {
     const directory = join(resolve(artifactDirectory), target);
@@ -83,7 +83,7 @@ async function main() {
   const manifest = daemonOnly
     ? releaseDaemonManifest(process.argv[3], process.argv[4], await metadataContract())
     : JSON.parse(regularFile(resolve(process.argv[2]), 512 * 1024));
-  if (!/^[a-f0-9]{40}$/.test(manifest.sourceRevision) || !manifest.platforms || Object.keys(manifest.platforms).sort().join() !== [...required].sort().join()) throw Error("Release daemon manifest must bind one source and all three supported targets");
+  if (!/^[a-f0-9]{40}$/.test(manifest.sourceRevision) || !manifest.platforms || Object.keys(manifest.platforms).sort().join() !== [...required].sort().join()) throw Error("Release daemon manifest must bind one source and all four supported targets");
   const verified = required.map(target => {
     const artifact = manifest.platforms[target];
     if (!artifact || !isAbsolute(artifact.path) || !/^sha256:[a-f0-9]{64}$/.test(artifact.sha256)) throw Error(`Invalid ${target} release artifact`);

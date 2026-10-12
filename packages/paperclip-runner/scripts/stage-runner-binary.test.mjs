@@ -16,7 +16,7 @@ const contract = { package: { name: "@paperclipai/paperclip-runner", version: "0
 const metadata = { binaryContractVersion: 2, nativeExecutionVersion: 1, harnessDriverVersion: 1,
   packageName: "@paperclipai/paperclip-runner", packageVersion: "0.0.0", prp: { name: "paperclip.runner", minimumVersion: 1, maximumVersion: 2 } };
 
-test("release assembly binds all three actual targets, source, hashes and compatible metadata", async () => {
+test("release assembly binds all four actual targets, source, hashes and compatible metadata", async () => {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), "runner-release-inputs-"))), source = "a".repeat(40);
   const verify = value => verifyReleaseRunnerMetadata(value, contract);
   const receiptPath = target => path.join(root, target, "receipt.json");
@@ -24,8 +24,8 @@ test("release assembly binds all three actual targets, source, hashes and compat
     for (const target of RELEASE_RUNNER_TARGETS) {
       await mkdir(path.join(root, target));
       const bytes = Buffer.alloc(64);
-      if (target === "linux-x64") {
-        bytes.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]); bytes.writeUInt16LE(62, 18);
+      if (target.startsWith("linux-")) {
+        bytes.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]); bytes.writeUInt16LE(target === "linux-x64" ? 62 : 183, 18);
       } else { bytes.writeUInt32LE(0xfeedfacf); bytes.writeUInt32LE(target === "darwin-x64" ? 0x01000007 : 0x0100000c, 4); }
       await writeFile(path.join(root, target, "paperclip-runnerd"), bytes);
       await writeFile(receiptPath(target), JSON.stringify({ schema: "paperclip.runner.release-artifact.v1", sourceRevision: source,
@@ -48,10 +48,17 @@ test("release assembly binds all three actual targets, source, hashes and compat
     await rm(binary); await symlink(path.join(root, "darwin-x64/paperclip-runnerd"), binary);
     assert.throws(() => releaseDaemonManifest(root, source, verify), /regular file/);
     await rm(binary); await writeFile(binary, bytes);
+    const armBinary = path.join(root, "linux-arm64/paperclip-runnerd"), armBytes = await readFile(armBinary);
+    const armReceipt = JSON.parse(await readFile(receiptPath("linux-arm64"), "utf8"));
+    const wrongArm = await readFile(path.join(root, "linux-x64/paperclip-runnerd"));
+    await writeFile(armBinary, wrongArm);
+    await writeFile(receiptPath("linux-arm64"), JSON.stringify({ ...armReceipt, sha256: "sha256:" + createHash("sha256").update(wrongArm).digest("hex") }));
+    assert.throws(() => releaseDaemonManifest(root, source, verify), /architecture mismatch/);
+    await writeFile(armBinary, armBytes); await writeFile(receiptPath("linux-arm64"), JSON.stringify(armReceipt));
     await mkdir(path.join(root, "win32-x64"));
-    assert.throws(() => releaseDaemonManifest(root, source, verify), /exactly the three/);
+    assert.throws(() => releaseDaemonManifest(root, source, verify), /exactly the four/);
     await rm(path.join(root, "win32-x64"), { recursive: true });
-    await rm(receiptPath("linux-x64"));
+    await rm(receiptPath("linux-arm64"));
     assert.throws(() => releaseDaemonManifest(root, source, verify), /only its daemon and receipt/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -142,8 +149,8 @@ test("a source rebuild selects fresh dev bytes while preserving release binaries
       const artifact = path.join(binaryRoot, target, "paperclip-runnerd");
       if (artifact !== hostTarget) {
         const header = Buffer.alloc(64);
-        if (target === "linux-x64") {
-          header.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]); header.writeUInt16LE(62, 18);
+        if (target.startsWith("linux-")) {
+          header.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]); header.writeUInt16LE(target === "linux-x64" ? 62 : 183, 18);
         } else { header.writeUInt32LE(0xfeedfacf); header.writeUInt32LE(target === "darwin-x64" ? 0x01000007 : 0x0100000c, 4); }
         await mkdir(path.dirname(artifact), { recursive: true });
         await writeFile(artifact, header);

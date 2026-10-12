@@ -14,12 +14,12 @@ export function paperclipRunnerProfileForHarness(harness: string): { provider: "
   return undefined;
 }
 
-/** Creation defaults follow the shipped Linux x64 and macOS release artifacts. */
+/** Creation defaults follow the shipped 64-bit Linux and macOS release artifacts. */
 export function paperclipRunnerSupportsPlatform(harness: string, platform: string, architecture: string): boolean {
   // Claude graduates on Apple Silicon first; other targets await package and live qualification.
   if (harness === "claude_local") return platform === "darwin" && architecture === "arm64";
   return !!paperclipRunnerProfileForHarness(harness)
-    && ((platform === "linux" && architecture === "x64")
+    && ((platform === "linux" && (architecture === "x64" || architecture === "arm64"))
       || (platform === "darwin" && (architecture === "arm64" || architecture === "x64")));
 }
 

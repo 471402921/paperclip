@@ -56,10 +56,10 @@ test("release assembly rejects rehashed stale or missing packs before staging an
       mkdirSync(dirname(join(root, file)), { recursive: true }); cpSync(join(source, file), join(root, file));
     }
     const platforms = {};
-    for (const target of ["darwin-arm64", "darwin-x64", "linux-x64"]) {
+    for (const target of ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"]) {
       const bytes = Buffer.alloc(64);
-      if (target === "linux-x64") {
-        bytes.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]); bytes.writeUInt16LE(62, 18);
+      if (target.startsWith("linux-")) {
+        bytes.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]); bytes.writeUInt16LE(target === "linux-x64" ? 62 : 183, 18);
       } else {
         bytes.writeUInt32LE(0xfeedfacf, 0); bytes.writeUInt32LE(target === "darwin-arm64" ? 0x0100000c : 0x01000007, 4);
       }

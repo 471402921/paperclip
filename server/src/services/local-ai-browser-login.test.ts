@@ -41,8 +41,8 @@ function targetPlatform(platform: string, architecture: string) {
 }
 
 describe.skipIf(process.platform === "win32")("local browser subscription login", () => {
-  it.each([false, true])("uses the selected Codex command with its credential home and ambient HOME/cwd (legacy Linux ARM64: %s)", async (legacy) => {
-    if (legacy) targetPlatform("linux", "arm64");
+  it.each([false, true])("uses the selected Codex command with its credential home and ambient HOME/cwd (legacy Linux ARM32: %s)", async (legacy) => {
+    if (legacy) targetPlatform("linux", "arm");
     const home = await fakeCli("codex", [
       '[ "$1 $2" = "login --device-auth" ] || exit 11',
       '[ "$HOME" = "$CLAUDE_CONFIG_DIR" ] && [ "$HOME" != "$CODEX_HOME" ] && [ "$CODEX_HOME" = "$PAPERCLIP_TEST_LOGIN_CODEX_HOME" ] || exit 12',
@@ -66,7 +66,7 @@ describe.skipIf(process.platform === "win32")("local browser subscription login"
     expect(login.code).toBe("ABCD-EFGHJ");
   });
 
-  it.each([["linux", "x64"], ["darwin", "arm64"], ["darwin", "x64"]] as const)("reports an unavailable Codex CLI on %s/%s without revealing private details", async (platform, architecture) => {
+  it.each([["linux", "x64"], ["linux", "arm64"], ["darwin", "arm64"], ["darwin", "x64"]] as const)("reports an unavailable Codex CLI on %s/%s without revealing private details", async (platform, architecture) => {
     targetPlatform(platform, architecture);
     const home = await fakeCli("codex", 'echo invoked > "$CODEX_HOME/unreviewed-cli"');
     const failure = new Error("private-installation-path-or-provider-output");
@@ -79,8 +79,8 @@ describe.skipIf(process.platform === "win32")("local browser subscription login"
     expect(login.authorizationUrl).toBeUndefined();
   });
 
-  it("reports a missing Linux ARM64 Codex CLI without revealing the host PATH", async () => {
-    targetPlatform("linux", "arm64");
+  it("reports a missing Linux ARM32 Codex CLI without revealing the host PATH", async () => {
+    targetPlatform("linux", "arm");
     const home = await fakeCli("codex", "exit 0");
     process.env.PATH = "/usr/bin:/bin";
     const login = startLocalBrowserLogin("openai", home);

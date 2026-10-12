@@ -9,7 +9,7 @@ vi.mock("./environment-config.js", () => ({ resolveEnvironmentDriverConfigForRun
 vi.mock("@paperclipai/adapter-utils/ssh", () => ({ runSshCommand: state.ssh }));
 import { agentRunnerAvailability, resolveAgentRunnerTargetForCompany, resolveNewAgentRunner, resolveNewAgentRunnerForCompany } from "./agent-runner-selection.js";
 const target = { driver: "local", platform: "linux", architecture: "x64" };
-const qualifiedTargets = [target, { driver: "local", platform: "darwin", architecture: "arm64" }, { driver: "local", platform: "darwin", architecture: "x64" }];
+const qualifiedTargets = [target, { driver: "local", platform: "linux", architecture: "arm64" }, { driver: "local", platform: "darwin", architecture: "arm64" }, { driver: "local", platform: "darwin", architecture: "x64" }];
 
 describe("server-owned Codex runner selection", () => {
   beforeEach(() => { state.disabled = []; state.overridden.clear(); state.settings = {}; state.getEnvironment.mockReset(); state.bindings.mockReset().mockResolvedValue([]); state.managedEnvironment.mockReset(); state.ssh.mockReset().mockResolvedValue({ stdout: "Linux\nx86_64\n" }); state.resolveEnvironment.mockReset().mockResolvedValue({ driver: "ssh", config: {} }); });
@@ -34,7 +34,7 @@ describe("server-owned Codex runner selection", () => {
     expect(resolveNewAgentRunner({ adapterType: "paperclip_runner", runner: "legacy", adapterConfig: { provider: "codex", codexPermissionMode: "never", lifecycleMode: "per_turn", dangerouslyBypassApprovalsAndSandbox: false } }))
       .toEqual({ adapterType: "codex_local", adapterConfig: { dangerouslyBypassApprovalsAndSandbox: false } });
   });
-  it.each([{ platform: "win32", architecture: "x64" }, { platform: "linux", architecture: "arm64" }, { platform: "darwin", architecture: "ia32" }])("keeps unqualified $platform/$architecture targets legacy while preserving explicit native profiles", ({ platform, architecture }) => {
+  it.each([{ platform: "win32", architecture: "x64" }, { platform: "linux", architecture: "arm" }, { platform: "darwin", architecture: "ia32" }])("keeps unqualified $platform/$architecture targets legacy while preserving explicit native profiles", ({ platform, architecture }) => {
     const input = { adapterType: "codex_local", target: { driver: "local", platform, architecture } };
     expect(resolveNewAgentRunner(input).adapterType).toBe("codex_local");
     expect(() => resolveNewAgentRunner({ ...input, runner: "paperclip" })).toThrow("unavailable");
@@ -80,13 +80,15 @@ describe("server-owned Codex runner selection", () => {
     state.ssh.mockResolvedValue({ stdout: "Linux\naarch64\n" });
     const result = await resolveNewAgentRunnerForCompany({} as never, "company", { adapterType: "codex_local", defaultEnvironmentId: null });
     expect(state.getEnvironment).toHaveBeenCalledWith("default"); expect(state.bindings).toHaveBeenCalledWith("default");
-    expect(result.adapterType).toBe("codex_local");
+    expect(result.adapterType).toBe("paperclip_runner");
   });
   it.each([
     ["Linux\nx86_64\n", "paperclip", "paperclip_runner"],
     ["Darwin\narm64\n", "paperclip", "paperclip_runner"],
     ["Darwin\nx86_64\n", "paperclip", "paperclip_runner"],
-    ["Linux\naarch64\n", "legacy", "codex_local"],
+    ["Linux\naarch64\n", "paperclip", "paperclip_runner"],
+    ["Linux\narm64\n", "paperclip", "paperclip_runner"],
+    ["Linux\narmv7l\n", "legacy", "codex_local"],
   ])("uses the same selected SSH target for discovery and saving (%s)", async (stdout, expectedRunner, expectedAdapter) => {
     state.getEnvironment.mockResolvedValue({ id: "selected", driver: "ssh", status: "active", config: {} });
     state.ssh.mockResolvedValue({ stdout });
@@ -122,7 +124,7 @@ describe("Codex creation runner contract", () => {
   });
   it("qualifies only the Codex daemon targets shipped in public server packages", () => {
     for (const { platform, architecture } of qualifiedTargets) expect(paperclipRunnerSupportsPlatform("codex_local", platform, architecture)).toBe(true);
-    for (const [platform, architecture] of [["darwin", "ia32"], ["linux", "arm64"], ["win32", "x64"], ["win32", "arm64"], ["freebsd", "x64"]]) expect(paperclipRunnerSupportsPlatform("codex_local", platform, architecture)).toBe(false);
+    for (const [platform, architecture] of [["darwin", "ia32"], ["linux", "arm"], ["win32", "x64"], ["win32", "arm64"], ["freebsd", "x64"]]) expect(paperclipRunnerSupportsPlatform("codex_local", platform, architecture)).toBe(false);
     expect(paperclipRunnerSupportsPlatform("claude_local", "darwin", "arm64")).toBe(true);
   });
   it("keeps auto out of saved update defaults and validates request intent", () => {

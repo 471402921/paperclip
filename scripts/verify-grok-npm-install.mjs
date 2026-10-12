@@ -8,6 +8,7 @@ import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, re
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
+import { stripTypeScriptTypes } from 'node:module';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { packConcurrency, packStagedPackages, packTimings } from './pack-staged-packages.mjs';
@@ -95,7 +96,75 @@ async function verifyMacConsumer(packageDirectory, sourceRevision, receiptPath) 
     console.log(JSON.stringify(receipt));
   } finally { rmSync(root, { recursive: true, force: true }); }
 }
-if (process.argv[2] === '--mac-consumer') {
+async function verifyLinuxArmConsumer(packageDirectory, sourceRevision, receiptPath) {
+  assert.equal(process.env.GITHUB_ACTIONS, 'true', 'Native clean consumers run only on disposable hosted CI');
+  assert.equal(process.platform + '-' + process.arch, 'linux-arm64', 'ARM qualification requires a native ARM host');
+  assert.match(sourceRevision, /^[a-f0-9]{40}$/);
+  const packages = realpathSync(packageDirectory);
+  const manifest = JSON.parse(readFileSync(join(packages, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.schema, 'paperclip.runner.public-packages/v1');
+  assert.equal(manifest.sourceRevision, sourceRevision);
+  assert.ok(manifest.archives.some(entry => entry.name === '@paperclipai/server'));
+  assert.ok(manifest.archives.some(entry => entry.name === 'paperclipai'));
+  assert.equal(new Set(manifest.archives.map(entry => entry.name)).size, manifest.archives.length);
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'paperclip-arm-public-install-')));
+  try {
+    const assets = join(root, 'assets'), consumer = join(root, 'consumer'), cache = join(root, 'cache');
+    for (const directory of [assets, consumer, cache]) mkdirSync(directory);
+    const run = (command, args, cwd = root) => execFileSync(command, args, { cwd,
+      env: { PATH: process.env.PATH, HOME: root, TMPDIR: root }, timeout: 10 * 60_000,
+      maxBuffer: 32 * 1024 * 1024, encoding: 'utf8' });
+    const platform = 'linux/arm64';
+    run('docker', ['pull', '--platform', platform, GROK_PUBLIC_INSTALL_IMAGE]);
+    const isolated = (command, options = {}) => run('docker', grokConsumerDockerArgs({ assets, consumer, cache,
+      uid: process.getuid(), gid: process.getgid(), platform, command, ...options }));
+    for (const entry of manifest.archives) {
+      assert.match(entry.file, /^[A-Za-z0-9._-]+\.tgz$/); assert.match(entry.sha256, /^[a-f0-9]{64}$/);
+      const tarball = join(packages, entry.file);
+      assert.equal(realpathSync(tarball), tarball);
+      assert.equal(createHash('sha256').update(readFileSync(tarball)).digest('hex'), entry.sha256);
+      assertNoBundledCodexPayloads(run('tar', ['-tzf', tarball]).trim().split('\n'));
+      cpSync(tarball, join(assets, entry.file)); chmodSync(join(assets, entry.file), 0o644);
+    }
+    writeFileSync(join(consumer, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
+    const sentinelSource = join(root, 'lifecycle-sentinel'); mkdirSync(sentinelSource);
+    writeFileSync(join(sentinelSource, 'package.json'), JSON.stringify({ name: 'paperclip-verification-lifecycle-sentinel', version: '1.0.0',
+      scripts: { postinstall: 'node -e "require(\'node:fs\').writeFileSync(\'lifecycle-ran\', \'ok\')"' } }));
+    run('npm', ['pack', '--ignore-scripts', '--pack-destination', assets], sentinelSource);
+    isolated(['npm', 'install', '--ignore-scripts', '--omit=dev', ...readdirSync(assets).filter(file => file.endsWith('.tgz')).map(file => `/packages/${file}`)], { download: true });
+    const sentinel = join(consumer, 'node_modules/paperclip-verification-lifecycle-sentinel/lifecycle-ran');
+    assert.equal(existsSync(sentinel), false);
+    const lock = readFileSync(join(consumer, 'package-lock.json'), 'utf8');
+    isolated(GROK_PUBLIC_INSTALL_LIFECYCLE);
+    assert.equal(readFileSync(sentinel, 'utf8'), 'ok');
+    assert.equal(readFileSync(join(consumer, 'package-lock.json'), 'utf8'), lock);
+    for (const entry of manifest.archives) {
+      assert.equal(JSON.parse(readFileSync(join(consumer, 'node_modules', entry.name, 'package.json'))).version, manifest.releaseVersion);
+    }
+    const server = '/consumer/node_modules/@paperclipai/server', installed = server + '/dist/vendor/paperclip-runner';
+    const probe = (name, source, options = {}) => { writeFileSync(join(assets, name), source); return JSON.parse(isolated(['node', '/packages/' + name], options).trim()); };
+    const daemon = probe('daemon-probe.mjs', installedDaemonProbeSource(installed, '/consumer', sourceRevision));
+    assert.equal(daemon.target, 'linux-arm64');
+    const codex = probe('codex-probe.mjs', installedCodexProbeSource(installed + '/index.js', '/consumer', undefined, { nativeCodex: true }));
+    // Reuse the existing zero-turn hook as read-only verifier source. All
+    // production imports still resolve from the installed consumer graph.
+    cpSync(join(repo, 'tests/runner-e2e/installed-cli.ts'), join(assets, 'installed-cli.ts'));
+    writeFileSync(join(assets, 'types.js'), stripTypeScriptTypes(readFileSync(join(repo, 'tests/runner-e2e/types.ts'), 'utf8')));
+    const startup = probe('startup-probe.mjs', macInstalledStartupProbeSource('/consumer', server, daemon.sha256, '/packages/installed-cli.ts'),
+      { temporarySizeMiB: 2048, temporaryExecutable: true });
+    const receipt = { schema: 'paperclip.runner.linux-arm64-public-install.v1', sourceRevision, platform: process.platform, architecture: process.arch,
+      cleanNpmInstall: true, packageCount: manifest.archives.length, codexPackedPayloadsOmitted: true,
+      consumerImage: GROK_PUBLIC_INSTALL_IMAGE, consumerImagePlatform: platform,
+      consumerLockPreserved: true, lifecycleSentinelVerified: true, lifecycleNetwork: 'none',
+      ...daemon, ...codex, startup, providerCalls: 0 };
+    writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + '\n');
+    console.log(JSON.stringify(receipt));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+}
+if (process.argv[2] === '--linux-arm64-consumer') {
+  assert.equal(process.argv.length, 6, 'Usage: --linux-arm64-consumer PACKAGE_DIRECTORY SOURCE_SHA RECEIPT_PATH');
+  await verifyLinuxArmConsumer(process.argv[3], process.argv[4], process.argv[5]);
+} else if (process.argv[2] === '--mac-consumer') {
   assert.equal(process.argv.length, 6, 'Usage: --mac-consumer PACKAGE_DIRECTORY SOURCE_SHA RECEIPT_PATH');
   await verifyMacConsumer(process.argv[3], process.argv[4], process.argv[5]);
 } else {

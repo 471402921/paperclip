@@ -2,6 +2,65 @@
 
 Updated 2026-10-12.
 
+## Current addition: Linux ARM64
+
+The user now requires ARM Linux support as well. Treat ARM Linux as ARM64
+(`aarch64`), alongside Linux x64 and both macOS architectures. The earlier
+Linux ARM deferral below is superseded for ARM64; 32-bit ARM and Windows retain
+legacy defaults. Existing agents keep their saved execution.
+
+Extend the same native Codex creation/discovery contract and existing selection,
+login, built-in and plugin fixtures. Extend the current release assembler and
+remote workflow matrix to the fourth target, with an actual ARM64 hosted build
+and clean installation. Reuse the installed no-turn Codex startup check and
+the same public npm tarballs. Read required targets from the selected source
+so historical three-target promotions still work. Keep the Linux x64 managed
+provider pack distinct from the local ARM64 daemon.
+
+No local Rust/Docker builds or new paid Linux campaign. Apple Silicon task and
+follow-up acceptance remains valid at the explicitly recorded source; Linux
+ARM64 build/install/startup must acquire its own evidence. The existing
+[three-target qualifier](https://github.com/paperclipai/paperclip/actions/runs/38259364638)
+completed successfully at `d522822`, including both clean Mac consumers. It does
+not qualify ARM64. Candidate `058af8f1b69c5fa3d9bc974b9eab73c141b52823` passed
+ordinary CI and fresh 5/5 review. Its remaining import display finding is fixed
+by sharing the existing legacy argument-policy calculation with the UI without
+changing execution permissions. Ninety-five focused controls pass; all 45 exact
+argument cases also pass against the original builder. Four component cases fail
+on the original page. A no-provider protected preview shows Legacy with bypass
+off, matching `--sandbox read-only`; it does not apply another import.
+Receipt: `/private/tmp/codex-default-dc-import-live/legacy-policy-p2-receipt.json`.
+
+ARM64 selection/discovery controls pass 46 and 29 cases. Fourteen isolated
+browser-login tests pass after replacing the hardcoded ARM64 legacy login branch
+with the shared platform contract. This uses native execution's owned Codex
+resolver on ARM64 and retains PATH lookup for unqualified platforms. Shared
+typecheck passes. Built-in and plugin fixtures now include ARM64; their database
+checks remain in normal Linux CI. Receipt:
+`/private/tmp/pr2-linux-arm64-selection-checkpoint.json`.
+
+The packaging patch passes 97 existing controls: 15 assembler/provider-pack,
+20 consumer-boundary and 62 workflow tests. The first full workflow attempt was
+blocked by sandbox localhost permissions; the same full suite passes with its
+temporary listener access. Three workflow YAML files and MJS/shell syntax pass.
+Independent review confirms historical source compatibility and the unprivileged
+offline consumer boundaries. Official registry metadata confirms the pinned
+Node image has a native ARM64 manifest and the installed Codex dependency has
+an ARM64 package. No image or binary was pulled to this Mac. Receipt:
+`/private/tmp/pr2-linux-arm-packaging-owned-receipt.json`.
+
+Actual ARM64 daemon build and clean npm/native startup remain unexecuted at this
+source freeze. The test-drive stays on its existing verified Mac daemon; its
+last restart at `058af8f` preserved both full execution digests, both recorded
+native runs and both paused imports, with the deprecated flag false. Receipt:
+`/private/tmp/codex-default-dc-import-live/final-restart-receipt.json`.
+
+Next action: integrate the narrow policy display and ARM64 source/package fixes,
+run targeted controls, freeze/push one candidate, then run the existing hosted
+qualification once with all source-declared targets and require fresh CI/review.
+Keep the same branch, PR, preview and evidence index below. No merge or
+production deployment is authorized.
+
 ## Current amendment: include macOS in this PR
 
 The user requires macOS support in the same Codex-default PR. The earlier
