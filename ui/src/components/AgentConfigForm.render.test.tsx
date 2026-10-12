@@ -18,6 +18,7 @@ import { ApiError } from "../api/client";
 import { aiConnectionsApi } from "../api/ai-connections";
 import { CodexLocalConfigFields } from "../adapters/codex-local/config-fields";
 import type { AdapterConfigFieldsProps } from "../adapters/types";
+import { buildClaudeLocalConfig } from "@paperclipai/adapter-claude-local/ui";
 import { DEFAULT_CODEX_LOCAL_MODEL } from "@paperclipai/adapter-codex-local";
 
 const mockAgentsApi = vi.hoisted(() => ({
@@ -73,9 +74,8 @@ vi.mock("../api/agents", () => ({
   agentsApi: mockAgentsApi,
 }));
 
-vi.mock("../api/adapters", () => ({
-  adaptersApi: { list: async () => [{ type: "codex_local", supportedRunners: ["legacy", "paperclip"], defaultRunner: "legacy" }] },
-}));
+const mockAdaptersApi = vi.hoisted(() => ({ list: vi.fn(async () => [{ type: "codex_local", supportedRunners: ["legacy", "paperclip"], defaultRunner: "legacy" }]) }));
+vi.mock("../api/adapters", () => ({ adaptersApi: mockAdaptersApi }));
 
 vi.mock("../api/environments", () => ({
   environmentsApi: mockEnvironmentsApi,
@@ -659,6 +659,37 @@ async function flushUntil(check: () => boolean, timeoutMs = 4000) {
 
 describe("AgentConfigForm environment selector", () => {
   let roots: Root[] = [];
+
+  it.each(["paperclip", "legacy"] as const)("uses the resolved %s Claude form to preserve the correct turn limit", async defaultRunner => {
+    mockAdaptersApi.list.mockResolvedValue([{ type: "claude_local", supportedRunners: defaultRunner === "paperclip" ? ["paperclip", "legacy"] : ["legacy"], defaultRunner }]);
+    try {
+      const values = { ...defaultCreateValues, adapterType: "claude_local", runner: "auto" as const };
+      const result = await renderCreateForm([], values);
+      roots.push(result.root);
+      const resolved = result.onChange.mock.calls.reduce((current, [patch]) => ({ ...current, ...patch }), values);
+      expect(resolved.resolvedRunner).toBe(defaultRunner);
+      const config = buildClaudeLocalConfig(resolved);
+      if (defaultRunner === "legacy") expect(config.maxTurnsPerRun).toBe(1000);
+      else expect(config).not.toHaveProperty("maxTurnsPerRun");
+      expect(config).not.toHaveProperty("resolvedRunner");
+    } finally { mockAdaptersApi.list.mockResolvedValue([{ type: "codex_local", supportedRunners: ["legacy", "paperclip"], defaultRunner: "legacy" }]); }
+  });
+
+
+  it("carries a selected native Claude permission through the ordinary creation builder", async () => {
+    mockAdaptersApi.list.mockResolvedValue([{ type: "claude_local", supportedRunners: ["paperclip", "legacy"], defaultRunner: "paperclip" }]);
+    try {
+      const values = { ...defaultCreateValues, adapterType: "claude_local", runner: "auto" as const };
+      const result = await renderCreateForm([], values);
+      roots.push(result.root);
+      await clickElement(result.container.querySelector('[aria-label="Permission mode"]'));
+      const deny = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(option => option.textContent === "Deny all");
+      expect(deny).toBeTruthy();
+      await clickElement(deny);
+      const resolved = result.onChange.mock.calls.reduce((current, [patch]) => ({ ...current, ...patch }), values);
+      expect(buildClaudeLocalConfig(resolved)).toMatchObject({ acpxPermissionMode: "deny-all" });
+    } finally { mockAdaptersApi.list.mockResolvedValue([{ type: "codex_local", supportedRunners: ["legacy", "paperclip"], defaultRunner: "legacy" }]); }
+  });
 
   it("keeps an explicit Codex draft policy until a harness reset clears it", async () => {
     mockEnvironmentsApi.list.mockResolvedValue([]);

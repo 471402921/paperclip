@@ -1626,7 +1626,7 @@ export function CompanyImport() {
     resetMutationState();
     const agent = adapterAgents.find((a) => a.slug === slug);
     const currentType = agent ? effectiveAdapterType(agent) : adapterOverrides[slug] ?? "claude_local";
-    if (Object.keys(patch).some(key => key !== "runner")) {
+    if (Object.keys(patch).some(key => key !== "runner" && key !== "resolvedRunner")) {
       setAdapterConfigEditedSlugs(prev => new Set([...prev, slug]));
     }
     setAdapterConfigValues((prev) => ({
@@ -1736,7 +1736,8 @@ export function CompanyImport() {
     for (const agent of adapterAgents) {
       const selectedType = effectiveAdapterType(agent);
       const configVals = adapterConfigValues[agent.slug];
-      if (selectedType === agent.adapterChoice && !configVals) continue;
+      if (selectedType === agent.adapterChoice && !adapterConfigEditedSlugs.has(agent.slug)
+        && (!configVals || configVals.runner === importAdapterValues(selectedType, agent.adapterConfig, agent.adapterType, agent.runner).runner)) continue;
       const retainsNativeHarness = agent.adapterType === "paperclip_runner"
         && selectedType === agent.adapterChoice && ["codex_local", "claude_local"].includes(selectedType);
       const apiType = selectedType === "openai_dot" || retainsNativeHarness ? "paperclip_runner" : selectedType;

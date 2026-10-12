@@ -43,8 +43,14 @@ export function buildClaudeLocalConfig(v: CreateConfigValues): Record<string, un
   ac.graceSec = 15;
   const env = buildAdapterEnvConfig(v.envBindings, v.envVars);
   if (Object.keys(env).length > 0) ac.env = env;
-  // Native creation omits the legacy form default; explicit limits remain visible to validation.
-  if (v.runner === "legacy" || v.maxTurnsPerRun !== 1000) ac.maxTurnsPerRun = v.maxTurnsPerRun;
+  const nativeSelected = v.runner === "paperclip"
+    || ((v.runner === undefined || v.runner === "auto") && v.resolvedRunner === "paperclip");
+  // Only a resolved native form omits the Legacy default. Explicit limits
+  // still reach the server's compatibility check.
+  if (!nativeSelected || v.maxTurnsPerRun !== 1000) ac.maxTurnsPerRun = v.maxTurnsPerRun;
+  if (nativeSelected && v.adapterSchemaValues?.acpxPermissionMode !== undefined) {
+    ac.acpxPermissionMode = v.adapterSchemaValues.acpxPermissionMode;
+  }
   ac.dangerouslySkipPermissions = v.dangerouslySkipPermissions;
   if (v.workspaceStrategyType === "git_worktree") {
     ac.workspaceStrategy = {

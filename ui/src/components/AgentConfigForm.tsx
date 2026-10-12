@@ -628,6 +628,12 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const fieldsAdapterType = isRunnerHarness
     ? (runner === "paperclip" || (runner === "auto" && runnerAvailability?.defaultRunner === "paperclip") ? "paperclip_runner" : harnessType)
     : adapterType;
+  useEffect(() => {
+    if (props.mode !== "create" || harnessType !== "claude_local") return;
+    const resolvedRunner = runner === "auto" ? runnerAvailability?.defaultRunner : runner;
+    if (props.values.resolvedRunner !== resolvedRunner) props.onChange({ resolvedRunner });
+  }, [props.mode, harnessType, runner, runnerAvailability?.defaultRunner,
+    isCreate ? props.values.resolvedRunner : undefined, isCreate ? props.onChange : undefined]);
   const getCapabilities = useAdapterCapabilities();
   const adapterCaps = getCapabilities(isRunnerHarness ? harnessType : adapterType);
   const isDotRunner = adapterType === "paperclip_runner" && (isCreate ? props.values.adapterSchemaValues?.provider : eff("adapterConfig", "provider", config.provider)) === "openai_dot";

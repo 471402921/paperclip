@@ -1832,6 +1832,7 @@ function OnboardingWizardInner({
       ...defaultCreateValues,
       adapterType,
       runner,
+      resolvedRunner: runner === "auto" ? runnerDiscovery.data?.find(item => item.type === adapterType)?.defaultRunner : runner,
       model:
         adapterType === "gemini_local"
           ? model || DEFAULT_GEMINI_LOCAL_MODEL

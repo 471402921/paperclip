@@ -725,6 +725,8 @@ export interface CLIAdapterModule {
 
 export interface CreateConfigValues {
   runner?: "auto" | "paperclip" | "legacy";
+  /** Transient form resolution; never an execution setting or API override. */
+  resolvedRunner?: "paperclip" | "legacy";
   adapterType: string;
   codexPermissionMode?: "never" | "on-request" | "untrusted";
   /** Explicit Legacy permission choice; never persisted as a runner setting. */
