@@ -479,3 +479,42 @@ fresh exact-head CI/review. Prerequisite #16028 is not merged: normal auto-merge
 is queued for actual code-owner approval. Dependent branches have not been
 retargeted as if master contains that prerequisite. Final packaged runtime and
 source reconciliation remain gated; the source owner retains merge ownership.
+
+## Guided setup and source-attestation correction — 2026-10-12
+
+Fresh review reproduced another ordinary creation gap: `NewAgentSetup` supplied
+Auto without its discovered runner, causing native Claude to receive Legacy's
+1000-turn default and fail compatibility validation. Repair `e2e5c60496` passes
+the existing environment-scoped discovery into the transient builder hint. All
+63 mounted setup controls pass, including native, Legacy and unknown Auto with
+the native experimental flag disabled. UI noemit, maps and token gates pass.
+The hint is absent from saved execution configuration and request runner overrides.
+
+Exact-head cloud runner controls also caught the ownership repair's changed Pi
+shared-source closure. Declaration generation alone had not checked that closure.
+Protocol repair `0ff31b2b76` publishes Pi profile 24 with command digest
+`sha256:d25d674cda9a0853bdbf0521025099f1424c573d2f533630cb67d90e1bfcda3b`.
+Immutable profile 23 is retained. Only the profile version and sandbox-source
+attestation change; executable closures, models, effort and platform qualification
+remain intact. Copilot stays at pending profile 18. TypeScript/Rust declarations,
+current installed-Pi probe and historical rejection controls are synchronized.
+Profile/factory controls pass 122 with one historical skip; runner noemit passes.
+
+Host/sandbox controls pass 78/78 on restored, uninstrumented source. Earlier local
+expanded runs had one varying kernel-lease acquisition failure each; their logs
+are retained, not relabeled as passes. This Mac's listener inventory contained
+718 TCP rows. A temporary diagnostic group passed 78/78 and was fully reverted;
+occupied-port contention is suspected but not independently proven. Sandboxed
+loopback execution additionally failed and is excluded from valid lease proof.
+Fresh cloud execution remains required to distinguish infrastructure contention
+from a regression. Production ownership checks were not weakened and unrelated
+listeners were not stopped. No local native/Docker build or paid provider turn.
+
+Current platform Darwin SSH guard keeps Auto on Legacy for both architectures;
+explicit matching assets and saved native choices remain supported. Both focused
+x64/arm64 controls pass. The general review comment cites historical `bfa3a966`,
+which predates this guard. Final package qualification will use one frozen
+candidate source through the existing provider-free cloud workflow, with tooling
+and product identities recorded separately. No publication, deployment or paid
+retry is part of that campaign. The actual foundation code-owner approval and
+master reconciliation remain external prerequisites for normal merge sequencing.
