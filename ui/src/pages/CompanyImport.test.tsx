@@ -1269,6 +1269,39 @@ describe("CompanyImport", () => {
     expect(preview.manifest.agents[0]!.adapterConfig).toEqual(savedSourceConfig);
   });
 
+  it.each(["deny-all", "approve-reads"])("preserves native Claude settings and saves an edited permission from %s", async permission => {
+    mockOptionalCompany.mockReturnValue({ selectedCompanyId: "company-1" });
+    mockAdaptersApi.list.mockResolvedValue([
+      { type: "claude_local", disabled: false, supportedRunners: ["paperclip", "legacy"], defaultRunner: "paperclip" },
+      { type: "paperclip_runner", disabled: false },
+    ]);
+    const preview = buildPreviewResult();
+    const source = { provider: "acpx", acpxAgent: "claude", model: "claude-opus-5-5", modelReasoningEffort: "high", acpxPermissionMode: permission, timeoutSec: 180, lifecycleMode: "per_turn" };
+    preview.manifest.agents[0]!.adapterType = "paperclip_runner";
+    preview.manifest.agents[0]!.runner = "paperclip";
+    preview.manifest.agents[0]!.adapterConfig = source;
+    mockCompaniesApi.importPreview.mockResolvedValue(preview);
+    await renderPage();
+    await enterGithubUrl();
+    await clickButton(text => text === "Preview import");
+    await clickButton(text => text.includes("configure adapter"));
+    const select = container.querySelector<HTMLButtonElement>('[aria-label="Permission mode"]');
+    expect(select?.textContent).toContain(permission === "deny-all" ? "Deny all" : "Allow Paperclip reads");
+    await act(async () => select!.click());
+    const nextPermission = permission === "deny-all" ? "approve-reads" : "deny-all";
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(element => element.textContent === (nextPermission === "deny-all" ? "Deny all" : "Allow Paperclip reads"));
+    expect(option).toBeTruthy();
+    await act(async () => option!.click());
+    await flushReact();
+    await clickButton(text => text.startsWith("Import 3 file"));
+    await settle();
+    expect(lastImportMeta().adapterOverrides?.coder).toMatchObject({
+      runner: "paperclip",
+      adapterConfig: { ...source, acpxPermissionMode: nextPermission },
+    });
+    expect(preview.manifest.agents[0]!.adapterConfig).toEqual(source);
+  });
+
   it("does not reinterpret an unknown native provider as Codex when its configuration is edited", async () => {
     mockAdaptersApi.list.mockResolvedValue([{ type: "paperclip_runner", disabled: false }]);
     const preview = buildPreviewResult();

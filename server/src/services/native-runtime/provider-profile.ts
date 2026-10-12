@@ -355,12 +355,14 @@ export function assertAgentCoreProfileRecoveryBinding(input: {
 }
 
 export function claudeRunnerUnsupportedSettings(config: Record<string, unknown>): string[] {
-  const unsupported = ["chrome", "agentCommand", "stateDir", "warmHandleIdleMs", "extraArgs", "args", "filesystemScope", "filesystemExtraPaths", "filesystemSandboxCommand", "networkScope", "networkAllowlist", "maxTurnsPerRun"]
+  const unsupported = ["chrome", "agentCommand", "acpAgentCommand", "stateDir", "acpStateDir", "warmHandleIdleMs", "acpWarmHandleIdleMs", "extraArgs", "args", "filesystemScope", "filesystemExtraPaths", "filesystemSandboxCommand", "networkScope", "networkAllowlist", "maxTurnsPerRun", "permissionMode", "acpPermissionMode"]
     .filter(key => config[key] !== undefined && config[key] !== false && config[key] !== "" && config[key] !== 0 && !(Array.isArray(config[key]) && config[key].length === 0));
   if (config.command && config.command !== "claude") unsupported.push("command");
   if (config.mode && config.mode !== "persistent") unsupported.push("mode");
+  if (config.acpMode && config.acpMode !== "persistent") unsupported.push("acpMode");
   if (config.engine && !["auto", "cli", "acp"].includes(String(config.engine))) unsupported.push("engine");
   if (config.nonInteractivePermissions && config.nonInteractivePermissions !== "deny") unsupported.push("nonInteractivePermissions");
+  if (config.acpNonInteractivePermissions && config.acpNonInteractivePermissions !== "deny") unsupported.push("acpNonInteractivePermissions");
   if (config.dangerouslySkipPermissions === false) unsupported.push("dangerouslySkipPermissions");
   return unsupported;
 }

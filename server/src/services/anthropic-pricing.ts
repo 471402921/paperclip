@@ -13,7 +13,7 @@ const RATE_CARDS: Record<string, { rates: readonly string[]; version: string }> 
  * claim. ACP aggregates cache writes without TTL; conservatively price them at
  * the documented one-hour rate rather than silently assume five-minute writes. */
 export function priceAnthropicReceipt(receipt: AdapterUsageCheckpoint): AdapterUsageCheckpoint {
-  const card = receipt.model ? RATE_CARDS[receipt.model] : undefined;
+  const card = receipt.model && Object.hasOwn(RATE_CARDS, receipt.model) ? RATE_CARDS[receipt.model] : undefined;
   if (!receipt.complete || !receipt.usage || receipt.usageBasis !== "per_run"
     || receipt.provider !== "anthropic" || receipt.biller !== "anthropic"
     || !["api", "metered_api"].includes(receipt.billingType ?? "")

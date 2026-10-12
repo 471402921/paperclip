@@ -1901,7 +1901,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                     defaultRunner={runnerAvailability?.defaultRunner}
                     supportedRunners={runnerAvailability?.supportedRunners}
                     onChange={next => isCreate ? set!({ runner: next }) : setOverlay(prev => ({ ...prev, runner: next }))} />}
-                  {isLocal && fieldsAdapterType !== "paperclip_runner" && (<>              {/*
+                  {isLocal && (!isRunnerHarness || fieldsAdapterType !== "paperclip_runner") && (<>              {/*
                 The command names a binary on the execution host, so the
                 managed-sandbox-only policy hides it: the platform-managed image
                 owns the binary. Hiding is presentation only. A stored
