@@ -4,7 +4,7 @@ import { webcrypto } from "node:crypto";
 import type { ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { CompanyPortabilityImportResult, CompanyPortabilityPreviewResult } from "@paperclipai/shared";
+import type { AgentRunnerChoice, CompanyPortabilityImportResult, CompanyPortabilityPreviewResult } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/client";
 import type { CompanyImportJobAccepted } from "../api/companies";
@@ -53,6 +53,7 @@ const mockSidebarPreferencesApi = vi.hoisted(() => ({
 }));
 const mockPushToast = vi.hoisted(() => vi.fn());
 const mockSetSelectedCompanyId = vi.hoisted(() => vi.fn());
+const mockOptionalCompany = vi.hoisted(() => vi.fn());
 const mockReadZipArchive = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/companies", () => ({
@@ -104,14 +105,16 @@ vi.mock("../context/CompanyContext", () => ({
     selectedCompany: { id: "company-1", name: "Paperclip" },
     setSelectedCompanyId: mockSetSelectedCompanyId,
   }),
-  useOptionalCompany: () => null,
+  useOptionalCompany: mockOptionalCompany,
 }));
 
 vi.mock("../context/ToastContext", () => ({
   useToastActions: () => ({ pushToast: mockPushToast }),
+  useOptionalToastActions: () => ({ pushToast: mockPushToast }),
 }));
 
 vi.mock("@/components/ui/tooltip", () => ({
+  TooltipProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   TooltipContent: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   TooltipTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -276,6 +279,7 @@ describe("CompanyImport", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     mockAuthApi.getSession.mockResolvedValue({ user: { id: "user-1" } });
+    mockOptionalCompany.mockReturnValue(null);
     mockAgentsApi.list.mockResolvedValue([]);
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableNativeRunner: false, enableOpenAiDot: false });
     mockInstanceSettingsApi.getGeneral.mockResolvedValue({});
@@ -1071,7 +1075,7 @@ describe("CompanyImport", () => {
   function lastImportMeta() {
     const call = mockCompaniesApi.importBundleAsync.mock.calls.at(-1);
     expect(call).toBeTruthy();
-    return call![0] as { adapterOverrides?: Record<string, { adapterType: string; adapterConfig?: Record<string, unknown> }> };
+    return call![0] as { adapterOverrides?: Record<string, { adapterType: string; runner?: AgentRunnerChoice; adapterConfig?: Record<string, unknown> }> };
   }
 
   it("keeps manifest adapters and sends no overrides when the user touches nothing", async () => {
@@ -1137,7 +1141,7 @@ describe("CompanyImport", () => {
     }
   });
 
-  it("keeps imported Dot agents and falls back other Runner providers under Dot-only opt-in", async () => {
+  it("keeps imported Dot and native Codex agents under Dot-only opt-in", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableNativeRunner: false, enableOpenAiDot: true });
     mockAdaptersApi.list.mockResolvedValue([
       { type: "claude_local", disabled: false },
@@ -1153,7 +1157,7 @@ describe("CompanyImport", () => {
     await enterGithubUrl();
     await clickButton((text) => text === "Preview import");
 
-    expect(findAdapterSelects().map((select) => select.value)).toEqual(["openai_dot", "claude_local"]);
+    expect(findAdapterSelects().map((select) => select.value)).toEqual(["openai_dot", "codex_local"]);
     for (const select of findAdapterSelects()) {
       const choices = Array.from(select.options).map((option) => option.value);
       expect(choices).toContain("openai_dot");
@@ -1161,7 +1165,117 @@ describe("CompanyImport", () => {
     }
     await clickButton((text) => text.startsWith("Import 3 file"));
     await settle();
-    expect(lastImportMeta().adapterOverrides).toEqual({ researcher: { adapterType: "claude_local" } });
+    expect(lastImportMeta().adapterOverrides).toBeUndefined();
+  });
+
+  it.each([undefined, "codex"])("preserves an exported native Codex package with provider %s when experiments are disabled", async provider => {
+    mockAdaptersApi.list.mockResolvedValue([
+      { type: "claude_local", disabled: false },
+      { type: "codex_local", disabled: false },
+      { type: "paperclip_runner", disabled: false },
+    ]);
+    const preview = buildMixedAdapterPreviewResult();
+    preview.manifest.agents[1]!.adapterType = "paperclip_runner";
+    preview.manifest.agents[1]!.runner = "paperclip";
+    preview.manifest.agents[1]!.adapterConfig = { ...(provider ? { provider } : {}), model: "gpt-5.6-sol", reasoningEffort: "high" };
+    mockCompaniesApi.importPreview.mockResolvedValue(preview);
+    await renderPage();
+    await enterGithubUrl();
+    await clickButton(text => text === "Preview import");
+    expect(findAdapterSelects().map(select => select.value)).toEqual(["claude_local", "codex_local"]);
+    expect(container.textContent).not.toContain("will use Claude Code");
+    await clickButton(text => text.startsWith("Import 3 file"));
+    await settle();
+    expect(lastImportMeta().adapterOverrides).toBeUndefined();
+  });
+
+  it.each([
+    { provider: "opencode", model: "provider/model" },
+    { provider: "acpx", acpxAgent: "codex" },
+    { provider: "unknown-provider" },
+  ])("keeps gated native $provider identity instead of falling back to another harness", async adapterConfig => {
+    mockAdaptersApi.list.mockResolvedValue([
+      { type: "claude_local", disabled: false },
+      { type: "paperclip_runner", disabled: false },
+    ]);
+    const preview = buildMixedAdapterPreviewResult();
+    preview.manifest.agents[0]!.adapterType = "paperclip_runner";
+    preview.manifest.agents[0]!.adapterConfig = adapterConfig;
+    mockCompaniesApi.importPreview.mockResolvedValue(preview);
+    await renderPage();
+    await enterGithubUrl();
+    await clickButton(text => text === "Preview import");
+    expect(findAdapterSelects()[0]!.value).toBe("paperclip_runner");
+    expect(container.textContent).toContain("requires its experimental feature to be enabled");
+    expect(container.textContent).not.toContain("source adapter paperclip_runner is not installed here");
+    await clickButton(text => text.startsWith("Import 3 file"));
+    await settle();
+    expect(lastImportMeta().adapterOverrides?.coder).toBeUndefined();
+  });
+
+  it.each([
+    { sourceType: "codex_local", sourceRunner: "legacy" as const, runner: "paperclip" as const },
+    { sourceType: "codex_local", sourceRunner: undefined, runner: "legacy" as const },
+    { sourceType: "paperclip_runner", sourceRunner: "paperclip" as const, runner: "legacy" as const },
+  ])("submits the explicit $runner import override from $sourceType without replacing saved settings", async ({ sourceType, sourceRunner, runner }) => {
+    mockOptionalCompany.mockReturnValue({ selectedCompanyId: "company-1" });
+    mockAdaptersApi.list.mockResolvedValue([
+      { type: "claude_local", disabled: false },
+      { type: "codex_local", disabled: false, supportedRunners: ["paperclip", "legacy"], defaultRunner: "paperclip" },
+      { type: "paperclip_runner", disabled: false },
+    ]);
+    const preview = buildPreviewResult();
+    preview.manifest.agents[0]!.adapterType = sourceType;
+    preview.manifest.agents[0]!.runner = sourceRunner;
+    preview.manifest.agents[0]!.adapterConfig = {
+      ...(sourceType === "paperclip_runner" ? { provider: "codex" } : {}),
+      model: "gpt-5.6-sol", modelReasoningEffort: "high", env: { CODEX_HOME: "/saved/account" },
+    };
+    mockCompaniesApi.importPreview.mockResolvedValue(preview);
+    await renderPage();
+    await enterGithubUrl();
+    await clickButton(text => text === "Preview import");
+    await clickButton(text => text.includes("configure adapter"));
+    await clickButton(text => text.includes("Advanced"));
+    const select = container.querySelector<HTMLButtonElement>('[aria-label="Runner"]');
+    expect(select).toBeTruthy();
+    await act(async () => select!.click());
+    const option = document.querySelector<HTMLButtonElement>(`[role="option"][data-value="${runner}"]`);
+    expect(option).toBeTruthy();
+    expect(option!.disabled).toBe(false);
+    await act(async () => option!.click());
+    await flushReact();
+    await clickButton(text => text.startsWith("Import 3 file"));
+    await settle();
+    expect(lastImportMeta().adapterOverrides).toEqual({ coder: { adapterType: "codex_local", runner } });
+  });
+
+  it("does not reinterpret an unknown native provider as Codex when its configuration is edited", async () => {
+    mockAdaptersApi.list.mockResolvedValue([{ type: "paperclip_runner", disabled: false }]);
+    const preview = buildPreviewResult();
+    preview.manifest.agents[0]!.adapterType = "paperclip_runner";
+    preview.manifest.agents[0]!.adapterConfig = { provider: "unknown-provider", customSetting: "keep" };
+    mockCompaniesApi.importPreview.mockResolvedValue(preview);
+    await renderPage();
+    await enterGithubUrl();
+    await clickButton(text => text === "Preview import");
+    await clickButton(text => text.includes("configure adapter"));
+    await clickButton(text => text.includes("Advanced"));
+    const input = container.querySelector<HTMLInputElement>('input[placeholder="e.g. --verbose, --foo=bar"]');
+    expect(input).toBeTruthy();
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(input!, "--verbose");
+      input!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await flushReact();
+    await act(async () => {
+      input!.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+    await clickButton(text => text.startsWith("Import 3 file"));
+    await settle();
+    expect(mockCompaniesApi.importBundleAsync).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Unknown Paperclip Runner provider unknown-provider");
   });
 
   it("requires billing acknowledgement and serializes the standalone Dot import choice as Runner", async () => {

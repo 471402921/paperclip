@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { chmod, copyFile, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -28,11 +28,22 @@ export async function stageRunnerBinary(source, destination) {
   }
 }
 
+export async function stageBuiltRunnerBinary(packageRoot) {
+  const executable = process.platform === "win32" ? "paperclip-runnerd.exe" : "paperclip-runnerd";
+  const source = path.join(packageRoot, "runner", "target", "release", executable);
+  const binaryRoot = path.join(packageRoot, "dist", "bin");
+  await stageRunnerBinary(source, path.join(binaryRoot, executable));
+  const hostTarget = path.join(binaryRoot, `${process.platform}-${process.arch}`, executable);
+  const targetStat = await stat(hostTarget).catch(error => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  // The production resolver prefers an existing platform target. A source
+  // rebuild must refresh it too, using the same atomic, signed publication.
+  if (targetStat?.isFile()) await stageRunnerBinary(source, hostTarget);
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-  const executable = process.platform === "win32" ? "paperclip-runnerd.exe" : "paperclip-runnerd";
-  await stageRunnerBinary(
-    path.join(packageRoot, "runner", "target", "release", executable),
-    path.join(packageRoot, "dist", "bin", executable),
-  );
+  await stageBuiltRunnerBinary(packageRoot);
 }

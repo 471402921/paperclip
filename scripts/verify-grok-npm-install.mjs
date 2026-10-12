@@ -12,7 +12,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { packConcurrency, packStagedPackages, packTimings } from './pack-staged-packages.mjs';
 import { materializePublishManifest } from './prepare-bundled-package.mjs';
-import { GROK_PUBLIC_INSTALL_IMAGE, GROK_PUBLIC_INSTALL_LIFECYCLE, assertNoBundledCodexPayloads, grokConsumerDockerArgs, installedCodexProbeSource, installedDaemonProbeSource, macPublicInstallLifecycleProfile, macInstalledStartupProbeSource } from './grok-public-install-sandbox.mjs';
+import { GROK_PUBLIC_INSTALL_IMAGE, GROK_PUBLIC_INSTALL_LIFECYCLE, assertNoBundledCodexPayloads, grokConsumerDockerArgs, installedCodexProbeSource, installedDaemonProbeSource, macNodeHeadersDirectory, macPublicInstallLifecycleProfile, macInstalledStartupProbeSource } from './grok-public-install-sandbox.mjs';
 import { startPrefetch, stopPrefetches } from './prefetch-child.mjs';
 import { retainRunnerQualificationPackages } from './retain-runner-qualification-packages.mjs';
 import { bundledInstallTimings, startBundledInstalls } from './stage-bundled-packages.mjs';
@@ -39,7 +39,7 @@ async function verifyMacConsumer(packageDirectory, sourceRevision, receiptPath) 
     // command can hide missing installed dependencies.
     const env = { PATH: `${tools}:/usr/bin:/bin:/usr/sbin:/sbin`, HOME: home, TMPDIR: join(root, 'tmp'),
       npm_config_cache: join(root, 'cache'), npm_config_audit: 'false', npm_config_fund: 'false' };
-    const run = (command, args, cwd = consumer) => execFileSync(command, args, { cwd, env,
+    const run = (command, args, cwd = consumer, runEnv = env) => execFileSync(command, args, { cwd, env: runEnv,
       timeout: 10 * 60_000, maxBuffer: 32 * 1024 * 1024, encoding: 'utf8' });
     const tarballs = manifest.archives.map(entry => {
       assert.match(entry.file, /^[A-Za-z0-9._-]+\.tgz$/); assert.match(entry.sha256, /^[a-f0-9]{64}$/);
@@ -71,7 +71,9 @@ async function verifyMacConsumer(packageDirectory, sourceRevision, receiptPath) 
       run(process.execPath, ['--input-type=module', '-e', networkProbe, 'allowed']);
       run('/usr/bin/sandbox-exec', ['-f', profile, process.execPath, '--input-type=module', '-e', networkProbe, 'denied']);
     } finally { await new Promise(resolve => listener.close(resolve)); }
-    run('/usr/bin/sandbox-exec', ['-f', profile, process.execPath, npmCli, 'rebuild', '--offline', '--ignore-scripts=false', '--dangerously-allow-all-scripts', '--foreground-scripts']);
+    const nodeHeaders = macNodeHeadersDirectory(process.execPath, process.versions.node);
+    run('/usr/bin/sandbox-exec', ['-f', profile, process.execPath, npmCli, 'rebuild', '--offline', '--ignore-scripts=false', '--dangerously-allow-all-scripts', '--foreground-scripts'],
+      consumer, { ...env, npm_config_nodedir: nodeHeaders });
     assert.equal(readFileSync(sentinel, 'utf8'), 'ok');
     assert.equal(readFileSync(join(consumer, 'package-lock.json'), 'utf8'), lock);
     for (const entry of manifest.archives) {
@@ -86,7 +88,8 @@ async function verifyMacConsumer(packageDirectory, sourceRevision, receiptPath) 
     const startup = JSON.parse(run(process.execPath, ['--import', 'tsx', startupFile], join(repo, 'server')).trim());
     const receipt = { schema: 'paperclip.runner.mac-public-install.v1', sourceRevision, platform: process.platform, architecture: process.arch,
       cleanNpmInstall: true, packageCount: manifest.archives.length, codexPackedPayloadsOmitted: true,
-      consumerLockPreserved: true, lifecycleSentinelVerified: true, lifecycleNetwork: 'sandbox-exec denied (loopback negative control)',
+      consumerLockPreserved: true, lifecycleSentinelVerified: true, lifecycleNodeHeadersVerified: true, lifecycleNodeVersion: process.versions.node,
+      lifecycleNetwork: 'sandbox-exec denied (loopback negative control)',
       ...daemon, ...codex, startup, providerCalls: 0 };
     writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + '\n');
     console.log(JSON.stringify(receipt));

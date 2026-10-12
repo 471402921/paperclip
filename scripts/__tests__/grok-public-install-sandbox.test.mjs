@@ -1,15 +1,45 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { isWorkspacePackage, parseWorkspaceEntries } from '../build-standalone-public-packages.mjs';
-import { GROK_PUBLIC_INSTALL_IMAGE, GROK_PUBLIC_INSTALL_LIFECYCLE, assertInstalledCodexPlatformProvenance, assertNoBundledCodexPayloads, grokConsumerDockerArgs, installedCodexProbeSource, installedDaemonProbeSource, macPublicInstallLifecycleProfile, macInstalledStartupProbeSource } from '../grok-public-install-sandbox.mjs';
+import { GROK_PUBLIC_INSTALL_IMAGE, GROK_PUBLIC_INSTALL_LIFECYCLE, assertInstalledCodexPlatformProvenance, assertNoBundledCodexPayloads, grokConsumerDockerArgs, installedCodexProbeSource, installedDaemonProbeSource, macNodeHeadersDirectory, macPublicInstallLifecycleProfile, macInstalledStartupProbeSource } from '../grok-public-install-sandbox.mjs';
+import { verifyPiPackagedDaemon } from '../pi-public-install-probe.mjs';
+import { runnerBinaryTarget } from '../../packages/paperclip-runner/src/live/runner-binary.ts';
 
 const paths = { assets: '/private/staging/assets', consumer: '/private/staging/consumer', cache: '/private/staging/cache', uid: 1001, gid: 1001 };
 const values = (args, flag) => args.flatMap((value, index) => value === flag ? [args[index + 1]] : []);
+
+test('Mac offline lifecycle uses only the matching executing Node SDK', () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'mac-node-headers-test-')));
+  try {
+    const prefix = join(root, 'sdk'), executable = join(prefix, 'bin/node'), include = join(prefix, 'include/node');
+    mkdirSync(join(prefix, 'bin'), { recursive: true }); mkdirSync(include, { recursive: true });
+    writeFileSync(executable, 'fixture Node executable');
+    writeFileSync(join(include, 'node.h'), '#include "node_version.h"\n');
+    const header = '#define NODE_MAJOR_VERSION 24\n#define NODE_MINOR_VERSION 20\n#define NODE_PATCH_VERSION 0\n';
+    writeFileSync(join(include, 'node_version.h'), header);
+    assert.equal(macNodeHeadersDirectory(executable, '24.20.0'), prefix);
+    assert.throws(() => macNodeHeadersDirectory(executable, '24.19.0'), /must match the executing Node/);
+    assert.throws(() => macNodeHeadersDirectory(executable, '24.20.0-custom'), /exact release version/);
+    writeFileSync(join(include, 'node_version.h'), header + '#define NODE_PATCH_VERSION 0\n');
+    assert.throws(() => macNodeHeadersDirectory(executable, '24.20.0'), /declare one patch version/);
+    writeFileSync(join(include, 'node_version.h'), header);
+    rmSync(join(include, 'node.h'));
+    assert.throws(() => macNodeHeadersDirectory(executable, '24.20.0'), /ENOENT/);
+    writeFileSync(join(root, 'outside-node.h'), '#include "node_version.h"\n');
+    symlinkSync(join(root, 'outside-node.h'), join(include, 'node.h'));
+    assert.throws(() => macNodeHeadersDirectory(executable, '24.20.0'), /inside the executing Node prefix/);
+    const source = readFileSync(new URL('../verify-grok-npm-install.mjs', import.meta.url), 'utf8');
+    assert.ok(source.includes('macNodeHeadersDirectory(process.execPath, process.versions.node)'));
+    assert.ok(source.includes('consumer, { ...env, npm_config_nodedir: nodeHeaders }'), 'SDK is bound only to the deferred lifecycle environment');
+    assert.equal(source.split('npm_config_nodedir:').length, 2);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 test('lifecycle execution has no network, host credentials, checkout, or elevated privileges', () => {
   const args = grokConsumerDockerArgs({ ...paths, command: GROK_PUBLIC_INSTALL_LIFECYCLE });
@@ -398,4 +428,39 @@ test('Mac startup wiring normalizes only validated manifest digests and uses ser
   assert.match(verifier, /\['--import', 'tsx', startupFile\], join\(repo, 'server'\)/);
   const closedEnvironment = verifier.match(/const env = \{ PATH: `\$\{tools\}[\s\S]*?\};/)[0];
   assert.doesNotMatch(closedEnvironment, /NODE_PATH|NODE_OPTIONS|\.\.\.process.env/);
+});
+
+test('Pi admission verifies assembled host daemon identity and preserves the flat source-package control', async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'pi-installed-daemon-'))), server = join(root, 'server');
+  const output = join(server, 'dist/vendor/paperclip-runner'), target = 'linux-x64', source = 'a'.repeat(40);
+  const binary = join(output, 'bin', target, 'paperclip-runnerd'), manifestPath = join(output, 'bin/release-manifest.json');
+  const bytes = Buffer.alloc(64); bytes.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]); bytes.writeUInt16LE(62, 18);
+  const sha256 = value => `sha256:${createHash('sha256').update(value).digest('hex')}`;
+  const manifest = { schema: 'paperclip.runner.release-binaries.v1', sourceRevision: source,
+    platforms: { [target]: { path: `${target}/paperclip-runnerd`, sha256: sha256(bytes) } } };
+  const check = () => verifyPiPackagedDaemon(server, binary, target, runnerBinaryTarget);
+  try {
+    mkdirSync(join(output, 'bin', target), { recursive: true });
+    writeFileSync(binary, bytes); writeFileSync(join(server, 'dist/build-info.json'), JSON.stringify({ commit: source }));
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+    await check();
+    for (const changed of [null, { ...manifest, schema: 'untrusted' }, { ...manifest, sourceRevision: 'b'.repeat(40) },
+      { ...manifest, platforms: { [target]: { ...manifest.platforms[target], path: '../outside' } } },
+      { ...manifest, platforms: { [target]: { ...manifest.platforms[target], sha256: 'sha256:' + '0'.repeat(64) } } }]) {
+      writeFileSync(manifestPath, JSON.stringify(changed)); await assert.rejects(check());
+    }
+    const wrongHeader = Buffer.from(bytes); wrongHeader.writeUInt16LE(183, 18);
+    writeFileSync(binary, wrongHeader);
+    writeFileSync(manifestPath, JSON.stringify({ ...manifest, platforms: { [target]: { ...manifest.platforms[target], sha256: sha256(wrongHeader) } } }));
+    await assert.rejects(check(), /linux-arm64/);
+    writeFileSync(binary, bytes); writeFileSync(manifestPath, JSON.stringify(manifest));
+    const outside = join(root, 'outside'); writeFileSync(outside, bytes);
+    rmSync(binary); symlinkSync(outside, binary); await assert.rejects(check());
+    rmSync(binary); writeFileSync(binary, bytes); rmSync(manifestPath);
+    const flat = join(output, 'bin/paperclip-runnerd'); writeFileSync(flat, bytes);
+    await verifyPiPackagedDaemon(server, flat, target, runnerBinaryTarget);
+    await assert.rejects(check(), /strictly equal/);
+    writeFileSync(manifestPath, 'null');
+    await assert.rejects(verifyPiPackagedDaemon(server, flat, target, runnerBinaryTarget), /manifest must be an object/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

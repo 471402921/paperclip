@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { stageRunnerBinary } from "./stage-runner-binary.mjs";
+import { stageBuiltRunnerBinary, stageRunnerBinary } from "./stage-runner-binary.mjs";
 import { RELEASE_RUNNER_TARGETS, releaseDaemonManifest, verifyReleaseRunnerMetadata } from "./stage-release-runner-binaries.mjs";
+import { paperclipRunnerBinaryNeedsBuild } from "../../../scripts/dev-runner-native-binary.mjs";
 
 const contract = { package: { name: "@paperclipai/paperclip-runner", version: "0.0.0" },
   contracts: { runnerdArtifact: 2, nativeExecution: 1, harnessDriver: 1 }, prp: { name: "paperclip.runner", minimumVersion: 1, maximumVersion: 3 } };
@@ -103,6 +104,49 @@ test("atomically publishes while the previous executable is running", { skip: pr
     assert.equal(old.child.signalCode, null);
     assert.deepEqual(await readdir(root), ["paperclip-runnerd"]);
     const next = start(destination, ["0"]);
+    await next.spawned; await next.closed;
+    assert.equal(next.child.exitCode, 0);
+  });
+});
+
+test("a source rebuild refreshes the preferred host target without replacing another architecture", { skip: process.platform === "win32", timeout: 15_000 }, async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "runnerd-stage-rebuild-"));
+  const packageRoot = path.join(root, "packages", "paperclip-runner");
+  const binaryRoot = path.join(packageRoot, "dist", "bin");
+  const hostTarget = path.join(binaryRoot, `${process.platform}-${process.arch}`, "paperclip-runnerd");
+  const otherTarget = path.join(binaryRoot, `${process.platform}-${process.arch === "x64" ? "arm64" : "x64"}`, "paperclip-runnerd");
+  const source = path.join(packageRoot, "runner", "crates", "runner-core", "src", "main.rs");
+  const built = path.join(packageRoot, "runner", "target", "release", "paperclip-runnerd");
+  await withOwnedChildren(root, async start => {
+    await mkdir(path.dirname(source), { recursive: true });
+    await writeFile(source, "fn main() {}\n");
+    await mkdir(path.dirname(built), { recursive: true });
+    await copyFile("/bin/echo", built);
+    await stageRunnerBinary("/bin/sleep", hostTarget);
+    await stageRunnerBinary("/bin/echo", path.join(binaryRoot, "paperclip-runnerd"));
+    await mkdir(path.dirname(otherTarget), { recursive: true });
+    await writeFile(otherTarget, "other architecture artifact");
+    const oldTime = new Date(Date.now() - 10_000);
+    await utimes(hostTarget, oldTime, oldTime);
+    const oldArtifact = await readFile(hostTarget);
+    const oldIdentity = await stat(hostTarget);
+    const old = start(hostTarget, ["30"]);
+    await old.spawned;
+    const requirement = { repoRoot: root, nativeRunnerRequired: true };
+    assert.equal(paperclipRunnerBinaryNeedsBuild(requirement), true);
+
+    await stageBuiltRunnerBinary(packageRoot);
+
+    const published = await stat(hostTarget);
+    assert.notEqual(published.ino, oldIdentity.ino);
+    assert.equal(published.mode & 0o777, 0o755);
+    assert.notDeepEqual(await readFile(hostTarget), oldArtifact);
+    assert.deepEqual(await readFile(hostTarget), await readFile(path.join(binaryRoot, "paperclip-runnerd")));
+    assert.equal(await readFile(otherTarget, "utf8"), "other architecture artifact");
+    assert.equal(paperclipRunnerBinaryNeedsBuild(requirement), false);
+    assert.equal(old.child.exitCode, null);
+    assert.equal(old.child.signalCode, null);
+    const next = start(hostTarget, ["rebuilt"]);
     await next.spawned; await next.closed;
     assert.equal(next.child.exitCode, 0);
   });

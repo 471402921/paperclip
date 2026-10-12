@@ -15,10 +15,10 @@ and the existing Product E2E helpers rather than create another test system.
 
 Keep the current PR and branch: [#15683](https://github.com/paperclipai/paperclip/pull/15683),
 `codex/codex-runner-default`. The last pushed source is
-`6ca302426b768791b499d2d563bbca4276f2c908`. Its prior CI has 52 passing checks,
-four conditional skips, fresh 5/5 review and eight resolved threads. These do
-not qualify the new macOS changes. Current master has real merge conflicts;
-integrate the fetched master after checkpointing the owned macOS changes.
+`dc7304d7c4db1c9c9ee2ed80a98d004371372771`; its ordinary CI is green.
+Earlier Linux-only source `6ca302426b768791b499d2d563bbca4276f2c908` had fresh
+5/5 review and eight resolved threads. That historical review does not qualify
+the macOS amendment. Master integration conflicts are resolved.
 
 The [test-drive server](http://127.0.0.1:3125/COD/agents/all) is running through
 the normal dev supervisor at the pushed source. Health and bootstrap are ready;
@@ -71,11 +71,59 @@ the $250 ceiling and $248.18 combined cost/reservation total remain unchanged.
 Limit the Mac journey to two task turns, 180 seconds each, no automatic retry,
 and an independently checked useful file plus revision.
 
-Next action: finish the confirmed master conflict resolutions, freeze the source,
-and run remote qualification for the Mac artifacts. Native Apple Silicon live acceptance, new-head CI/review, managed
-staging execution, code-owner approval and actual post-merge Cloud composition
-remain unverified. Prior staging image/preflight evidence is retained at
-[37962635959](https://github.com/paperclipai/paperclip/actions/runs/37962635959)
+### Mac acceptance checkpoint
+
+The real [Apple Silicon task and follow-up](http://127.0.0.1:3125/COD/issues/COD-2)
+passed at runtime source `f4abdc2cfcd779d5ad9b9c0ea8b63114c1a18a9b`.
+The ordinary picker submitted `codex_local` without a runner override and saved
+`paperclip_runner` / `codex`. Saved subscription reuse and native setup passed.
+Both task runs succeeded with driver `codex_app_server`, observed model
+`gpt-5.6-sol`, and the same provider session. Independent attachment downloads
+verified exact 61-byte and 102-byte Markdown files, including preservation of
+the first attachment. Reload retained the native configuration.
+
+The actual owned daemon process loaded the source-bound CI bytes:
+`sha256:d0656673f7b6dfa6f2554fac18f3e0b42e2eb10f444b06f6063255335d71aa14`.
+Mach-O arm64, production contract, source receipt and code signature passed.
+The borrowed development daemon override was removed. Startup at this revision
+preserved the old legacy agent's full execution digest. Unrelated UI title edits
+and reload preserved complete legacy/native execution digests; the shared runner
+picker passed light/dark, mobile and keyboard checks. Screenshots and sanitized
+receipts are under `/private/tmp/pr2-f4-mac-ui/`.
+
+[Three-target qualification](https://github.com/paperclipai/paperclip/actions/runs/38252137381)
+built all three daemons, including actual Intel Mac. Its clean Linux consumer
+passed the 18-package installation and Codex ownership controls, then a Pi probe
+failed because it expected the old flat daemon path. Both Mac consumers reached
+deferred offline lifecycle scripts but Node-gyp tried a forbidden header download.
+Narrow verifier corrections preserve the startup/network/lock/sentinel assertions
+and use the host SDK. These failed attempts remain evidence; installed-package
+qualification still requires a passing corrected run.
+
+Test-only head `dc7304d7c4db1c9c9ee2ed80a98d004371372771` is production-byte
+identical to `f4abdc2`. Its [ordinary CI](https://github.com/paperclipai/paperclip/actions/runs/38253941991)
+passes the required checks. Two fixture repairs enabled Dot only in its intended
+experiment cases and restored owner directory permissions only inside each test
+worker's scratch home for teardown. The actual asset producer/symlink control
+passed. Fresh review identified import override/availability gaps and stale dev
+host binaries. Their fixes now pass 38 real-component import cases (eight fail
+on the old page) and 12 dev-stager/freshness controls. Unknown/gated providers
+retain their identity. Rebuilding refreshes an existing host target atomically
+and keeps a running old executable intact. Fresh final-head checks/review remain
+required. The corrected Pi/Mac installation probes pass 19 focused controls
+and independent source review; actual hosted consumers remain pending.
+
+The two native runs report included subscription use without a dollar amount.
+The complete $3 setup/task hold remains reserved as unpriced. No historical
+unknown or cleanup hold was released, no automatic retry ran, and no additional
+paid Linux campaign started. The aggregate ceiling remains $250.
+
+Next action: commit the verified import, dev-stager and installation-probe fixes
+together, then run the existing three-target qualifier once for the frozen head.
+Verify restart preservation and update the same PR with its final evidence.
+Managed staging execution/access renewal, code-owner approval and actual
+post-merge Cloud composition remain unverified. Prior staging preflight evidence
+is retained at [37962635959](https://github.com/paperclipai/paperclip/actions/runs/37962635959)
 and [37965658123](https://github.com/paperclipai/paperclip-cloud/actions/runs/37965658123).
 
 ## Outcome and ownership

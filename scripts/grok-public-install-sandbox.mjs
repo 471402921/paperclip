@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 
 // Keep public-package lifecycle code off the verification host. Resolve and
 // cache the public npm graph without scripts, then execute it offline.
@@ -8,6 +10,31 @@ export const GROK_PUBLIC_INSTALL_IMAGE =
 export const GROK_PUBLIC_INSTALL_LIFECYCLE = [
   'npm', 'rebuild', '--offline', '--ignore-scripts=false', '--dangerously-allow-all-scripts',
 ];
+
+// setup-node provides its matching SDK alongside the executing Node binary.
+// Deferred lifecycle scripts may read that SDK, but may never download headers.
+export function macNodeHeadersDirectory(nodeExecutable, nodeVersion) {
+  assert.match(nodeVersion, /^\d+\.\d+\.\d+$/, 'Executing Node must have an exact release version');
+  const executable = realpathSync(nodeExecutable);
+  assert.equal(basename(executable), 'node', 'Node SDK must belong to the executing Node binary');
+  assert.ok(statSync(executable).isFile(), 'Executing Node must be a regular file');
+  const prefix = realpathSync(join(dirname(executable), '..'));
+  const include = join(prefix, 'include/node');
+  for (const name of ['node.h', 'node_version.h']) {
+    const header = join(include, name);
+    assert.equal(realpathSync(header), header, 'Node SDK headers must remain inside the executing Node prefix');
+    assert.ok(statSync(header).isFile(), 'Node SDK headers must be regular files');
+  }
+  assert.match(readFileSync(join(include, 'node.h'), 'utf8'), /#\s*include\s+"node_version\.h"/, 'Node SDK must include its version header');
+  const versionHeader = readFileSync(join(include, 'node_version.h'), 'utf8');
+  const versions = ['MAJOR', 'MINOR', 'PATCH'].map(part => {
+    const matches = [...versionHeader.matchAll(new RegExp('^#\\s*define\\s+NODE_' + part + '_VERSION\\s+(\\d+)\\s*$', 'gm'))];
+    assert.equal(matches.length, 1, 'Node SDK must declare one ' + part.toLowerCase() + ' version');
+    return matches[0][1];
+  });
+  assert.equal(versions.join('.'), nodeVersion, 'Node SDK version must match the executing Node');
+  return prefix;
+}
 
 // Inspect the actual npm archive, independently of the staging helper.
 export function assertNoBundledCodexPayloads(entries) {
