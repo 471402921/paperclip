@@ -2,6 +2,24 @@
 
 Updated 2026-10-12.
 
+## Fixture closure checkpoint
+
+The runtime prerequisite advances to `093b97aa12` with 54 files. The Codex
+review remains 99 files. Existing managed fixtures now run the saved environment
+probe before native-generation Codex creation and inspect server defaults only
+for automatic requests. The owned setup probe lease joins the existing runtime
+estimator, with unrelated leases excluded from task attribution. The fixture
+contract records one setup lease per eligible cell, zero provider turns, zero
+retries, a 330-second HTTP deadline and a 10-second platform command deadline.
+Archive/release, expiry and failure-cost holds remain unchanged.
+
+Both worktrees pass 36 existing fixture/billing controls and canonical E2E
+no-emit. Existing catalog/report controls pass 46 cases, and core compatibility
+discovery succeeds. Affected adapter discovery/setup routes pass 69 controls.
+Unknown sandbox facts now expect Legacy; measured GNU2.39 ARM64 expects native.
+All checks use fixtures, not paid provider proof. Exact-head hosted CI/review and
+real managed onboarding/task/follow-up remain pending. No merge has occurred.
+
 ## Corrective source checkpoint: ready for fresh CI and review
 
 Runtime prerequisite source is `cf19e086ae4a0142c8b4314771c55f73b294805b`
