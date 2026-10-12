@@ -106,6 +106,18 @@ const baseTimestamps = {
 };
 
 describe("IssueChatThread system notice routing", () => {
+  it("renders the typed disposition notice in the classic thread without reading its prose", () => {
+    const comment: IssueChatComment = {
+      id: "typed-recovery", companyId: "company-1", issueId: "issue-1", authorType: "system", authorAgentId: null, authorUserId: null,
+      body: "Unrelated wording", presentation: { kind: "system_notice", tone: "warning", title: "Different title", detailsDefaultOpen: false, density: "compact" },
+      metadata: { version: 1, sections: [], recovery: { kind: "disposition_repair_escalated", actionId: "action", assigneeAgentId: "agent", attemptCount: 3, maxAttempts: 3, reason: "unchanged_source_state_exhausted" } }, ...baseTimestamps,
+    };
+    renderThread([comment]);
+    expect(container.querySelector('[data-testid="disposition-recovery-notice"]')).not.toBeNull();
+    expect(container.textContent).toContain("3 automatic attempts");
+    expect(container.textContent).not.toContain("Unrelated wording");
+  });
+
   it("renders authorType=system comments as a SystemNotice rather than a user bubble", () => {
     const comment: IssueChatComment = {
       id: "comment-system",
@@ -148,6 +160,34 @@ describe("IssueChatThread system notice routing", () => {
     const toggle = row?.querySelector("button[aria-expanded]") as HTMLButtonElement | null;
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
     expect(container.querySelectorAll('[data-message-role="user"]').length).toBe(0);
+  });
+
+  it("renders a system notice with a malformed createdAt without tripping the error boundary (PAP-16607)", () => {
+    const comment: IssueChatComment = {
+      id: "comment-system-bad-date",
+      companyId: "company-1",
+      issueId: "issue-1",
+      authorType: "system",
+      authorAgentId: null,
+      authorUserId: null,
+      body: "Workspace ready.",
+      presentation: {
+        kind: "system_notice",
+        tone: "info",
+        title: "Workspace ready",
+        detailsDefaultOpen: false,
+      },
+      metadata: { version: 1, sections: [] },
+      // A server serialization bug (Dates collapsed to `{}` by secret
+      // redaction) shipped comments whose timestamps parse to Invalid Date.
+      createdAt: {} as unknown as Date,
+      updatedAt: {} as unknown as Date,
+    };
+
+    renderThread([comment]);
+
+    expect(container.textContent).not.toContain("Chat renderer hit an internal state error.");
+    expect(container.textContent).toContain("Workspace ready");
   });
 
   it("expands metadata when detailsDefaultOpen is true", () => {
