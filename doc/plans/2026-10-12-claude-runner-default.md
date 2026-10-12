@@ -320,3 +320,93 @@ Known estimates remain $1.331719, excluding unknown charges.
 passed authorization and await a build worker. Current-source full checks,
 latest reviews, useful remote task/follow-up pairs, additional platform defaults,
 and final package qualification remain gates. No local Docker or Rust build.
+
+## SSH cold-controller acceptance — 2026-10-12
+
+The first repaired SSH task `9a6c3417-b961-47fb-bd25-06847d82e2e6`
+succeeded with a checked file, admitted high effort, and completed API accounting
+($0.195194600 estimate). Its follow-up failed before provider startup with
+`prior_owner_terminal_state_indeterminate`; accounting completed without a
+pending charge. The successful remote turn had already persisted a suspended
+verified backup, but two controller migration callers allowed that backup only
+for sandbox transport. The existing quarantine and task records remain intact.
+
+Shared repair `e833e1d6c1cac6017f4effb59fbe0d22f0a9fcf2` allows selected
+SSH remote targets to use the same integrity/full-scope/suspended-owner checks.
+Two positive SSH regression cases fail before the repair; all 14 sandbox/SSH
+backup scenarios pass after, including corrupt, conflicting and active state
+rejection. Additional active-owner/full-scope controls bring focused coverage to
+16 passing tests. Server typecheck passes. The source owner lifted both shared
+repairs into prerequisite `00ac509b0a85336e4948a325dbde1cbf09378572`, composed
+Codex `8de43be4cd7e71e7833ea268d9e6e59e77cde381`; our stack coalesces them.
+
+A fresh bounded [ARM task and revision](http://127.0.0.1:3105/CLAAAAAA/issues/CLAAAAAA-1)
+now passed. Runs `3c297604-23b4-4a42-a0af-185af05aad01` and
+`09bae36d-32a5-4634-a0b8-0349cf405dc9` succeeded with Opus 5.5,
+requested/admitted high effort, metered Anthropic API billing and completed
+accounting: estimates $0.219495400 and $0.186328600. The controller boot changed;
+task, provider and backend session identities matched privately. Both exact
+oracles passed independent downloads after the revision; v1 stayed unchanged.
+
+- [v1](http://127.0.0.1:3105/api/attachments/e94f7320-1197-4a4a-b27e-4447a9ecc58c/content?download=1):
+  166 bytes, SHA256 `6263758fb2009dd6b70df03b1c3aa314a865ba1b2b81d5bda5cc6c079a17b7ab`.
+- [v2](http://127.0.0.1:3105/api/attachments/a536415a-91c3-4e7f-8b45-46b09d5520bb/content?download=1):
+  220 bytes, SHA256 `b7229581fb2b566485a023ed6b016e556e6bc66f3ab4d1bcf7b81c6abf61f9f4`.
+- [Sanitized report](http://127.0.0.1:3105/api/attachments/5db4c71b-cb01-4a91-972d-49bcec527d7f/content?download=1)
+  and [screenshot](http://127.0.0.1:3105/api/attachments/998dac47-837f-46a9-b821-a77499809031/content?download=1)
+  are attached artifact work products. Uploading them left the run count at two.
+
+This proof uses public package source 557 with the recorded setup/argv/cold-resume
+controller overlays and the verified standard installed ARM pack. It is not an
+unmodified-final-package claim. The cold-resume compiled module changed from
+`205e27e8a0dda494585600d87b98545d5601822e5bd77c79505101419719a1b7` to
+`1c75aa00142f5657a416debba44717548ad5106a763821ed1f8cb0309167ab71`.
+
+The prior successful-but-failed-resume fixture is paused with a conservative $1
+allocation; the fresh ARM pair uses $2. Original $17/$9/$16 allocations and the
+failed prelaunch ARM fixture's $1 unknown reservation remain. The Linux x64
+fixture has $4, making aggregate allocated caps $50. No automatic paid retries
+or timer heartbeats are enabled; remaining acceptance uses API keys per the user.
+
+## Linux x64 task and cold-controller revision — 2026-10-12
+
+The [Linux x64 acceptance task](http://127.0.0.1:3105/CLAAAAAAA/issues/CLAAAAAAA-1)
+and follow-up succeeded on the immutable 557 cloud image through the existing
+Daytona integration. Runs `ba8ff6f0-d88d-4369-b03e-a88cf2a3dafa` and
+`f9675055-6f9f-4ec2-aa7c-31b3a784dffc` used Opus 5.5, acknowledged high
+effort and the fixture's selected API-key connection. Accounting completed:
+estimates $0.178204600 and $0.135639200. The controller restarted between
+turns; private task/provider/backend session IDs matched. Both versions passed
+independent exact byte/hash checks after the revision and persisted after reload.
+
+- [v1](http://127.0.0.1:3105/api/attachments/b7ebc13d-a09f-414f-84fc-a36d0dac9975/content?download=1):
+  176 bytes, SHA256 `97d7ddbea0d3d1a1aad23673692ff3719fc83d8b8e7c66da4fc1f70af79d9672`.
+- [v2](http://127.0.0.1:3105/api/attachments/e238108d-3a61-42c7-a305-b2199b97a291/content?download=1):
+  230 bytes, SHA256 `426e41d0c76b037322aec212c60ece80d91b05ca9064aaab17a7e7950dc9416f`.
+- [Sanitized report](http://127.0.0.1:3105/api/attachments/9f619e2f-6bca-4059-9a35-7e1651863395/content?download=1)
+  and [screenshot](http://127.0.0.1:3105/api/attachments/3eb53a63-f8fc-483e-8b53-18439b87185b/content?download=1)
+  are attached work products.
+
+The pinned official Daytona package `2026.1005.0` (manifest version `0.1.8`,
+SDK `0.203.0`) is registered from the private qualification installation.
+The first existing installer request used its shared package directory and
+failed to resolve a version-suffixed package name; no global plugin record was
+adopted for this fixture. Shared package files were left intact. Subsequent
+installation disabled lifecycle scripts and uses the private directory.
+Company-scoped Daytona and Anthropic secrets remain separate, with Anthropic
+connection installation restricted to the qualification agent.
+
+This proof uses the exact 557 installed controller plus its recorded overlays
+and image/pack identities; it does not qualify an unmodified final release.
+Known Claude API estimates now total $2.2465814, excluding earlier unknown
+charges. Aggregate allocated company caps remain $50; holds/reservations and
+failed records are preserved. No automatic paid retries or local Docker/Rust
+builds occurred.
+
+The source owner is correcting additional shared review findings and will
+provide the next source freeze. Final packaging waits for that freeze. The
+platform PR can now apply the additional target default changes using the
+passing package/clean-install and API execution evidence, while final packaged
+runtime, current-source required checks and exact-head reviews remain handoff
+gates. Subscription follow-up remains unverified under the user's API-key
+steering; Intel Mac requires clean installation, not attended provider turns.
