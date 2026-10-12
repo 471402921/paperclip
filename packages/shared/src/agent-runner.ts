@@ -31,8 +31,6 @@ function supportsLinuxLibc(libc?: "glibc" | "musl" | "unknown", version?: string
 
 /** Creation defaults follow GNU/Linux and macOS artifacts; Alpine/musl is deferred. */
 export function paperclipRunnerSupportsPlatform(harness: string, platform: string, architecture: string, libc?: "glibc" | "musl" | "unknown", glibcVersion?: string): boolean {
-  // Claude graduates on Apple Silicon first; other targets await package and live qualification.
-  if (harness === "claude_local") return platform === "darwin" && architecture === "arm64";
   return !!paperclipRunnerProfileForHarness(harness)
     // Omitted libc preserves platform-only callers; detected unknown Linux is not qualified.
     && ((platform === "linux" && supportsLinuxLibc(libc, glibcVersion) && (architecture === "x64" || architecture === "arm64"))

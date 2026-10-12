@@ -39,13 +39,14 @@ Automated: [new agent page](../../ui/src/pages/NewAgent.test.tsx) and [configura
 
 Manual: Hire an agent with a distinct name and role. Complete any required approval, reload the roster, and open its configuration. Confirm manager, adapter, and model persisted; run a small task to prove execution readiness.
 
-For Claude Code on Apple Silicon, submit without a runner override and inspect
+For Claude Code on qualified macOS or GNU/Linux x64/ARM64, submit without a
+runner override and inspect
 saved configuration: `paperclip_runner`, `provider: acpx`, `acpxAgent: claude`,
 and ordinary model `claude-opus-5-5`. The Advanced runner selector can explicitly
 choose Legacy. Keep explicit model/account choices and saved runners on edits.
 Verify useful output and a follow-up after a controller restart; setup success
-alone does not establish session continuity. Additional target defaults remain
-subject to their separate qualification gates.
+alone does not establish session continuity. Unsupported architectures/libc and unknown environment qualification retain
+Legacy. Linux ARM64 cloud-image production remains deferred.
 
 The current hiring wizard assigns the first hire CEO and subsequent hires
 General reporting to the CEO. Change manager/role afterward through supported

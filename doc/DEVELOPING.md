@@ -1529,9 +1529,9 @@ CLI paths that use stdin avoid that separate limit for the wake prompt.
 ## Paperclip Runner Adapter Conversion
 
 Paperclip Runner offers native Codex, OpenCode, and **ACPX Claude**. New
-Claude Code agents default to ACPX Claude on Apple Silicon; other Claude targets
-retain Legacy until platform qualification is complete. The runner override is
-in Advanced. Ordinary Claude models default to `claude-opus-5-5`; explicit models
+Claude Code agents default to ACPX Claude on Apple Silicon, Intel Mac, Linux x64
+and Linux ARM64 with supported glibc. Unsupported or unqualified targets retain
+Legacy. The runner override is in Advanced. Ordinary Claude models default to `claude-opus-5-5`; explicit models
 and provider routing remain authoritative. Existing agents keep their saved runner. Converting an existing Claude, Codex, or OpenCode agent selects its
 corresponding provider, preserves compatible models, credentials, workspace,
 and instructions, and resets execution sessions while retaining run history.
