@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 
 import { act } from "react";
+import { buildClaudeLocalConfig } from "../../../packages/adapters/claude-local/src/ui/build-config";
+import type { CreateConfigValues } from "@paperclipai/adapter-utils";
 import type { LocalAiLoginStatus } from "@paperclipai/shared";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -124,7 +126,7 @@ const mockAgentsApi = vi.hoisted(() => ({
 // can shape the built adapter config (e.g. a configured ANTHROPIC_API_KEY)
 // without a real adapter package.
 const mockAdapterBuild = vi.hoisted(() => ({
-  buildAdapterConfig: vi.fn(() => ({}) as Record<string, unknown>),
+  buildAdapterConfig: vi.fn((_values?: CreateConfigValues) => ({}) as Record<string, unknown>),
 }));
 // The Connect path loads environment settings before probing; without these
 // the probe dies on "Could not load environment settings" and the hire never
@@ -178,6 +180,8 @@ vi.mock("../context/DialogContext", () => ({
 vi.mock("../context/CompanyContext", () => ({
   useCompany: () => mockCompany,
 }));
+const mockAdaptersApi = vi.hoisted(() => ({ list: vi.fn() }));
+vi.mock("../api/adapters", () => ({ adaptersApi: mockAdaptersApi }));
 vi.mock("../api/companies", () => ({ companiesApi: mockCompaniesApi }));
 vi.mock("../api/goals", () => ({ goalsApi: mockGoalsApi }));
 vi.mock("../api/agents", () => ({ agentsApi: mockAgentsApi }));
@@ -349,6 +353,7 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
     mockCompaniesApi.list.mockResolvedValue([]);
     mockAdapterRegistry.list = [];
     mockAdapterRegistry.disabled = new Set<string>();
+    mockAdaptersApi.list.mockReset().mockResolvedValue(["claude_local", "codex_local"].map(type => ({ type, loaded: true, disabled: false, supportedRunners: ["paperclip", "legacy"], defaultRunner: "legacy" })));
     mockAdapterBuild.buildAdapterConfig.mockReset();
     mockAdapterBuild.buildAdapterConfig.mockReturnValue({});
     // Default: no stored Claude login for the owner. The route returns a
@@ -3136,6 +3141,82 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
         expect(document.body.textContent).not.toContain("Start sign-in again");
       }
 
+      it.each(["paperclip", "legacy"] as const)("waits for Claude runner discovery before saved subscription verification (%s)", async defaultRunner => {
+        let finish!: (value: object[]) => void;
+        mockAdaptersApi.list.mockReturnValue(new Promise<object[]>(resolve => { finish = resolve; }));
+        mockAdapterBuild.buildAdapterConfig.mockImplementation(values => buildClaudeLocalConfig(values!));
+        const { root, queryClient } = await openStep4({ adapterType: "claude_local" });
+        try {
+          await act(async () => queryClient.setQueryData(["ai-connections", "company-new"], {
+            currentUserId: "user-1", connections: [{ id: "saved", grantId: "grant", companyId: "company-new", provider: "anthropic", method: "subscription", ownership: "personal", ownerUserId: "user-1", status: "connected", isDefault: true }],
+          }));
+          await pickSource(/Claude/);
+          await settle();
+          expect(button("Connect").disabled).toBe(true);
+          await act(async () => button("Connect").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true })));
+          await settle();
+          expect(mockAgentsApi.testEnvironment).not.toHaveBeenCalled();
+          expect(mockAgentsApi.hire).not.toHaveBeenCalled();
+          await act(async () => finish([{ type: "claude_local", defaultRunner, supportedRunners: ["paperclip", "legacy"] }]));
+          await settle();
+          expect(mockAgentsApi.testEnvironment).toHaveBeenCalledTimes(1);
+          expect(mockAgentsApi.hire).toHaveBeenCalledTimes(1);
+          const tested = mockAgentsApi.testEnvironment.mock.calls[0] as unknown as [string, string, { adapterConfig: Record<string, unknown> }];
+          const hired = mockAgentsApi.hire.mock.calls[0] as unknown as [string, { adapterConfig: Record<string, unknown> }];
+          expect(hired[1].adapterConfig).toEqual(tested[2].adapterConfig);
+          if (defaultRunner === "paperclip") expect(hired[1].adapterConfig).not.toHaveProperty("maxTurnsPerRun");
+          else expect(hired[1].adapterConfig.maxTurnsPerRun).toBe(1000);
+          expect(hired[1].adapterConfig).not.toHaveProperty("resolvedRunner");
+        } finally { await act(async () => root.unmount()); }
+      });
+
+      it("does not hire from obsolete Claude discovery after the target changes during verification", async () => {
+        mockAdapterBuild.buildAdapterConfig.mockImplementation(values => buildClaudeLocalConfig(values!));
+        mockAdaptersApi.list.mockImplementation(async ({ environmentId }: { environmentId: string | null }) => [{ type: "claude_local", defaultRunner: environmentId === "new-local-default" ? "paperclip" : "legacy" }]);
+        const finishes: Array<(value: typeof passed) => void> = [];
+        mockAgentsApi.testEnvironment.mockImplementation(() => new Promise(resolve => finishes.push(resolve)));
+        const { root, queryClient } = await openStep4({ adapterType: "claude_local" });
+        try {
+          await pickSource(/Claude/);
+          await detected();
+          expect(mockAgentsApi.testEnvironment).toHaveBeenCalledTimes(1);
+          await act(async () => queryClient.setQueryData(queryKeys.environments.list("company-new"), [{ ...LOCAL_ENVIRONMENT, id: "new-local-default" }]));
+          await settle();
+          expect(mockAgentsApi.testEnvironment).toHaveBeenCalledTimes(2);
+          await act(async () => finishes[0](passed));
+          await settle();
+          expect(mockAgentsApi.hire).not.toHaveBeenCalled();
+          await act(async () => finishes[1](passed));
+          await settle();
+          expect(mockAgentsApi.hire).toHaveBeenCalledTimes(1);
+          const tested = mockAgentsApi.testEnvironment.mock.calls as unknown as Array<[string, string, { environmentId: string; adapterConfig: Record<string, unknown> }]>;
+          expect(tested[0][2].adapterConfig.maxTurnsPerRun).toBe(1000);
+          expect(tested[1][2].environmentId).toBe("new-local-default");
+          expect(tested[1][2].adapterConfig).not.toHaveProperty("maxTurnsPerRun");
+          const hired = mockAgentsApi.hire.mock.calls[0] as unknown as [string, { adapterConfig: Record<string, unknown> }];
+          expect(hired[1].adapterConfig).toEqual(tested[1][2].adapterConfig);
+        } finally { await act(async () => root.unmount()); }
+      });
+
+      it("fails closed on Claude discovery rejection and retries availability before verification", async () => {
+        mockAdaptersApi.list.mockRejectedValue(new Error("Discovery unavailable"));
+        const { root, queryClient } = await openStep4({ adapterType: "claude_local" });
+        try {
+          await act(async () => queryClient.setQueryData(["ai-connections", "company-new"], {
+            currentUserId: "user-1", connections: [{ id: "saved", grantId: "grant", companyId: "company-new", provider: "anthropic", method: "subscription", ownership: "personal", ownerUserId: "user-1", status: "connected", isDefault: true }],
+          }));
+          await pickSource(/Claude/);
+          await settle();
+          expect(mockAgentsApi.testEnvironment).not.toHaveBeenCalled();
+          expect(mockAgentsApi.hire).not.toHaveBeenCalled();
+          expect(document.body.textContent).toContain("Could not load runner availability");
+          mockAdaptersApi.list.mockResolvedValue([{ type: "claude_local", defaultRunner: "paperclip" }]);
+          await click("Retry setup");
+          expect(mockAgentsApi.testEnvironment).toHaveBeenCalledTimes(1);
+          expect(mockAgentsApi.hire).toHaveBeenCalledTimes(1);
+        } finally { await act(async () => root.unmount()); }
+      });
+
       it.each(providers)("automatically verifies detected %s once through connection refreshes and advances", async (adapterType, provider, label) => {
         let finish!: (result: typeof passed) => void;
         mockAgentsApi.testEnvironment.mockReturnValue(new Promise(resolve => { finish = resolve; }));
@@ -3229,7 +3310,7 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
           await detected();
           expectTesting();
           await act(async () => queryClient.setQueryData(queryKeys.environments.list("company-new"), [
-            { ...LOCAL_ENVIRONMENT, id: "new-local-default" },
+            { ...LOCAL_ENVIRONMENT, name: "Refreshed local environment" },
           ]));
           await settle();
           expectTesting();

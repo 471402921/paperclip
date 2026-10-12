@@ -947,14 +947,14 @@ function OnboardingWizardInner({
   // managed-sandbox-only redirect (see AgentConfigForm.tsx:618-640). A render
   // must not throw, so a resolver error yields no login environment rather
   // than an error boundary.
-  const { data: loginEnvironmentList = [] } = useQuery({
+  const { data: loginEnvironmentList = [], isSuccess: loginEnvironmentsReady } = useQuery({
     queryKey: createdCompanyId
       ? queryKeys.environments.list(createdCompanyId)
       : ["environments", "none"],
     queryFn: () => environmentsApi.list(createdCompanyId!),
     enabled: Boolean(createdCompanyId) && effectiveOnboardingOpen && step === 4,
   });
-  const { data: instanceSettingsForLogin } = useQuery({
+  const { data: instanceSettingsForLogin, isSuccess: loginSettingsReady } = useQuery({
     queryKey: queryKeys.instance.settings,
     queryFn: () => instanceSettingsApi.get(),
     enabled: effectiveOnboardingOpen && step === 4,
@@ -962,7 +962,7 @@ function OnboardingWizardInner({
   // Wanted across the whole arc, not just the connect step. The progress strip
   // reads it too — see `enteredFromCloud` — and a value fetched only on step 4
   // would let the strip change length as the customer walked through it.
-  const { data: experimentalSettingsForLogin } = useQuery({
+  const { data: experimentalSettingsForLogin, isSuccess: loginPolicyReady } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
     enabled: effectiveOnboardingOpen && step >= 3 && step <= 5,
@@ -988,8 +988,24 @@ function OnboardingWizardInner({
   const runnerDiscovery = useQuery({
     queryKey: queryKeys.adapters.availability(createdCompanyId, resolvedLoginEnvironmentId),
     queryFn: () => adaptersApi.list({ companyId: createdCompanyId!, environmentId: resolvedLoginEnvironmentId }),
-    enabled: Boolean(createdCompanyId) && effectiveOnboardingOpen && step === 4,
+    enabled: Boolean(createdCompanyId) && effectiveOnboardingOpen && step === 4
+      && loginEnvironmentsReady && loginSettingsReady && loginPolicyReady,
   });
+  const needsRunnerDiscovery = ["codex_local", "claude_local"].includes(adapterType) && runner === "auto";
+  const resolvedRunner = runner === "auto"
+    ? runnerDiscovery.data?.find(item => item.type === adapterType)?.defaultRunner
+    : runner;
+  const runnerDiscoveryReady = !needsRunnerDiscovery
+    || (runnerDiscovery.isSuccess && !runnerDiscovery.isFetching && resolvedRunner !== undefined);
+  const runnerDiscoveryError = needsRunnerDiscovery && runnerDiscovery.isError
+    ? "Could not load runner availability. Retry setup."
+    : needsRunnerDiscovery && runnerDiscovery.isSuccess && resolvedRunner === undefined
+      ? "Runner availability is missing for this harness. Retry setup."
+      : null;
+  const visibleAdapterEnvError = adapterEnvError ?? runnerDiscoveryError;
+  const runnerSelectionKey = JSON.stringify([createdCompanyId, resolvedLoginEnvironmentId, adapterType, runner, resolvedRunner]);
+  const runnerSelectionRef = useRef(runnerSelectionKey);
+  runnerSelectionRef.current = runnerSelectionKey;
   const resolvedLoginEnvironment = useMemo(
     () =>
       loginEnvironmentList.find((environment) => environment.id === resolvedLoginEnvironmentId) ??
@@ -1033,8 +1049,8 @@ function OnboardingWizardInner({
     Boolean(managedProvider) && !savedSubscription && !savedKeys.storedLogin.data && !managedBindingForStep(),
   );
   // A result from a previous selection must not hire or advance this wizard.
-  // Environment query updates are not user navigation: the test resolves its
-  // own environment, and those updates must not interrupt the pending attempt.
+  // Discovery starts after environment settings resolve. A later target or
+  // runner change invalidates the configuration an in-flight test was built from.
   useEffect(() => {
     autoConnectStartedRef.current = false;
     hiringAgentRef.current = null;
@@ -1043,7 +1059,7 @@ function OnboardingWizardInner({
       setAdapterEnvLoading(false);
     }
     return () => { connectAttemptRef.current++; };
-  }, [effectiveOnboardingOpen, createdCompanyId, adapterType, credentialMode, step]);
+  }, [effectiveOnboardingOpen, createdCompanyId, adapterType, credentialMode, step, resolvedLoginEnvironmentId, runner, resolvedRunner]);
 
   const canShowAdapterLogin = Boolean(
     adapterCaps.login != null &&
@@ -1183,7 +1199,7 @@ function OnboardingWizardInner({
    * Anything that gates this step belongs in here, so the next one is added
    * once rather than twice.
    */
-  const connectStepReady = sourceSelected && !adapterEnvLoading && !savedKeys.loading;
+  const connectStepReady = sourceSelected && !adapterEnvLoading && !savedKeys.loading && runnerDiscoveryReady;
 
   /**
    * Whether this step has a sign-in to do before it can hire.
@@ -1326,7 +1342,7 @@ function OnboardingWizardInner({
       // Not before the login is stored. "Connecting" starts at the paste now,
       // ahead of the server confirming anything, so a hire from here would go
       // out against a source with no credential to run on.
-      if (!connectCredentialStored) return;
+      if (!connectCredentialStored || !runnerDiscoveryReady) return;
       // No success state: the step advances. The hold is so "Connecting" is
       // legible as a state rather than a flicker on the way out — a step that
       // left the instant a paste landed would read as the paste having gone
@@ -1365,7 +1381,7 @@ function OnboardingWizardInner({
       return () => clearTimeout(t);
     }
     return;
-  }, [step, connectPhase, credentialMode, connectStepNeedsLogin, connectCredentialStored]);
+  }, [step, connectPhase, credentialMode, connectStepNeedsLogin, connectCredentialStored, runnerDiscoveryReady]);
 
   /**
    * The button's four faces, and which of them can be pressed.
@@ -1832,7 +1848,7 @@ function OnboardingWizardInner({
       ...defaultCreateValues,
       adapterType,
       runner,
-      resolvedRunner: runner === "auto" ? runnerDiscovery.data?.find(item => item.type === adapterType)?.defaultRunner : runner,
+      resolvedRunner,
       model:
         adapterType === "gemini_local"
           ? model || DEFAULT_GEMINI_LOCAL_MODEL
@@ -1899,6 +1915,7 @@ function OnboardingWizardInner({
     appliedStoredClaudeLoginBinding = false,
     isCurrent = () => true,
   ): Promise<AdapterEnvironmentTestResult | null> {
+    if (!runnerDiscoveryReady) return null;
     if (!createdCompanyId) {
       setAdapterEnvError(
         "Create or select an organization before testing adapter environment."
@@ -2042,9 +2059,10 @@ function OnboardingWizardInner({
       setStep(5);
       return;
     }
-    if (hiringAgentRef.current !== null) return;
+    if (!runnerDiscoveryReady || hiringAgentRef.current !== null) return;
     const attempt = ++connectAttemptRef.current;
-    const isCurrent = () => connectAttemptRef.current === attempt && stillTheSameCompany(createdCompanyId);
+    const isCurrent = () => connectAttemptRef.current === attempt && stillTheSameCompany(createdCompanyId)
+      && runnerSelectionRef.current === runnerSelectionKey;
     hiringAgentRef.current = attempt;
     autoConnectStartedRef.current = true;
     setLoading(true);
@@ -2939,12 +2957,18 @@ function OnboardingWizardInner({
                       the hire, because `handleGiveHeartbeat` clears it in its
                       `finally` after the early return — so a genuine block still
                       shows its checks, which is the whole reason this is here. */}
-                  {isLocalAdapter && !loading && (adapterEnvError || (adapterEnvResult && adapterEnvResult.status !== "pass")) && (
+                  {isLocalAdapter && !loading && (visibleAdapterEnvError || (adapterEnvResult && adapterEnvResult.status !== "pass")) && (
                     <div className="space-y-2 rounded-md border border-border p-3">
-                      {adapterEnvError && (
+                      {visibleAdapterEnvError && (
                         <div className="rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-2 text-(length:--text-micro) text-destructive">
-                          {adapterEnvError}
+                          {visibleAdapterEnvError}
                         </div>
+                      )}
+
+                      {runnerDiscoveryError && (
+                        <Button type="button" variant="outline" disabled={runnerDiscovery.isFetching} onClick={() => void runnerDiscovery.refetch()}>
+                          Retry setup
+                        </Button>
                       )}
 
                       {adapterEnvResult &&
