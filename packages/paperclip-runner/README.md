@@ -211,6 +211,16 @@ and exercises the same installed graph's read-only native startup on the actual
 ARM host. This does not qualify arbitrary container or managed setup targets;
 their selected runtime must pass setup in that environment.
 
+Ubuntu 24.04 also needs system `bubblewrap` and the stock
+`bwrap-userns-restrict` AppArmor profile described in
+[Codex's Linux prerequisites](https://learn.chatgpt.com/docs/sandboxing#prerequisites).
+The qualified ARM64 host uses that distribution helper/profile while retaining
+AppArmor enforcement and global namespace restrictions. Hosted qualification
+materializes authenticated stock package files without running maintainer
+scripts; it verifies native startup and package continuity separately from the
+restricted Docker installation check. This does not prove a normal OS package
+installation journey or a paid provider task on ARM64.
+
 Automatic creation selects legacy execution when a Linux host has musl, unknown
 libc, or a measured GNU libc version below the baseline. Existing agents retain
 their stored runner. Windows, 32-bit ARM, and Alpine/musl native qualification

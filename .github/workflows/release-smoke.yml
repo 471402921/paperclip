@@ -308,6 +308,10 @@ jobs:
           path: ${{ runner.temp }}/public-runner-packs
       - name: Install only the existing verifier tooling
         run: pnpm install --ignore-scripts --no-frozen-lockfile
+      - name: Prepare Linux ARM sandbox prerequisites
+        if: ${{ matrix.target == 'linux-arm64' }}
+        timeout-minutes: 5
+        run: bash scripts/prepare-linux-arm64-qualification.sh
       - name: Verify host identity and actual clean npm consumer
         env:
           SOURCE_SHA: ${{ inputs.qualification_source_sha }}
@@ -324,6 +328,8 @@ jobs:
         if: always()
         with:
           name: ${{ inputs.artifact_name }}-${{ matrix.target }}
-          path: ${{ runner.temp }}/native-public-install.json
+          path: |
+            ${{ runner.temp }}/native-public-install.json
+            ${{ runner.temp }}/paperclip-arm-bwrap-prerequisite/
           if-no-files-found: warn
           retention-days: 14

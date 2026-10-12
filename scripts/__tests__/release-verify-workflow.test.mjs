@@ -961,6 +961,57 @@ test("premerge native qualification consumes the same Linux-packed npm bytes wit
   assert.match(qualification, /pnpm install --ignore-scripts --no-frozen-lockfile/);
 });
 
+test("native ARM qualification prepares its scoped distro sandbox before the existing consumer", () => {
+  const smoke = readWorkflow("release-smoke.yml");
+  const native = smoke.split("  qualification_native:\n")[1];
+  const preparation = native.split("      - name: Prepare Linux ARM sandbox prerequisites\n")[1].split("\n      - ")[0];
+  assert.match(preparation, /if: \$\{\{ matrix\.target == 'linux-arm64' \}\}/);
+  assert.match(preparation, /timeout-minutes: 5/);
+  assert.match(preparation, /run: bash scripts\/prepare-linux-arm64-qualification\.sh/);
+  assert.ok(native.indexOf("Prepare Linux ARM sandbox prerequisites") < native.indexOf("Verify host identity and actual clean npm consumer"));
+  assert.match(native, /path: \|\n\s+\$\{\{ runner\.temp \}\}\/native-public-install\.json\n\s+\$\{\{ runner\.temp \}\}\/paperclip-arm-bwrap-prerequisite\//);
+  assert.doesNotMatch(smoke.split("  qualification_daemons:\n")[0], /prepare-linux-arm64-qualification/,
+    "ordinary service and Docker smoke keep their existing setup");
+});
+
+test("Linux ARM prerequisite setup rejects other hosts before invoking tools and preserves scoped security", { skip: process.platform === "win32" }, () => {
+  const helper = path.join(repoRoot, "scripts/prepare-linux-arm64-qualification.sh");
+  const source = readFileSync(helper, "utf8");
+  const root = mkdtempSync(path.join(tmpdir(), "arm-prerequisite-guard-"));
+  try {
+    const tools = path.join(root, "tools"); mkdirSync(tools);
+    const sentinel = path.join(root, "invoked");
+    for (const command of ["dpkg", "uname", "mkdir", "mktemp", "sysctl", "sudo"]) {
+      writeFileSync(path.join(tools, command), '#!/bin/bash\nprintf "%s\\n" "$0" >> "$PREREQUISITE_SENTINEL"\nexit 85\n', { mode: 0o755 });
+    }
+    for (const [actions, runnerOs] of [["", "Linux"], ["false", "Linux"], ["true", "macOS"], ["true", "Windows"]]) {
+      const result = spawnSync("/bin/bash", [helper], { encoding: "utf8", env: {
+        PATH: tools, GITHUB_ACTIONS: actions, RUNNER_OS: runnerOs, RUNNER_TEMP: root, PREREQUISITE_SENTINEL: sentinel,
+      } });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /requires a GitHub Actions Linux runner/);
+      assert.equal(existsSync(sentinel), false, "host guard must precede every external tool");
+      assert.equal(existsSync(path.join(root, "paperclip-arm-bwrap-prerequisite")), false);
+    }
+    assert.ok(source.indexOf('"${GITHUB_ACTIONS:-}" != true') < source.indexOf(". /etc/os-release"));
+    assert.match(source, /-o Acquire::AllowInsecureRepositories=false/);
+    assert.match(source, /download "\$package_name=\$package_version"/);
+    assert.match(source, /printf '%s  %s\\n' "\$package_sha256" "\$package_file" \| sha256sum -c -/);
+    assert.match(source, /dpkg-deb --fsys-tarfile "\$package_file"/);
+    assert.match(source, /tar -xO \.\/usr\/bin\/bwrap/);
+    assert.match(source, /11d39094f044f0cda0febb3ad517b830301da6b2ce929664af09ee9e4dd264f9/);
+    assert.ok(source.indexOf('test ! -L "$target"') < source.indexOf('sudo install -o root -g root -m 0644 "$stock_profile" "$target"'));
+    assert.match(source, /timeout 15s sudo "\$parser" -r "\$target"/);
+    for (const setting of ["userns", "apparmor", "clone"]) assert.ok(source.includes(`test "$after_${setting}" = "$before_${setting}"`));
+    const aptCommands = source.replace(/\\\n\s*/g, " ").split("\n").filter(line => /\bapt-get\b/.test(line));
+    assert.equal(aptCommands.length, 2, "only signed-index update and download may invoke APT");
+    assert.match(aptCommands[0], /\bupdate\b/);
+    assert.match(aptCommands[1], /\bdownload\b/);
+    for (const command of aptCommands) assert.doesNotMatch(command, /\b(?:install|upgrade|remove|purge)\b/);
+    assert.doesNotMatch(source, /apt-get[^\n]* install|\bdpkg(?:-deb)?\s+(?:-i|--install|--unpack)|sysctl\s+(?:-w|--system)|\baa-disable\b|\bsetcap\b|systemctl|--no-sandbox/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test("exact-source daemon matrices preserve historical three-target sources and add native ARM only for new sources", () => {
   const workflow = readWorkflow("release-verify.yml");
   const step = workflow.split('      - name: Preserve the immutable source\'s platform contract')[1].split('\n  runner_binaries:')[0];

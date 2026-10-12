@@ -175,6 +175,57 @@ relax Codex's sandbox, or substitute direct execution for native qualification.
 Require fresh CI/review after the correction. ARM startup and managed staging
 remain unresolved; no merge or production recommendation is made.
 
+The frozen production checkpoint `a200495cc7488f4d59da570407e516cf702e5af8`
+passes [CI](https://github.com/paperclipai/paperclip/actions/runs/38283122068)
+(54 successful checks/statuses, four conditional skips) and fresh 5/5 review;
+all 15 review threads are resolved. It serves the test-drive at
+`2026.1005.0+351.git.a200495cc7`, with four complete agent configurations and two
+historical native runs unchanged after restart. No local native/Docker build
+or additional provider turn ran.
+
+Its [exact-source qualifier](https://github.com/paperclipai/paperclip/actions/runs/38283695248)
+builds and verifies all four daemons. Linux clean installation and both actual
+Mac native startup/cleanup consumers pass. Cache restores are real cold misses;
+JavaScript/native preparation overlaps on all four producers. The unchanged
+host's ARM startup fails at AppArmor's namespace capability restriction, so that
+original run remains failed. Public artifact `11763536756` contains the verified
+18-package graph. Receipts: `/private/tmp/ci-final-a200495-hosted-qualification-receipt.json`
+and `/private/tmp/ci-final-a200495-cached-producer-observations.json`.
+
+The separate [stock-prerequisite ARM treatment](https://github.com/paperclipai/paperclip/actions/runs/38287918968)
+passes actual native startup, default daemon resolution, model selection,
+read-only context, and joined cleanup on the exact same packages. Lock, daemon,
+official Codex launcher, and native payload hashes match before/after. GNU libc
+is 2.39. Global AppArmor enforcement, namespace restriction, and clone setting
+remain Y/1/1. Authenticated Ubuntu package files provide system bubblewrap and
+its reviewed stock scoped profile. Only those files are materialized; no package
+maintainer scripts, sysctl writes, or broad profile reload runs. This is a
+qualified target prerequisite, not a product permission-policy change.
+The user has no other QA ARM host. No new paid environment was provisioned.
+Receipt: `/private/tmp/ci-final-a200495-arm-stock-prerequisite-receipt.json`.
+
+Keep the boundaries explicit: normal OS APT installation is unproven; the actual
+Paperclip npm installation and native startup are proven. The separate direct
+control hits a read-only temporary-home error and is excluded from native
+qualification. No ARM paid task/follow-up is claimed. Actual Apple Silicon
+useful-task/follow-up evidence remains tied to its recorded source and identical
+verified daemon bytes. Existing agents keep their runners.
+
+The tested setup body is integrated as
+`scripts/prepare-linux-arm64-qualification.sh`, with an early hosted-Linux guard.
+The existing ARM-only qualification step invokes it before the existing consumer
+and uploads its report through the same artifact pipeline. Four focused workflow
+and guard controls pass; syntax and diff checks pass. Receipt:
+`/private/tmp/codex-default-arm-prerequisite-ci-integration-receipt.json`.
+
+Next action: require latest-head CI/review and one hosted consumer against the
+unchanged `a200495` production packages using the integrated helper. Production
+code remains frozen there; subsequent edits are qualification tooling or
+documentation and retain separate source identities when reusing those literal
+package archives. Managed staging, human
+code-owner approval, actual post-merge cloud composition, and production sign-off
+remain outstanding. No merge or deployment is authorized.
+
 ## Current addition: Linux ARM64
 
 The user now requires ARM Linux support as well. Treat ARM Linux as ARM64
