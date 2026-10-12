@@ -525,3 +525,33 @@ fixture now has its own exception alongside immutable prior identities; other
 fixtures remain excluded. Cloud job 115053600515 retained the exact ENOENT
 failure. No local Docker invocation was used. The next composed heads must pass
 this check before candidate package qualification.
+
+## Completed-discovery onboarding guard — 2026-10-12
+
+Fresh behavior review reproduced a separate onboarding race: saved-subscription
+verification could start while runner discovery was pending, building an
+unresolved Auto configuration with Legacy's 1000-turn cap. Both delayed native
+and Legacy cases fail before treatment. Onboarding now enables discovery after
+its environment/settings/policy queries succeed and gates manual, keyboard,
+saved-account and completed-login advancement on the matching completed result.
+The builder receives that resolved value. Target or runner changes invalidate
+an in-flight attempt; metadata-only environment refreshes preserve it. Discovery
+failure or a missing harness result stops setup and offers an explicit availability
+retry, without testing or hiring. No connection/authentication mechanism changed.
+
+All 173 mounted onboarding/guided-setup/builder controls pass, including keyboard
+submission while discovery is pending, both native and Legacy results, failed
+availability/retry and obsolete-target verification rejection. UI noemit, token
+and map checks pass. Earlier subscription/account/login controls remain intact;
+the prior environment-refresh fixture now changes metadata rather than changing
+its target ID, and a separate two-target control proves actual invalidation.
+
+Protocol source `3aaf1f8b1e1e525378f0f2330fd5453a3ac1c252` has 53 successful
+current-head cloud checks, including Rust, static checks, both runner unit shards
+and Docker-context integrity, with fresh 5/5 review. Earlier local varying lease
+failures remain recorded. Behavior/platform need fresh gates after this UI guard;
+no final candidate package campaign has been dispatched and no paid turn added.
+The retained installed preview has been inspected in light/dark mode with the
+original theme restored and agent Save disabled. The browser's requested mobile
+override did not affect its actual 1150-pixel viewport, so that attempt is not
+mobile proof and its override was reset. Final responsive qualification remains.
