@@ -2,6 +2,38 @@
 
 Updated 2026-10-12.
 
+## Corrective source checkpoint: ready for fresh CI and review
+
+Runtime prerequisite source is `cf19e086ae4a0142c8b4314771c55f73b294805b`
+on `codex/runner-native-platform-prerequisites`, with 50 changed files. The
+Codex-default branch `codex/codex-runner-default` is composed on it and retains
+99 changed files. Both reviews remain under 100 files. All four original review
+findings and the relevant independent-review follow-ups are fixed.
+
+Existing controls pass: release workflow 70, assembly 7, registration 15,
+measured environment/probe routes 32, UI permission/forms 207, and selection/import
+140. Counts describe separate runs and can overlap. Canonical server, runner and
+UI no-emit checks and token gates pass. Source-matching independent reviews
+confirm cleanup, immutable-image binding and saved Legacy permission handling.
+No local Docker/Rust build, new provider turn, or agent migration was used.
+
+Remaining gates are fresh exact-head full CI/review and managed Codex acceptance.
+The existing managed eval catalog already requires OCI digests. Its image-backed
+fixture helper must use the existing explicit environment probe before automatic
+Codex creation and inspect the stored default; explicit-runner coverage remains
+separate. First-task onboarding fixtures are local-only, so fresh managed
+onboarding still requires live proof. The pinned fleet tenant currently uses a
+name-only snapshot and cannot establish native-default compatibility. Use a
+qualified immutable image-backed QA environment, preserve the tenant pin, and
+verify the serving commit and independently checked task/follow-up artifacts.
+
+Merge the prerequisite after its applicable checks pass. Then reconcile the
+Codex PR with actual master, verify its final source, and build the immutable
+preview and DB/shared pair remotely once. All three cancelled previews remain
+excluded. The original budget and cleanup holds remain unchanged. Claude owns
+its separate bounded proof and downstream attestation reconciliation. No merge
+or production deployment has occurred at this checkpoint.
+
 ## Final review checkpoint: shared fixes and sandbox qualification
 
 The user authorizes normal sequential merges after the applicable gates pass.
