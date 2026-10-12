@@ -94,3 +94,57 @@ Executable identities: daemon source `5f0b898e9ecef77afefe309a230e04d7fef66cde`,
 ## Approved prerequisite split and current CI
 
 The behavior PR now targets the protocol branch and has 64 changed files. Protocol #15994 targets the latest Codex dependency and adds the shared v7 effort/resume contract with historical readers. Cloud Docker-context verification found that `.dockerignore` omitted the new Pi v23 and Copilot v18 identity inputs; explicit exceptions retain them without broadening the fixture context. The old 9788c05 package campaign passed all four daemon producers and Apple Silicon clean install, but the Linux ARM64 consumer failed durable-suspend settlement. Retain that failure; current-source package qualification and ARM diagnosis remain required. No local Docker or Rust compilation occurred.
+
+
+## Review and qualification update after the prerequisite split
+
+Review stack: [protocol #15994](https://github.com/paperclipai/paperclip/pull/15994),
+[behavior #15993](https://github.com/paperclipai/paperclip/pull/15993),
+[platform #15997](https://github.com/paperclipai/paperclip/pull/15997).
+Before the latest dependency reconciliation, protocol `33c9216614` and behavior
+`23d834fc0a` each received 5/5 with their findings resolved. Platform pack parity
+was corrected in `4dc13aa32c`; its review still requires refresh. All remain
+unmerged drafts pending checks and final qualification.
+
+Further fixes keep explicit Auto effort cleared through native imports and use
+the resolved Claude harness for task model/effort overrides and compatibility
+validation, including saved profiles without `acpxAgent`. Builder/provider88,
+import52 and server noemit passed. Native v7 answered-question constraints now
+point to the compact envelope; native contracts/runtime-context58 passed. The
+clean-install Pi probe now binds both v23 and its exact digest. Install-sandbox
+controls21 passed.
+
+Native Linux producer packs previously contained a daemon under `dist/bin`
+that was absent from image packs. Both builders now exclude controller binaries
+and remote-pack identities before hashing their provider tree. Parity/integrity13
+and image content9 controls passed. Actual rebuilt pack/image identity and paid
+remote execution remain gates. No provider boundary was widened by this fix.
+
+Candidate campaigns `38284813521` (8d07b409) and `38285667342` (d0da37c2)
+completed all four daemon producers and both Mac clean-install consumers.
+Linux assembly retained package bytes but failed the stale Pi install-probe
+assertion, now fixed. ARM host startup exposed the precise Codex prerequisite
+error: stock Bubblewrap's network namespace was denied by the host AppArmor
+policy. The latest dependency `665c155472` supplies verified stock distro
+prerequisites and retains the host restriction values before and after setup.
+The stack is reconciled with that branch, including its master fixes and cached
+build preparation. Reconciled Pi evidence/installed controls87 passed.
+
+The cloud ARM pack from d0da37c2 passed GitHub ZIP digest validation,
+bounded archive extraction, recorded artifact hashes, relocated Node/Claude
+version launches and the shipped no-follow Claude admission probe. ZIP digest:
+`9589de44e923b336e6a4b09bacbfd8ae66de1473577197731bc85e8eefd174a0`;
+pack identity: `sha256:6e283f3069e38a2f00cd1b752f10d8147f633dc5be4b60e85ae15a1b762bcfd1`;
+daemon: `sha256:0adbf14efb2b5b2826044aa0f55f50a0a779d0f5751d7a7a2526f494ffb9e1bc`.
+The pack is installed at the authorized SSH host's standard runtime location;
+an ownership receipt records this disposable qualification installation. No
+existing pack was replaced. These software checks submitted zero prompts and
+used no API key. Pack-parity changes require a new identity before final proof.
+
+The hash-verified 8d07b409 public packages were installed without lifecycle
+scripts into `/private/tmp/claude-installed-8d07-preview/consumer` for an actual
+installed preview. This is preparation, not a passing installed task claim.
+The existing successful preview/data and all unknown-charge holds remain.
+No additional paid turns occurred during this review/packaging work; aggregate
+active company caps remain $42 of the $50 Claude ceiling. Remaining live checks
+use API keys per the user's steering. No Docker or Rust build ran locally.
