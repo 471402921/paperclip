@@ -560,7 +560,7 @@ export async function resolveActiveEnvironmentCustomImageTemplateForRuntime(
     secretRefExcludePaths?: Iterable<string>;
     now?: Date;
     readOnly?: boolean;
-    onResolvedTemplate?: (identity: { id: string; capturedAt: string | null }) => void;
+    onResolvedTemplate?: (identity: { id: string; capturedAt: string | null; templateKind: string; bindingField: string }) => void;
   },
 ): Promise<SandboxEnvironmentConfig> {
   const row = await db
@@ -591,7 +591,8 @@ export async function resolveActiveEnvironmentCustomImageTemplateForRuntime(
   // match. Runtime-only knobs such as lease reuse, timeouts, and resource hints
   // are excluded from the fingerprint so those edits do not discard the capture.
   const now = input.now ?? new Date();
-  input.onResolvedTemplate?.({ id: row.id, capturedAt: row.capturedAt?.toISOString() ?? null });
+  input.onResolvedTemplate?.({ id: row.id, capturedAt: row.capturedAt?.toISOString() ?? null,
+    templateKind: row.templateKind ?? "unknown", bindingField: resolveEnvironmentCustomImageRuntimeConfigBinding(row).field });
   if (!input.readOnly) await db
     .update(environmentCustomImageTemplates)
     .set({ lastUsedAt: now, updatedAt: now })

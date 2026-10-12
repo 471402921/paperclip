@@ -661,7 +661,7 @@ export async function resolveEnvironmentDriverConfigForRuntime(
     // configuration and tooling so the test reflects what real agent runs use.
     applyCustomImageTemplate?: boolean;
     readOnlyCustomImageTemplate?: boolean;
-    onResolvedCustomImageTemplate?: (identity: { id: string; capturedAt: string | null }) => void;
+    onResolvedCustomImageTemplate?: (identity: { id: string; capturedAt: string | null; templateKind: string; bindingField: string }) => void;
   },
 ): Promise<ParsedEnvironmentConfig> {
   const parsed = parseEnvironmentDriverConfig(environment);
