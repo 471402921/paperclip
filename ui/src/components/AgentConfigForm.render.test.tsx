@@ -706,6 +706,21 @@ describe("AgentConfigForm environment selector", () => {
     expect(result.onSave).toHaveBeenCalledWith({ name: "Renamed Cody" });
   });
 
+  it.each(["codex", "claude"].flatMap(harness => ["modelReasoningEffort", "reasoningEffort", "effort"].map(key => ({ harness, key }))))("hydrates saved effort and clears explicit Auto for $harness ($key)", async ({ harness, key }) => {
+    const profile = harness === "codex" ? { provider: "codex", model: "gpt-5.6-sol" } : { provider: "acpx", acpxAgent: "claude", model: "claude-opus-5-5" };
+    const result = await renderForm([], { adapterType: "paperclip_runner", adapterConfig: { ...profile, [key]: "high" } });
+    roots.push(result.root);
+    const effort = result.container.querySelector('[aria-label="Thinking effort"]');
+    expect(effort?.textContent).toContain("High");
+    await clickElement(effort);
+    await clickElement(document.querySelector('[role="option"][data-value=""]'));
+    await clickByText(result.container, "Save");
+    const saved = result.onSave.mock.calls[0][0];
+    expect(saved.replaceAdapterConfig).toBe(true);
+    expect(saved.adapterConfig).toMatchObject(profile);
+    for (const alias of ["modelReasoningEffort", "reasoningEffort", "effort"]) expect(saved.adapterConfig).not.toHaveProperty(alias);
+  });
+
   it("submits only an explicit runner change and retains saved configuration for server translation", async () => {
     const result = await renderForm([], { adapterType: "paperclip_runner", adapterConfig: { provider: "codex", model: "gpt-5.6-sol", reasoningEffort: "high", env: { CODEX_HOME: { type: "secret_ref", secretId: "codex-account" } } } });
     roots.push(result.root);
