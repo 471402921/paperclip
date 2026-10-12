@@ -251,3 +251,72 @@ with artifact work products on CLAA-2. The actual native SDK is the server's
 nested 0.3.286 package, executable SHA256
 `75e3016e9d2570767b08e43a7467d4817a4f149232c169ca295f2c95fef21433`;
 the top-level Legacy SDK is a separate dependency and was not this runtime.
+## Four-target packages and SSH launch repair — 2026-10-12
+
+The frozen `557c3064a30779e86e1ae312eab3d1d42c3a8b8d` four-target
+campaign above completed successfully, including all daemon producers, Linux
+x64 public installation, both Mac consumers, and the native Linux ARM64
+consumer. Consumer reports record clean npm installation and zero provider
+calls. The raw packaging manifest's `publicInstallationVerified: false`
+precedes those consumer checks; it is not rewritten as execution evidence.
+
+The cloud image campaign succeeded with immutable image
+`ghcr.io/paperclipai/paperclip-daytona-runner@sha256:d9dbda3a9435e3e555f431bdeb0ba22e1241ae9103184e6c1646a200e26423e1`.
+Independent native/image Linux x64 manifest comparison matched pack
+`sha256:97f44524d1b35ed6295c922f6b52ac376960213be0a0e09a3635c281db26aecf`,
+Node `sha256:7fde7b8afa198da66257f42ee2001d874c7355631e6d1579a5fb5ef1f246df4c`,
+and distribution `sha256:83aafb7d6c951c1fa31c0d8bbbfd32c39b4d265b01607cd566c55c8d9b4a6143`.
+The installed ARM pack is
+`sha256:51fe734d79211b474ee13f53080ac60f07cdc9315ebd33b703ecf4a7dc0f8ce1`.
+The new existing-consumer Claude SDK admission hook passed 22 controls and a
+real installed Mac no-prompt probe. The earlier frozen campaign predates this
+hook; its Intel report does not certify that new hook ran.
+
+The isolated preview now uses the real 557 public package with two recorded
+controller overlays: the narrow existing Claude ARM setup allowlist and the
+shared SSH argument repair. Normal installed daemon/package resolution stays
+in use. The source is not misrepresented as an unmodified installed package.
+The user-directed remaining acceptance uses the API key in `~/.secrets`;
+subscription follow-up remains unverified.
+
+ARM attempts `5ec7bc81-8023-4b5c-84c0-1886224ac4fa` and
+`ebb8a76b-60d8-4881-a6ad-e60b6604ca9c` failed before provider startup.
+The first lacked a remote WSS ingress URL. Qualification now uses the existing
+explicit direct-WSS transport through a private TLS relay and authenticated SSH
+reverse forwarding; both endpoints bind loopback, certificate validation stays
+on, and protocol authentication is unchanged. The second exposed the first
+causal launch error, `sh: 7: 1: parameter not set`: the shared SSH wrapper had
+flattened `sh -c`, dropping positional arguments. Failed records and unknown
+accounting holds remain intact; neither failure is reported as a successful
+provider turn or zero-cost accounting completion.
+
+Protocol `b833c609cf2da1aacb6ab29d062e23bb1865624c` preserves argv, applies
+environment assignments after `exec`, and validates environment names.
+Six regression controls fail before and pass after; 51 shared/Codex controls
+and adapter-utils typecheck pass. The authorized cloud host passed both
+execFile and stdin/spawn paths with exact literal quoted arguments and zero
+provider calls. Private proof: `/private/tmp/claude-ssh-no-provider-proof.json`;
+installed overlay: `/private/tmp/claude-installed-557-ssh-overlay.json`.
+Module SHA256 changed from
+`0b89740ef859923d3bb9cdddc09a836eab8ff9296b986eaee68700f766ea5bae` to
+`a7f3ec5effa48d05a8388d77d130449dba52f3693afd8bed04c16378a7c764ae`.
+
+The stack incorporates latest Codex composed source
+`d3916151f65ca08904bda309474a35e4c48c54fe`. The authorized source-chat owner
+will lift the identical shared SSH fix into prerequisite
+[PR #16028](https://github.com/paperclipai/paperclip/pull/16028) before Codex;
+our retained commit will coalesce on later reconciliation. That owner coordinates
+normal squash merge order. No dependent PR or production deployment is performed
+by this qualification session.
+
+The failed fresh ARM fixture now retains its complete $1 unknown reservation
+under a reduced $1 cap and remains held. A new repaired ARM fixture has a $3
+cap; original $17, candidate $9, and local acceptance $16 caps remain.
+Aggregate allocated cap is $46, reserving $4 for Linux x64, within the separate
+$50 ceiling. Timer heartbeats and automatic paid retries remain disabled.
+Known estimates remain $1.331719, excluding unknown charges.
+
+[Required cloud source checks](https://github.com/paperclipai/paperclip/actions/runs/38302321706)
+passed authorization and await a build worker. Current-source full checks,
+latest reviews, useful remote task/follow-up pairs, additional platform defaults,
+and final package qualification remain gates. No local Docker or Rust build.

@@ -39,6 +39,14 @@ Automated: [new agent page](../../ui/src/pages/NewAgent.test.tsx) and [configura
 
 Manual: Hire an agent with a distinct name and role. Complete any required approval, reload the roster, and open its configuration. Confirm manager, adapter, and model persisted; run a small task to prove execution readiness.
 
+For Claude Code on Apple Silicon, submit without a runner override and inspect
+saved configuration: `paperclip_runner`, `provider: acpx`, `acpxAgent: claude`,
+and ordinary model `claude-opus-5-5`. The Advanced runner selector can explicitly
+choose Legacy. Keep explicit model/account choices and saved runners on edits.
+Verify useful output and a follow-up after a controller restart; setup success
+alone does not establish session continuity. Additional target defaults remain
+subject to their separate qualification gates.
+
 The current hiring wizard assigns the first hire CEO and subsequent hires
 General reporting to the CEO. Change manager/role afterward through supported
 configuration. Process/HTTP agents can be created through API/CLI but are excluded
