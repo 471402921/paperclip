@@ -13,7 +13,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { packConcurrency, packStagedPackages, packTimings } from './pack-staged-packages.mjs';
 import { materializePublishManifest } from './prepare-bundled-package.mjs';
-import { GROK_PUBLIC_INSTALL_IMAGE, GROK_PUBLIC_INSTALL_LIFECYCLE, assertNoBundledCodexPayloads, grokConsumerDockerArgs, installedCodexProbeSource, installedDaemonProbeSource, macNodeHeadersDirectory, macPublicInstallLifecycleProfile, macInstalledStartupProbeSource } from './grok-public-install-sandbox.mjs';
+import { GROK_PUBLIC_INSTALL_IMAGE, GROK_PUBLIC_INSTALL_LIFECYCLE, assertInstalledNativeConsumerContinuity, assertNoBundledCodexPayloads, grokConsumerDockerArgs, installedCodexProbeSource, installedDaemonProbeSource, macNodeHeadersDirectory, macPublicInstallLifecycleProfile, macInstalledStartupProbeSource } from './grok-public-install-sandbox.mjs';
 import { startPrefetch, stopPrefetches } from './prefetch-child.mjs';
 import { retainRunnerQualificationPackages } from './retain-runner-qualification-packages.mjs';
 import { bundledInstallTimings, startBundledInstalls } from './stage-bundled-packages.mjs';
@@ -99,6 +99,7 @@ async function verifyMacConsumer(packageDirectory, sourceRevision, receiptPath) 
 async function verifyLinuxArmConsumer(packageDirectory, sourceRevision, receiptPath) {
   assert.equal(process.env.GITHUB_ACTIONS, 'true', 'Native clean consumers run only on disposable hosted CI');
   assert.equal(process.platform + '-' + process.arch, 'linux-arm64', 'ARM qualification requires a native ARM host');
+  assert.equal(process.versions.node.split('.')[0], '24', 'ARM host startup requires the qualified Node24 runtime');
   assert.match(sourceRevision, /^[a-f0-9]{40}$/);
   const packages = realpathSync(packageDirectory);
   const manifest = JSON.parse(readFileSync(join(packages, 'manifest.json'), 'utf8'));
@@ -150,12 +151,38 @@ async function verifyLinuxArmConsumer(packageDirectory, sourceRevision, receiptP
     // production imports still resolve from the installed consumer graph.
     cpSync(join(repo, 'tests/runner-e2e/installed-cli.ts'), join(assets, 'installed-cli.ts'));
     writeFileSync(join(assets, 'types.js'), stripTypeScriptTypes(readFileSync(join(repo, 'tests/runner-e2e/types.ts'), 'utf8')));
-    const startup = probe('startup-probe.mjs', macInstalledStartupProbeSource('/consumer', server, daemon.sha256, '/packages/installed-cli.ts'),
-      { temporarySizeMiB: 2048, temporaryExecutable: true });
+    // The restricted install container deliberately forbids nested namespaces.
+    // Keep its lifecycle/no-network proof, then test the exact same bind-mounted
+    // graph on the native host using Codex's normal read-only namespace policy.
+    const home = join(root, 'host-home'), hostTmp = join(root, 'host-tmp');
+    for (const directory of [home, hostTmp]) mkdirSync(directory, { mode: 0o700 });
+    const hostEnv = { PATH: `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`, HOME: home, TMPDIR: hostTmp, LC_ALL: 'C', TZ: 'UTC' };
+    const hostProbe = (name, source) => {
+      const file = join(assets, name); writeFileSync(file, source);
+      return JSON.parse(execFileSync(process.execPath, [file], { cwd: consumer, env: hostEnv,
+        timeout: 120_000, maxBuffer: 1024 * 1024, encoding: 'utf8' }).trim());
+    };
+    const hostServer = join(consumer, 'node_modules/@paperclipai/server'), hostInstalled = join(hostServer, 'dist/vendor/paperclip-runner');
+    const hostDaemon = () => hostProbe('host-daemon-probe.mjs', installedDaemonProbeSource(hostInstalled, consumer, sourceRevision));
+    const hostCodex = () => hostProbe('host-codex-probe.mjs', installedCodexProbeSource(join(hostInstalled, 'index.js'), consumer, undefined, { nativeCodex: true }));
+    const digest = value => createHash('sha256').update(value).digest('hex');
+    const before = { lockSha256: digest(lock), runnerSha256: hostDaemon().sha256.slice(7), codexCommandSha256: hostCodex().codexCommandSha256 };
+    assert.equal(before.runnerSha256, daemon.sha256.slice(7), 'Docker and host must select the same packaged daemon bytes');
+    assert.equal(before.codexCommandSha256, codex.codexCommandSha256, 'Docker and host must select the same official Codex command bytes');
+    const hostHeader = process.report.getReport().header;
+    assert.match(hostHeader.glibcVersionRuntime || '', /^\d+\.\d+$/, 'Native host startup must report its actual GNU libc ABI');
+    const startup = hostProbe('host-startup-probe.mjs', macInstalledStartupProbeSource(consumer, hostServer, daemon.sha256, join(assets, 'installed-cli.ts')));
+    const after = { lockSha256: digest(readFileSync(join(consumer, 'package-lock.json'))), runnerSha256: hostDaemon().sha256.slice(7), codexCommandSha256: hostCodex().codexCommandSha256 };
+    assertInstalledNativeConsumerContinuity(before, after);
+    assert.equal(startup.runnerSha256, before.runnerSha256);
+    assert.equal(startup.codexSha256, before.codexCommandSha256);
     const receipt = { schema: 'paperclip.runner.linux-arm64-public-install.v1', sourceRevision, platform: process.platform, architecture: process.arch,
       cleanNpmInstall: true, packageCount: manifest.archives.length, codexPackedPayloadsOmitted: true,
       consumerImage: GROK_PUBLIC_INSTALL_IMAGE, consumerImagePlatform: platform,
       consumerLockPreserved: true, lifecycleSentinelVerified: true, lifecycleNetwork: 'none',
+      startupEnvironment: 'native host, same installed graph, isolated empty homes',
+      startupHost: { nodeVersion: process.versions.node, nodeModulesAbi: process.versions.modules, glibcVersionRuntime: hostHeader.glibcVersionRuntime, kernelRelease: hostHeader.osRelease },
+      installedIdentityBefore: before, installedIdentityAfter: after,
       ...daemon, ...codex, startup, providerCalls: 0 };
     writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + '\n');
     console.log(JSON.stringify(receipt));

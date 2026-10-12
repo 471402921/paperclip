@@ -18,6 +18,7 @@ afterEach(async () => {
   Object.defineProperty(process, "arch", initialArchitecture);
   process.env.PATH = initialPath;
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
   if (root) await rm(root, { recursive: true, force: true });
   root = undefined;
@@ -35,14 +36,20 @@ async function fakeCli(name: string, source: string) {
   return realpath(home);
 }
 
-function targetPlatform(platform: string, architecture: string) {
+function targetPlatform(platform: string, architecture: string, glibc = true, glibcVersionRuntime = "2.39") {
   Object.defineProperty(process, "platform", { ...initialPlatform, value: platform });
   Object.defineProperty(process, "arch", { ...initialArchitecture, value: architecture });
+  if (platform === "linux") vi.spyOn(process.report, "getReport").mockReturnValue({ header: glibc ? { glibcVersionRuntime } : {} } as never);
 }
 
 describe.skipIf(process.platform === "win32")("local browser subscription login", () => {
-  it.each([false, true])("uses the selected Codex command with its credential home and ambient HOME/cwd (legacy Linux ARM32: %s)", async (legacy) => {
-    if (legacy) targetPlatform("linux", "arm");
+  it.each(["native", "arm32", "musl", "glibc-2.38", "glibc-3.0", "unknown"])("uses the selected Codex command with its credential home and ambient HOME/cwd (%s)", async platform => {
+    const legacy = platform === "arm32";
+    if (platform === "arm32") targetPlatform("linux", "arm");
+    if (platform === "musl") targetPlatform("linux", "arm64", false);
+    if (platform === "glibc-2.38") targetPlatform("linux", "arm64", true, "2.38");
+    if (platform === "glibc-3.0") targetPlatform("linux", "arm64", true, "3.0");
+    if (platform === "unknown") targetPlatform("linux", "x64", true, "unknown");
     const home = await fakeCli("codex", [
       '[ "$1 $2" = "login --device-auth" ] || exit 11',
       '[ "$HOME" = "$CLAUDE_CONFIG_DIR" ] && [ "$HOME" != "$CODEX_HOME" ] && [ "$CODEX_HOME" = "$PAPERCLIP_TEST_LOGIN_CODEX_HOME" ] || exit 12',
@@ -60,10 +67,49 @@ describe.skipIf(process.platform === "win32")("local browser subscription login"
     for (const key of ["OPENAI_API_KEY", "CODEX_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"])
       vi.stubEnv(key, "unrelated-host-value");
     const login = startLocalBrowserLogin("openai", home);
-    await vi.waitFor(() => expect(login.outcome).toBe("success"), { timeout: 5000 });
+    await vi.waitFor(() => expect(login.outcome).toBeDefined(), { timeout: 5000 });
+    expect(login.outcome).toBe("success");
     if (legacy) expect(resolveCodexCommand).not.toHaveBeenCalled();
     else expect(resolveCodexCommand).toHaveBeenCalledOnce();
     expect(login.code).toBe("ABCD-EFGHJ");
+  });
+
+  it.each(["x64", "arm64"].flatMap(architecture => ["2.38", "musl", "unknown"].map(libc => ({ architecture, libc }))))("uses the installed Codex dependency for login on Linux $architecture/$libc without a global CLI", async ({ architecture, libc }) => {
+    targetPlatform("linux", architecture, libc !== "musl", libc);
+    const home = await fakeCli("codex", [
+      'echo owned > "$CODEX_HOME/owned-cli"',
+      'printf "1. Open this link in your browser and sign in to your account\\nhttps://auth.openai.com/codex/device\\n2. Enter this one-time code (expires in 15 minutes)\\nABCD-EFGHJ\\n"',
+    ].join("\n"));
+    const dependency = path.join(root!, "node_modules/@openai/codex");
+    await mkdir(path.join(dependency, "bin"), { recursive: true });
+    await writeFile(path.join(dependency, "package.json"), JSON.stringify({ name: "@openai/codex", version: "0.1.0", bin: { codex: "bin/codex" } }));
+    await writeFile(path.join(dependency, "bin/codex"), await readFile(path.join(root!, "bin/codex")), { mode: 0o700 });
+    const actual = await vi.importActual<Pick<typeof import("../vendor/paperclip-runner/index.js"), "resolveCodexCommand">>("../../../packages/paperclip-runner/src/drivers/codex/codex-command.ts");
+    vi.mocked(resolveCodexCommand).mockImplementation(() => actual.resolveCodexCommand(path.join(root!, "issuer.js"), process.env, home));
+    process.env.PATH = "/usr/bin:/bin";
+    const login = startLocalBrowserLogin("openai", home);
+    await vi.waitFor(() => expect(login.outcome).toBeDefined(), { timeout: 5000 });
+    expect(login.outcome).toBe("success");
+    expect(await readFile(path.join(home, "owned-cli"), "utf8")).toBe("owned\n");
+    expect(resolveCodexCommand).toHaveBeenCalledOnce();
+    expect(process.report.getReport).not.toHaveBeenCalled();
+  });
+
+  it.each(["2.38", "musl", "unknown"])("reports a real owned-dependency containment failure on Linux/%s without falling back to another CLI", async libc => {
+    targetPlatform("linux", "arm64", libc !== "musl", libc);
+    const home = await fakeCli("codex", 'echo invoked > "$CODEX_HOME/unreviewed-cli"');
+    const dependency = path.join(root!, "node_modules/@openai/codex");
+    await mkdir(dependency, { recursive: true });
+    await writeFile(path.join(dependency, "package.json"), JSON.stringify({ name: "@openai/codex", version: "0.1.0", bin: { codex: "../outside-codex" } }));
+    const actual = await vi.importActual<Pick<typeof import("../vendor/paperclip-runner/index.js"), "resolveCodexCommand">>("../../../packages/paperclip-runner/src/drivers/codex/codex-command.ts");
+    vi.mocked(resolveCodexCommand).mockImplementation(() => actual.resolveCodexCommand(path.join(root!, "issuer.js"), process.env, home));
+    const login = startLocalBrowserLogin("openai", home);
+    await vi.waitFor(() => expect(login.outcome).toBeDefined(), { timeout: 5000 });
+    expect(login.outcome).toBe("failure");
+    expect(login.error).toMatch(/requires an installed Codex CLI.*Install Codex/);
+    expect(JSON.stringify(login)).not.toContain(root!);
+    await expect(readFile(path.join(home, "unreviewed-cli"))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(resolveCodexCommand).toHaveBeenCalledOnce();
   });
 
   it.each([["linux", "x64"], ["linux", "arm64"], ["darwin", "arm64"], ["darwin", "x64"]] as const)("reports an unavailable Codex CLI on %s/%s without revealing private details", async (platform, architecture) => {

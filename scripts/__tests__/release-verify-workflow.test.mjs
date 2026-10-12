@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -747,7 +747,7 @@ test("release daemon production uses exact-source native hosts and no publisher 
   const workflow = readWorkflow("release-verify.yml");
   const producer = workflow.split("  runner_binaries:\n")[1];
   const targets = workflow.split("  runner_binary_targets:\n")[1].split("  runner_binaries:\n")[0];
-  for (const [target, host] of [["linux-x64", "ubuntu-latest"], ["linux-arm64", "ubuntu-24.04-arm"], ["darwin-arm64", "macos-15"], ["darwin-x64", "macos-15-intel"]]) {
+  for (const [target, host] of [["linux-arm64", "ubuntu-24.04-arm"], ["darwin-arm64", "macos-15"], ["darwin-x64", "macos-15-intel"]]) {
     assert.ok(targets.includes(`'${target}': '${host}'`));
   }
   assert.match(producer, /matrix: \$\{\{ fromJSON\(needs.runner_binary_targets.outputs.matrix\) \}\}/);
@@ -760,7 +760,10 @@ test("release daemon production uses exact-source native hosts and no publisher 
   assert.match(producer, /\[\[ "\$SOURCE_SHA" =~ \^\[a-f0-9\]\{40\}\$ \]\]/);
   assert.match(producer, /git rev-parse HEAD/);
   assert.match(producer, /process.platform \+ "-" \+ process.arch/);
-  assert.match(producer, /pnpm build:binary/);
+  assert.match(producer, /\['native', \['build:binary'\]/);
+  const runner = JSON.parse(readFileSync(path.join(repoRoot, 'packages/paperclip-runner/package.json'), 'utf8'));
+  assert.match(runner.scripts['build:binary'], /cargo build --release --manifest-path runner\/Cargo.toml --locked/);
+  assert.match(runner.scripts['build:binary'], /&& node scripts\/stage-runner-binary.mjs$/);
   assert.match(producer, /stage-release-runner-binaries.mjs record/);
   for (const job of ["runner_chaos_evals", "typecheck", "general_tests", "serialized_tests", "runner_workflow_evals", "verify_paperclip_runner", "build"]) {
     assert.ok(workflow.includes(`${job}:\n    if: \${{ !inputs.runner_binaries_only }}`));
@@ -776,6 +779,170 @@ test("release daemon production uses exact-source native hosts and no publisher 
   assert.ok(script.indexOf('assemble-daemons "$PAPERCLIP_RELEASE_RUNNER_ARTIFACTS_DIR"') < script.indexOf('scripts/build-standalone-public-packages.mjs'));
   assert.match(script, /cp -R .*paperclip-runner\/dist\/bin\/\." .*server\/dist\/vendor\/paperclip-runner\/bin\//);
   assert.match(script, /elif \[ "\$dry_run" = false \]; then[\s\S]*?release_fail "Public releases require/);
+});
+
+function nativeProducer() {
+  return readWorkflow('release-verify.yml').split('  runner_binaries:\n')[1];
+}
+
+test('native dependency caches are target-bound and unmerged master callers cannot save them', () => {
+  const producer = nativeProducer();
+  const cache = producer.split('      - name: Cache native Rust dependencies\n')[1].split('\n      - ')[0];
+  assert.match(cache, /Swatinem\/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6/);
+  assert.match(cache, /workspaces: \$\{\{ steps.native_rust_workspace.outputs.path \}\} -> target/);
+  assert.match(cache, /shared-key: release-native-v2-\$\{\{ matrix.host \}\}-\$\{\{ matrix.target \}\}-\$\{\{ hashFiles\('packages\/paperclip-runner\/protocol\/\*\*', 'packages\/paperclip-runner\/src\/\*\*', 'packages\/paperclip-runner\/\*.json'\) \}\}/);
+  for (const option of ['cache-workspace-crates', 'cache-bin', 'cache-on-failure']) {
+    assert.match(cache, new RegExp(option + ': false'));
+  }
+  const expression = cache.match(/save-if: \$\{\{ (.+) \}\}/)?.[1];
+  assert.ok(expression, 'cache writes need a separate source trust gate');
+  const canSave = new Function('github', 'inputs', `return (${expression});`);
+  const github = { repository: 'paperclipai/paperclip', repository_id: '1170821064', event_name: 'push', ref: 'refs/heads/master', sha: 'a'.repeat(40) };
+  assert.equal(canSave(github, { ref: github.sha }), true);
+  for (const [overrides, input] of [
+    [{}, 'b'.repeat(40)], [{}, ''],
+    [{ event_name: 'workflow_dispatch' }, github.sha],
+    [{ event_name: 'workflow_dispatch' }, 'b'.repeat(40)],
+    [{ event_name: 'pull_request', ref: 'refs/pull/123/merge' }, github.sha],
+    [{ ref: 'refs/heads/topic' }, github.sha],
+    [{ repository: 'fork/paperclip' }, github.sha],
+    [{ repository_id: '1' }, github.sha],
+  ]) assert.equal(canSave({ ...github, ...overrides }, { ref: input }), false);
+  assert.match(producer, /pinned="\$HOME\/paperclip-runner-rust"/);
+  assert.match(producer, /ln -s "\$GITHUB_WORKSPACE\/packages\/paperclip-runner\/runner" "\$pinned"/);
+  assert.match(producer, /echo "RUSTUP_TOOLCHAIN=\$toolchain" >> "\$GITHUB_ENV"/);
+  assert.doesNotMatch(producer, /cache-hit|continue-on-error/);
+  assert.ok(producer.indexOf('Bind immutable producer source and target') < producer.indexOf('Cache native Rust dependencies'));
+  assert.ok(producer.indexOf('Build TypeScript contract and host daemon concurrently') < producer.indexOf('Record actual daemon metadata and immutable bytes'));
+});
+
+function nativePreparationScript() {
+  const step = nativeProducer().split('      - name: Build TypeScript contract and host daemon concurrently\n')[1].split('\n      - ')[0];
+  const script = step.match(/node --input-type=module <<'NODE'\n([\s\S]*?)\n          NODE/)?.[1];
+  assert.ok(script);
+  return script.replace(/^ {10}/gm, '');
+}
+
+const fixtureProcessGone = pid => {
+  try { process.kill(pid, 0); } catch (error) { return error.code === 'ESRCH'; }
+  try { return /^\d+ \(.*\) Z /.test(readFileSync(`/proc/${pid}/stat`, 'utf8')); } catch { return false; }
+};
+const waitForFixture = async (predicate, label) => {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if (predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  assert.fail(label);
+};
+
+// Execute the workflow's actual coordinator with two tiny local Node commands.
+// Both must cross the start barrier before either can finish; no pnpm, Cargo,
+// provider, registry, or Docker build runs in these fixtures.
+async function withNativePreparationFixture(mode, check) {
+  const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'native-preparation-')));
+  let controller;
+  try {
+    for (const directory of ['scripts', 'tools', 'packages/paperclip-runner', 'logs']) {
+      mkdirSync(path.join(root, directory), { recursive: true });
+    }
+    for (const helper of ['prefetch-child.mjs', 'prefetch-supervisor.mjs']) {
+      copyFileSync(path.join(repoRoot, 'scripts', helper), path.join(root, 'scripts', helper));
+    }
+    writeFileSync(path.join(root, 'prepare.mjs'), nativePreparationScript());
+    writeFileSync(path.join(root, 'tools/pnpm'), `#!${process.execPath}
+const { spawn } = require('node:child_process');
+const { existsSync, writeFileSync } = require('node:fs');
+const { join } = require('node:path');
+const root = process.env.FIXTURE_ROOT;
+const name = process.argv.includes('build:binary') ? 'native' : 'typescript';
+writeFileSync(join(root, name + '.started'), JSON.stringify({ pid: process.pid, cwd: process.cwd(), args: process.argv.slice(2) }));
+const wait = setInterval(() => {
+  if (!existsSync(join(root, 'native.started')) || !existsSync(join(root, 'typescript.started'))) return;
+  clearInterval(wait);
+  if (process.env.FIXTURE_MODE === 'success') {
+    setTimeout(() => { writeFileSync(join(root, name + '.finished'), 'joined'); console.log(name + ' complete'); }, 150);
+    return;
+  }
+  const child = spawn(process.execPath, ['-e', \
+    "const fs=require('node:fs'); fs.writeFileSync(process.argv[1], String(process.pid)); setInterval(() => fs.writeFileSync(process.argv[2], String(Date.now())), 25)",\
+    join(root, name + '.descendant'), join(root, name + '.writing')], { stdio: 'inherit' });
+  child.on('exit', () => process.exit(0));
+  const barrier = setInterval(() => {
+    if (!existsSync(join(root, 'native.descendant')) || !existsSync(join(root, 'typescript.descendant'))) return;
+    clearInterval(barrier);
+    if (process.env.FIXTURE_MODE === name) { console.error(name + ' failed'); process.exit(23); }
+  }, 10);
+}, 10);
+`, { mode: 0o755 });
+    controller = spawn(process.execPath, ['prepare.mjs'], { cwd: root, env: {
+      ...process.env, PATH: `${path.join(root, 'tools')}:${process.env.PATH}`, RUNNER_TEMP: path.join(root, 'logs'), FIXTURE_ROOT: root, FIXTURE_MODE: mode,
+    }, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '', stderr = '';
+    controller.stdout.on('data', chunk => { stdout += chunk; });
+    controller.stderr.on('data', chunk => { stderr += chunk; });
+    const completed = new Promise((resolve, reject) => {
+      controller.once('error', reject);
+      controller.once('close', (status, signal) => resolve({ status, signal, stdout, stderr }));
+    });
+    await check({ root, controller, completed });
+  } finally {
+    if (controller?.exitCode === null && controller.signalCode === null) controller.kill('SIGKILL');
+    for (const name of ['native', 'typescript']) {
+      for (const filename of [name + '.started', name + '.descendant']) {
+        const file = path.join(root, filename);
+        if (!existsSync(file)) continue;
+        const data = readFileSync(file, 'utf8');
+        const pid = filename.endsWith('.started') ? JSON.parse(data).pid : Number(data);
+        if (!fixtureProcessGone(pid)) {
+          try { process.kill(pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+        }
+      }
+    }
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test('native preparation overlaps independent outputs and joins both before recording', async () => {
+  await withNativePreparationFixture('success', async ({ root, completed }) => {
+    const result = await completed;
+    assert.equal(result.status, 0, result.stderr);
+    for (const name of ['native', 'typescript']) assert.equal(readFileSync(path.join(root, name + '.finished'), 'utf8'), 'joined');
+    assert.equal(JSON.parse(readFileSync(path.join(root, 'native.started'), 'utf8')).cwd, path.join(root, 'packages/paperclip-runner'));
+    assert.deepEqual(JSON.parse(readFileSync(path.join(root, 'native.started'), 'utf8')).args, ['build:binary']);
+    assert.deepEqual(JSON.parse(readFileSync(path.join(root, 'typescript.started'), 'utf8')).args, ['--filter', '@paperclipai/paperclip-runner', 'build:typescript']);
+    const results = result.stdout.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
+    assert.deepEqual(results.map(item => [item.build, item.status, item.exitCode]), [['typescript', 'fulfilled', 0], ['native', 'fulfilled', 0]]);
+  });
+});
+
+for (const name of ['typescript', 'native']) {
+  test(`${name} preparation failure fails the join and retires both owned process trees`, async () => {
+    await withNativePreparationFixture(name, async ({ root, completed }) => {
+      const result = await completed;
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stderr, new RegExp(name + ' prefetch failed \\(exit 23\\)'));
+      const results = result.stdout.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
+      assert.equal(results.length, 2);
+      assert.ok(results.every(item => item.status === 'rejected'));
+      for (const build of ['native', 'typescript']) {
+        const pid = Number(readFileSync(path.join(root, build + '.descendant'), 'utf8'));
+        await waitForFixture(() => fixtureProcessGone(pid), build + ' descendant outlived failed join');
+      }
+    });
+  });
+}
+
+test('canceling native preparation retires both supervisors and their descendants', { skip: process.platform === 'win32' }, async () => {
+  await withNativePreparationFixture('cancel', async ({ root, controller, completed }) => {
+    await waitForFixture(() => ['native', 'typescript'].every(name => existsSync(path.join(root, name + '.descendant'))), 'both native build trees must start');
+    controller.kill('SIGTERM');
+    const result = await completed;
+    assert.equal(result.signal, 'SIGTERM');
+    for (const name of ['native', 'typescript']) {
+      const pid = Number(readFileSync(path.join(root, name + '.descendant'), 'utf8'));
+      await waitForFixture(() => fixtureProcessGone(pid), name + ' descendant outlived cancellation');
+    }
+  });
 });
 
 test("premerge native qualification consumes the same Linux-packed npm bytes without publishing", () => {
@@ -819,6 +986,8 @@ test("exact-source daemon matrices preserve historical three-target sources and 
       assert.deepEqual(data.matrix.include.map(row => row.target), targets);
       assert.deepEqual(data.native_consumers.include.map(row => row.target), targets.filter(target => target !== 'linux-x64'));
       assert.ok(data.matrix.include.every(row => row.target !== 'linux-arm64' || row.host === 'ubuntu-24.04-arm'));
+      assert.equal(data.matrix.include.find(row => row.target === 'linux-x64').host, targets.length === 4 ? 'ubuntu-24.04' : 'ubuntu-latest',
+        'new GNU libc baseline stays pinned while historical qualification keeps its producer mode');
     }
     writeFileSync(source, 'export const RELEASE_RUNNER_TARGETS = ["linux-arm64"];'); writeFileSync(output, '');
     const result = spawnSync('bash', ['-euo', 'pipefail', '-c', script], { cwd: root, encoding: 'utf8', env: {

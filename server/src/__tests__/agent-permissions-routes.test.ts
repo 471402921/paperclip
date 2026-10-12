@@ -1855,7 +1855,8 @@ describe("agent permission routes", () => {
       );
       if (adapterCase.adapterType === "codex_local") {
         expect(mockAgentService.create.mock.calls[0][1].adapterConfig).toMatchObject({ provider: "codex" });
-        expect(mockRunSshCommand).toHaveBeenCalledWith(expect.objectContaining({ host: "qa.example.invalid" }), "uname -s; uname -m", { timeoutMs: 10_000 });
+        const { AGENT_RUNNER_SSH_PLATFORM_COMMAND } = await import("../services/agent-runner-selection.js");
+        expect(mockRunSshCommand).toHaveBeenCalledWith(expect.objectContaining({ host: "qa.example.invalid" }), AGENT_RUNNER_SSH_PLATFORM_COMMAND, { timeoutMs: 10_000 });
       } else {
         expect(mockRunSshCommand).not.toHaveBeenCalled();
       }

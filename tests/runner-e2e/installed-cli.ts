@@ -100,6 +100,8 @@ export async function probeInstalledCodexStartup(input: {
   let session: any;
   let bundle: any;
   let cleanupConfirmed = false;
+  let startupFailed = false;
+  let startupFailure: unknown;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("Installed Codex startup timed out")), Math.max(1, Math.min(input.timeoutMs ?? 45000, 120000)));
   try {
@@ -138,11 +140,35 @@ export async function probeInstalledCodexStartup(input: {
       runnerSha256, codexSha256, codexVersion, providerDriver: "codex_app_server", model: "gpt-5.6-sol",
       nativeSessionStarted: true, cleanupConfirmed: true, providerTurns: 0, credentialsUsed: false,
       defaultRuntimeResolution: true, reasoningEffortExercised: false };
+  } catch (error) {
+    startupFailed = true;
+    startupFailure = error;
+    throw error;
   } finally {
     clearTimeout(timer);
-    if (session) await session.close({ reason: "installed startup cleanup" });
-    else if (bundle && !cleanupConfirmed) await bundle.transport.close("installed startup cleanup");
-    if (!bundle || bundle.evidence().runnerExited) await rm(directory, { recursive: true, force: true });
+    const cleanupFailures: unknown[] = [];
+    try {
+      if (session) await session.close({ reason: "installed startup cleanup" });
+      else if (bundle && !cleanupConfirmed) await bundle.transport.close("installed startup cleanup");
+    } catch (error) { cleanupFailures.push(error); }
+    try {
+      if (!bundle || bundle.evidence().runnerExited) await rm(directory, { recursive: true, force: true });
+    } catch (error) { cleanupFailures.push(error); }
+    if (startupFailed) {
+      const evidence = bundle?.evidence();
+      // This zero-turn fixture has empty homes and no provider credentials.
+      // Report only bounded failure text and lifecycle state, never identities
+      // or raw durable state. A close failure cannot hide the startup cause.
+      const bounded = (value: unknown) => String(value).replaceAll(directory, "[private-startup]").slice(0, 2000);
+      const primaryMessage = bounded(startupFailure instanceof Error ? startupFailure.message : startupFailure);
+      const diagnostic = { schema: "paperclip.e2e.installed-codex-startup-failure/v1", platform: `${process.platform}-${process.arch}`,
+        runnerExited: evidence?.runnerExited ?? null, runnerExitCode: evidence?.runnerExitCode ?? null,
+        runnerSignal: evidence?.runnerSignal ?? null,
+        diagnostics: (Array.isArray(evidence?.diagnostics) ? evidence.diagnostics : []).slice(-16).map(bounded),
+        cleanupFailures: cleanupFailures.map(error => bounded(error instanceof Error ? error.message : error)) };
+      throw new AggregateError([startupFailure, ...cleanupFailures], `Installed Codex startup failed: ${primaryMessage}\n${JSON.stringify(diagnostic)}`, { cause: startupFailure });
+    }
+    if (cleanupFailures.length) throw new AggregateError(cleanupFailures, "Installed Codex startup cleanup failed", { cause: cleanupFailures[0] });
   }
 }
 

@@ -7,12 +7,30 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { isWorkspacePackage, parseWorkspaceEntries } from '../build-standalone-public-packages.mjs';
-import { GROK_PUBLIC_INSTALL_IMAGE, GROK_PUBLIC_INSTALL_LIFECYCLE, assertInstalledCodexPlatformProvenance, assertNoBundledCodexPayloads, grokConsumerDockerArgs, installedCodexProbeSource, installedDaemonProbeSource, macNodeHeadersDirectory, macPublicInstallLifecycleProfile, macInstalledStartupProbeSource } from '../grok-public-install-sandbox.mjs';
+import { GROK_PUBLIC_INSTALL_IMAGE, GROK_PUBLIC_INSTALL_LIFECYCLE, assertInstalledCodexPlatformProvenance, assertInstalledNativeConsumerContinuity, assertNoBundledCodexPayloads, grokConsumerDockerArgs, installedCodexProbeSource, installedDaemonProbeSource, macNodeHeadersDirectory, macPublicInstallLifecycleProfile, macInstalledStartupProbeSource } from '../grok-public-install-sandbox.mjs';
 import { verifyPiPackagedDaemon } from '../pi-public-install-probe.mjs';
 import { runnerBinaryTarget } from '../../packages/paperclip-runner/src/live/runner-binary.ts';
 
 const paths = { assets: '/private/staging/assets', consumer: '/private/staging/consumer', cache: '/private/staging/cache', uid: 1001, gid: 1001 };
 const values = (args, flag) => args.flatMap((value, index) => value === flag ? [args[index + 1]] : []);
+
+test('native host startup preserves the consumer lock and both executable byte identities', () => {
+  const before = { lockSha256: 'a'.repeat(64), runnerSha256: 'b'.repeat(64), codexCommandSha256: 'c'.repeat(64) };
+  assert.doesNotThrow(() => assertInstalledNativeConsumerContinuity(before, { ...before }));
+  for (const field of Object.keys(before)) {
+    assert.throws(() => assertInstalledNativeConsumerContinuity(before, { ...before, [field]: 'd'.repeat(64) }), new RegExp(field));
+    assert.throws(() => assertInstalledNativeConsumerContinuity({ ...before, [field]: '' }, { ...before, [field]: '' }), new RegExp(field));
+  }
+  const source = readFileSync(new URL('../verify-grok-npm-install.mjs', import.meta.url), 'utf8');
+  const arm = source.split('async function verifyLinuxArmConsumer')[1].split("if (process.argv[2] === '--linux-arm64-consumer')")[0];
+  assert.match(arm, /const hostEnv = \{ PATH: .*HOME: home, TMPDIR: hostTmp, LC_ALL: 'C', TZ: 'UTC' \}/);
+  assert.match(arm, /execFileSync\(process.execPath, \[file\], \{ cwd: consumer, env: hostEnv/);
+  assert.ok(arm.indexOf('isolated(GROK_PUBLIC_INSTALL_LIFECYCLE)') < arm.indexOf("hostProbe('host-startup-probe.mjs'"));
+  assert.ok(arm.indexOf('const before =') < arm.indexOf("hostProbe('host-startup-probe.mjs'"));
+  assert.ok(arm.indexOf("hostProbe('host-startup-probe.mjs'") < arm.indexOf('const after ='));
+  assert.match(arm, /assertInstalledNativeConsumerContinuity\(before, after\)/);
+  assert.doesNotMatch(arm, /externallySandboxed|externalSandbox|sudo|sysctl|--privileged|seccomp=unconfined|unshare/);
+});
 
 test('Mac offline lifecycle uses only the matching executing Node SDK', () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'mac-node-headers-test-')));
@@ -266,6 +284,7 @@ test('the installed Codex probe exercises the public export and rejects incomple
     assert.equal(JSON.parse(result.stdout).pinnedCodexCommandVerified, true);
     assert.equal(JSON.parse(result.stdout).codexPlatformPackageSource, 'official npm');
     assert.equal(JSON.parse(result.stdout).codexConsumerPlatform, target);
+    assert.equal(JSON.parse(result.stdout).codexCommandSha256, createHash('sha256').update(readFileSync(command)).digest('hex'));
     assert.equal(JSON.parse(result.stdout).codexQualifiedInstallationVerified, true);
     assert.equal(JSON.parse(result.stdout).codexCommandLeaseVerified, true);
     assert.equal(JSON.parse(result.stdout).codexNativeSandboxResourcesVerified, true);
@@ -438,7 +457,9 @@ test('native ARM clean consumers keep the existing container and installed-runti
   assert.match(arm, /isolated\(GROK_PUBLIC_INSTALL_LIFECYCLE\)/);
   assert.match(arm, /installedCodexProbeSource\(installed \+ '\/index.js', '\/consumer', undefined, \{ nativeCodex: true \}\)/);
   assert.match(arm, /tests\/runner-e2e\/installed-cli.ts/);
-  assert.match(arm, /temporarySizeMiB: 2048, temporaryExecutable: true/);
+  assert.match(arm, /process.versions.node.split\('\.'\)\[0\], '24'/);
+  assert.match(arm, /macInstalledStartupProbeSource\(consumer, hostServer, daemon.sha256, join\(assets, 'installed-cli.ts'\)\)/);
+  assert.match(arm, /startupEnvironment: 'native host, same installed graph, isolated empty homes'/);
   assert.doesNotMatch(arm, /stage-runner|runner\/target|PAPERCLIP_RUNNER_BINARY|prerequisite:/);
 });
 

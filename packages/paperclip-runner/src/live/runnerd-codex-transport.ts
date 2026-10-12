@@ -7043,13 +7043,16 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
   }
 }
 
-export function defaultCapabilityRunnerdBinary(): string {
+export function defaultCapabilityRunnerdBinary(platform = process.platform, architecture = process.arch): string {
   // Standalone builds use dist/live; the server vendors that compiled tree
   // directly under vendor/paperclip-runner. Resolve beside our own live module.
   const outputRoot = resolve(fileURLToPath(new URL("../", import.meta.url)));
-  const staged = resolvePackagedRunnerBinary(outputRoot)
-    ?? resolvePackagedRunnerBinary(resolve(packageRoot, "dist"));
+  const staged = resolvePackagedRunnerBinary(outputRoot, platform, architecture)
+    ?? resolvePackagedRunnerBinary(resolve(packageRoot, "dist"), platform, architecture);
   if (staged) return staged;
+  if (platform !== process.platform || architecture !== process.arch) {
+    throw new Error(`runner_remote_artifact_unavailable: install the Paperclip release containing the ${platform}-${architecture} daemon or configure PAPERCLIP_RUNNER_REMOTE_BINARY_PATH`);
+  }
   return resolve(
     packageRoot,
     `runner/target/debug/paperclip-runnerd${executableSuffix}`,

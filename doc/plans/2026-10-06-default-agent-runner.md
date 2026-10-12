@@ -2,6 +2,97 @@
 
 Updated 2026-10-12.
 
+## Current amendment: remote build performance and Linux baseline
+
+The user requires Cargo dependency caching and overlapping JavaScript/native
+preparation in the existing hosted jobs. Dockerfile and native builds must stay
+off this Mac. Reuse the current child supervisor for concurrent commands and
+failure/cancellation cleanup; join both outputs before source, header, signature,
+and hash recording. Cache dependency crates only, keyed by target, OS baseline,
+compiler, lockfile, and external contract inputs. Only canonical exact-source
+master pushes may save trusted caches. Preview jobs restore only. Seventy-nine
+workflow/process controls pass; actual speed or cache hits remain unproven until
+the final hosted run. Receipt:
+`/private/tmp/pr2-native-cache-parallel-owned-receipt.json`.
+
+The exact `dcdf09a0f33536fa2b6daaf6e731d921d5711282` four-target qualifier
+[38268767165](https://github.com/paperclipai/paperclip/actions/runs/38268767165)
+has built all four actual daemons. Linux package installation passes, as does
+the clean Apple Silicon consumer. ARM64 installs successfully but native session
+startup fails; cleanup masked the original cause. Ordinary CI passes at that
+source. Fresh review found a target-daemon
+selection mismatch for cross-architecture SSH: an x64 controller could select
+its own daemon for an ARM64 environment. The existing resolver/setup/execution
+seams now select and verify the actual target header. One hundred four affected
+controls and both typechecks pass. Setup and execution share the fix; missing or
+wrong artifacts fail explicitly. Receipt:
+`/private/tmp/pr2-native-ubuntu-ssh-owned-receipt.json`.
+
+The existing installed startup fixture now preserves the primary error and
+separately records cleanup failure. Fourteen controls and E2E typecheck pass.
+Docker isolation, no-network policy, and zero provider turns stay unchanged.
+Use the exact failed package artifact `11757308120` from run `38268767165` in
+one disposable hosted ARM diagnostic job. Keep corrected tooling provenance
+separate from its literal `dcdf09a` product source. Verify registry ZIP digest,
+bounded archive members, source, and every package hash before using the
+existing consumer. This temporary diagnostic ref adds no permanent test suite
+or workflow inputs. The primary cause and final ARM startup remain unresolved.
+Receipts: `/private/tmp/pr2-installed-startup-error-preservation-receipt.json`
+and `/private/tmp/ci-final-dcdf09a-arm-startup-failure-receipt.json`.
+
+Independent inert ELF inspection of both Linux artifacts at this revision
+confirms required `GLIBC_2.39`, GNU loaders, `libc.so.6`, `libm.so.6`, and
+`libgcc_s.so.1`. Neither binary was executed locally. The published Linux
+baseline is therefore GNU libc >=2.39 on x64/AArch64. Pin current producers to
+Ubuntu 24.04; clean consumers use the pinned Debian 13 Node image. Do not claim
+older distribution/kernel qualification. Automatic new-agent selection rejects
+measured older, musl, or unknown Linux libc; existing native configurations keep
+their execution. Windows and Alpine/musl remain deferred. Receipts:
+`/private/tmp/ci-final-dcdf09a-linux-arm64-data/elf-dependencies.json` and
+`/private/tmp/ci-final-dcdf09a-linux-x64-data/elf-dependencies.json`.
+
+The libc guard passes 209 focused controls and both typechecks. Seven actual
+POSIX probe/version controls pass. Forty-one built-in database cases did not
+execute because embedded PostgreSQL timed out on this Mac; require Linux CI.
+Token gates pass with the pinned pnpm launcher. Receipt:
+`/private/tmp/codex-default-glibc-floor-receipt.json`.
+
+Next action: freeze corrected diagnostic tooling, identify and fix the actual
+ARM startup cause, then require fresh hosted qualification, CI, and review. Keep
+the current branch, PR, test-drive, budget holds, and no-Codex-bundling boundary.
+No merge or production deployment is authorized.
+
+Checkpoint `695506ad3912fa63604ca784fda50416fba983d6` is pushed and passes
+ordinary CI (53 successful checks, four conditional skips). The restarted
+test-drive serves `2026.1005.0+348.git.695506ad39`; four complete agent execution
+configurations and both historical native runs survive unchanged, with the old
+experimental flag false. Normal staging selects the verified Mac target and
+reports `needsBuild: false`; there is no binary override or local Cargo build.
+Receipt: `/private/tmp/pr2-final-preservation-after.json`.
+
+The hosted [ARM diagnostic](https://github.com/paperclipai/paperclip/actions/runs/38273898742)
+used tooling `695506ad` and the literal `dcdf09a` package archives. It recovered
+the primary failure: Codex's bubblewrap cannot create a namespace inside the
+restricted Docker fixture. Daemon/CLI installation and ABI were not the cause.
+The existing consumer now retains that Docker install/lifecycle proof and
+uses the same installed graph on the actual ARM host for unchanged read-only
+startup. Lock, daemon, and official Codex command hashes must match across
+Docker/host and before/after. Twenty-one controls and independent review pass.
+No external-sandbox substitution, sudo, sysctl, namespace flags, or product
+permission policy changes are used. Actual host capability still needs proof.
+Receipt: `/private/tmp/pr2-arm-host-split-owned-receipt.json`.
+
+Fresh review also found that the daemon's new libc gate had accidentally sent
+older Linux browser login to PATH-only lookup. A two-file fix restores owned
+Codex CLI resolution independently of daemon eligibility. One hundred twenty-four
+focused cases and server typecheck pass; nine regressions fail before the fix.
+Creation's libc floor remains unchanged. Receipt:
+`/private/tmp/codex-default-login-libc-decoupling-receipt.json`.
+
+Next action: freeze this corrected tooling and run one remote ARM host treatment
+against the same verified archives. Require actual host startup before the final
+four-target qualification; retain literal product/tool source identities.
+
 ## Current addition: Linux ARM64
 
 The user now requires ARM Linux support as well. Treat ARM Linux as ARM64

@@ -14,12 +14,28 @@ export function paperclipRunnerProfileForHarness(harness: string): { provider: "
   return undefined;
 }
 
-/** Creation defaults follow the shipped 64-bit Linux and macOS release artifacts. */
-export function paperclipRunnerSupportsPlatform(harness: string, platform: string, architecture: string): boolean {
+/** Highest required GLIBC version in the shipped GNU/Linux daemon's ELF version needs. */
+export const PAPERCLIP_RUNNER_MINIMUM_GLIBC_VERSION = "2.39";
+
+function supportsLinuxLibc(libc?: "glibc" | "musl" | "unknown", version?: string): boolean {
+  if (libc !== undefined && libc !== "glibc") return false;
+  // Source-only/platform callers do not assert a measured host libc version.
+  if (version === undefined) return true;
+  const match = typeof version === "string" ? version.trim().match(/^(?:glibc\s+)?(\d+)\.(\d+)(?:\.\d+)?$/) : null;
+  if (!match) return false;
+  const major = Number(match[1]), minor = Number(match[2]);
+  if (!Number.isSafeInteger(major) || !Number.isSafeInteger(minor)) return false;
+  const [requiredMajor, requiredMinor] = PAPERCLIP_RUNNER_MINIMUM_GLIBC_VERSION.split(".").map(Number);
+  return major > requiredMajor! || (major === requiredMajor && minor >= requiredMinor!);
+}
+
+/** Creation defaults follow GNU/Linux and macOS artifacts; Alpine/musl is deferred. */
+export function paperclipRunnerSupportsPlatform(harness: string, platform: string, architecture: string, libc?: "glibc" | "musl" | "unknown", glibcVersion?: string): boolean {
   // Claude graduates on Apple Silicon first; other targets await package and live qualification.
   if (harness === "claude_local") return platform === "darwin" && architecture === "arm64";
   return !!paperclipRunnerProfileForHarness(harness)
-    && ((platform === "linux" && (architecture === "x64" || architecture === "arm64"))
+    // Omitted libc preserves platform-only callers; detected unknown Linux is not qualified.
+    && ((platform === "linux" && supportsLinuxLibc(libc, glibcVersion) && (architecture === "x64" || architecture === "arm64"))
       || (platform === "darwin" && (architecture === "arm64" || architecture === "x64")));
 }
 

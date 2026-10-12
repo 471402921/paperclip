@@ -91,6 +91,7 @@ export function installedCodexProbeSource(indexPath, consumerRoot, expectedVersi
   return `
     import assert from 'node:assert/strict';
     import { execFileSync } from 'node:child_process';
+    import { createHash } from 'node:crypto';
     import { createRequire } from 'node:module';
     import { accessSync, constants, existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
     import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -174,11 +175,21 @@ export function installedCodexProbeSource(indexPath, consumerRoot, expectedVersi
     const lease = await installation.openCommand();
     await lease.close();`}
     console.log(JSON.stringify({ pinnedCodexCommandVerified: true, installedCodexVersion: version,
+      codexCommandSha256: createHash('sha256').update(readFileSync(command)).digest('hex'),
       ...provenance, codexSelectedPlatformPath: selectedPlatform.path, codexSelectedPlatformVersion: selectedMetadata.version,
       codexNativeSandboxResourcesVerified: true,
       ${nativeCodex ? '' : `pinnedCodexVersion: ${JSON.stringify(expectedVersion)}, codexQualifiedInstallationVerified: true, codexCommandLeaseVerified: true,`}
       providerCalls: 0 }));
   `;
+}
+
+/** Installed bytes and consumer resolution must survive host protocol startup. */
+export function assertInstalledNativeConsumerContinuity(before, after) {
+  for (const field of ['lockSha256', 'runnerSha256', 'codexCommandSha256']) {
+    if (!/^[a-f0-9]{64}$/.test(before[field]) || before[field] !== after[field]) {
+      throw new Error(`Installed native host startup changed ${field}`);
+    }
+  }
 }
 
 /** The installed consumer must select its packaged host daemon, never PATH. */
