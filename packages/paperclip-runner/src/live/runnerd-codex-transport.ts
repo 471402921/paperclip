@@ -1,3 +1,4 @@
+import { resolvePinnedOpenCodeCommand } from "../drivers/opencode/opencode-server-driver.js";
 import { ACPX_CAPABILITY_PROFILES } from "../drivers/acpx/capability-profiles.js";
 import { admittedPiThinkingLevel, resolvePiThinkingLevel } from "../drivers/acpx/pi-thinking.js";
 import { configuredEnvironment } from "../configured-environment.js";
@@ -3031,6 +3032,20 @@ function acpxProviderPackageAuthority(
       basename(resolve(cliDirectory, "../..")) === "vendor" &&
       basename(resolve(cliDirectory, "../../..")) === "dist") {
     const serverRoot = resolve(cliDirectory, "../../../..");
+    const workspaceRoot = dirname(serverRoot);
+    // Source/Docker builds share the workspace's pnpm store. Published npm
+    // bundles and self-rooted pnpm deployments retain their server authority.
+    if (basename(serverRoot) === "server" &&
+        !existsSync(resolve(serverRoot, "node_modules/.pnpm")) &&
+        existsSync(resolve(workspaceRoot, "node_modules/.pnpm")) &&
+        existsSync(resolve(workspaceRoot, "pnpm-workspace.yaml")) &&
+        existsSync(resolve(workspaceRoot, "package.json"))) {
+      const workspace = JSON.parse(readFileSync(resolve(workspaceRoot, "package.json"), "utf8"));
+      const server = JSON.parse(readFileSync(resolve(serverRoot, "package.json"), "utf8"));
+      if (workspace.name === "paperclip" && workspace.private === true && server.name === "@paperclipai/server") {
+        return { root: workspaceRoot, manifest: resolve(serverRoot, "package.json") };
+      }
+    }
     return { root: serverRoot, manifest: resolve(serverRoot, "package.json") };
   }
   if (
@@ -3182,6 +3197,14 @@ function opencodeRunnerLaunchProfile(
     executable,
     executableSha256,
   };
+}
+
+function resolveRunnerOpenCodeExecutable(options: RunnerdCodexTransportOptions): string {
+  if (options.opencodeCommand !== undefined) return options.opencodeCommand;
+  if (options.runnerFilesystemRoot) {
+    throw new Error("runner_remote_provider_artifact_incompatible: OpenCode executable is missing from the provider pack");
+  }
+  return resolvePinnedOpenCodeCommand();
 }
 
 function authorizedToolSet(
@@ -3531,6 +3554,20 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
   #sessionId: string | null = null;
   #providerIdentity: Record<string, unknown> | null = null;
   #turnControls: NativeTurnControlCapabilities = { steering: false, queuedFollowUp: false };
+
+  supportsTurnReasoning(): boolean {
+    if (this.options.provider !== "opencode") return false;
+    // Use the durable selected model on both fresh and recovered sessions.
+    // Older states may retain the provider only in the preparation command.
+    const state = this.#core?.store.state;
+    const template = this.#runAttachTemplate ?? state?.runAttachTemplate
+      ?? state?.commands.findLast(command =>
+        (command.type === "run.prepare" || command.type === "run.attach")
+        && record(command.payload).provider !== undefined,
+      )?.payload;
+    const model = record(record(template).provider).model;
+    return typeof model === "string" && model.startsWith("openrouter/");
+  }
 
   turnControlCapabilities(): NativeTurnControlCapabilities | null {
     if (this.options.provider !== "acpx") return null;
@@ -4734,8 +4771,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
       : undefined;
     const opencodeExecutable =
       provider === "opencode"
-        ? (this.options.opencodeCommand ??
-          resolve(packageRoot, "node_modules/opencode-ai/bin/opencode.exe"))
+        ? resolveRunnerOpenCodeExecutable(this.options)
         : null;
     const runnerAcpxLaunchProfile =
       provider === "acpx"
@@ -4760,9 +4796,9 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
     ) {
       const providerPaths = [
         ["provider Node", providerNodeCommand],
-        ["OpenCode proxy", opencodeProxyPath],
-        ["ACPX sidecar", acpxSidecarPath],
-        ["OpenCode executable", opencodeExecutable ?? "opencode"],
+        ...(provider === "opencode"
+          ? [["OpenCode proxy", opencodeProxyPath], ["OpenCode executable", opencodeExecutable!]] as const
+          : [["ACPX sidecar", acpxSidecarPath]] as const),
       ] as const;
       for (const [label, candidate] of providerPaths) {
         if (
@@ -5363,8 +5399,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
       this.options.providerNodeCommand ?? process.execPath;
     const opencodeExecutable =
       provider === "opencode"
-        ? (this.options.opencodeCommand ??
-          resolve(packageRoot, "node_modules/opencode-ai/bin/opencode.exe"))
+        ? resolveRunnerOpenCodeExecutable(this.options)
         : null;
     const runnerAcpxLaunchProfile =
       provider === "acpx"
@@ -5881,6 +5916,11 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
       .filter((item) => item.type !== "skill")
       .map((item) => (typeof item.text === "string" ? item.text : ""))
       .join("\n");
+    const reasoningMode = params.reasoningMode;
+    if (reasoningMode !== undefined && (
+      !this.supportsTurnReasoning()
+      || (reasoningMode !== "default" && reasoningMode !== "disabled")
+    )) throw new Error("turn.reasoningMode requires an OpenCode/OpenRouter model and must be default or disabled");
     const skills = resolveRunnerdCodexSkillInputs(
       input.filter((item) => item.type === "skill"),
       this.options.runtimeContext ?? null,
@@ -5915,6 +5955,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
         {
           text: message,
           ...((this.options.provider ?? "codex") === "codex" && params.effort !== undefined ? { effort: params.effort } : {}),
+          ...(reasoningMode === undefined ? {} : { reasoningMode }),
           ...(skills.length ? { skills } : {}),
           turnId: pendingTurnId,
         },
@@ -7217,6 +7258,7 @@ export const runnerdLaunchProfileInternals = Object.freeze({
   acpxProviderPackageAuthority,
   acpxRunnerLaunchProfile,
   resolveBuildOwnedCliArtifact,
+  resolveRunnerOpenCodeExecutable,
   maxOutboxBytes: RUNNERD_MAX_OUTBOX_BYTES,
   p0ReserveBytes: RUNNERD_P0_RESERVE_BYTES,
 });

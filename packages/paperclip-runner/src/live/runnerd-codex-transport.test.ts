@@ -897,7 +897,10 @@ it.each(["after_budget", "within_budget", "interrupted_within_budget", "persiste
         "--split-event-prefix-count", "2", "--split-event-suffix-count", "2",
       ),
       stateDirectory,
-      closeGraceMs: 5_000,
+      // Successful cases use the production close budget for the real
+      // semantic-result, stop, drain and suspension round trips. Keep the
+      // shorter deadline only for intentionally unfinishable callbacks.
+      ...(settles ? {} : { closeGraceMs: 5_000 }),
       controlPlaneRegistration: async (authority) => {
         core = authority;
         await authority.start();
@@ -1588,6 +1591,15 @@ it.each(["acpx-runtime-sidecar.cjs", "opencode-app-server-proxy.cjs"] as const)(
   },
 );
 
+it("requires a remote OpenCode executable before resolving controller dependencies", () => {
+  expect(() => runnerdLaunchProfileInternals.resolveRunnerOpenCodeExecutable({
+    runnerFilesystemRoot: "/provider-pack",
+  })).toThrow("OpenCode executable is missing from the provider pack");
+  expect(runnerdLaunchProfileInternals.resolveRunnerOpenCodeExecutable({
+    runnerFilesystemRoot: "/provider-pack", opencodeCommand: "/provider-pack/opencode",
+  })).toBe("/provider-pack/opencode");
+});
+
 it("derives the ACPX package authority only from the verified dist/cli layout", () => {
   const runnerPackageRoot = fileURLToPath(new URL("../..", import.meta.url));
   expect(
@@ -1620,6 +1632,23 @@ it("uses the public server npm package as the authority for vendored sidecars", 
     root: "/clean/node_modules/@paperclipai/server",
     manifest: "/clean/node_modules/@paperclipai/server/package.json",
   });
+});
+
+it.each([false, true])("binds a vendored source server to its pnpm dependency root (self-rooted: %s)", async selfRooted => {
+  const workspace = await mkdtemp(join(tmpdir(), "paperclip-vendored-source-"));
+  const server = join(workspace, "server");
+  await mkdir(join(workspace, "node_modules", ".pnpm"), { recursive: true });
+  await mkdir(join(server, "node_modules", ...(selfRooted ? [".pnpm"] : [])), { recursive: true });
+  await writeFile(join(workspace, "package.json"), JSON.stringify({ name: "paperclip", private: true }));
+  await writeFile(join(workspace, "pnpm-workspace.yaml"), "packages:\n  - server\n");
+  await writeFile(join(server, "package.json"), JSON.stringify({ name: "@paperclipai/server" }));
+  try {
+    expect(runnerdLaunchProfileInternals.acpxProviderPackageAuthority(
+      join(server, "dist/vendor/paperclip-runner/cli/acpx-runtime-sidecar.cjs"),
+    )).toEqual({ root: selfRooted ? server : workspace, manifest: join(server, "package.json") });
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 it("keeps a self-rooted pnpm deployment inside its dependency authority", async () => {
@@ -6549,6 +6578,12 @@ it("rotates PRP authority in place for a warm cross-run attachment", async () =>
 
 it("reopens Pi after a completed turn within its cold admission budget during warm attachment", async () => {
   const root = await mkdtemp(join(tmpdir(), "runnerd-pi-warm-admission-"));
+  const providerNode = process.platform === "linux" ? join(root, "node") : process.execPath;
+  if (process.platform === "linux") {
+    await cp(process.execPath, providerNode, { dereference: true });
+    await chmod(providerNode, 0o500);
+    expect((await stat(providerNode)).mode & 0o777).toBe(0o500);
+  }
   const cliRoot = join(root, "dist/cli");
   await mkdir(cliRoot, { recursive: true, mode: 0o700 });
   const sidecarPath = join(cliRoot, "acpx-runtime-sidecar.cjs");
@@ -6559,7 +6594,7 @@ it("reopens Pi after a completed turn within its cold admission budget during wa
   const bundle = createCapabilityRunnerdCodexTransport({
     provider: "acpx", acpxAgent: "pi", piThinkingLevel: "low", acpxPermissionMode: "deny-all",
     runnerBinary: defaultCapabilityRunnerdBinary(), stateDirectory: root, runnerFilesystemRoot: root,
-    providerNodeCommand: process.execPath, providerNodeCommandSha256: digest(process.execPath),
+    providerNodeCommand: providerNode, providerNodeCommandSha256: digest(providerNode),
     acpxSidecarPath: sidecarPath, acpxSidecarSha256: digest(sidecarPath),
     providerPackAuthorityDigest: `sha256:${"d".repeat(64)}`,
     lifecyclePolicy: { mode: "warm", idleTimeoutMs: 60_000 },
@@ -8033,7 +8068,10 @@ it.each([true, false])("preserves prepared OpenCode cleanup errors (primary fail
   expect((failure as Error).message).not.toContain("fixture-secret");
 });
 
-it("preserves prepared input and completion feedback through runnerd and the real OpenCode proxy boundary", async () => {
+it.each([
+  { model: "openrouter/deepseek/deepseek-v4-flash-0731", supportsReasoning: true },
+  { model: "anthropic/claude-sonnet-4", supportsReasoning: false },
+])("preserves prepared input and completion feedback through runnerd and the real OpenCode proxy boundary ($model)", async ({ model, supportsReasoning }) => {
   const root = await mkdtemp(join(tmpdir(), "runnerd-prepared-opencode-"));
   // GitHub-hosted Linux toolcache Node can be group-writable, unlike the AWS
   // fleet. Qualify an owned copy with strict permissions, never chmod the host
@@ -8088,7 +8126,7 @@ it("preserves prepared input and completion feedback through runnerd and the rea
   const driver = new CodexAppServerDriver({
     taskEnvelope: task,
     conversationMode: "prepared",
-    model: "openrouter/deepseek/deepseek-v4-flash-0731",
+    model,
     transportFactory: () => bundle.transport,
     workingDirectoryAuthority: "remote_runner",
     environment: { PAPERCLIP_WORKSPACE_CWD: root },
@@ -8107,7 +8145,15 @@ it("preserves prepared input and completion feedback through runnerd and the rea
   await withPreparedOpenCodeCleanup({
     run: async () => {
       session = await driver.openSession({ runId: "prepared-opencode", normalizedSessionId: "prepared-opencode", workingDirectory: root });
-      await session.startTurn({ message: { role: "user", text: prepared } });
+      expect(bundle.transport.supportsTurnReasoning?.()).toBe(supportsReasoning);
+      const firstTurn = { message: { role: "user" as const, text: prepared } };
+      if (!supportsReasoning) {
+        await expect(session.startTurn({ ...firstTurn, reasoningMode: "disabled" }))
+          .rejects.toThrow("Per-turn reasoning is not supported");
+        await expect(bundle.transport.request("turn/start", { input: [{ type: "text", text: prepared }], reasoningMode: "disabled" }))
+          .rejects.toThrow("requires an OpenCode/OpenRouter model");
+      }
+      await session.startTurn({ ...firstTurn, ...(supportsReasoning ? { reasoningMode: "disabled" as const } : {}) });
       const events: PrpEvent[] = [];
       for await (const event of session.events()) {
         events.push(event);
@@ -8119,10 +8165,16 @@ it("preserves prepared input and completion feedback through runnerd and the rea
       expect(sessionRoots).toHaveLength(1);
       const requests = (await readFile(join(runtime, sessionRoots[0]!.name, "data/fake-prompt-requests.ndjson"), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
       expect(requests.map((request) => request.parts)).toEqual([[{ type: "text", text: prepared }]]);
+      expect(requests[0].variant).toBe(supportsReasoning ? "paperclip-no-reasoning" : undefined);
       const outcomes = JSON.parse(await readFile(join(runtime, sessionRoots[0]!.name, "data/fake-completion-feedback.json"), "utf8"));
       expect(outcomes).toHaveLength(2);
       expect(outcomes[0].result).toMatchObject({ isError: true, content: [{ text: expect.stringContaining("required document link") }] });
       expect(outcomes[1].result).toMatchObject({ content: [{ text: expect.stringContaining(feedback) }] });
+      await session.startTurn({ message: { role: "user", text: "Reply Hi." } });
+      for await (const event of session.events()) if (event.eventType === "turn.completed") break;
+      const allRequests = (await readFile(join(runtime, sessionRoots[0]!.name, "data/fake-prompt-requests.ndjson"), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+      expect(allRequests.map(request => request.variant)).toEqual(supportsReasoning
+        ? ["paperclip-no-reasoning", "paperclip-default"] : [undefined, undefined]);
     },
     closeSession: async () => { await session?.close(); },
     closeTransport: () => bundle.transport.close(),

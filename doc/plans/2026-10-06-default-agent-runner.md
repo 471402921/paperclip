@@ -55,9 +55,24 @@ paid Linux campaign is authorized by this amendment. Embedded-browser-only
 login, no automatic agent migration, and no merge or production deployment
 remain constraints.
 
-Next action: integrate the macOS packaging and policy changes, reconcile the
-confirmed master conflicts, freeze the source, and run remote qualification for
-the Mac artifacts. Native Apple Silicon live acceptance, new-head CI/review, managed
+The macOS source checkpoint is `7b8d29a856b54217234131474ea47ea1a38fb0aa`.
+The frozen master integration target is `b189f586d2f01c078725193b8a5ce4372b4acb3d`.
+Conflicts are being reconciled by file ownership, retaining the newer transport,
+lifecycle and release verification fixes. Focused macOS selection, installed-hook,
+file confinement and packaging controls pass. These are source/protocol controls,
+not real provider execution. The existing saved OpenAI subscription is connected.
+The ordinary production agent-config render suite passes 111 cases after its merge.
+
+Budget reconciliation assigns $3 of the documented unstarted $5.50 managed
+reservation to Apple Silicon native test-drive acceptance, leaving $2.50 for the
+managed journey. The completed legacy subscription journey's entire $2.50 hold
+remains reserved as unpriced. No historical unknown or cleanup reserve is released;
+the $250 ceiling and $248.18 combined cost/reservation total remain unchanged.
+Limit the Mac journey to two task turns, 180 seconds each, no automatic retry,
+and an independently checked useful file plus revision.
+
+Next action: finish the confirmed master conflict resolutions, freeze the source,
+and run remote qualification for the Mac artifacts. Native Apple Silicon live acceptance, new-head CI/review, managed
 staging execution, code-owner approval and actual post-merge Cloud composition
 remain unverified. Prior staging image/preflight evidence is retained at
 [37962635959](https://github.com/paperclipai/paperclip/actions/runs/37962635959)

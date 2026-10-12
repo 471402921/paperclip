@@ -1,7 +1,9 @@
+import { allowLegacyShutdownWorkspaceCleanup, legacyShutdownWorkspaceResourceProtected } from "./legacy-shutdown-workspace-settlement.js";
 import { beginIdleTrackedWork } from "./task-admission.js";
 import { hasStopOnlyCleanup, prepareSandboxStopAndRetain, readStopOnlyCleanup, settleStopOnlyCleanup, stopOnlyCleanupKey } from "./sandbox-stop-and-retain.js";
-import { readEnvironmentCreationCleanupError } from "@paperclipai/plugin-sdk";
+import { JsonRpcCallError, readEnvironmentAcquisitionDiagnostic, readEnvironmentCreationCleanupError } from "@paperclipai/plugin-sdk";
 import { preserveEnvironmentSyncOutErrorDiagnostic } from "./environment-sync-out-error.js";
+import { captureEnvironmentAcquisitionDiagnostic } from "./environment-acquisition-diagnostics.js";
 import { remoteTerminationReceipt } from "./remote-execution-termination.js";
 import { hasNativeWorkspaceExportResume, releaseCompletedNativeWorkspaceExportRetention } from "./native-runtime/native-workspace-export-resume.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -537,6 +539,9 @@ export interface EnvironmentDriverExecuteInput extends EnvironmentDriverLeaseInp
   env?: Record<string, string>;
   stdin?: string;
   timeoutMs?: number;
+  /** Total command execution budget for an explicitly requested session.
+   * Separate from the timeout of an individual status/log observation. */
+  commandTimeoutMs?: number;
   /**
    * Run this command outside the lease's persistent session. The run
    * orchestrator sets this on the workspace provision command, which runs before
@@ -1942,6 +1947,9 @@ function createSandboxEnvironmentDriver(
                 lease.metadata?.agentId === input.agentId,
               )
           : [];
+        for (let index = reusableCandidateLeases.length - 1; index >= 0; index--) {
+          if (await legacyShutdownWorkspaceResourceProtected(db, reusableCandidateLeases[index]!)) reusableCandidateLeases.splice(index, 1);
+        }
         const reusableExistingLeases = reusableCandidateLeases.filter((lease) =>
           reusableSandboxLeaseScopeMatches({
             lease,
@@ -2126,11 +2134,17 @@ function createSandboxEnvironmentDriver(
               ),
             );
           } catch (error) {
+            captureEnvironmentAcquisitionDiagnostic(error, {
+              companyId: input.companyId, environmentId: input.environment.id, runId: acquisitionRunId,
+            }, null);
             const cleanup = readEnvironmentCreationCleanupError(error);
             // The authenticated worker may identify its uncertain allocation,
             // but cannot redirect cleanup to another company, environment, or run.
             if (cleanup && cleanup.companyId === input.companyId &&
                 cleanup.environmentId === input.environment.id && cleanup.runId === acquisitionRunId) {
+              if (error instanceof JsonRpcCallError) captureEnvironmentAcquisitionDiagnostic(error, {
+                companyId: input.companyId, environmentId: input.environment.id, runId: acquisitionRunId,
+              }, readEnvironmentAcquisitionDiagnostic(error));
               const cleanupMetadata = {
                 ...sandboxConfigForLeaseMetadata(storedConfig),
                 failedCreateCleanup: cleanup,
@@ -2351,6 +2365,9 @@ function createSandboxEnvironmentDriver(
                 lease.metadata?.agentId === input.agentId,
               )
           : [];
+      for (let index = reusableCandidateLeases.length - 1; index >= 0; index--) {
+        if (await legacyShutdownWorkspaceResourceProtected(db, reusableCandidateLeases[index]!)) reusableCandidateLeases.splice(index, 1);
+      }
       const reusableExistingLeases = reusableCandidateLeases.filter((lease) =>
         reusableSandboxLeaseScopeMatches({
           lease,
@@ -2948,6 +2965,7 @@ function createSandboxEnvironmentDriver(
             env: input.env,
             stdin: input.stdin,
             timeoutMs: input.timeoutMs,
+            commandTimeoutMs: input.commandTimeoutMs,
             // Forward the effective session-bypass flag so a provider that opens
             // a persistent session skips it for a pre-run or context-less command
             // (the workspace provision command, the CLI install command, the
@@ -3320,6 +3338,7 @@ function createSandboxEnvironmentDriver(
     lease: EnvironmentLease;
     failureReason: string;
   }): Promise<EnvironmentLease | null> {
+    if (await legacyShutdownWorkspaceResourceProtected(db, input.lease)) return null;
     let cleanupStatus: "success" | "failed" = "success";
     let termination: ReturnType<typeof remoteTerminationReceipt>;
     const metadata = input.lease.metadata ?? {};
@@ -3881,6 +3900,7 @@ export function environmentRuntimeService(
     scopeCondition?: ReturnType<typeof and>;
     failureReason: string;
   }): Promise<EnvironmentLease | null> {
+    if (!(await allowLegacyShutdownWorkspaceCleanup(db, input.leaseRow))) return null;
     const now = new Date();
     const attemptId = randomUUID();
     // Persist recovery ownership before any provider work. Re-check scope and
@@ -4058,8 +4078,16 @@ export function environmentRuntimeService(
       // error through `onLeaseReleaseError` for its log path. Keep the order
       // serial.
       const released: EnvironmentRuntimeLeaseRecord[] = [];
-      for (const leaseRow of leaseRows) {
+      for (let leaseRow of leaseRows) {
         try {
+          if (!(await allowLegacyShutdownWorkspaceCleanup(db, leaseRow, new Date(), {
+            ownerStopOnly: cancelActiveWork === true && providerResourceDisposition === "stop_and_retain",
+          }))) continue;
+          if (leaseRow.metadata?.legacyShutdownWorkspaceSettlement) {
+            leaseRow = (await db.select().from(environmentLeases).where(and(
+              eq(environmentLeases.id, leaseRow.id), eq(environmentLeases.companyId, leaseRow.companyId),
+            )))[0] ?? leaseRow;
+          }
           const environment = leaseRow.environmentId
             ? await environmentsSvc.getById(leaseRow.environmentId)
             : null;
@@ -4204,6 +4232,14 @@ export function environmentRuntimeService(
       environment: Environment | null;
       lease: EnvironmentLease;
     }): Promise<unknown> {
+      if (!(await allowLegacyShutdownWorkspaceCleanup(db, input.lease))) {
+        throw new Error("Shutdown workspace settlement is still pending.");
+      }
+      if (input.lease.metadata?.legacyShutdownWorkspaceSettlement) {
+        const current = await environmentsSvc.getLeaseById(input.lease.id);
+        if (!current) throw new Error("Shutdown workspace source is unavailable.");
+        input = { ...input, lease: current };
+      }
       const driver = requireDriverKey(getLeaseDriverKey(input.lease, input.environment));
       if (!driver.retryPendingSandboxTeardown) {
         throw new Error(
@@ -4400,6 +4436,7 @@ export function environmentRuntimeService(
     },
 
     async resumeRunLease(input: EnvironmentDriverLeaseInput): Promise<PluginEnvironmentLease | EnvironmentLease | null> {
+      if (await legacyShutdownWorkspaceResourceProtected(db, input.lease)) return null;
       const driver = requireDriverKey(getLeaseDriverKey(input.lease, input.environment));
       if (!driver.resumeRunLease) {
         throw new Error(`Environment driver "${driver.driver}" does not support lease resume.`);
@@ -4408,6 +4445,13 @@ export function environmentRuntimeService(
     },
 
     async destroyRunLease(input: EnvironmentDriverLeaseInput): Promise<EnvironmentLease | null> {
+      if (await legacyShutdownWorkspaceResourceProtected(db, input.lease)) return null;
+      if (input.lease.metadata?.legacyShutdownWorkspaceSettlement) {
+        if (!(await allowLegacyShutdownWorkspaceCleanup(db, input.lease))) return null;
+        const current = await environmentsSvc.getLeaseById(input.lease.id);
+        if (!current || hasStopOnlyCleanup(current)) return null;
+        input = { ...input, lease: current };
+      }
       const driver = requireDriverKey(getLeaseDriverKey(input.lease, input.environment));
       if (!driver.destroyRunLease) {
         throw new Error(`Environment driver "${driver.driver}" does not support lease destroy.`);

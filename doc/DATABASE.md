@@ -19,6 +19,17 @@ That's it. On first start the server:
 
 Data persists across restarts in `~/.paperclip/instances/default/db/`. To reset local dev data, delete that directory.
 
+Subscription reporting adds `ai_subscriptions` (company-scoped account identity),
+`ai_subscription_prices` (immutable price revisions), and
+`ai_subscription_connections` (selected grant-to-account bindings). New managed
+subscription receipts also have a nullable `cost_events.subscription_id`.
+Migration `0322_reflective_kree.sql` is replay-safe and leaves existing cost
+amounts and receipts untouched. No historical account attribution is inferred.
+Deleting a connection removes its binding but retains subscription price history;
+disconnecting is not proof that provider billing ended. See
+[subscription cost reporting](connections/AI-CONNECTIONS.md#subscription-cost-reporting)
+for the reporting and ownership rules.
+
 If you need to apply pending migrations manually, run:
 
 ```sh
@@ -421,6 +432,14 @@ run/turn ids, payload digest, attempt/acknowledgement state, and one of `steered
 `coalesced`, or `wake_fallback`; answer content remains only in
 `issue_thread_interactions.result`. Deleting the interaction cascades its receipt,
 while deleting a referenced run clears that run pointer without deleting history.
+
+The question-history index covers `(company_id, idempotency_key)` for every
+`question-response:` wake state, including failed, cancelled, and skipped
+receipts excluded from the delivery-idempotency fence. Migration `0332` creates
+this nonunique index concurrently through the standard migration executor.
+Apply it with `pnpm db:migrate` on a direct connection before enabling the new
+sleep guard. The executor retries interrupted invalid builds and records history
+only after the index is valid. It does not delete delivery or wake records.
 
 ## Plugin database namespaces
 
