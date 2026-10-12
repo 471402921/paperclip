@@ -61,6 +61,32 @@ export function resolveNewAgentRunner(input: AgentRunnerSelection): { adapterTyp
     ? "Paperclip Runner is unavailable for this sandbox. Choose an immutable OCI image digest and run its environment connection probe to qualify the OS, architecture and libc, or select Legacy runner in Advanced."
     : "Paperclip Runner is unavailable for this harness and environment. Select Legacy runner in Advanced.", { code: "agent_runner_unavailable" });
   if (native) return { adapterType, adapterConfig: normalizeLegacyRunnerProvider(config) };
+  const aliasSources = new Map<string, string>();
+  // Legacy ACP uses the first nonempty canonical/alias string, and nullish
+  // precedence for its idle timeout. Validate that effective choice, not an
+  // unchecked prefixed field, while retaining its name in actionable errors.
+  for (const [canonical, alias] of [
+    ["agentCommand", "acpAgentCommand"], ["stateDir", "acpStateDir"],
+    ["mode", "acpMode"], ["permissionMode", "acpPermissionMode"],
+    ["nonInteractivePermissions", "acpNonInteractivePermissions"],
+  ]) {
+    if (config[alias] === undefined) continue;
+    const canonicalValue = typeof config[canonical] === "string" ? config[canonical].trim() : "";
+    const aliasValue = typeof config[alias] === "string" ? config[alias].trim() : "";
+    if (canonicalValue || aliasValue) {
+      config[canonical] = canonicalValue || aliasValue;
+      if (!canonicalValue) aliasSources.set(canonical, alias);
+    } else if (config[alias] !== null && typeof config[alias] !== "string") incompatible([alias]);
+    else if (typeof config[canonical] === "string") delete config[canonical];
+    delete config[alias];
+  }
+  if (config.acpWarmHandleIdleMs !== undefined) {
+    if (config.warmHandleIdleMs == null && config.acpWarmHandleIdleMs != null) {
+      config.warmHandleIdleMs = config.acpWarmHandleIdleMs;
+      aliasSources.set("warmHandleIdleMs", "acpWarmHandleIdleMs");
+    }
+    delete config.acpWarmHandleIdleMs;
+  }
   const unsupported = ["agentCommand", "stateDir", "warmHandleIdleMs", "extraArgs", "args", "search", "fastMode", "variant", "filesystemScope", "filesystemExtraPaths", "filesystemSandboxCommand", "networkScope", "networkAllowlist", "permissionMode", "maxTurns", "disableWebSearch", "outputInactivityTimeoutMs", "terminalResultCleanupGraceMs"]
     .filter(key => config[key] !== undefined && config[key] !== false && config[key] !== "" && config[key] !== 0 && !(Array.isArray(config[key]) && config[key].length === 0));
   if (config.command && config.command !== "codex") unsupported.push("command");
@@ -69,7 +95,7 @@ export function resolveNewAgentRunner(input: AgentRunnerSelection): { adapterTyp
   if (config.nonInteractivePermissions && config.nonInteractivePermissions !== "deny") unsupported.push("nonInteractivePermissions");
   if (config.dangerouslyBypassApprovalsAndSandbox === false) unsupported.push("dangerouslyBypassApprovalsAndSandbox");
   if (config.dangerouslyBypassSandbox === false) unsupported.push("dangerouslyBypassSandbox");
-  if (unsupported.length) incompatible(unsupported);
+  if (unsupported.length) incompatible(unsupported.map(field => aliasSources.get(field) ?? field));
   const effort = config.modelReasoningEffort ?? config.reasoningEffort ?? config.effort;
   for (const key of ["engine", "command", "extraArgs", "args", "agentCommand", "mode", "nonInteractivePermissions", "stateDir", "warmHandleIdleMs", "dangerouslyBypassApprovalsAndSandbox", "dangerouslyBypassSandbox", "search", "fastMode", "reasoningEffort", "effort"]) delete config[key];
   if (config.model !== undefined && typeof config.model !== "string") incompatible(["model"]);
