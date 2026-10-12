@@ -26,8 +26,8 @@ import { getAgentOrderStorageKey, writeAgentOrder } from "../lib/agent-order";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "../components/EmptyState";
-import { AgentConfigForm } from "../components/AgentConfigForm";
-import { cn } from "../lib/utils";
+import { AgentConfigForm, overlayValuesEqual } from "../components/AgentConfigForm";
+import { asObject, cn } from "../lib/utils";
 import {
   ArrowRight,
   Check,
@@ -584,13 +584,25 @@ function importAdapterValues(
     ...(runner !== undefined ? { runner } : nativeCodex ? { runner: agentRunner("paperclip_runner") } : {}),
     ...(sourceConfig && choice === "codex_local" ? {
       model: typeof sourceConfig.model === "string" ? sourceConfig.model : "",
-      thinkingEffort: String(sourceConfig.reasoningEffort ?? sourceConfig.modelReasoningEffort ?? ""),
+      thinkingEffort: String(sourceConfig.modelReasoningEffort ?? sourceConfig.reasoningEffort ?? ""),
       ...(typeof savedBypass === "boolean" ? { codexLegacySandboxBypass: savedBypass } : {}),
       // Runner-only imports preserve server-translated policy; display that policy too.
       dangerouslyBypassSandbox: typeof savedBypass === "boolean" ? savedBypass
         : nativeCodex
           ? (sourceConfig.codexPermissionMode ?? PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES.codex.defaultMode) === "never"
           : resolveCodexLocalCliPolicy(sourceConfig).bypass,
+    } : {}),
+    ...(nativeCodex && sourceConfig ? {
+      cwd: typeof sourceConfig.cwd === "string" ? sourceConfig.cwd : "",
+      instructionsFilePath: typeof sourceConfig.instructionsFilePath === "string" ? sourceConfig.instructionsFilePath : "",
+      envBindings: { ...asObject(sourceConfig.env) },
+      workspaceStrategyType: String(asObject(sourceConfig.workspaceStrategy).type ?? "project_primary"),
+      workspaceBaseRef: String(asObject(sourceConfig.workspaceStrategy).baseRef ?? ""),
+      workspaceBranchTemplate: String(asObject(sourceConfig.workspaceStrategy).branchTemplate ?? ""),
+      worktreeParentDir: String(asObject(sourceConfig.workspaceStrategy).worktreeParentDir ?? ""),
+      runtimeServicesJson: sourceConfig.workspaceRuntime ? JSON.stringify(sourceConfig.workspaceRuntime) : "",
+      ...(sourceConfig.lifecycleMode === "warm" || sourceConfig.lifecycleMode === "per_turn" ? { paperclipRunnerLifecycleMode: sourceConfig.lifecycleMode } : {}),
+      ...(typeof sourceConfig.idleTimeoutMs === "number" ? { paperclipRunnerIdleTimeoutMs: sourceConfig.idleTimeoutMs } : {}),
     } : {}),
     ...(sourceAdapterType === "paperclip_runner" && choice !== "openai_dot"
       ? { adapterSchemaValues: { ...sourceConfig } } : {}),
@@ -1733,7 +1745,31 @@ export function CompanyImport() {
         if (selectedType === "openai_dot" && configVals.adapterSchemaValues?.allowUnmeteredProvider !== true) {
           throw new Error("OpenAI Dot requires acknowledgement of external billing. Configure the Dot adapter and enable Allow externally billed provider.");
         }
-        override.adapterConfig = getUIAdapter(configVals.adapterType).buildAdapterConfig(configVals);
+        const build = getUIAdapter(configVals.adapterType).buildAdapterConfig;
+        const edited = build(configVals);
+        if (agent.adapterType === "paperclip_runner" && selectedType === agent.adapterChoice
+          && selectedType === "codex_local" && configVals.adapterType === "codex_local"
+          && agentHarnessType("paperclip_runner", configVals.adapterSchemaValues) === "codex_local") {
+          // Project only real form changes onto the saved native configuration.
+          // Form defaults must not replace bindings or runtime fields; explicit
+          // clears must not be filled back in from the source either.
+          const original = importAdapterValues(selectedType, agent.adapterConfig, agent.adapterType, configVals.runner);
+          const baseline = build(original);
+          const retained = { ...agent.adapterConfig };
+          const applyChanges = (before: Record<string, unknown>, after: Record<string, unknown>) => {
+            for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+              if (overlayValuesEqual(before[key], after[key])) continue;
+              if (after[key] === undefined) delete retained[key];
+              else retained[key] = after[key];
+            }
+          };
+          applyChanges(original.adapterSchemaValues ?? {}, configVals.adapterSchemaValues ?? {});
+          applyChanges(baseline, edited);
+          if (!overlayValuesEqual(baseline.modelReasoningEffort, edited.modelReasoningEffort)) delete retained.reasoningEffort;
+          override.adapterConfig = retained;
+        } else {
+          override.adapterConfig = edited;
+        }
       }
       overrides[agent.slug] = override;
     }

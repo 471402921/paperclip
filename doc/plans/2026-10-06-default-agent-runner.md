@@ -2,6 +2,43 @@
 
 Updated 2026-10-12.
 
+## Codex configuration review closure checkpoint
+
+Runtime prerequisite [#16028](https://github.com/paperclipai/paperclip/pull/16028)
+advances to `d16eccf109b524778ceb896f79ccb3881bc61a9b`, with 57 files. Its small
+shared builder correction preserves saved or selected Codex reasoning effort
+without adding Codex settings to other providers. All 52 existing builder tests
+pass in the actual prerequisite checkout. The earlier `cae179` fresh 5/5 review
+is retained historical evidence; this new source requires fresh checks/review.
+
+Codex behavior source is `b63b779fe141ffe8db6d200580335de84ee78651`, on
+`codex/codex-runner-default`; [#15683](https://github.com/paperclipai/paperclip/pull/15683)
+retains 99 changed files. Review reproduced eight selection failures and six
+import/builder failures before correction. All six actual ACP aliases now follow
+Legacy precedence before native compatibility checks. Unsupported settings name
+the effective source field and offer explicit Legacy; Legacy itself is unchanged.
+Native imports retain hidden runtime settings and account bindings through
+ordinary edits. Explicit clears/removals and intentional harness changes remain
+effective. Existing controls pass: 100 selection, 91 UI, and 52 builder; counts
+can overlap. Canonical server/UI/adapter no-emit, token gates, and independent
+source-matching reviews pass. No new suite, schema, or API was introduced.
+
+The [local test-drive](http://127.0.0.1:3125/COD/agents/all) restarted on this exact
+behavior source and serves `2026.1005.0+403.git.b63b779fe1`. Startup recovery is
+ready, active runs are zero, and all four complete legacy/native execution
+configurations and two historical native run records match before/after.
+The deprecated flag remains false. Prefix-specific receipts are
+`/private/tmp/pr2-b63b-preservation-{before,after}.json`. The staged Mac daemon
+passed preflight with `sourceBuild=false` and `needsBuild=false`; startup used
+JavaScript preparation only. Provider actions, Docker builds, and Cargo builds
+are zero. This checkpoint's subsequent commit changes only this dated record.
+
+Current-head full CI/review and managed onboarding/task/follow-up remain required.
+No merge or production deployment has occurred. Keep expensive final previews
+deferred until the prerequisite merges and Codex is reconciled with actual master.
+The authorized Claude owner is coordinating its dependent PRs and existing
+bounded evidence; root retains normal sequential merge ownership.
+
 ## Metadata review closure checkpoint
 
 Runtime prerequisite source is `cae179c21412048d08aeb94e0fe8b0f7844119de`,
