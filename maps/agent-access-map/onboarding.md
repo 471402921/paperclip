@@ -9,6 +9,11 @@ Each capability needs operation-level review before its entire scope can be
 qualified. No live agent execution is claimed. Follow the [map contract](../README.md)
 for format, permission checks, evidence and maintenance.
 
+Scoped runner-default source review: 2026-10-12 at
+`eee0534154eaf5d0d3f2bbc97c1e24d86f34a5a5`, limited to first-agent selection,
+selected-runtime validation and draft restoration. Unrelated baseline entries
+retain the original source commit; no live agent verification is added.
+
 ## `instance`
 
 Review: `baseline`.
@@ -74,9 +79,24 @@ provider-account/environment setup.
 Policy: Instance setup is operator work; company creation is board; agent creation/task
 creation retain their individual permissions.
 
+The wizard selects the Codex harness and lets the server resolve an automatic
+new-agent runner; explicit Legacy remains available. Supported-platform and
+immutable sandbox evidence follow [environment probe policy](./execution-environments.md#probe).
+Creation/discovery do not provision a target to determine this default. Adapter
+setup validation requires `agents:create`, plus saved-agent update access when
+testing an existing agent; interactive account login additionally requires a
+board user and owner-bound session. An agent's right to hire is not login or
+instance-environment administration authority.
+
 Evidence: `source-only` —
 [implementation](../../ui/src/components/OnboardingWizard.tsx#L279) at the reviewed
 commit above.
+
+Scoped Evidence: `source-only` — [wizard/default selection](../../ui/src/components/OnboardingWizard.tsx),
+[creation resolver](../../server/src/services/agent-runner-selection.ts) and
+[setup/login authorization](../../server/src/routes/agents.ts) at the scoped
+commit. Existing agent/approval execution preservation follows
+[hiring access](./agents.md#hire); no live onboarding proof is claimed here.
 
 Verification: `not-run` — exercise a listed permitted operation with actual agent
 credentials/run context; inspect its result and applicable persistence/attribution.
@@ -85,6 +105,11 @@ remaining operations before qualifying the whole capability.
 
 Gaps: Account authorization, environment administration and model selection need
 separate checks.
+
+Verify automatic onboarding without a post-hire runner change, explicit Legacy,
+saved configuration after reload and the actual selected runtime's useful task
+plus follow-up. Assert denied agent login/probe and foreign-company account or
+environment access separately. These agent-context checks remain `not-run`.
 
 ## `first-task`
 
@@ -134,3 +159,8 @@ evidence.
 
 Gaps: No server onboarding-draft API for this browser-local state; classify explicitly
 or intentionally make it a cross-client product feature.
+
+Scoped source review of [draft restoration](../../ui/src/components/OnboardingWizard.tsx)
+preserves harness/runner intent and invalidates obsolete setup-test results after
+a selection change. Browser draft continuity is not API or live-agent evidence,
+and opening a saved Legacy agent does not apply new-agent defaults.

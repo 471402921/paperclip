@@ -33,11 +33,43 @@ Automated: [adapter validation routes](../../server/src/__tests__/agent-adapter-
 
 Manual: Select the intended adapter and account, refresh model choices, and run its environment test. Save, reload, then execute a small task. Repeat with a deliberately unavailable account and verify the failure remains visible.
 
+Choose Codex as the harness; the UI displays its name/icon for both runners.
+Advanced identifies the automatic default and offers Paperclip Runner or Legacy.
+Only new Codex agents default to the native runner on supported macOS or GNU/Linux
+targets; the [shared selection contract](../../packages/shared/src/agent-runner.ts)
+and [runtime prerequisites](../../packages/paperclip-runner/README.md) define the
+platform/libc boundary. Windows and Alpine/musl remain Legacy; other harness
+defaults are unchanged. Disabled adapters, external overrides, and selected-target
+qualification also affect availability.
+
+For sandbox defaults, follow the [environment probe](./execution-environments.md#environment-settings)
+recipe first. Discovery/creation read company-bound immutable-image evidence
+without allocating a target. A mutable image or snapshot name does not establish
+native compatibility. Then test the actual selected runtime with its selected
+account/model: a legacy CLI or authentication probe alone cannot establish native
+readiness. Missing dependencies, failed authentication, invalid models and
+incompatible custom settings must remain actionable errors without silent runner
+switching. Saved unchanged execution can still be tested without applying new
+selection policy, but runtime/account validation must still run.
+
+Verify an automatic Codex hire and an explicit Legacy control through a useful
+file artifact, follow-up and reload. Preserve Codex reasoning effort and account
+isolation; retain explicit Legacy permission choices, including false. Reopen an
+existing agent, make an unrelated edit, and confirm both its persisted runner and
+next run stay unchanged. Use [hiring/import preservation](./agents.md#hire-agent)
+for approval and portability controls.
+
 ### `run-history`
 
 Automated: [live run routes](../../server/src/__tests__/agent-live-run-routes.test.ts) and [run event sequencing](../../server/src/__tests__/heartbeat-run-event-sequencing.test.ts) cover run data contracts.
 
 Manual: Start a disposable task, open its running transcript, and follow it to a terminal outcome. Reload and compare task/run IDs, status, output, and cost. Verify a failed run remains distinguishable from a completed run with useful output.
+
+An explicit runner change starts a configuration revision and invalidates the
+eligible session. Active runs, restart recovery and historical transcript parsing
+retain their recorded execution configuration; do not infer their runner from a
+later edit to the agent. Account/harness branding and execution identity are
+different observations, both required in the evidence.
 
 ## Gotchas
 
