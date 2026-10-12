@@ -29,7 +29,21 @@ const paperclipTestHome = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-vites
 process.env.PAPERCLIP_HOME = paperclipTestHome;
 // Setup-file afterAll hooks run before suites drain asynchronous heartbeats.
 // Cleanup at worker exit, after all suite teardown, avoids deleting live state.
-process.once("exit", () => fs.rmSync(paperclipTestHome, { recursive: true, force: true, maxRetries: 8, retryDelay: 50 }));
+process.once("exit", () => {
+  // Native runtime assets intentionally seal their directories. Restore only
+  // this worker's scratch directories so teardown can unlink their contents;
+  // symlinks and immutable files keep their permissions.
+  const makeWritable = (directory: string): void => {
+    const stat = fs.lstatSync(directory, { throwIfNoEntry: false });
+    if (!stat?.isDirectory()) return;
+    fs.chmodSync(directory, stat.mode | 0o700);
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory()) makeWritable(path.join(directory, entry.name));
+    }
+  };
+  makeWritable(paperclipTestHome);
+  fs.rmSync(paperclipTestHome, { recursive: true, force: true, maxRetries: 8, retryDelay: 50 });
+});
 
 const require = createRequire(import.meta.url);
 const SupertestTest = require("supertest/lib/test.js") as SupertestTestConstructor;
