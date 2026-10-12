@@ -701,7 +701,23 @@ describe("AgentConfigForm environment selector", () => {
     expect(result.onSave.mock.calls[0][0].runner).toBeUndefined();
   });
 
-  it.each([{ provider: "opencode", model: "openrouter/anthropic/claude-sonnet-4.6" }, { provider: "acpx", acpxAgent: "claude" }, { provider: "unknown-provider" }])("preserves saved native $provider configuration with the experimental gate off", async adapterConfig => {
+  it("shows Claude's saved runner without legacy command controls when the experimental gate is off", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableNativeRunner: false });
+    const result = await renderForm([], { adapterType: "paperclip_runner", adapterConfig: { provider: "acpx", acpxAgent: "claude", model: "claude-opus-5-5", modelReasoningEffort: "high" } }, { showAdapterTypeField: true });
+    roots.push(result.root);
+    expect(result.container.querySelector('[aria-label="Harness"]')?.textContent).toContain("Claude");
+    await clickByText(result.container, "Advanced");
+    expect(result.container.querySelector('[aria-label="Runner"]')?.textContent).toContain("Paperclip Runner");
+    const labels = Array.from(result.container.querySelectorAll("label")).map(label => label.textContent?.trim());
+    expect(labels).not.toContain("Command");
+    expect(labels).not.toContain("Extra args (comma-separated)");
+    await act(async () => setInputValue(result.container.querySelector<HTMLInputElement>('[placeholder="Agent name"]')!, "Renamed Claude"));
+    await flushReact();
+    await clickByText(result.container, "Save");
+    expect(result.onSave).toHaveBeenCalledWith({ name: "Renamed Claude" });
+  });
+
+  it.each([{ provider: "opencode", model: "openrouter/anthropic/claude-sonnet-4.6" }, { provider: "unknown-provider" }])("preserves saved native $provider configuration with the experimental gate off", async adapterConfig => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableNativeRunner: false });
     const result = await renderForm([], { adapterType: "paperclip_runner", adapterConfig }, { showAdapterTypeField: true });
     roots.push(result.root);

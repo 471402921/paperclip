@@ -10,6 +10,10 @@ Local Apple Silicon API-key task and follow-up are the first gate. Keep existing
 
 ## Current state
 
+- Local ordinary API-key onboarding, useful task, revision, cold resume with high effort, independent artifact downloads and persistence passed. The active preview is `http://127.0.0.1:3105/CLAA/issues/CLAA-1`.
+- The user redirected the remaining live checks to API keys. Subscription login remains supported, but no further attended subscription qualification is required; subscription follow-up is not claimed.
+- Shared runner controls passed light/dark, 390-pixel mobile and keyboard opening/closing checks. The walkthrough found native Command/Extra args controls; they are now hidden for native execution. The saved Claude preservation test covers this path. Agent form 111 tests, UI TypeScript and token gates passed.
+- Four-target cloud producers and required source checks are running on 9788c05; clean-install consumers are still pending. The existing authorized SSH development host is Linux ARM64 with GNU libc 2.39; qualification will use an isolated directory and preserve its other services.
 - Reviewed source chat “Make Paperclip Runner the default”; source worktree remains separate and active.
 - Isolated feature branch starts at the exact requested SHA.
 - Workspace dependencies installed with pinned pnpm 9.15.4 and lifecycle scripts disabled.
