@@ -7738,9 +7738,7 @@ async function executePaperclipNativeSessionWithinScope(
     retainedTransition = await migrateRunnerdStateRootForExecution({
       db: input.db,
       execution: input.execution,
-      allowVerifiedBackup:
-        input.runnerExecutionTarget?.kind === "remote" &&
-        input.runnerExecutionTarget.transport === "sandbox",
+      allowVerifiedBackup: input.runnerExecutionTarget?.kind === "remote",
       // A retained warm runner is deliberately still ready rather than
       // suspended. Only the exact idle in-process owner may rotate that
       // prior-run authority; after a hard restart the map is empty and the
@@ -11207,9 +11205,7 @@ export async function createRunnerdBackend(input: {
       retainedTransition = await migrateRunnerdStateRootForExecution({
         db: input.db,
         execution: input.execution,
-        allowVerifiedBackup:
-          input.runnerExecutionTarget?.kind === "remote" &&
-          input.runnerExecutionTarget.transport === "sandbox",
+        allowVerifiedBackup: input.runnerExecutionTarget?.kind === "remote",
         allowRetainedWarmRunner: false,
         allowLocalRecovery: input.runnerExecutionTarget?.kind !== "remote",
         onLog: input.onLog,
