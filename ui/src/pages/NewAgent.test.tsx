@@ -412,11 +412,21 @@ describe("New agent setup", () => {
     await click("Finish setup");
     expect(api.hire.mock.calls[0][1].defaultEnvironmentId).toBe("grok-sandbox");
   });
-  it.each([false, true])("keeps non-Codex runner setup links gated when the experiment is disabled (cloud=%s)", async (cloud) => {
+  it.each([false, true])("keeps other native setup links gated when the experiment is disabled (cloud=%s)", async (cloud) => {
+    cache.setQueryData(queryKeys.health, { status: "ok", cloud: { managed: cloud } });
+    settings.getExperimental.mockResolvedValue({ enableNativeRunner: false });
+    await render("paperclip_runner", "grok");
+    expect(container.textContent).toContain("This adapter is unavailable");
+    expect(api.hire).not.toHaveBeenCalled();
+  });
+  it.each([false, true])("restores native Claude setup intent and its connection flow with experiment=false (cloud=%s)", async cloud => {
     cache.setQueryData(queryKeys.health, { status: "ok", cloud: { managed: cloud } });
     settings.getExperimental.mockResolvedValue({ enableNativeRunner: false });
     await render("paperclip_runner", "claude");
-    expect(container.textContent).toContain("This adapter is unavailable");
+    expect(container.textContent).not.toContain("This adapter is unavailable");
+    expect(container.textContent).toContain("Claude Code");
+    expect(container.textContent).toContain("Paperclip Runner");
+    expect(container.textContent).toContain("Connect a model");
     expect(api.hire).not.toHaveBeenCalled();
   });
   it("blocks direct setup links for unsupported Cloud adapters", async () => {

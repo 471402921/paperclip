@@ -50,6 +50,11 @@ describe("resolveNativeRuntimeMode", () => {
     })).toMatchObject({ kind: "native", profile: { backend: "codex_app_server" } });
   });
 
+  it("admits native Claude without enabling other ACPX providers", () => {
+    expect(resolveNativeRuntimeMode({ ...eligible, enabled: false, adapterConfig: { provider: "acpx", acpxAgent: "claude" } })).toMatchObject({ kind: "native", profile: { backend: "acpx_runtime" } });
+    expect(() => resolveNativeRuntimeMode({ ...eligible, enabled: false, adapterConfig: { provider: "acpx", acpxAgent: "grok" } })).toThrow(expect.objectContaining({ code: "paperclip_runner_rollout_disabled" }));
+  });
+
   it("still rejects experimental providers while the rollout flag is disabled", () => {
     expect(() => resolveNativeRuntimeMode({
       ...eligible,

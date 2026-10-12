@@ -4,7 +4,7 @@ import { SelectPopover } from "./ui/select";
 import { Button } from "./ui/button";
 
 /** The override is request-level. Automatic selection is resolved by the server. */
-export function CodexRunnerSelect({
+export function AgentRunnerSelect({
   value,
   onChange,
   defaultRunner,

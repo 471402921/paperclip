@@ -1,7 +1,7 @@
 import type { AgentRunnerChoice } from "@paperclipai/shared";
 import { agentHarnessType } from "@paperclipai/shared";
 import { adaptersApi } from "../api/adapters";
-import { CodexRunnerSelect } from "./CodexRunnerSelect";
+import { AgentRunnerSelect } from "./AgentRunnerSelect";
 import { healthApi } from "@/api/health";
 import { LocalProviderLoginInstructions } from "./AdapterLoginChrome";
 import { useLocalAiLogin } from "./ai-connections/useLocalAiLogin";
@@ -600,7 +600,7 @@ function OnboardingWizardInner({
     restoreOnboardingAdapterType(saved?.adapterType, saved?.runnerProvider),
   );
   const [runner, setRunner] = useState<AgentRunnerChoice>(() => saved?.runner === "legacy" || saved?.runner === "paperclip"
-    ? saved.runner : saved?.adapterType === "paperclip_runner" && (saved?.runnerProvider === undefined || saved?.runnerProvider === "codex") ? "paperclip" : "auto");
+    ? saved.runner : saved?.adapterType === "paperclip_runner" && (saved?.runnerProvider === undefined || ["codex", "claude", "acpx"].includes(String(saved?.runnerProvider))) ? "paperclip" : "auto");
   /**
    * Whether a model source has been chosen, as opposed to which one
    * `adapterType` happens to hold.
@@ -629,7 +629,7 @@ function OnboardingWizardInner({
   // Recover the harness and runner separately. Host command overrides from an
   // old native draft cannot describe the provider; portable model/cwd survive.
   const [model, setModel] = useState(
-    savedNativeRunnerDraft && saved?.runnerProvider !== undefined && saved.runnerProvider !== "codex" ? "" : (saved?.model as string) ?? "",
+    savedNativeRunnerDraft && saved?.runnerProvider !== undefined && !["codex", "claude", "acpx"].includes(String(saved.runnerProvider)) ? "" : (saved?.model as string) ?? "",
   );
   const [command, setCommand] = useState(
     savedNativeRunnerDraft ? "" : (saved?.command as string) ?? "",
@@ -1550,7 +1550,7 @@ function OnboardingWizardInner({
     setAdapterEnvResult(null);
     adapterEnvResultAppliedStoredLoginRef.current = false;
     setAdapterEnvError(null);
-  }, [step, adapterType, runner, model, command, args, url, credentialMode, apiKey, selectedSavedKey, selectedApiKey?.id, savedSubscription?.id, createdCompanyId, resolvedLoginEnvironmentId, runner === "auto" ? runnerDiscovery.data?.find(item => item.type === "codex_local")?.defaultRunner : undefined]);
+  }, [step, adapterType, runner, model, command, args, url, credentialMode, apiKey, selectedSavedKey, selectedApiKey?.id, savedSubscription?.id, createdCompanyId, resolvedLoginEnvironmentId, runner === "auto" ? runnerDiscovery.data?.find(item => item.type === adapterType)?.defaultRunner : undefined]);
 
   /**
    * Leaving the step puts the row back to a question.
@@ -1963,7 +1963,7 @@ function OnboardingWizardInner({
         adapterType,
         {
           adapterConfig: adapterConfigOverride ?? buildAdapterConfig(),
-          ...(adapterType === "codex_local" && runner !== "auto" ? { runner } : {}),
+          ...(["codex_local", "claude_local"].includes(adapterType) && runner !== "auto" ? { runner } : {}),
           ...(managedBindingForStep() ? { aiConnection: managedBindingForStep() } : {}),
           environmentId,
         }
@@ -2212,7 +2212,7 @@ function OnboardingWizardInner({
         role: agentRole,
         adapterType,
         adapterConfig: hireAdapterConfig,
-        ...(adapterType === "codex_local" && runner !== "auto" ? { runner } : {}),
+        ...(["codex_local", "claude_local"].includes(adapterType) && runner !== "auto" ? { runner } : {}),
         ...(shouldApplyStoredClaudeLogin ? { applyStoredClaudeLogin: true } : {}),
         // The server owns what the first agent is told now: this marker seeds
         // the chief-of-staff persona over the agent's entry instruction file.
@@ -2908,12 +2908,12 @@ function OnboardingWizardInner({
                     ) : null}
                   </motion.div>
 
-                  {sourceSelected && adapterType === "codex_local" && <details className="space-y-3">
+                  {sourceSelected && ["codex_local", "claude_local"].includes(adapterType) && <details className="space-y-3">
                     <summary className="cursor-pointer text-sm text-muted-foreground">Advanced</summary>
-                    <CodexRunnerSelect value={runner} disabled={loading || adapterEnvLoading}
+                    <AgentRunnerSelect value={runner} disabled={loading || adapterEnvLoading}
                       pending={runnerDiscovery.isFetching} error={runnerDiscovery.error?.message} onRetry={() => { void runnerDiscovery.refetch(); }}
-                      defaultRunner={runnerDiscovery.data?.find(item => item.type === "codex_local")?.defaultRunner}
-                      supportedRunners={runnerDiscovery.data?.find(item => item.type === "codex_local")?.supportedRunners}
+                      defaultRunner={runnerDiscovery.data?.find(item => item.type === adapterType)?.defaultRunner}
+                      supportedRunners={runnerDiscovery.data?.find(item => item.type === adapterType)?.supportedRunners}
                       onChange={setRunner} />
                   </details>}
 

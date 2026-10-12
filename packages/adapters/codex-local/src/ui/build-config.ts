@@ -76,6 +76,7 @@ export function buildCodexLocalConfig(v: CreateConfigValues): Record<string, unk
 export function buildPaperclipRunnerConfig(v: CreateConfigValues): Record<string, unknown> {
   const config = buildCodexLocalConfig(v);
   const schemaValues = normalizeLegacyRunnerProvider({ ...(v.adapterSchemaValues ?? {}) });
+  const configuredEffort = v.thinkingEffort || schemaValues.modelReasoningEffort || schemaValues.reasoningEffort || schemaValues.effort;
   for (const unsupportedKey of [
     "engine",
     "agentCommand",
@@ -253,6 +254,7 @@ export function buildPaperclipRunnerConfig(v: CreateConfigValues): Record<string
     ...(provider === "acpx"
       ? {
           acpxAgent,
+          ...(acpxAgent === "claude" && configuredEffort ? { modelReasoningEffort: configuredEffort } : {}),
           ...(cursorMode === undefined ? {} : { acpxSessionMode: cursorMode }),
           ...(piThinkingLevel === undefined ? {} : { piThinkingLevel }),
           model: configuredModel || schemaModel || (acpxAgent === "grok" ? "grok-4.7" : resolvePaperclipRunnerModel("acpx", undefined)),

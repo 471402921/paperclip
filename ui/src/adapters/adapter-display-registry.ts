@@ -212,7 +212,8 @@ export function getAdapterDisplay(type: string): AdapterDisplayInfo {
 export function agentDisplayAdapterType(agent: { adapterType: string; adapterConfig: Record<string, unknown> }): string {
   if (agent.adapterType !== "paperclip_runner") return agent.adapterType;
   if (agent.adapterConfig.provider === "openai_dot") return "openai_dot";
-  return agentHarnessType(agent.adapterType, agent.adapterConfig) === "codex_local" ? "codex_local" : agent.adapterType;
+  const harness = agentHarnessType(agent.adapterType, agent.adapterConfig);
+  return ["codex_local", "claude_local"].includes(harness) ? harness : agent.adapterType;
 }
 
 export function isKnownAdapterType(type: string): boolean {

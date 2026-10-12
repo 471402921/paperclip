@@ -575,13 +575,14 @@ function importAdapterValues(
   sourceAdapterType?: string,
   runner?: AgentRunnerChoice,
 ): CreateConfigValues {
-  const nativeCodex = sourceAdapterType === "paperclip_runner" && choice === "codex_local";
+  const nativeHarness = sourceAdapterType === "paperclip_runner" && ["codex_local", "claude_local"].includes(choice);
+  const nativeCodex = nativeHarness && choice === "codex_local";
   const savedBypass = sourceConfig?.dangerouslyBypassApprovalsAndSandbox
     ?? (nativeCodex ? undefined : sourceConfig?.dangerouslyBypassSandbox);
   return {
     ...defaultCreateValues,
     adapterType: choice === "openai_dot" ? "paperclip_runner" : choice,
-    ...(runner !== undefined ? { runner } : nativeCodex ? { runner: agentRunner("paperclip_runner") } : {}),
+    ...(runner !== undefined ? { runner } : nativeHarness ? { runner: agentRunner("paperclip_runner") } : {}),
     ...(sourceConfig && choice === "codex_local" ? {
       model: typeof sourceConfig.model === "string" ? sourceConfig.model : "",
       thinkingEffort: String(sourceConfig.reasoningEffort ?? sourceConfig.modelReasoningEffort ?? ""),
@@ -591,6 +592,7 @@ function importAdapterValues(
           ? (sourceConfig.codexPermissionMode ?? PAPERCLIP_RUNNER_PERMISSION_CAPABILITIES.codex.defaultMode) === "never"
           : DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX,
     } : {}),
+    ...(sourceConfig && choice === "claude_local" ? { model: typeof sourceConfig.model === "string" ? sourceConfig.model : "", thinkingEffort: String(sourceConfig.modelReasoningEffort ?? sourceConfig.reasoningEffort ?? sourceConfig.effort ?? "") } : {}),
     ...(sourceAdapterType === "paperclip_runner" && choice !== "openai_dot"
       ? { adapterSchemaValues: { ...sourceConfig } } : {}),
     ...(choice === "openai_dot" ? {
@@ -1670,14 +1672,15 @@ export function CompanyImport() {
     return importPreview.manifest.agents.map((a) => {
       const nativeCodex = a.adapterType === "paperclip_runner"
         && (a.adapterConfig?.provider === "codex" || a.adapterConfig?.provider === undefined);
+      const nativeHarness = nativeCodex || (a.adapterType === "paperclip_runner" && agentHarnessType(a.adapterType, a.adapterConfig) === "claude_local");
       const adapterChoice = a.adapterType === "paperclip_runner" && a.adapterConfig?.provider === "openai_dot"
-        ? "openai_dot" : nativeCodex ? agentHarnessType(a.adapterType, a.adapterConfig) : a.adapterType;
+        ? "openai_dot" : nativeHarness ? agentHarnessType(a.adapterType, a.adapterConfig) : a.adapterType;
       let fallbackAdapterType: string | null = null;
       let availabilityWarning: string | undefined;
       if (a.adapterType === "paperclip_runner") {
-        const available = nativeCodex ? runnerInstalled : adapterChoice === "openai_dot" ? dotAvailable : nativeRunnerAvailable;
-        if (!available && (availableAdapterTypes || !nativeCodex)) {
-          availabilityWarning = nativeCodex
+        const available = nativeHarness ? runnerInstalled : adapterChoice === "openai_dot" ? dotAvailable : nativeRunnerAvailable;
+        if (!available && (availableAdapterTypes || !nativeHarness)) {
+          availabilityWarning = nativeHarness
             ? "Paperclip Runner is unavailable here. Choose a runner or another harness explicitly."
             : `Paperclip Runner provider ${String(a.adapterConfig?.provider)} requires its experimental feature to be enabled. This import keeps its saved harness until you choose another one.`;
         }

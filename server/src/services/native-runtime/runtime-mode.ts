@@ -130,7 +130,7 @@ export function resolveNativeRuntimeMode(input: {
   // enabling Dot does not opt in any of those providers.
   if (runnerProfile.provider === "openai_dot") {
     if (input.dotEnabled !== true) throw ineligible("paperclip_runner_dot_disabled", "Enable OpenAI Dot and Assistant connections (MCP) in experimental settings before assigning new work.");
-  } else if (runnerProfile.provider !== "codex" && !input.enabled) {
+  } else if (runnerProfile.provider !== "codex" && !(runnerProfile.provider === "acpx" && runnerProfile.acpxAgent === "claude") && !input.enabled) {
     throw ineligible(
       "paperclip_runner_rollout_disabled",
       "Paperclip Runner is experimental and disabled on this instance.",

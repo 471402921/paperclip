@@ -849,7 +849,7 @@ describe("AgentConfigForm environment selector", () => {
 
   it.each([
     ["Codex", "codex", undefined, DEFAULT_CODEX_LOCAL_MODEL],
-    ["ACP agents", "acpx", "claude", "claude-sonnet-5"],
+    ["ACP agents", "acpx", "claude", "claude-opus-5-5"],
     ["Claude Managed", "claude_managed", undefined, "claude-sonnet-5"],
   ])("saves the %s harness default without the previous OpenCode model prefix", async (label, provider, acpxAgent, model) => {
     const accountList = vi.spyOn(aiConnectionsApi, "list").mockResolvedValue({
@@ -996,8 +996,8 @@ describe("AgentConfigForm environment selector", () => {
     roots.push(existing.root);
     const created = await renderCreateForm(environments, { adapterType: "claude_local", model: "" });
     roots.push(created.root);
-    expect(existing.container.textContent).toContain("Default (claude-opus-5)");
-    expect(created.container.textContent).toContain("Default (claude-opus-5)");
+    expect(existing.container.textContent).toContain("Default (claude-opus-5-5)");
+    expect(created.container.textContent).toContain("Default (claude-opus-5-5)");
     expect(existing.onSave).not.toHaveBeenCalled();
   });
 

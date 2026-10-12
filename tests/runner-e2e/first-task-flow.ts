@@ -8,7 +8,6 @@ import { captureFirstTaskAttachments } from "./first-task-attachments.js";
 import { waitForFirstTaskReply } from "./first-task-replies.js";
 import { observeCompletionUpdate } from "./completion-update-flow.js";
 import {
-  firstTaskNativeRuntimePatch,
   provisionFirstTaskFixtures,
 } from "./first-task-fixtures.js";
 import { execFileSync } from "node:child_process";
@@ -228,7 +227,7 @@ export async function setupFirstTaskFixtures(input: {
   const wizardAdapter =
     execution.profile.credential === "OPENAI_API_KEY"
       ? execution.profile.id === "runner-codex" ? "paperclip_runner" : "codex_local"
-      : "claude_local";
+      : execution.profile.id === "runner-acpx-claude" ? "paperclip_runner" : "claude_local";
   expect(agents[0].adapterType).toBe(wizardAdapter);
   if (execution.profile.id === "runner-codex") {
     expect(agents[0].adapterConfig?.provider).toBe("codex");
@@ -239,37 +238,9 @@ export async function setupFirstTaskFixtures(input: {
     testedAdapterType: wizardAdapter,
     originalModel: agents[0].adapterConfig?.model ?? null,
   };
-  // Claude remains an explicit native regression path in this Codex-only
-  // rollout. Codex is never switched after onboarding: the saved default is
-  // the execution under test.
   if (execution.profile.id === "runner-acpx-claude") {
-    const runtimePatch = firstTaskNativeRuntimePatch(
-      execution,
-      fixtures,
-      agents[0],
-    );
-    const migrated = await api.patch<Row>(
-      `/api/agents/${agents[0].id}`,
-      runtimePatch,
-    );
-    expect(migrated.adapterType).toBe("paperclip_runner");
-    expect(migrated.adapterConfig?.provider).toBe(execution.profile.provider);
-    expect(migrated.adapterConfig?.instructionsFilePath).toBe(
-      agents[0].adapterConfig?.instructionsFilePath,
-    );
-    expect(migrated.adapterConfig?.paperclipSkillSync?.desiredSkills).toEqual(
-      (
-        runtimePatch.adapterConfig.paperclipSkillSync as {
-          desiredSkills?: unknown[];
-        }
-      )?.desiredSkills,
-    );
-    fixtures.onboardingRuntime = {
-      mode: "post-onboarding-runtime-switch",
-      originalAdapterType: wizardAdapter,
-      testedAdapterType: migrated.adapterType,
-      originalModel: agents[0].adapterConfig?.model ?? null,
-    };
+    expect(agents[0].adapterConfig?.provider).toBe("acpx");
+    expect(agents[0].adapterConfig?.acpxAgent).toBe("claude");
   }
   fixtures.agent = {
     id: agents[0].id,

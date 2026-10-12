@@ -2198,3 +2198,19 @@ Private traces and database files must not be published. Unconfirmed cleanup
 always preserves recovery state regardless of this optional diagnostic flag.
 
 The `file-edit-validate` fixture independently downloads the exact active artifact work product from the tested run. It requires the matching run-attributed attachment, filename, MIME type, recorded byte count and SHA-256, then compares the downloaded content to the expected bytes. A workspace file alone cannot satisfy this gate. Explicit failed-case diagnostic retention follows the final result after integrity, isolation and evidence checks, including incomplete publication.
+
+
+## Claude default rollout acceptance
+
+The Claude first-task onboarding case asserts the wizard's saved native profile
+directly. It must not patch a Legacy agent into native execution after creation.
+Ordinary native defaults are qualified by execution target: the first rollout
+enables Apple Silicon only. API-key acceptance requires a useful downloadable
+file, a follow-up revision, independent downloads of both versions, persisted
+configuration and session continuity after reload/restart. Subscription setup
+uses the existing connection tools and receives separate task/follow-up proof.
+
+Keep exact source, runtime executable digests and reports for each candidate.
+Effort or runtime changes require affected acceptance reruns. No automatic paid
+retry campaign is permitted under the separate $50 Claude qualification ceiling.
+Docker and expensive Rust builds run in cloud CI, never on the local Mac.
