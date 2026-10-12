@@ -2,46 +2,63 @@
 
 Updated 2026-10-12.
 
-## Latest checkpoint: ARM qualification tooling provenance
+## Latest checkpoint: ARM qualification and master integration
 
-Production code remains frozen at `a200495cc7488f4d59da570407e516cf702e5af8`.
-Subsequent changes are QA tooling and documentation. The verified 18-package
-archive retains that literal source. All four hosted native producers, Linux x64
-clean installation, and both Mac installed startup/cleanup consumers pass.
-The qualified ARM native startup passes with stock scoped OS prerequisites;
-the original unprepared-host failure remains recorded below.
+The native runtime, protocol, Codex adapter/driver, selection code, and provider
+requirements remain unchanged from qualified source
+`a200495cc7488f4d59da570407e516cf702e5af8`. Its verified 18-package archive
+retains that literal identity. All four hosted daemon producers, Linux x64 clean
+installation, and both Mac installed startup/cleanup consumers pass. The original
+unprepared ARM failure remains recorded; qualified ARM startup passes with stock
+scoped OS prerequisites and no global restriction change.
 
-At `0690801`, fresh review found one valid workflow compatibility defect: an
-older frozen product source does not contain the new prerequisite helper. The
-existing native qualification job now obtains only that helper through a sparse
-checkout pinned to `job.workflow_repository` and `job.workflow_sha`. These
-identify the workflow defining the current job, including reusable calls. The
-product checkout, archive guards, and original native consumer remain unchanged.
-Both checkout identities and the helper hash enter the existing diagnostic
-artifact. No mutable branch or caller-source fallback is used.
-
-Five focused controls pass, including execution with a product source that lacks
-the helper and rejection of mismatched checkout identities. Syntax/YAML checks
-pass. The full affected workflow suite passes all 70 controls with localhost
-fixture access; it runs no native or Docker builds. Receipt:
-`/private/tmp/codex-default-arm-immutable-tooling-fix-receipt.json`.
 The [committed-helper consumer](https://github.com/paperclipai/paperclip/actions/runs/38290234153)
-checks tooling `0690801` against literal `a200495` packages with no diagnostic
-overlay, no native rebuild, and no provider turns. Final results and latest-head
-CI/review remain required before sign-off.
+passes using tooling `0690801` and literal `a200495` packages. Receipt:
+`/private/tmp/ci-final-0690801-integrated-arm-receipt.json`.
+Fresh review at `a5b1683` is 5/5, with all 16 threads resolved. That correction
+loads the helper from the immutable workflow definition rather than an older
+frozen product checkout that does not contain it. A separate sparse checkout
+uses `job.workflow_repository`/`job.workflow_sha`; both source identities and
+the helper digest enter the existing report. No mutable branch or caller-source
+fallback is used. The original product consumer and archive guards stay intact.
 
-The local preview serves `2026.1005.0+352.git.0690801f13` at
-[3125](http://127.0.0.1:3125/COD/agents/all). All four complete agent configurations
-and both historical native runs remain unchanged after restart. The downloaded
-Apple Silicon daemon is verified; `needsBuild` and `sourceBuild` are false.
-No local Dockerfile/native build or provider call ran.
+The [actual final workflow wiring](https://github.com/paperclipai/paperclip/actions/runs/38291535914)
+also passes: immutable helper checkout, stock prerequisite preparation, native
+session, default daemon, read-only model context, and joined cleanup. Its three
+critical steps are byte-preserved from the delivery workflow. Literal product
+source is `a200495`, definition base is `a5b1683`, and actual tooling source is
+`8eb3595a`. All 18 packages and lock/daemon/official-launcher/native-payload
+hashes remain unchanged. Global restrictions stay 1/Y/1; scoped profiles stay
+enforced. No overlay, direct-control substitute, Rust rebuild, credentials, or
+provider turns were used. Receipt:
+`/private/tmp/ci-final-a5b1683-final-wiring-receipt.json`.
+Normal OS APT installation and paid ARM task/follow-up remain unproven.
 
-Next action: freeze the workflow-only correction, prove its actual sparse
-checkout on hosted ARM against the unchanged verified package archive, and
-require fresh CI/review. Refresh the preview and PR evidence at that candidate.
-Human code-owner approval, managed staging onboarding, and actual post-merge
-Cloud composition remain outstanding. No merge or production deployment is
-authorized. Historical unknown costs and cleanup holds remain reserved.
+Master `82274853729f8c5b0f812da08595020f7eb64d66` requires one test-fixture
+conflict resolution. Its shared test-home cleanup replaces the duplicate
+traversal. Real Mac Node 24 tests expose `ENOTEMPTY` for read-only descendants;
+the shared helper now retries only after restoring owned directory permissions.
+Unrelated errors remain visible; symlinks and immutable file modes stay intact.
+All 84 fixture/selection controls, server typecheck, 80 merged workflow/cache
+controls, and token gates pass. Both master's general release-crate cache and
+this branch's native producer dependency cache remain. Receipts:
+`/private/tmp/codex-default-master-home-cleanup-fix-receipt.json` and
+`/private/tmp/codex-default-master822748-readonly-audit.json`.
+
+Master's heartbeat extraction updates server orchestration. Historical frozen
+package startup and useful-task evidence remain component proof with literal
+revisions; they are not relabeled as complete current-server onboarding proof.
+The last verified preview restart serves `2026.1005.0+352.git.0690801f13` at
+[3125](http://127.0.0.1:3125/COD/agents/all), preserving all four agent
+configurations and both historical native runs. The downloaded Apple Silicon
+daemon requires no source build or binary override.
+
+Next action: require fresh CI/review on the integrated candidate, refresh the
+matched preview, and publish final conclusions in the canonical PR's evidence
+index. Human code-owner approval, managed staging onboarding, and actual
+post-merge Cloud composition remain outstanding. No merge or production
+deployment is authorized. Historical unknown costs and cleanup holds remain
+reserved; all Dockerfile/native builds stay remote.
 
 ## Current amendment: remote build performance and Linux baseline
 
