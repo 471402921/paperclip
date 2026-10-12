@@ -1750,7 +1750,10 @@ export function CompanyImport() {
         if (selectedType === "openai_dot" && configVals.adapterSchemaValues?.allowUnmeteredProvider !== true) {
           throw new Error("OpenAI Dot requires acknowledgement of external billing. Configure the Dot adapter and enable Allow externally billed provider.");
         }
-        const build = getUIAdapter(retainsNativeHarness && selectedType === "claude_local" ? "paperclip_runner" : configVals.adapterType).buildAdapterConfig;
+        const nativeClaudeForm = selectedType === "claude_local" && (retainsNativeHarness
+          || (configVals.runner !== "legacy" && configVals.adapterSchemaValues?.provider === "acpx"
+            && configVals.adapterSchemaValues.acpxAgent === "claude"));
+        const build = getUIAdapter(nativeClaudeForm ? "paperclip_runner" : configVals.adapterType).buildAdapterConfig;
         const edited = build(configVals);
         if (agent.adapterType === "paperclip_runner" && selectedType === agent.adapterChoice
           && ["codex_local", "claude_local"].includes(selectedType) && configVals.adapterType === selectedType
@@ -1770,6 +1773,18 @@ export function CompanyImport() {
           };
           applyChanges(original.adapterSchemaValues ?? {}, configVals.adapterSchemaValues ?? {});
           applyChanges(baseline, edited);
+          if (selectedType === "claude_local") {
+            // The native builder preserves source schema fields. Project common
+            // form edits separately so a removed binding cannot be restored there.
+            const commonBuild = getUIAdapter("claude_local").buildAdapterConfig;
+            const commonBefore = commonBuild(original);
+            const commonAfter = commonBuild(configVals);
+            for (const key of ["cwd", "instructionsFilePath", "env", "workspaceStrategy", "workspaceRuntime"]) {
+              if (overlayValuesEqual(commonBefore[key], commonAfter[key])) continue;
+              if (commonAfter[key] === undefined) delete retained[key];
+              else retained[key] = commonAfter[key];
+            }
+          }
           if (original.model !== configVals.model && !configVals.model) delete retained.model;
           if (original.thinkingEffort !== configVals.thinkingEffort) {
             delete retained.reasoningEffort;

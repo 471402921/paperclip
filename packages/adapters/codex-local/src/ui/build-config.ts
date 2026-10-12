@@ -230,7 +230,7 @@ export function buildPaperclipRunnerConfig(v: CreateConfigValues): Record<string
   ]) {
     delete schemaValues[normalizedKey];
   }
-  if (provider === "acpx" && acpxAgent === "claude") {
+  if (provider === "codex" || (provider === "acpx" && acpxAgent === "claude")) {
     delete config.reasoningEffort;
     delete config.effort;
     delete schemaValues.reasoningEffort;
