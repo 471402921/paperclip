@@ -696,7 +696,7 @@ export async function selectHeartbeatRuntime(db: Db, input: HeartbeatRuntimeSele
       });
       getNativeFreshSessionHandoff = nativeReviewRequest ? undefined : getFreshSessionHandoff;
       const nativeProviderConfig = nativeRuntimeResolution.profile.backend === "codex_app_server"
-        || (nativeRuntimeResolution.profile.backend === "acpx_runtime" && nativeRuntimeResolution.profile.provider === "acpx" && nativeRuntimeResolution.profile.acpxAgent === "claude")
+        || (nativeRuntimeResolution.profile.backend === "acpx_runtime" && parseObject(agent.adapterConfig).provider === "acpx" && parseObject(agent.adapterConfig).acpxAgent === "claude")
         || nativeRuntimeResolution.profile.backend === "opencode_server"
         ? projectPaperclipRunnerTaskConfig(
             nativeRuntimeResolution.profile.backend,

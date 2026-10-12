@@ -119,6 +119,20 @@ describe("ACPX runtime sandbox", () => {
     }
   });
 
+  it("restores bound Claude effort in private settings across cold connections", async () => {
+    const fixture = await sandboxFixture("claude");
+    for (const claudeEffort of ["high", "xhigh", "max"] as const) {
+      const binding = { ...fixture.binding, claudeEffort };
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const sandbox = await prepareAcpxRuntimeSandbox({ binding, agent: "claude" });
+        const settings = JSON.parse(await readFile(join(sandbox.agentHomeDirectory, "settings.json"), "utf8"));
+        expect(settings.effortLevel).toBe(claudeEffort);
+      }
+    }
+    const sandbox = await prepareAcpxRuntimeSandbox({ binding: fixture.binding, agent: "claude" });
+    expect(JSON.parse(await readFile(join(sandbox.agentHomeDirectory, "settings.json"), "utf8"))).not.toHaveProperty("effortLevel");
+  });
+
   it.each([
     ["pi", "OPENROUTER_API_KEY", "pi-home"],
     ["claude", "ANTHROPIC_API_KEY", "claude-home"],

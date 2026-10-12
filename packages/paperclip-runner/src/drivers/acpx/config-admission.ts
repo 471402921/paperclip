@@ -41,11 +41,11 @@ export function createAcpxConfigAdmission(expected: string, options: { label: st
             if (method === "session/prompt") {
               assertReady();
               if (params.sessionId !== state.sessionId) throw failure("prompt belongs to a different session");
-            } else if (method === "session/new" || method === "session/load" || method === "session/set_config_option") {
+            } else if (method === "session/new" || method === "session/load" || method === "session/resume" || method === "session/set_config_option") {
               if (typeof message.id !== "string" && typeof message.id !== "number") throw failure("uncorrelated mode request");
               if (pending.has(message.id)) throw failure("duplicate mode request identity");
               if (pending.size) throw failure("overlapping native admission controls");
-              if (method === "session/new" || method === "session/load") {
+              if (method === "session/new" || method === "session/load" || method === "session/resume") {
                 if (pending.size) throw failure("overlapping session admission");
                 state.sessionId = null; state.mode = null;
               } else {
