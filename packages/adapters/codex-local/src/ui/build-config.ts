@@ -76,7 +76,9 @@ export function buildCodexLocalConfig(v: CreateConfigValues): Record<string, unk
 export function buildPaperclipRunnerConfig(v: CreateConfigValues): Record<string, unknown> {
   const config = buildCodexLocalConfig(v);
   const schemaValues = normalizeLegacyRunnerProvider({ ...(v.adapterSchemaValues ?? {}) });
-  const configuredEffort = v.thinkingEffort || schemaValues.modelReasoningEffort || schemaValues.reasoningEffort || schemaValues.effort;
+  const configuredEffort = typeof v.thinkingEffort === "string"
+    ? v.thinkingEffort.trim()
+    : schemaValues.modelReasoningEffort || schemaValues.reasoningEffort || schemaValues.effort;
   for (const unsupportedKey of [
     "engine",
     "agentCommand",
@@ -227,6 +229,12 @@ export function buildPaperclipRunnerConfig(v: CreateConfigValues): Record<string
     "idleTimeoutMs",
   ]) {
     delete schemaValues[normalizedKey];
+  }
+  if (provider === "acpx" && acpxAgent === "claude") {
+    delete config.reasoningEffort;
+    delete config.effort;
+    delete schemaValues.reasoningEffort;
+    delete schemaValues.effort;
   }
   return {
     ...config,

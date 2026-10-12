@@ -1,3 +1,4 @@
+import { agentHarnessType } from "@paperclipai/shared";
 import { resolveClaudeEffort, resolveQualifiedAcpxProfile } from "../../vendor/paperclip-runner/index.js";
 import {
   isPaperclipRunnerProvider,
@@ -179,7 +180,7 @@ export function projectPaperclipRunnerTaskConfig(
   // The server resolves a connection's model namespace after task overrides.
   // Carry that model into durable input without allowing routing to change the harness.
   const model = optionalString(managedModel) ?? optionalString(task.model);
-  const supportsEffort = backend === "codex_app_server" || (backend === "acpx_runtime" && base.acpxAgent === "claude");
+  const supportsEffort = backend === "codex_app_server" || (backend === "acpx_runtime" && agentHarnessType("paperclip_runner", base) === "claude_local");
   const effortKey = supportsEffort
     ? ["modelReasoningEffort", "reasoningEffort", "effort"].find((key) => key in task)
     : undefined;
@@ -389,7 +390,7 @@ export function resolvePaperclipRunnerProviderProfile(
     const bindingId = validatePaperclipRunnerDotConfig(config)!;
     return { provider: "openai_dot", backend: "openai_dot_mcp", model: null, dotBindingId: bindingId };
   }
-  if (candidate === "acpx" && config.acpxAgent === "claude") {
+  if (candidate === "acpx" && agentHarnessType("paperclip_runner", config) === "claude_local") {
     const unsupported = claudeRunnerUnsupportedSettings(config);
     if (unsupported.length) throw new PaperclipRunnerProviderProfileError("agent_runner_config_incompatible",
       `Paperclip Runner cannot honor these settings: ${unsupported.join(", ")}. Remove them or select Legacy runner in Advanced.`);
@@ -403,7 +404,7 @@ export function resolvePaperclipRunnerProviderProfile(
       error instanceof Error ? error.message : "Invalid Cursor session mode",
     );
   }
-  try { if (candidate === "acpx" && config.acpxAgent === "claude") resolveClaudeEffort("claude", config.modelReasoningEffort ?? config.reasoningEffort ?? config.effort); } catch (error) {
+  try { if (candidate === "acpx" && agentHarnessType("paperclip_runner", config) === "claude_local") resolveClaudeEffort("claude", config.modelReasoningEffort ?? config.reasoningEffort ?? config.effort); } catch (error) {
     throw new PaperclipRunnerProviderProfileError("paperclip_runner_claude_effort_invalid", error instanceof Error ? error.message : "Invalid Claude effort");
   }
   try { resolvePaperclipRunnerPiThinkingLevel(candidate, config.acpxAgent, config.piThinkingLevel); } catch (error) {
