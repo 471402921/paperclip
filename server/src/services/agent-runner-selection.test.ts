@@ -215,6 +215,17 @@ describe("Claude runner defaults", () => {
     expect(resolveNewAgentRunner({ adapterType: "claude_local", target, runner: "legacy", adapterConfig: { model: "custom", dangerouslySkipPermissions: true } }))
       .toEqual({ adapterType: "claude_local", adapterConfig: { model: "custom", dangerouslySkipPermissions: true } });
   });
+  it.each(["x64", "arm64"])("keeps Darwin SSH %s automatic selection Legacy while preserving explicit assets", architecture => {
+    const target = { driver: "ssh", platform: "darwin", architecture };
+    expect(agentRunnerAvailability("claude_local", target)).toEqual({ supportedRunners: ["paperclip", "legacy"], defaultRunner: "legacy" });
+    const config = { model: "custom-model", dangerouslySkipPermissions: false };
+    expect(resolveNewAgentRunner({ adapterType: "claude_local", target, adapterConfig: config })).toEqual({ adapterType: "claude_local", adapterConfig: config });
+    const assets = { runnerRemoteProviderPackPath: "/operator/mac-pack", runnerRemoteBinaryPath: "/operator/mac-daemon" };
+    expect(resolveNewAgentRunner({ adapterType: "claude_local", target, runner: "paperclip", adapterConfig: assets }))
+      .toMatchObject({ adapterType: "paperclip_runner", adapterConfig: { ...assets, provider: "acpx", acpxAgent: "claude" } });
+    const saved = { adapterType: "paperclip_runner", adapterConfig: { ...assets, provider: "acpx", acpxAgent: "claude" }, target };
+    expect(resolveNewAgentRunner(saved)).toEqual({ adapterType: saved.adapterType, adapterConfig: saved.adapterConfig });
+  });
   it.each(["x64", "arm64"])("keeps incompatible Linux Claude %s targets legacy", architecture => {
     for (const libc of ["musl", "unknown"] as const) {
       expect(agentRunnerAvailability("claude_local", { driver: "local", platform: "linux", architecture, libc }).defaultRunner).toBe("legacy");

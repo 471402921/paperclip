@@ -14,3 +14,19 @@ export async function prepareVerifiedRemoteProviderPack(input: {
   await input.stageAndVerify();
   return "uploaded";
 }
+
+/** A stale standard installation must not hide a matching later installation. */
+export async function useVerifiedPreinstalledRemoteProviderPack(input: {
+  candidates: readonly string[];
+  verifyAndLink: (root: string) => Promise<void>;
+}): Promise<boolean> {
+  for (const candidate of input.candidates) {
+    try {
+      await input.verifyAndLink(candidate);
+      return true;
+    } catch {
+      // Continue only to another installation with the same full verifier.
+    }
+  }
+  return false;
+}

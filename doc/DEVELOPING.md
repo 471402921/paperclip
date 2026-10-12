@@ -1531,7 +1531,8 @@ CLI paths that use stdin avoid that separate limit for the wake prompt.
 Paperclip Runner offers native Codex, OpenCode, and **ACPX Claude**. New
 Claude Code agents default to ACPX Claude on Apple Silicon, Intel Mac, Linux x64
 and Linux ARM64 with supported glibc. Unsupported or unqualified targets retain
-Legacy. The runner override is in Advanced. Ordinary Claude models default to `claude-opus-5-5`; explicit models
+Legacy. Darwin SSH keeps an automatic Legacy default; explicit native execution
+requires matching remote assets. The runner override is in Advanced. Ordinary Claude models default to `claude-opus-5-5`; explicit models
 and provider routing remain authoritative. Existing agents keep their saved runner. Converting an existing Claude, Codex, or OpenCode agent selects its
 corresponding provider, preserves compatible models, credentials, workspace,
 and instructions, and resets execution sessions while retaining run history.

@@ -193,7 +193,8 @@ Choose the underlying harness in `adapterType`, such as `codex_local` or
 `claude_local`. New Codex agents use Paperclip Runner automatically on supported
 execution targets. New Claude Code agents use Paperclip Runner on Apple Silicon,
 Intel Mac, Linux x64 and Linux ARM64 with supported glibc. Unknown or unsupported
-targets retain Legacy. The native Claude profile is
+targets retain Legacy. Darwin SSH also defaults to Legacy; native execution
+requires an explicit runner choice and matching remote assets. The native Claude profile is
 `provider: acpx`, `acpxAgent: claude`, with ordinary model `claude-opus-5-5`.
 Explicit models and existing saved runners remain intact. The saved response
 may therefore have `adapterType: paperclip_runner` and a resolved provider;

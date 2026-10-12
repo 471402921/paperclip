@@ -46,7 +46,9 @@ and ordinary model `claude-opus-5-5`. The Advanced runner selector can explicitl
 choose Legacy. Keep explicit model/account choices and saved runners on edits.
 Verify useful output and a follow-up after a controller restart; setup success
 alone does not establish session continuity. Unsupported architectures/libc and unknown environment qualification retain
-Legacy. Linux ARM64 cloud-image production remains deferred.
+Legacy. Darwin SSH also defaults to Legacy until automatic matching assets are
+qualified; explicit matching native assets and saved native configurations remain
+supported. Linux ARM64 cloud-image production remains deferred.
 
 The current hiring wizard assigns the first hire CEO and subsequent hires
 General reporting to the CEO. Change manager/role afterward through supported

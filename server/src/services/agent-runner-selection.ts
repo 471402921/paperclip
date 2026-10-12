@@ -33,7 +33,10 @@ export function agentRunnerAvailability(harness: string, target: RunnerTarget = 
     && (harness === "claude_local"
       ? !!target.platform && paperclipRunnerSupportsPlatform(harness, target.platform, target.architecture ?? "", target.libc, target.glibcVersion)
       : !target.platform || paperclipRunnerSupportsPlatform(harness, target.platform, target.architecture ?? "", target.libc, target.glibcVersion));
-  return { supportedRunners: supported ? ["paperclip", "legacy"] : ["legacy"], defaultRunner: supported ? "paperclip" : "legacy" };
+  // Darwin SSH execution needs operator-provided matching assets. It remains
+  // an explicit choice until automatic Darwin remote packs are qualified.
+  const automatic = supported && !(harness === "claude_local" && target.driver === "ssh" && target.platform === "darwin");
+  return { supportedRunners: supported ? ["paperclip", "legacy"] : ["legacy"], defaultRunner: automatic ? "paperclip" : "legacy" };
 }
 
 function incompatible(fields: string[]): never {
@@ -105,7 +108,7 @@ export function resolveNewAgentRunner(input: AgentRunnerSelection): { adapterTyp
     return { adapterType: "codex_local", adapterConfig: { ...config, dangerouslyBypassApprovalsAndSandbox: config.dangerouslyBypassApprovalsAndSandbox ?? true } };
   }
   if (native && harness !== "codex_local" && choice === "paperclip") return { adapterType, adapterConfig: normalizeLegacyRunnerProvider(config) };
-  if (availability.defaultRunner !== "paperclip") throw unprocessable("Paperclip Runner is unavailable for this harness and environment. Select Legacy runner in Advanced.", { code: "agent_runner_unavailable" });
+  if (!availability.supportedRunners.includes("paperclip")) throw unprocessable("Paperclip Runner is unavailable for this harness and environment. Select Legacy runner in Advanced.", { code: "agent_runner_unavailable" });
   if (native) return { adapterType, adapterConfig: normalizeLegacyRunnerProvider(config) };
   if (harness === "claude_local") {
     config = resolveClaudeRunnerConfig(config);
