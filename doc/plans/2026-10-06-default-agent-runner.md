@@ -62,6 +62,37 @@ ARM startup cause, then require fresh hosted qualification, CI, and review. Keep
 the current branch, PR, test-drive, budget holds, and no-Codex-bundling boundary.
 No merge or production deployment is authorized.
 
+Checkpoint `695506ad3912fa63604ca784fda50416fba983d6` is pushed and passes
+ordinary CI (53 successful checks, four conditional skips). The restarted
+test-drive serves `2026.1005.0+348.git.695506ad39`; four complete agent execution
+configurations and both historical native runs survive unchanged, with the old
+experimental flag false. Normal staging selects the verified Mac target and
+reports `needsBuild: false`; there is no binary override or local Cargo build.
+Receipt: `/private/tmp/pr2-final-preservation-after.json`.
+
+The hosted [ARM diagnostic](https://github.com/paperclipai/paperclip/actions/runs/38273898742)
+used tooling `695506ad` and the literal `dcdf09a` package archives. It recovered
+the primary failure: Codex's bubblewrap cannot create a namespace inside the
+restricted Docker fixture. Daemon/CLI installation and ABI were not the cause.
+The existing consumer now retains that Docker install/lifecycle proof and
+uses the same installed graph on the actual ARM host for unchanged read-only
+startup. Lock, daemon, and official Codex command hashes must match across
+Docker/host and before/after. Twenty-one controls and independent review pass.
+No external-sandbox substitution, sudo, sysctl, namespace flags, or product
+permission policy changes are used. Actual host capability still needs proof.
+Receipt: `/private/tmp/pr2-arm-host-split-owned-receipt.json`.
+
+Fresh review also found that the daemon's new libc gate had accidentally sent
+older Linux browser login to PATH-only lookup. A two-file fix restores owned
+Codex CLI resolution independently of daemon eligibility. One hundred twenty-four
+focused cases and server typecheck pass; nine regressions fail before the fix.
+Creation's libc floor remains unchanged. Receipt:
+`/private/tmp/codex-default-login-libc-decoupling-receipt.json`.
+
+Next action: freeze this corrected tooling and run one remote ARM host treatment
+against the same verified archives. Require actual host startup before the final
+four-target qualification; retain literal product/tool source identities.
+
 ## Current addition: Linux ARM64
 
 The user now requires ARM Linux support as well. Treat ARM Linux as ARM64

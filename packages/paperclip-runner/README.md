@@ -66,8 +66,8 @@ are allowed. Relative PATH entries use the selected process working directory.
 Compatibility is established by the actual protocol or login attempt.
 Missing executables and real protocol failures still return actionable errors.
 Package identity and executable containment remain checked. Browser login keeps
-its existing provider-specific credential home and uses the native Codex resolver
-on supported Linux and macOS targets, including Linux ARM64.
+its provider-specific credential home and resolves the installed Codex CLI on
+64-bit Linux and macOS independently of the daemon's libc requirements.
 
 Exact dependency pins remain release and ACPX artifact-qualification checks.
 They make published builds reproducible and verify sandbox artifacts; they do not
@@ -202,6 +202,14 @@ Debian 13 (`node:24-trixie-slim`). macOS binaries build on the existing macOS 15
 Apple Silicon and Intel hosts. Actual task and follow-up acceptance is performed
 on Apple Silicon; Intel qualification covers build, installation, and protocol
 startup.
+
+On Linux, Codex's sandboxed filesystem modes also require the host to permit its
+unprivileged namespaces. A no-privilege Docker container can prohibit nested
+namespace creation even when installation and binary compatibility pass.
+Qualification therefore retains the restricted Docker install/lifecycle checks
+and exercises the same installed graph's read-only native startup on the actual
+ARM host. This does not qualify arbitrary container or managed setup targets;
+their selected runtime must pass setup in that environment.
 
 Automatic creation selects legacy execution when a Linux host has musl, unknown
 libc, or a measured GNU libc version below the baseline. Existing agents retain
