@@ -4,6 +4,7 @@ import path from "node:path";
 import { installedReleaseDaytonaPlugin } from "./installed-release.js";
 import { isManagedHiringCase } from "./chat-cases.js";
 import { FixtureRegistry } from "./fixture-registry.js";
+import { isImmutableDaytonaImage } from "./catalog.js";
 import { TASK_TITLE_BUDGET_CENTS } from "./task-titles.js";
 import { stageGrokSubscriptionFixture } from "./grok-subscription-fixture.js";
 import type { RunnerApi } from "./api.js";
@@ -63,6 +64,8 @@ export interface LiveFixtureValues {
   agent: AgentRecord;
   project?: ProjectRecord;
   aiConnection?: ManagedAccountFixture;
+  /** Private setup receipt; its lease is included in existing runtime cost accounting. */
+  setupProbe?: { leaseId: string; durationMs: number; defaultRunner?: string };
 
   onboardingRuntime?: {
     mode: "production-wizard" | "post-onboarding-runtime-switch";
@@ -77,6 +80,19 @@ function value<T>(resolved: ReadonlyMap<string, unknown>, id: string): T {
   const result = resolved.get(id);
   if (!result) throw new Error(`Missing resolved fixture ${id}`);
   return result as T;
+}
+
+/** Preserve task/run attribution and include only this fixture's explicit setup probe. */
+export function selectFixtureRuntimeLeases<T extends {
+  id: string; provider?: string | null; heartbeatRunId?: string | null; issueId?: string | null;
+}>(input: { leases: T[]; runIds: string[]; issueId?: string; setupProbeLeaseId?: string }): T[] {
+  const selectedRunIds = new Set(input.runIds);
+  const relevant = input.leases.filter(lease => lease.provider === "daytona" && (
+    lease.id === input.setupProbeLeaseId || selectedRunIds.size === 0
+    || (lease.heartbeatRunId && selectedRunIds.has(lease.heartbeatRunId))
+    || (input.issueId && lease.issueId === input.issueId)
+  ));
+  return relevant.length > 0 ? relevant : input.leases;
 }
 
 async function deleteDaytonaEnvironment(api: RunnerApi, environmentId: string) {
@@ -111,6 +127,7 @@ export async function setupLiveFixtures(input: {
 }): Promise<LiveFixtureValues> {
   const { api, execution } = input;
   const registry = new FixtureRegistry();
+  let setupProbe: LiveFixtureValues["setupProbe"];
 
   if (execution.environment.id === "daytona") {
     registry.register<PluginRecord>({
@@ -295,6 +312,35 @@ export async function setupLiveFixtures(input: {
         secretRefs,
         executionId: input.executionNonce,
       });
+      const autoCodex = agent.adapterType === "codex_local" && (agent.runner === undefined || agent.runner === "auto");
+      const nativeCodex = agent.adapterType === "paperclip_runner" && (agent.adapterConfig as Record<string, unknown>).provider === "codex";
+      if (environment.driver === "sandbox" && execution.profile.generation === "native"
+        && execution.profile.provider === "codex" && agent.runner !== "legacy" && (autoCodex || nativeCodex)) {
+        if (!isImmutableDaytonaImage(String(environment.config?.image ?? "")) || environment.config?.snapshot) {
+          throw new Error("Native Codex qualification requires this fixture's immutable image-backed environment.");
+        }
+        const startedAt = Date.now();
+        // One existing explicit connection probe: a fresh lease, bounded platform read,
+        // verified release, and server-owned image evidence before agent creation.
+        const probe = await api.post<{ ok: boolean; details?: { platformQualificationRecorded?: boolean; leaseId?: string } }>(
+          `/api/environments/${environment.id}/probe?companyId=${encodeURIComponent(company.id)}`,
+          {}, { timeout: 330_000 },
+        );
+        if (probe.ok !== true || probe.details?.platformQualificationRecorded !== true || !probe.details.leaseId) {
+          throw new Error("Native Codex image qualification was not recorded; agent creation was not attempted.");
+        }
+        setupProbe = { leaseId: probe.details.leaseId, durationMs: Date.now() - startedAt };
+        if (autoCodex) {
+          const adapters = await api.get<Array<{ type: string; defaultRunner?: string; supportedRunners?: string[] }>>(
+            `/api/adapters?companyId=${encodeURIComponent(company.id)}&environmentId=${encodeURIComponent(environment.id)}`,
+          );
+          const selected = adapters.find(adapter => adapter.type === "codex_local");
+          if (selected?.defaultRunner !== "paperclip" || !selected.supportedRunners?.includes("paperclip")) {
+            throw new Error("The qualified image does not advertise native Codex as its server-owned default.");
+          }
+          setupProbe.defaultRunner = selected.defaultRunner;
+        }
+      }
       if (["stock-harness", "native-connection-guidance"].includes(execution.suite.id)
         || (execution.suite.id === "everyday-workflows" && ["hire-reuse", "delegate-feedback"].includes(execution.task.id))) {
         agent.budgetMonthlyCents = 1_000;
@@ -362,6 +408,7 @@ export async function setupLiveFixtures(input: {
     secretRefs: value<SecretReferenceMap>(setup.values, "secrets"),
     environment: value<EnvironmentRecord>(setup.values, "environment"),
     agent: value<AgentRecord>(setup.values, "agent"),
+    ...(setupProbe ? { setupProbe } : {}),
     ...(setup.values.has("project")
       ? { project: value<ProjectRecord>(setup.values, "project") }
       : {}),
