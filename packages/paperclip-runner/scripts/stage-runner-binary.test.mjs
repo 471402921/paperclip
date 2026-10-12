@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { stageBuiltRunnerBinary, stageRunnerBinary } from "./stage-runner-binary.mjs";
-import { RELEASE_RUNNER_TARGETS, releaseDaemonManifest, verifyReleaseRunnerMetadata } from "./stage-release-runner-binaries.mjs";
+import { RELEASE_RUNNER_TARGETS, releaseRunnerTargets, releaseDaemonManifest, verifyReleaseRunnerMetadata } from "./stage-release-runner-binaries.mjs";
 import { paperclipRunnerBinaryNeedsBuild, resolveNativeRunnerDevBinary } from "../../../scripts/dev-runner-native-binary.mjs";
 import { resolvePackagedRunnerBinary } from "../src/live/runner-binary.ts";
 
@@ -15,6 +15,18 @@ const contract = { package: { name: "@paperclipai/paperclip-runner", version: "0
   contracts: { runnerdArtifact: 2, nativeExecution: 1, harnessDriver: 1 }, prp: { name: "paperclip.runner", minimumVersion: 1, maximumVersion: 3 } };
 const metadata = { binaryContractVersion: 2, nativeExecutionVersion: 1, harnessDriverVersion: 1,
   packageName: "@paperclipai/paperclip-runner", packageVersion: "0.0.0", prp: { name: "paperclip.runner", minimumVersion: 1, maximumVersion: 2 } };
+
+test("release assembly uses the inert four-target contract and rejects unexpected selection data", async () => {
+  const contract = JSON.parse(await readFile(new URL("../release-runner-targets.json", import.meta.url), "utf8"));
+  assert.deepEqual(RELEASE_RUNNER_TARGETS, ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"]);
+  assert.deepEqual(releaseRunnerTargets(contract), RELEASE_RUNNER_TARGETS);
+  assert.ok(Object.isFrozen(RELEASE_RUNNER_TARGETS));
+  for (const invalid of [null, {}, { ...contract, schema: "other" }, { ...contract, host: "trusted-fleet" },
+    { ...contract, targets: contract.targets.slice(0, 3) }, { ...contract, targets: [...contract.targets, "linux-arm64"] },
+    { ...contract, targets: [...contract.targets.slice(0, 3), "win32-x64"] }, { ...contract, targets: "linux-arm64" }]) {
+    assert.throws(() => releaseRunnerTargets(invalid), /Unknown release daemon target contract/);
+  }
+});
 
 test("release assembly binds all four actual targets, source, hashes and compatible metadata", async () => {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), "runner-release-inputs-"))), source = "a".repeat(40);

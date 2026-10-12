@@ -727,6 +727,8 @@ export interface CreateConfigValues {
   runner?: "auto" | "paperclip" | "legacy";
   adapterType: string;
   codexPermissionMode?: "never" | "on-request" | "untrusted";
+  /** Explicit Legacy permission choice; never persisted as a runner setting. */
+  codexLegacySandboxBypass?: boolean;
   paperclipRunnerLifecycleMode?: "per_turn" | "warm";
   paperclipRunnerIdleTimeoutMs?: number;
   cwd: string;

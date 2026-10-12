@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -753,7 +753,9 @@ test("release daemon production uses exact-source native hosts and no publisher 
   }
   assert.match(producer, /matrix: \$\{\{ fromJSON\(needs.runner_binary_targets.outputs.matrix\) \}\}/);
   assert.match(targets, /Unknown exact-source daemon platform contract/);
-  assert.match(targets, /RELEASE_RUNNER_TARGETS/);
+  assert.match(targets, /release-runner-targets\.json/);
+  assert.match(targets, /execFileSync\('git', \['show', source \+ ':' \+ file\]/);
+  assert.doesNotMatch(targets, /import .*from '\.\/|await import\(|\beval\(|new Function/);
   assert.doesNotMatch(targets, /secrets\.|id-token: write|contents: write|npm publish|environment:/);
   assert.match(producer, /persist-credentials: false/);
   assert.match(producer, /contents: read/);
@@ -1064,39 +1066,96 @@ test("Linux ARM prerequisite setup rejects other hosts before invoking tools and
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test("exact-source daemon matrices preserve historical three-target sources and add native ARM only for new sources", () => {
+test("exact-source daemon matrices read inert data and never execute preview runner selection", () => {
   const workflow = readWorkflow("release-verify.yml");
   const step = workflow.split('      - name: Preserve the immutable source\'s platform contract')[1].split('\n  runner_binaries:')[0];
   const script = step.split('        run: |\n')[1].split('\n').map(line => line.startsWith('          ') ? line.slice(10) : line).join('\n');
   const root = mkdtempSync(path.join(tmpdir(), 'release-target-contract-'));
   try {
-    const tools = path.join(root, 'tools'); mkdirSync(tools);
-    writeFileSync(path.join(tools, 'git'), '#!/bin/sh\nprintf "%s\\n" "$FIXTURE_HEAD"\n', { mode: 0o755 });
+    const environment = {
+      PATH: `${path.dirname(process.execPath)}:/usr/bin:/bin`, HOME: root,
+      GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null',
+    };
+    const git = args => {
+      const result = spawnSync('git', args, { cwd: root, env: environment, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr);
+      return result.stdout.trim();
+    };
+    const template = path.join(root, 'empty-template'); mkdirSync(template);
+    git(['init', '-q', '--template=' + template]);
     const source = path.join(root, 'packages/paperclip-runner/scripts/stage-release-runner-binaries.mjs');
+    const dataFile = path.join(root, 'packages/paperclip-runner/release-runner-targets.json');
     mkdirSync(path.dirname(source), { recursive: true });
-    const output = path.join(root, 'outputs');
+    const output = path.join(root, 'outputs'), marker = path.join(root, 'candidate-executed');
     const historical = ['darwin-arm64', 'darwin-x64', 'linux-x64'];
-    for (const targets of [historical, [...historical, 'linux-arm64']]) {
-      writeFileSync(source, `export const RELEASE_RUNNER_TARGETS = ${JSON.stringify(targets)};`);
+    const current = [...historical, 'linux-arm64'];
+    const contract = targets => JSON.stringify({ schema: 'paperclip.runner.release-targets.v1', targets });
+    const malicious = `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(marker)}, 'executed');\nwriteFileSync(process.env.GITHUB_OUTPUT, 'matrix={"include":[{"target":"linux-x64","host":"runs-on/fleet=paperclip-post-merge-x64/env=public-ci"}]}\\n');\nprocess.exit(0);\n`;
+    const pin = (module, data) => {
+      rmSync(dataFile, { force: true });
+      writeFileSync(source, module);
+      if (data !== undefined) writeFileSync(dataFile, data);
+      git(['add', 'packages']);
+      git(['-c', 'user.name=Release fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false',
+        'commit', '-qm', 'Fixture', '--allow-empty']);
+      return git(['rev-parse', 'HEAD']);
+    };
+    const run = sha => {
       writeFileSync(output, '');
       const result = spawnSync('bash', ['-euo', 'pipefail', '-c', script], { cwd: root, encoding: 'utf8', env: {
-        PATH: `${tools}:${path.dirname(process.execPath)}:/usr/bin:/bin`, SOURCE_SHA: 'a'.repeat(40), FIXTURE_HEAD: 'a'.repeat(40), GITHUB_OUTPUT: output,
+        ...environment, SOURCE_SHA: sha, GITHUB_OUTPUT: output,
       } });
-      assert.equal(result.status, 0, result.stderr);
+      assert.equal(existsSync(marker), false, 'Candidate code must never execute while selecting runners');
+      return result;
+    };
+    const assertMatrix = targets => {
       const data = Object.fromEntries(readFileSync(output, 'utf8').trim().split('\n').map(line => {
         const index = line.indexOf('='); return [line.slice(0, index), JSON.parse(line.slice(index + 1))];
       }));
       assert.deepEqual(data.matrix.include.map(row => row.target), targets);
       assert.deepEqual(data.native_consumers.include.map(row => row.target), targets.filter(target => target !== 'linux-x64'));
-      assert.ok(data.matrix.include.every(row => row.target !== 'linux-arm64' || row.host === 'ubuntu-24.04-arm'));
-      assert.equal(data.matrix.include.find(row => row.target === 'linux-x64').host, targets.length === 4 ? 'ubuntu-24.04' : 'ubuntu-latest',
-        'new GNU libc baseline stays pinned while historical qualification keeps its producer mode');
+      const hosts = { 'linux-x64': targets.length === 4 ? 'ubuntu-24.04' : 'ubuntu-latest',
+        'linux-arm64': 'ubuntu-24.04-arm', 'darwin-arm64': 'macos-15', 'darwin-x64': 'macos-15-intel' };
+      for (const row of data.matrix.include) assert.equal(row.host, hosts[row.target], 'Only workflow-owned public hosts may be selected');
+    };
+    for (const [targets, module, data] of [
+      [historical, `export const RELEASE_RUNNER_TARGETS = ${JSON.stringify(historical)};`, undefined],
+      [current, `${malicious}export const RELEASE_RUNNER_TARGETS = Object.freeze(${JSON.stringify(current)});`, undefined],
+      [historical, malicious, contract(historical)],
+      [current, malicious, contract(current)],
+    ]) {
+      const result = run(pin(module, data));
+      assert.equal(result.status, 0, result.stderr);
+      assertMatrix(targets);
     }
-    writeFileSync(source, 'export const RELEASE_RUNNER_TARGETS = ["linux-arm64"];'); writeFileSync(output, '');
-    const result = spawnSync('bash', ['-euo', 'pipefail', '-c', script], { cwd: root, encoding: 'utf8', env: {
-      PATH: `${tools}:${path.dirname(process.execPath)}:/usr/bin:/bin`, SOURCE_SHA: 'a'.repeat(40), FIXTURE_HEAD: 'a'.repeat(40), GITHUB_OUTPUT: output,
-    } });
-    assert.equal(result.status, 1); assert.match(result.stderr, /Unknown exact-source daemon platform contract/);
+    const sha = pin(malicious, contract(current));
+    writeFileSync(dataFile, contract(['runs-on/fleet=paperclip-post-merge-x64/env=public-ci']));
+    assert.equal(run(sha).status, 0, 'Read the immutable git blob, not a changed checkout file');
+    assertMatrix(current);
+    assert.equal(run('a'.repeat(40)).status, 1, 'Wrong checked-out source must fail before output');
+    assert.equal(readFileSync(output, 'utf8'), '');
+    for (const data of [
+      contract(['linux-arm64']), contract([...current, 'linux-arm64']), contract([...current.slice(0, 3), 'win32-x64']),
+      JSON.stringify({ schema: 'paperclip.runner.release-targets.v1', targets: current, host: 'trusted-fleet' }),
+      JSON.stringify({ schema: 'other', targets: current }), contract('linux-arm64'), 'null', '{invalid', ' '.repeat(65 * 1024),
+    ]) {
+      const result = run(pin(`export const RELEASE_RUNNER_TARGETS = ${JSON.stringify(historical)};`, data));
+      assert.notEqual(result.status, 0, 'Malformed present data must never fall back to a legacy module');
+      assert.equal(readFileSync(output, 'utf8'), '');
+    }
+    for (const module of [malicious,
+      'export const RELEASE_RUNNER_TARGETS = getTargets();',
+      `export const RELEASE_RUNNER_TARGETS = ${JSON.stringify(current)};\nexport const RELEASE_RUNNER_TARGETS = ${JSON.stringify(historical)};`,
+      'export const RELEASE_RUNNER_TARGETS = ["linux-arm64"];']) {
+      const result = run(pin(module, undefined));
+      assert.notEqual(result.status, 0, 'Unknown legacy declarations must fail closed');
+      assert.equal(readFileSync(output, 'utf8'), '');
+    }
+    pin(malicious, undefined);
+    symlinkSync('scripts/stage-release-runner-binaries.mjs', dataFile);
+    git(['add', 'packages']);
+    git(['-c', 'user.name=Release fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'Symlink fixture']);
+    assert.notEqual(run(git(['rev-parse', 'HEAD'])).status, 0, 'Source contract symlinks must not be followed');
     assert.equal(readFileSync(output, 'utf8'), '');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

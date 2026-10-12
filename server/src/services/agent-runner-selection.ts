@@ -25,6 +25,8 @@ export function agentRunnerAvailability(harness: string, target: RunnerTarget = 
     && !!findActiveServerAdapter(harness) && !!findActiveServerAdapter("paperclip_runner")
     && !hasActiveAdapterOverride(harness) && !hasActiveAdapterOverride("paperclip_runner")
     && isEnvironmentDriverSupportedForAdapter("paperclip_runner", target.driver)
+    && (target.driver !== "sandbox" || Boolean(target.platform && target.architecture
+      && (target.platform !== "linux" || (target.libc === "glibc" && target.glibcVersion))))
     && (!target.platform || paperclipRunnerSupportsPlatform(harness, target.platform, target.architecture ?? "", target.libc, target.glibcVersion));
   return { supportedRunners: supported ? ["paperclip", "legacy"] : ["legacy"], defaultRunner: supported ? "paperclip" : "legacy" };
 }
@@ -55,7 +57,9 @@ export function resolveNewAgentRunner(input: AgentRunnerSelection): { adapterTyp
     return { adapterType: "codex_local", adapterConfig: { ...config, dangerouslyBypassApprovalsAndSandbox: config.dangerouslyBypassApprovalsAndSandbox ?? true } };
   }
   if (native && harness !== "codex_local" && choice === "paperclip") return { adapterType, adapterConfig: normalizeLegacyRunnerProvider(config) };
-  if (availability.defaultRunner !== "paperclip") throw unprocessable("Paperclip Runner is unavailable for this harness and environment. Select Legacy runner in Advanced.", { code: "agent_runner_unavailable" });
+  if (availability.defaultRunner !== "paperclip") throw unprocessable(input.target?.driver === "sandbox"
+    ? "Paperclip Runner is unavailable for this sandbox. Choose an immutable OCI image digest and run its environment connection probe to qualify the OS, architecture and libc, or select Legacy runner in Advanced."
+    : "Paperclip Runner is unavailable for this harness and environment. Select Legacy runner in Advanced.", { code: "agent_runner_unavailable" });
   if (native) return { adapterType, adapterConfig: normalizeLegacyRunnerProvider(config) };
   const unsupported = ["agentCommand", "stateDir", "warmHandleIdleMs", "extraArgs", "args", "search", "fastMode", "variant", "filesystemScope", "filesystemExtraPaths", "filesystemSandboxCommand", "networkScope", "networkAllowlist", "permissionMode", "maxTurns", "disableWebSearch", "outputInactivityTimeoutMs", "terminalResultCleanupGraceMs"]
     .filter(key => config[key] !== undefined && config[key] !== false && config[key] !== "" && config[key] !== 0 && !(Array.isArray(config[key]) && config[key].length === 0));
@@ -112,7 +116,12 @@ export async function resolveAgentRunnerTargetForCompany(db: Db, companyId: stri
   }
   const driver = environment?.driver ?? "local";
   let target: RunnerTarget = driver === "local" ? localAgentRunnerTarget()
-    : { driver }; // Sandbox platform/artifact identity is verified by selected-runtime setup; do not guess an image's architecture.
+    : { driver };
+  if (driver === "sandbox" && environment) {
+    const { readSandboxPlatformQualification } = await import("./environment-probe.js");
+    const qualified = await readSandboxPlatformQualification(db, environment, companyId);
+    if (qualified) target = { driver, ...qualified };
+  }
   if (driver === "ssh" && environment && agentRunnerAvailability("codex_local", target).defaultRunner === "paperclip") {
     const parsed = await resolveEnvironmentDriverConfigForRuntime(db, companyId, environment);
     if (parsed.driver !== "ssh") throw unprocessable("The selected SSH environment is unavailable.");
