@@ -5,7 +5,7 @@ import { agents, companies, heartbeatRuns, issues, issueComments, issueDocuments
   museAgentBindings as bindings, museCredentials as credentials, museRunnerAssignments as assignments, museRunnerOperations as operations,
   museMailboxItems as mailbox, museInputDeliveries as inputs, museIdleReceipts as idleReceipts, externalAgentHolds as holds,
   museReceiverContactBuckets, mcpOauthGrants, mcpOauthTokens, type Db } from "@paperclipai/db";
-import { MUSE_TICKET_TTL_MS, MUSE_CLEANUP_TTL_MS, MUSE_RESOURCE_PATH, museStopBoundarySchema, type AgentConnectionSubject, type MuseBinding, type MuseCommand,
+import { MUSE_TICKET_TTL_MS, MUSE_CLEANUP_TTL_MS, MUSE_RESOURCE_PATH, museStopBoundarySchema, MUSE_ASSET_VERSION, type AgentConnectionSubject, type MuseBinding, type MuseCommand,
   type MuseQuery, type MusePairing, type MuseStopBoundary, type MuseQualificationEvidence, type MuseQualificationBeginResult } from "@paperclipai/shared";
 import { externalOperationDigest, parsePaperclipQuestionSet, type MuseBindingSnapshot, type ExternalProviderPort, type ExternalProviderOperation } from "../../vendor/paperclip-runner/index.js";
 import { conflict, forbidden, notFound } from "../../errors.js";
@@ -130,7 +130,7 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
         return {binding:created!,replacedRuns};
       }));
       await Promise.all(replacedRuns.map(async runId=>{await nativeBroker.revokeRun(runId);await(await heartbeat()).cancelRun(runId,"Muse connection replaced");}));
-      return {bindingId:b.id,generation:b.generation,revision:b.revision,ticket,expiresAt:b.ticketExpiresAt!.toISOString(),assetVersion:2,setupInstruction};
+      return {bindingId:b.id,generation:b.generation,revision:b.revision,ticket,expiresAt:b.ticketExpiresAt!.toISOString(),assetVersion:MUSE_ASSET_VERSION,setupInstruction};
     },
     async bindingForAgent(companyId:string,agentId:string):Promise<MuseBinding|null> {
       const [b]=await db.select().from(bindings).where(and(eq(bindings.companyId,companyId),eq(bindings.agentId,agentId))).orderBy(desc(bindings.generation)).limit(1);
@@ -285,7 +285,15 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
     },
     async inspect(s:AgentConnectionSubject,q:MuseQuery):Promise<Record<string,unknown>> {
       const b=await subjectBinding(s,q.query!=="mailbox"&&q.query!=="identify",q.query==="mailbox");
-      if(q.query==="identify")return {companyId:b.companyId,agentId:b.agentId,bindingId:b.id,generation:b.generation,authorizingUserId:b.operatorId,idleOperations:["identify","task.list","task.search","task.read","task.history","task.document.read","task.create","task.comment"],usage:null,cost:null};
+      if(q.query==="identify") {
+        if(q.clientVersion)await db.transaction(tx=>withExternalAdmissionGuard(tx,b.companyId,b.agentId,async()=>{
+          const [current]=await tx.select().from(bindings).where(and(eq(bindings.id,b.id),eq(bindings.companyId,s.companyId),eq(bindings.agentId,s.agentId),eq(bindings.generation,s.generation),isNull(bindings.revokedAt))).for("update");
+          if(!current)throw forbidden("Muse connection authority is unavailable.");
+          await assertMuseSubjectCredential(tx,s,connectionResource());await assertMuseCurrentAuthority(tx,current,true);
+          await tx.update(bindings).set({clientVersion:q.clientVersion}).where(and(eq(bindings.id,current.id),eq(bindings.generation,s.generation),isNull(bindings.revokedAt)));
+        }));
+        return {companyId:b.companyId,agentId:b.agentId,bindingId:b.id,generation:b.generation,authorizingUserId:b.operatorId,idleOperations:["identify","task.list","task.search","task.read","task.history","task.document.read","task.create","task.comment"],usage:null,cost:null};
+      }
       if(q.query==="mailbox")return db.transaction(async tx=>{
         const [current]=await tx.select().from(bindings).where(and(eq(bindings.id,b.id),eq(bindings.generation,b.generation),isNull(bindings.revokedAt))).for("update");if(!current)throw forbidden("Binding changed.");
         const rows=await tx.select().from(mailbox).where(and(eq(mailbox.bindingId,b.id),eq(mailbox.bindingGeneration,b.generation),gt(mailbox.id,q.after))).orderBy(asc(mailbox.id)).limit(50);

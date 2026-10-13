@@ -457,7 +457,7 @@ export function createPublicMcpOAuth(db: Db, config: PublicMcpConfig, options: {
             scopes, requestedCompanyId: binding.companyId, state: p.state ?? null, challenge: p.code_challenge,
             grantId: grant.id, codeHash: hashMcpSecret(code), decidedAt: now, expiresAt: new Date(now.getTime() + minute) });
           await tx.update(museAgentBindings).set({ grantId: grant.id, status: "connected", pairedAt: now, workerActivityAt: now,
-            ticketHash: null, ticketExpiresAt: null, clientVersion: "2", revision: binding.revision + 1, updatedAt: now }).where(eq(museAgentBindings.id, binding.id));
+            ticketHash: null, ticketExpiresAt: null, clientVersion: null, revision: binding.revision + 1, updatedAt: now }).where(eq(museAgentBindings.id, binding.id));
           await logActivity(tx as unknown as Db, { companyId: binding.companyId, actorType: "user", actorId: binding.operatorId,
             action: "muse.paired", entityType: "agent", entityId: binding.agentId,
             details: { bindingId: binding.id, generation: binding.generation, grantId: grant.id, via: "oauth_pkce_ticket" } });

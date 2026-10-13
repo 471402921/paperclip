@@ -71,6 +71,45 @@ class ClientContract(unittest.TestCase):
         self.assertNotIn("Authorization", wrapper.read_text())
         self.assertNotIn("credential", wrapper.read_text())
 
+    def test_public_preflight_uses_no_credentials_or_wake_content(self):
+        response = Mock(); response.__enter__ = Mock(return_value=response); response.__exit__ = Mock(return_value=False)
+        response.status = 200; response.headers.get_content_type.return_value = "application/json"
+        response.read.return_value = json.dumps({"issuer": ORIGIN + "/api/muse/v1/oauth", "resource": ORIGIN + "/api/muse/v1"}).encode()
+        with patch.object(client_module.HTTP, "open", return_value=response) as transport:
+            result = client_module.public_preflight(ORIGIN)
+        self.assertEqual(result["status"], "site_approval_preflight_complete")
+        request = transport.call_args.args[0]
+        self.assertEqual(request.full_url, ORIGIN + "/api/muse/v1/oauth/metadata")
+        self.assertEqual(request.get_method(), "GET")
+        self.assertIsNone(request.data)
+        self.assertIsNone(request.get_header("Authorization"))
+        self.assertIsNone(request.get_header("X-paperclip-muse-binding"))
+        self.assertEqual(transport.call_args.kwargs["timeout"], 120)
+        self.helper.add_surrogate_to_request.assert_not_called()
+        self.helper.read_json_response.assert_not_called()
+
+    def test_approval_timeout_is_bounded_sanitized_and_keeps_original_command_identity(self):
+        private = "synthetic-private-header-and-provider-detail"
+        command = {"command": "accept", "assignmentId": ASSIGNMENT}
+        requests = []
+        def unavailable(request, timeout):
+            requests.append(request)
+            self.assertEqual(timeout, 120)
+            raise urllib.error.URLError(TimeoutError(private))
+        with patch.object(client_module.HTTP, "open", side_effect=unavailable):
+            with self.assertRaisesRegex(RuntimeError, "transport_timeout_or_permission_wait") as failure:
+                self.client.command("approval-wait", command)
+        self.assertNotIn(private, str(failure.exception))
+        journal = json.loads(self.client.journal_path("approval-wait").read_text())
+        self.assertEqual(journal["state"], "sending")
+        self.assertEqual(len(requests), 1)
+        with patch.object(client_module, "http", return_value={"status": "accepted"}) as retry:
+            self.client.command("approval-wait", command)
+        self.assertEqual(retry.call_args.args[1]["requestId"], journal["command"]["requestId"])
+        with patch.object(client_module.HTTP, "open", side_effect=TimeoutError(private)):
+            with self.assertRaisesRegex(RuntimeError, "transport_timeout_or_permission_wait"):
+                client_module.public_preflight(ORIGIN)
+
     def test_existing_managed_hook_directory_permissions_are_preserved(self):
         os.chmod(client_module.HOOK_ROOT, 0o755)
         self.client.configure(ORIGIN)

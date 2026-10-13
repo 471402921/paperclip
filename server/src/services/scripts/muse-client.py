@@ -12,7 +12,8 @@ import urllib.error
 import urllib.request
 import uuid
 from urllib.parse import urlparse
-VERSION = "2"
+VERSION = "3"
+REQUEST_TIMEOUT_SECONDS = 120
 ROOT = Path.home() / ".config" / "paperclip-muse"
 HOOK_ROOT = Path.home() / "hooks" / "scripts"
 AUTHD_HELPER_PATH = Path("/opt/hatch/skills/skill-creator/bin/dynamic_credentials.py")
@@ -75,16 +76,33 @@ def http(url, body=None, credential_name=None):
         helper.add_surrogate_to_request(request, credential_name=credential_name, entry_name="access_token", allowed_hosts=[parsed.hostname])
     except Exception:
         raise RuntimeError("Muse Secure Vault authorization unavailable; reconnect using the supported consent flow") from None
+    return request_json(request, helper.read_json_response)
+def timeout_failure():
+    return RuntimeError("transport_timeout_or_permission_wait: review any pending Muse site approval; then repeat the same read or inspect the original command receipt")
+def request_json(request, decode):
     try:
-        with HTTP.open(request, timeout=30) as response:
+        with HTTP.open(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
             if response.status != 200 or response.headers.get_content_type() != "application/json": raise RuntimeError("Incomplete Paperclip protocol response")
-            try: value = helper.read_json_response(BoundedResponse(response))
-            except RuntimeError: raise RuntimeError("Paperclip response is invalid or exceeds the transport limit") from None
-            except Exception: raise RuntimeError("Paperclip response is unavailable") from None
+            try: value = decode(BoundedResponse(response))
+            except TimeoutError: raise
+            except Exception: raise RuntimeError("Paperclip response is invalid or exceeds the transport limit") from None
             if not isinstance(value, dict): raise RuntimeError("Invalid Paperclip protocol response")
             return value
     except urllib.error.HTTPError as error:
         raise RuntimeError("Paperclip HTTP %d; inspect connection or receipt before retrying" % error.code) from None
+    except TimeoutError:
+        raise timeout_failure() from None
+    except urllib.error.URLError as error:
+        if isinstance(error.reason, TimeoutError): raise timeout_failure() from None
+        raise RuntimeError("Paperclip transport unavailable; review Muse site approval before retrying the same request") from None
+def public_preflight(base):
+    base = origin(base)
+    request = urllib.request.Request(base + "/api/muse/v1/oauth/metadata", headers={"Accept": "application/json"})
+    value = request_json(request, lambda response: json.loads(response.read()))
+    if value.get("resource") != base + "/api/muse/v1" or value.get("issuer") != base + "/api/muse/v1/oauth":
+        raise RuntimeError("Public Paperclip metadata does not match the configured connection")
+    return {"status": "site_approval_preflight_complete", "origin": base, "clientVersion": VERSION}
+
 class Client:
     def __init__(self, binding):
         if str(uuid.UUID(binding)) != binding: raise RuntimeError("A canonical binding UUID is required")
@@ -172,7 +190,7 @@ class Client:
         state["batch"] = result; save(path, state)
         return result
     def status(self):
-        identity = self.query({"query": "identify"})
+        identity = self.query({"query": "identify", "clientVersion": VERSION})
         self.remember_identity(identity)
         identity["localPendingCommands"] = sum(1 for path in (self.directory / "journal").glob("*.json") if json.loads(path.read_text()).get("receipt", {}).get("status", "pending") in ("pending", "reserved", "dispatched", "unknown"))
         identity["instructionsPath"] = str(ROOT / "instructions.md")
@@ -246,6 +264,7 @@ def main():
     sub = parser.add_subparsers(dest="mode", required=True)
     configure = sub.add_parser("configure", help="Write only a nonsecret binding profile; OAuth consent belongs to Muse Secure Vault"); configure.add_argument("--origin", required=True)
     sub.add_parser("query", help="Read JSON from stdin; see installed instructions.md for exact envelopes")
+    sub.add_parser("preflight", help="Read public OAuth metadata for the normal Muse site approval; grants no worker or readiness authority")
     sub.add_parser("status", help="Inspect bound identity and local pending command count")
     sub.add_parser("help", help="Read persistent Paperclip instructions")
     receipt = sub.add_parser("receipt", help="Inspect the original durable command without resending it"); receipt.add_argument("--key", required=True)
@@ -263,6 +282,7 @@ def main():
         if args.mode == "configure": result = client.configure(args.origin)
         elif args.mode == "help":
             print((ROOT / "instructions.md").read_text()); return
+        elif args.mode == "preflight": result = public_preflight(client.config["origin"])
         elif args.mode == "status": result = client.status()
         elif args.mode == "receipt": result = client.receipt(args.key)
         elif args.mode == "mailbox": result = client.mailbox(args.ack)

@@ -67,3 +67,10 @@ describe("Muse progress UTF-8 bounds", () => {
     expect(validate(" \n\t ").success).toBe(false);
   });
 });
+
+
+it("keeps optional installed-version declarations finite and backward compatible",()=>{
+  expect(museQuerySchema.parse({version:1,query:"identify"})).toEqual({version:1,query:"identify"});
+  for(const clientVersion of ["2","3"])expect(museQuerySchema.parse({version:1,query:"identify",clientVersion})).toMatchObject({clientVersion});
+  expect(()=>museQuerySchema.parse({version:1,query:"identify",clientVersion:"4"})).toThrow();
+});
