@@ -1,3 +1,4 @@
+import { skillAccessService } from "../skill-access.js";
 import { callTaskWorkspaceTool } from "../task-workspace-tools.js";
 import { TaskAttachmentReadCache, TASK_ATTACHMENT_DEFINITIONS, TASK_ATTACHMENT_SCHEMAS, listTaskAttachments, readTaskAttachment } from "./runner-task-attachments.js";
 import { RUNNER_BRIDGE_SCHEMAS, runnerBridgeDefinitions, readAssignedSkill, executeWorkspaceTool, readWorkspaceUploadFile, settleRunnerBridgeRead, assertRunnerWorkspacePathAllowed } from "./runner-bridge-tools.js";
@@ -55,6 +56,7 @@ import type { Db } from "@paperclipai/db";
 import {
   authUsers,
   companyMemberships,
+  companySkills,
   activityLog,
   assets,
   runnerApiResponseReservations,
@@ -350,8 +352,19 @@ export class PaperclipRunnerToolAuthority {
         .innerJoin(authUsers, eq(authUsers.id, companyMemberships.principalId))
         .where(and(eq(companyMemberships.companyId, this.binding.companyId), eq(companyMemberships.principalType, "user"), eq(companyMemberships.status, "active"), input.after ? sql`${authUsers.id} > ${input.after}` : undefined))
         .orderBy(authUsers.id).limit(input.limit);
-      if (call.tool === "list_assigned_skills") return this.binding.runtimeContext!.skills.map(skill => ({ key: skill.key, name: skill.runtimeName, versionId: skill.versionId, digest: skill.bundle.digest }));
-      if (call.tool === "read_assigned_skill") return settleRunnerBridgeRead(() => readAssignedSkill(this.binding.runtimeContext!, input));
+      if (call.tool === "list_assigned_skills" || call.tool === "read_assigned_skill") {
+        const current = await this.#boundContext();
+        const visibility = await skillAccessService(this.db, this.#privacyActor(current.run)).condition(this.binding.companyId);
+        const known = await this.db.select({ key: companySkills.key }).from(companySkills).where(eq(companySkills.companyId, this.binding.companyId));
+        const permitted = await this.db.select({ key: companySkills.key }).from(companySkills).where(and(eq(companySkills.companyId, this.binding.companyId), visibility));
+        const hidden = new Set(known.filter(skill => !permitted.some(allowed => allowed.key === skill.key)).map(skill => skill.key));
+        const savedVersions = current.run.contextSnapshot?.skillVersions;
+        const permittedKeys = new Set(permitted.map(skill => skill.key));
+        const runtimeContext = { ...this.binding.runtimeContext!, skills: this.binding.runtimeContext!.skills.filter(skill =>
+          !hidden.has(skill.key) && !(savedVersions && Object.prototype.hasOwnProperty.call(savedVersions, skill.key) && !permittedKeys.has(skill.key))) };
+        if (call.tool === "list_assigned_skills") return runtimeContext.skills.map(skill => ({ key: skill.key, name: skill.runtimeName, versionId: skill.versionId, digest: skill.bundle.digest }));
+        return settleRunnerBridgeRead(() => readAssignedSkill(runtimeContext, input));
+      }
       const paths: Record<string, [string, string]> = { get_task: ["GET", "/api/issues/{id}"], comment_on_task: ["POST", "/api/issues/{id}/comments"],
         list_task_documents: ["GET", "/api/issues/{id}/documents"], read_task_document: ["GET", "/api/issues/{id}/documents/{key}"], write_task_document: ["PUT", "/api/issues/{id}/documents/{key}"] };
       const [method, path] = paths[call.tool]!;

@@ -40,7 +40,17 @@ const meta = {
   title:
     "Getting started and access/Onboarding and first work/Resume a saved draft",
   component: Resume,
-  parameters: { layout: "fullscreen" },
+  parameters: { layout: "fullscreen",
+    paperclip: {
+      "capabilities": [
+        "onboarding/resume"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "OnboardingWizard restores a seeded draft, malformed/unavailable-company handling and draft retention across a fixture remount. The reopen button belongs to the fixture host; real reload, account switch and storage failure remain separate checks."
+    },
+  },
   beforeEach: ({ parameters }) => {
     seedOnboardingDraft();
     if (parameters.invalid)

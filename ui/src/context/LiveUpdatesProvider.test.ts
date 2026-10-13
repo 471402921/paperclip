@@ -16,6 +16,17 @@ import { __liveUpdatesTestUtils } from "./LiveUpdatesProvider";
 import { queryKeys } from "../lib/queryKeys";
 
 describe("LiveUpdatesProvider issue invalidation", () => {
+  it('refreshes sources, legacy repositories and installed skills after a background import', () => {
+    const client = new QueryClient();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    __liveUpdatesTestUtils.invalidateActivityQueries(client, 'company-1', {
+      entityType: 'company_skill_source', entityId: 'source-1', action: 'company.skill_source_refreshed',
+    }, { userId: 'user-1', agentId: null });
+    for (const queryKey of [queryKeys.skillSources.all('company-1'), queryKeys.skillSources.projects('company-1'), queryKeys.companySkills.list('company-1')]) {
+      expect(invalidate).toHaveBeenCalledWith({ queryKey });
+    }
+    client.clear();
+  });
   it("refreshes personal membership state when a primary changes on another device", () => {
     const client = new QueryClient();
     const invalidate = vi.spyOn(client, "invalidateQueries");

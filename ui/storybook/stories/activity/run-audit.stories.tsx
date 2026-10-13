@@ -15,7 +15,17 @@ const meta = {
     "Oversight and operation/Dashboards and audit trails/Execution history",
   component: AuditRuns,
   args: { companyId: "company-storybook" },
-  parameters: { layout: "padded" },
+  parameters: { layout: "padded",
+    paperclip: {
+      "capabilities": [
+        "activity/runs"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "AuditRuns list, completed receipt, empty/loading/failed/denied and no-match filter. Run records are fixture snapshots; no real execution or scoped audit proof."
+    },
+  },
   beforeEach: ({ parameters }) =>
     prepareFixtureApi(
       [

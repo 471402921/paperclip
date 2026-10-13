@@ -1,4 +1,8 @@
-# Hiring, agent configuration, and organization
+---
+navigation: {"section":"Agents and reusable capabilities","sectionOrder":30,"order":10}
+---
+
+# Hiring, configuration, and organization
 
 Operators hire agents, configure their identity and instructions, assign reporting relationships, and manage their lifecycle. Built-in agents have their own setup and lifecycle constraints.
 
@@ -82,3 +86,7 @@ over the primary fallback. Opening Chat must not start execution.
 - Skill and tool grants are separate: see [skills](./skills.md) and [app permissions](./app-permissions.md).
 - A personal primary agent is a per-user/company preference. It does not change
   reporting lines, stars, permissions, or another person's primary agent.
+
+### Documentation scope: Agents, organization, and runtime setup
+
+Per-harness/model/account capabilities, every instruction-file error, and complete built-in-agent lifecycle variants remain separate qualification matrices.

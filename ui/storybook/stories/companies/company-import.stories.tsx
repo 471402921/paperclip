@@ -52,7 +52,17 @@ const meta = {
   id: "feature-company-import",
   title: "Getting started and access/Companies and portability/Import preview",
   component: CompanyImport,
-  parameters: { layout: "padded" },
+  parameters: { layout: "padded",
+    paperclip: {
+      "capabilities": [
+        "companies/portability"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Shipped CompanyImport GitHub-source preview, warnings, pending, error and 403. Plan/package replies are fictional; export, final import and real package fidelity remain separate scenarios/contracts."
+    },
+  },
   beforeEach: ({ parameters }) =>
     prepareFixtureApi(
       [

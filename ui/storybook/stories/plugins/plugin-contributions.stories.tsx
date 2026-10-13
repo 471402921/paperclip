@@ -35,6 +35,15 @@ const meta = {
   parameters: {
     layout: "padded",
     initialEntries: ["/PAP/plugins/contribution-gap"],
+    paperclip: {
+      "capabilities": [
+        "plugins/contributions"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Production PluginPage host with a registered fixture plugin component; pending/missing contribution and discovery failure. Discovery failure currently remains Loading; contribution contents are a fixture, not shipped plugin code."
+    },
   },
   beforeEach: ({ parameters }) => {
     registerPluginReactComponent(

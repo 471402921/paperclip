@@ -36,6 +36,17 @@ const meta = {
           "Production environment admin page. API replies are fictional; no probe connects to a provider. List loading/errors currently fall back to empty saved environments rather than dedicated feedback.",
       },
     },
+    paperclip: {
+      "capabilities": [
+        "execution-environments/configuration",
+        "execution-environments/capabilities",
+        "execution-environments/probe"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "CompanyEnvironments configuration/edit, unsupported capabilities and probe pending/failure/success. No provider contacted. List read/loading failures expose shipped fallback behavior, not dedicated error UI."
+    },
   },
   beforeEach: ({ parameters }) =>
     installEnvironmentFixture(

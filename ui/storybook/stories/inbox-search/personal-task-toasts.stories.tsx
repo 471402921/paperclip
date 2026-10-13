@@ -65,6 +65,15 @@ const meta = {
           "Production socket consumer and toast viewport. Server eligibility metadata is simulated; persisted participation and mentions require multiplayer tests.",
       },
     },
+    paperclip: {
+      "capabilities": [
+        "inbox-search/toasts"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "LiveUpdatesProvider and ToastViewport consume fixture socket eligibility, suppress unrelated/visible-task events and deduplicate replay. Server eligibility metadata is simulated; no persisted multiplayer participation proof. The upstream Inbox recipe adds agent-created-task discovery checks; this LiveUpdatesProvider suite still tests toast eligibility only."
+    },
   },
   beforeEach: installLiveEventFixture,
 } satisfies Meta<typeof TaskNotifications>;

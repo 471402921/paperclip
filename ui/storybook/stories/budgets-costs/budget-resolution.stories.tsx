@@ -38,7 +38,17 @@ const meta = {
   title: "Oversight and operation/Costs and budgets/Resolve a budget incident",
   component: BudgetHost,
   args: { embedded: true, initialTab: "budgets", lockTab: true },
-  parameters: { layout: "padded" },
+  parameters: { layout: "padded",
+    paperclip: {
+      "capabilities": [
+        "budgets-costs/resolution"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Shipped Costs budget tab with empty/read failures, invalid amount, raise-and-resume, keep-paused and write failure/pending. Fixture incident transitions only; real overlapping holds and hard stops remain separate. The upstream budget UI distinguishes soft warnings from hard stops; hard incidents retain raise-and-resume and keep-paused controls."
+    },
+  },
   beforeEach: ({ parameters }) => {
     currentIncident = { ...incident };
     return prepareFixtureApi(

@@ -21,6 +21,15 @@ const meta = {
           "Shipped Learnings with isolated API receipts. Guards, durable transitions, automation execution and learning provenance require production tests.",
       },
     },
+    paperclip: {
+      "capabilities": [
+        "pipelines/learnings"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Production Learnings feed renders a review_decided event plus loading/empty/error/403. Event provenance and durable audit records remain separate; this is not a new learning-record subsystem."
+    },
   },
   beforeEach: ({ parameters }) =>
     installPipelineFixture(parameters.fixtureState as FixtureState).cleanup,

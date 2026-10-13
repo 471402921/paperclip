@@ -21,6 +21,15 @@ const meta = {
   parameters: {
     initialEntries: ["/cli-auth/challenge-gap?token=fixture-code"],
     layout: "padded",
+    paperclip: {
+      "capabilities": [
+        "access/cli-auth"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Real CliAuth route with pending/expired/unavailable/preflight denial, approval/cancel and write pending/error. Fictional challenge; no CLI identity or real token is authorized."
+    },
   },
   beforeEach: ({ parameters }) => {
     let status = parameters.status ?? "pending";

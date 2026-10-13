@@ -2016,9 +2016,11 @@ unavailable. Preserve current ownership and newer-work fences. See
   reduced-motion-aware animations and shows indeterminate progress while saving
   complete packages, without inventing completion percentages.
 
-- Sources and entries are company-scoped. Reuse GitHub connection grants and credential
-  refresh; every provider read authorizes the current caller. Saved connection IDs do
-  not confer access to another user's token. Agent reads use managed run identities.
+- Sources and entries are company-scoped. Discovery and connection changes authorize
+  the current caller. Automatic and manual source refresh use the stored setup person's
+  connection and grant, revalidating their access and refreshing credentials on each
+  check. Saved connection IDs do not independently grant library visibility. Agent
+  setup derives the responsible person from the authenticated run identity.
 - The import picker searches the deduplicated union of repositories from all connections
   the caller can access, automatically choosing an authorized connection. Adding accounts
   uses the standard GitHub setup in Apps and retains the import draft. Repository URLs
@@ -2079,7 +2081,7 @@ unavailable. Preserve current ownership and newer-work fences. See
   and history. New key collisions cannot overwrite unrelated skills. Only changed package
   bytes or executable modes create versions. Library reads, tests, and subsequent unpinned
   runs use local installed snapshots; pinned/active runs retain their versions.
-- Additions require reviewed selection, with new candidates checked by default and
+- Manually selected sources retain reviewed selection, with new candidates checked by default and
   explicit folder exclusions retained. Upstream deletion keeps installed content with
   removed status; moves are removal plus discovery. Deselect retains content
   and assignments. Originals are read-only, with the existing independent fork workflow.
@@ -2096,8 +2098,38 @@ unavailable. Preserve current ownership and newer-work fences. See
   resolve missing repository IDs and full snapshots on successful refresh. Exclude bundled,
   catalog, local/project, skills.sh, and unsupported hosts. Existing GitHub import and update
   endpoints delegate to sources while retaining response shapes.
-- GitHub.com, manual refresh only. No upstream editing, polling, webhook sync, commits,
-  or pull-request creation in this milestone.
+- GitHub.com project repository attachments enqueue durable skill-source import jobs in
+  the project mutation transaction. Skill import completes asynchronously and cannot
+  fail project creation. Configured refs use the existing project workspace precedence;
+  absent refs track the default branch. Sources without skills remain tracked.
+- Enabled sources check upstream every five minutes; unchanged commits avoid downloads.
+  Manual Refresh uses the same serialized publication pipeline. Automatic updates may
+  be paused independently of selection. Project sources select future additions unless
+  excluded; existing manually imported sources retain their selections. Legacy projects
+  adopt through an explicit company-scoped, project-authorized endpoint, never a GET.
+- Repository size fallback must not discard installed shared dependencies or
+  publish packages with detected omitted dependencies. Retain affected versions
+  and report the size problem. Self-contained packages can still update through
+  fallback. Project sources retry complete repository packaging and return to it
+  when supported; selections and exclusions remain unchanged.
+- Unattended refresh stores setup identity and connection/grant identifiers, never token
+  values. Current membership, connection authorization and skill policy are revalidated.
+  Unrecoverable legacy setup identities require explicit connection repair. Retries are
+  bounded and backed off; leases survive restarts and shutdown cancels owned downloads.
+- Project-derived skill visibility is the union of current originating project audiences.
+  Core uses project authorization, including agent/responsible-user intersection, for
+  discovery, reads, mutations, files, versions, tests and runtime delivery. Unauthorized
+  IDs return not found. Company imports retain their existing visibility. Forks preserve
+  project provenance. Unsupported public publication or portable export is rejected.
+- Detachment retains installed content and project access provenance while stopping that
+  project's tracking. Ref replacement never rewrites existing references. An orphaned
+  project source remains restricted after its last originating project is deleted.
+- Executions resolve unpinned references from local immutable versions, persist the
+  resolved inventory, and reuse it on resume after rechecking access. Explicit unavailable
+  references fail actionably rather than silently omitting instructions. Background
+  GitHub checks never delay execution. Existing version pins remain supported.
+- Upstream editing, push webhooks, commit/PR creation and advanced reference pin UI
+  remain outside this release.
 
 ## Public assistant connection (opt-in)
 
@@ -2188,6 +2220,17 @@ See [the layer architecture](plans/2026-10-09-task-workspaces.md) for resolution
 
 Companies may configure an optional shared API connection and model for short acknowledgements of accepted human turns. Fast responses use direct SDK inference alongside normal agent work, with a three-second admission deadline, bounded prompts/output, current authorization and independent `fast_response` accounting. They are server-marked platform receipts attributed to the agent, never completion, interaction or recovery evidence. Company-sponsored unlinked external senders are explicit; linked-user permission denials are never bypassed. See [fast-responses.md](fast-responses.md) for provider, delivery, history and endpoint contracts.
 
+Project-derived source removal retains dynamic project access for kept editable
+copies and forks. A removed source is absent from Sources and cannot refresh;
+ordinary repository attachment does not restart it. Explicit project adoption can
+restart tracking without widening the retained content’s access.
+
+Codex execution homes are scoped to the agent’s authorized skill inventory,
+including its immutable source versions and an empty inventory. Revocation and
+version changes select a separate home and session store while retaining the
+selected model account’s credential source. Repository skill auto-update trusts
+its upstream authors; operators can pause updates to review changes manually.
+
 ### Task collection creation visibility (2026-10-13)
 
 Tasks and project collections default to hiding agent/system-created tasks and
@@ -2207,3 +2250,32 @@ read-only activity do not admit scheduled work. Inbox discovery/Blocked preserve
 participated automation and hide unrelated automation by default. Agent profile
 history, routine history, and task-detail subtasks remain complete. API consumers
 that omit the optional creation filter retain their existing list behavior.
+
+Project-derived editable forks retain the project audience present when created.
+Later repository attachments do not grant access to those edits. Re-adopting a
+removed source uses a separate active tracking identity; retained copies keep
+their original provenance. Project membership and visibility remain dynamic.
+
+Automatic skill checks compare tree identity as well as commit identity, so
+empty commits do not download or rescan content. Automatic scan work uses a
+durable per-source 512 MiB allowance with 512 MiB/hour refill; installed versions
+remain usable when it is temporarily limited, and authorized manual Refresh
+remains available. Initial imports authorize skills.import before provider work.
+At most 20 jobs per project and 100 per company enter the active initial queue;
+additional repository bindings remain durable and are admitted automatically
+when capacity frees. Project workspace create/update/delete use the existing
+workspace-write authorization evaluator. Policy-denied initial jobs await explicit
+adoption/repair rather than repeatedly scanning.
+
+Agent-created project sources may reuse only the GitHub connection and grant
+already authorized in the persisted active run identity. The responsible person
+is recorded for attribution; that identity alone does not permit searching other
+personal connections. Without a selected run grant, Sources requires an explicit
+human connection repair before background import or update.
+
+Automatic initial repository imports reserve durable company work credits before
+provider reads: 512 MiB capacity, refilling 512 MiB per hour, with a 128 MiB
+reservation per attempt. Failed downloads and package fallback keep the full
+reservation. Successfully linked small imports refund unused measured work.
+Completed bindings do not reset company credits; waiting jobs retry on refill.
+The company_skill_import_budgets table stores no credentials or source contents.

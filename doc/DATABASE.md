@@ -756,6 +756,37 @@ register before writing, or they can remain unseen until the next startup or
 another notification. Tests should verify both the producer and its outer
 transaction boundary.
 
+### Project repository skill synchronization
+
+`project_skill_sources` stores durable workspace import jobs and originating project
+access provenance. Active bindings track their repository/ref; inactive bindings retain
+access to installed versions. Project deletion removes bindings, but retained skills
+with `access_source_id` stay restricted when no originating project remains.
+Removing a project source hides tracking using `company_skill_sources.removed_at`
+while retaining its access identity for editable copies and forks. Bindings become
+inactive and refresh leases are invalidated transactionally. Reattachment preserves
+removal; explicit adoption creates or joins an active source with a separate identity.
+Migration 0341 limits repository/ref uniqueness to active sources. Removed sources
+retain their original project audience; editable forks capture independent retained
+provenance so later attachments cannot expose their local edits. Membership and
+project visibility are still evaluated dynamically.
+
+`company_skill_sources` stores automatic-update and future-import preferences, setup
+user/agent and connection/grant IDs, next-check time, failure count and existing refresh
+leases. Existing sources default to automatic updates with their selection preserved.
+Credential values remain in the connection secret system. No project membership lists
+are copied into skills. Background publication uses normal immutable versions and
+transactional activity attribution. Setup agent and connection identifiers remain after
+those identities are deleted. Refresh then requires explicit repair; deletion cannot
+silently substitute board authority or another connection. Execution snapshots keep
+only the delivered skill keys and their immutable version IDs. New executions resolve
+the latest installed versions without an upstream fetch.
+
+Project-derived sources retain `HEAD` for an unspecified repository ref. It follows
+GitHub's current default branch. An explicitly configured branch has a separate
+source identity even if it currently resolves to that default branch. API-key
+agents without an authenticated run may attach repositories; their durable import
+jobs have no setup person and require adoption by an authorized person.
 
 ### Task workspace records (2026-10-09)
 
@@ -800,3 +831,16 @@ source captures leave no new records. Worktree realization uses a verified check
 as its Git command directory, including when metadata sits inside another repository.
 
 No migration scans or copies existing agent home directories. Keep admitted native descriptors and recovery references until compatible controllers finish their persistence obligations. See [the architecture rollout contract](plans/2026-10-09-task-workspaces.md).
+
+Migration 0341 stores the last scanned Git tree and a durable automatic-refresh
+work allowance. The allowance starts at 512 MiB, refills at 512 MiB/hour, and
+reserves the existing 128 MiB upper bound before automatic downloads. Completed
+small scans refund unused capacity; interrupted/failed work keeps its bounded
+reservation. These internal fields do not appear in source responses.
+
+Automatic initial repository imports reserve durable company work credits before
+provider reads: 512 MiB capacity, refilling 512 MiB per hour, with a 128 MiB
+reservation per attempt. Failed downloads and package fallback keep the full
+reservation. Successfully linked small imports refund unused measured work.
+Completed bindings do not reset company credits; waiting jobs retry on refill.
+The company_skill_import_budgets table stores no credentials or source contents.

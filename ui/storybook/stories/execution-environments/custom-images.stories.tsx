@@ -35,6 +35,15 @@ const meta = {
           "Production environment admin page. API replies are fictional; no probe connects to a provider. List loading/errors currently fall back to empty saved environments rather than dedicated feedback.",
       },
     },
+    paperclip: {
+      "capabilities": [
+        "execution-environments/images"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "CompanyEnvironments image metadata: unconfigured, captured, unsupported, failed, loading and 403. No live setup terminal, provider capture, rollback or relink is executed."
+    },
   },
   beforeEach: ({ parameters }) =>
     installEnvironmentFixture(

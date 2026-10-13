@@ -97,6 +97,16 @@ const meta = {
           "Production queue with an immutable accepted response and remote-cleanup wait. Delivery uses local state; it does not prove persisted queues or runtime continuation.",
       },
     },
+    paperclip: {
+      "capabilities": [
+        "steering/approval-queue",
+        "recovery/user-continuation"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Accepted immutable response, cleanup wait, unavailable admission, empty queue and interrupt delivery states. Local callbacks remove delivered entries; durable queue/coalescing and fresh-session authority need production tests. The expanded native copyback recovery recipe requires harness stop proof; these generic exhaustion/queued-response fixtures do not establish that path. The shipped pending-delivery path removes rows optimistically and shows no separate progress indicator; the Delivering story asserts that actual presentation. Retained legacy files use a separate recovery form with verified stop evidence; these exhaustion and response-queue examples do not establish file repair."
+    },
   },
 } satisfies Meta<typeof ResponseQueue>;
 export default meta;
