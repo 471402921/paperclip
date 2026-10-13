@@ -1498,6 +1498,13 @@ function invalidateActivityQueries(
     return;
   }
 
+  if (entityType === "company_skill_source") {
+    queryClient.invalidateQueries({ queryKey: queryKeys.skillSources.all(companyId) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.companySkills.list(companyId) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.skillSources.projects(companyId) });
+    return;
+  }
+
   if (entityType === "company_skill") {
     const sourceIssueId = readString((payload.details as Record<string, unknown> | undefined)?.sourceIssueId);
     if (sourceIssueId) queryClient.invalidateQueries({ queryKey: queryKeys.issues.activity(sourceIssueId) });

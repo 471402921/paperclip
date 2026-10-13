@@ -1,3 +1,4 @@
+import { enqueueProjectSkillSource, detachProjectSkillSource } from "./project-skill-source-bindings.js";
 import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
@@ -41,7 +42,7 @@ import { lockExecutionWorkspaceRootProvenance, preserveConfiguredProjectWorkspac
 
 type ProjectTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-async function lockProjectRootMutation(tx: ProjectTransaction, projectId: string) {
+export async function lockProjectRootMutation(tx: ProjectTransaction, projectId: string) {
   const [identity] = await tx.select({ companyId: projects.companyId }).from(projects).where(eq(projects.id, projectId));
   if (!identity) return null;
   await lockExecutionWorkspaceRootProvenance(tx, identity.companyId);
@@ -1174,6 +1175,7 @@ export function projectService(db: Db, options: { captureWorkspaceUpdates?: bool
           })
           .returning()
           .then((rows) => rows[0] ?? null);
+        if (row) await enqueueProjectSkillSource(tx as unknown as Db, row);
         return row;
       });
 
@@ -1285,6 +1287,9 @@ export function projectService(db: Db, options: { captureWorkspaceUpdates?: bool
           .returning()
           .then((rows) => rows[0] ?? null);
         if (!row) return null;
+        if (row.repoUrl !== existing.repoUrl || row.defaultRef !== existing.defaultRef || row.repoRef !== existing.repoRef) {
+          await enqueueProjectSkillSource(tx as unknown as Db, row);
+        }
 
         if (row.isPrimary) return row;
 
@@ -1364,6 +1369,7 @@ export function projectService(db: Db, options: { captureWorkspaceUpdates?: bool
 
       await preserveConfiguredProjectWorkspaceRootProvenance(tx, existing);
       const removed = await db.transaction(async (tx) => {
+        await detachProjectSkillSource(tx as unknown as Db, existing.companyId, workspaceId);
         const row = await tx
           .delete(projectWorkspaces)
           .where(eq(projectWorkspaces.id, workspaceId))

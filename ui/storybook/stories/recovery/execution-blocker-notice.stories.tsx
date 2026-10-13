@@ -10,10 +10,17 @@ client.setQueryData(queryKeys.issues.runs("storybook-recovery"), [
   { runId: "stopped-run", agentId: "agent", status: "failed" },
 ]);
 const meta = {
+  parameters: { docs: { story: { inline: false } }, paperclip: {
+      "capabilities": [
+        "recovery/diagnosis"
+      ],
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Retained-file states cover the production repair form, source-bound evidence and unchanged task status; fixture APIs do not prove live provider recovery."
+    } },
   id: "task-chat-recovery-notice",
   title: "Projects and execution/Recovery/Task chat/Recovery notice",
   component: ExecutionBlockerNotice,
-  parameters: { docs: { story: { inline: false } } },
   decorators: [(Story, context) => <FileRecoveryApiFixture response={context.parameters.fileRecoveryResponse ?? "success"}><QueryClientProvider client={client}><div className="max-w-2xl"><Story /></div></QueryClientProvider></FileRecoveryApiFixture>],
   args: {
     companyId: "storybook-company", issueId: "storybook-recovery", onRetried: () => {},

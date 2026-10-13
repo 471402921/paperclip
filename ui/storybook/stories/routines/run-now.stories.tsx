@@ -31,6 +31,15 @@ const meta = {
   parameters: {
     layout: "padded",
     initialEntries: ["/PAP/routines/routine-gap"],
+    paperclip: {
+      "capabilities": [
+        "routines/run-now"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "RoutineDetail manual-run dialog with required input, captured variables, pending/error/success and read states. Fictional dispatch receipt; real scheduling, coalescing, workspace authority and execution remain separate."
+    },
   },
   beforeEach: ({ parameters }) => {
     submitted = null;

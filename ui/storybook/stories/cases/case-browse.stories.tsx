@@ -7,7 +7,17 @@ const meta = {
   id: "feature-case-browse",
   title: "Automation and structured work/Cases/Browse and hierarchy",
   component: Cases,
-  parameters: { layout: "padded" },
+  parameters: { layout: "padded",
+    paperclip: {
+      "capabilities": [
+        "cases/browse"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Cases page with fixture parent/child records and loading/empty/error/403. Failed list queries currently use the shipped empty-case presentation. Responsive duplicate labels are accounted for; server filters and case mutations remain separate."
+    },
+  },
   beforeEach: ({ parameters }) => {
     const key = "paperclip:cases:company-storybook:view";
     const previous = localStorage.getItem(key);

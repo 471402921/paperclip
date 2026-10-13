@@ -23,6 +23,15 @@ const meta = {
           "Production document section. Loading and read errors currently yield the section's empty rendering; these examples expose that limitation. Revision authority and persisted concurrency require API tests.",
       },
     },
+    paperclip: {
+      "capabilities": [
+        "documents-artifacts/documents"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "IssueDocumentsSection renders current/edit/historical preview and append-only restore with mutation error. Read/loading failures retain shipped fallback rendering; no persisted concurrency or authorization proof."
+    },
   },
   beforeEach: ({ parameters }) => {
     let doc = {

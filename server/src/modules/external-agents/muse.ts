@@ -1,15 +1,15 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, inArray, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import { agents, companies, heartbeatRuns, issues, issueComments, issueDocuments, documents, nativeRunFinalizations, agentWakeupRequests,
+import { agents, companies, activityLog, heartbeatRuns, issues, issueComments, issueDocuments, documents, nativeRunFinalizations, agentWakeupRequests,
   museAgentBindings as bindings, museCredentials as credentials, museRunnerAssignments as assignments, museRunnerOperations as operations,
   museMailboxItems as mailbox, museInputDeliveries as inputs, museIdleReceipts as idleReceipts, externalAgentHolds as holds,
   museReceiverContactBuckets, type Db } from "@paperclipai/db";
 import { MUSE_TICKET_TTL_MS, MUSE_CLEANUP_TTL_MS, museStopBoundarySchema, type AgentConnectionSubject, type MuseBinding, type MuseCommand,
   type MuseQuery, type MusePairing, type MuseStopBoundary, type MuseQualificationEvidence, type MuseQualificationBeginResult } from "@paperclipai/shared";
 import { externalOperationDigest, parsePaperclipQuestionSet, type MuseBindingSnapshot, type ExternalProviderPort, type ExternalProviderOperation } from "../../vendor/paperclip-runner/index.js";
-import { conflict, forbidden, notFound } from "../../errors.js";
-import { museIdentity, museCredentialHash, assertMuseCurrentAuthority } from "../../services/muse-identity.js";
+import { conflict, forbidden, notFound, unprocessable } from "../../errors.js";
+import { museIdentity, museCredentialHash, assertMuseCurrentAuthority, museCleanupHoldIds } from "../../services/muse-identity.js";
 import { instanceSettingsService } from "../../services/instance-settings.js";
 import { updateAgentConfigurationInTransaction } from "../../services/agent-configuration-transaction.js";
 import { canConfigureAgentConnection, scheduleAgentLifecycle } from "../agent-lifecycle/index.js";
@@ -47,26 +47,47 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
     await assertMuseCurrentAuthority(db,b,!ready,paused);
     return b;
   }
-  async function visible(s:AgentConnectionSubject,database:Db|ExternalAdmissionTransaction=db):Promise<SQL> {
-    return issueReadSqlCondition(database,agentActor(s));
+  async function canReadIssue(authorization:ReturnType<typeof authorizationService>,actor:AuthorizationActor,issue:Pick<typeof issues.$inferSelect,"id"|"companyId"|"projectId"|"parentId"|"assigneeAgentId"|"assigneeUserId"|"status"|"originKind"|"originId">) {
+    const scope={issueId:issue.id,projectId:issue.projectId,parentIssueId:issue.parentId,assigneeAgentId:issue.assigneeAgentId,assigneeUserId:issue.assigneeUserId};
+    // decide intersects the agent, responsible user and current authorizer;
+    // privacy SQL alone does not enforce the ordinary work/trust boundary.
+    return (await authorization.decide({actor,action:"issue:read",resource:{type:"issue",companyId:issue.companyId,...scope,status:issue.status,originKind:issue.originKind,originId:issue.originId},scope})).allowed;
   }
-  async function assertIssue(s:AgentConnectionSubject,issueId:string,runResponsibleUserId?:string|null,database:Db|ExternalAdmissionTransaction=db) {
-    const conditions=[eq(issues.companyId,s.companyId),eq(issues.id,issueId),await issueReadSqlCondition(database,agentActor(s,undefined,runResponsibleUserId)),isNull(issues.hiddenAt),isNull(issues.harnessKind)];
+  async function assertIssue(s:AgentConnectionSubject,issueId:string,runResponsibleUserId?:string|null,database:Db|ExternalAdmissionTransaction=db,runId?:string) {
+    const actor=agentActor(s,runId,runResponsibleUserId);
+    const conditions=[eq(issues.companyId,s.companyId),eq(issues.id,issueId),await issueReadSqlCondition(database,actor),isNull(issues.hiddenAt),isNull(issues.harnessKind)];
     const [issue]=await database.select().from(issues).where(and(...conditions));
-    if(!issue) throw notFound("Task is unavailable to the current Muse agent and authorizer.");
+    if(!issue||!await canReadIssue(authorizationService(database),actor,issue)) throw notFound("Task is unavailable to the current Muse agent and authorizer.");
     return issue;
+  }
+  async function listReadableIssues(s:AgentConnectionSubject,q:Extract<MuseQuery,{query:"task.list"|"task.search"}>) {
+    const actor=agentActor(s),condition=await issueReadSqlCondition(db,actor),authorization=authorizationService(db);
+    const tasks:Array<Pick<typeof issues.$inferSelect,"id"|"identifier"|"title"|"status"|"assigneeAgentId">>=[];
+    let cursor=q.after,scanned=0;
+    // Bound ordinary decisions without exposing the last denied candidate as
+    // a cursor. Search can narrow collections beyond this 200-candidate limit.
+    while(scanned<200) {
+      const candidates=await db.select({id:issues.id,companyId:issues.companyId,identifier:issues.identifier,title:issues.title,status:issues.status,projectId:issues.projectId,parentId:issues.parentId,assigneeAgentId:issues.assigneeAgentId,assigneeUserId:issues.assigneeUserId,originKind:issues.originKind,originId:issues.originId}).from(issues).where(and(eq(issues.companyId,s.companyId),condition,isNull(issues.hiddenAt),isNull(issues.harnessKind),cursor?gt(issues.id,cursor):undefined,q.query==="task.search"?sql`(${issues.title} ilike ${`%${q.text}%`} or ${issues.description} ilike ${`%${q.text}%`})`:undefined)).orderBy(asc(issues.id)).limit(50);
+      for(const issue of candidates) {
+        scanned++;cursor=issue.id;
+        if(await canReadIssue(authorization,actor,issue))tasks.push({id:issue.id,identifier:issue.identifier,title:issue.title,status:issue.status,assigneeAgentId:issue.assigneeAgentId});
+        if(tasks.length===50)return {tasks,nextCursor:tasks.at(-1)!.id};
+      }
+      if(candidates.length<50)return {tasks,nextCursor:tasks.at(-1)?.id??null};
+    }
+    throw unprocessable("Task collection exceeds its read limit. Use task.search with a narrower query.");
   }
   async function authorizeAssignment(s:AgentConnectionSubject,id:string,allowSettled=false) {
     const b=await subjectBinding(s);
     const [a]=await db.select().from(assignments).where(and(eq(assignments.id,id),eq(assignments.companyId,s.companyId),eq(assignments.agentId,s.agentId),eq(assignments.bindingId,b.id),eq(assignments.bindingGeneration,b.generation)));
     if(!a || a.status==="fenced" || (!allowSettled && a.status==="settled") || (!allowSettled && a.expiresAt<=new Date())) throw forbidden("Assignment authority expired or was fenced.");
     const [run]=await db.select().from(heartbeatRuns).where(and(eq(heartbeatRuns.id,a.runId),eq(heartbeatRuns.companyId,a.companyId),eq(heartbeatRuns.agentId,a.agentId)));
-    if(run?.nativeIssueId) await assertIssue(s,run.nativeIssueId,run.responsibleUserId);
+    if(run?.nativeIssueId) await assertIssue(s,run.nativeIssueId,run.responsibleUserId,db,run.id);
     if(a.status==="settled" && allowSettled) return {b,a,run};
     const [owner]=await db.select().from(nativeRunFinalizations).where(and(eq(nativeRunFinalizations.runId,a.runId),eq(nativeRunFinalizations.companyId,a.companyId)));
     const [company]=await db.select().from(companies).where(eq(companies.id,a.companyId));
     const [agent]=await db.select().from(agents).where(eq(agents.id,a.agentId));
-    const issue=run?.nativeIssueId?await assertIssue(s,run.nativeIssueId,run.responsibleUserId):null;
+    const issue=run?.nativeIssueId?await assertIssue(s,run.nativeIssueId,run.responsibleUserId,db,run.id):null;
     const reviewContext=readNativeReviewAssignmentContext(run?.contextSnapshot);
     const review=run&&issue&&reviewContext?await getNativeReviewAssignment(db,{companyId:a.companyId,issueId:issue.id,agentId:a.agentId,contextSnapshot:run.contextSnapshot,actingRunId:run.id,allowResolvedByRunId:run.id}):null;
     const owns=run&&issue&&(reviewContext?!!review&&(review.interaction.status!=="pending"||issue.executionRunId===run.id):issue.assigneeAgentId===a.agentId&&[issue.checkoutRunId,issue.executionRunId].includes(run.id));
@@ -122,7 +143,8 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
       if(!b)return null;
       const live=await db.select({id:assignments.id}).from(assignments).where(and(eq(assignments.companyId,companyId),eq(assignments.agentId,agentId),inArray(assignments.status,["offered","claimed","accepted"])));
       const unknown=await db.select({id:operations.id}).from(operations).innerJoin(assignments,eq(assignments.id,operations.assignmentId)).where(and(eq(assignments.companyId,companyId),eq(assignments.agentId,agentId),inArray(operations.status,["unknown","dispatched","pending"])));
-      const pending=await db.select({id:inputs.id}).from(inputs).innerJoin(assignments,eq(assignments.id,inputs.assignmentId)).where(and(eq(assignments.companyId,companyId),eq(assignments.agentId,agentId),isNull(inputs.consumedAt)));
+      // Keep fenced/settled answer rows for audit; only live assignments can consume them.
+      const pending=await db.select({id:inputs.id}).from(inputs).innerJoin(assignments,eq(assignments.id,inputs.assignmentId)).where(and(eq(assignments.companyId,companyId),eq(assignments.agentId,agentId),inArray(assignments.status,["offered","claimed","accepted"]),isNull(inputs.consumedAt)));
       const [stop]=await db.select().from(holds).where(and(eq(holds.companyId,companyId),eq(holds.agentId,agentId),eq(holds.provider,"muse"),isNull(holds.releasedAt))).orderBy(desc(holds.createdAt)).limit(1);
       const [stopBinding]=stop?.stopBoundary ? await db.select({revision:bindings.revision}).from(bindings).where(and(eq(bindings.id,stop.stopBoundary.bindingId),eq(bindings.generation,stop.stopBoundary.generation),eq(bindings.companyId,companyId),eq(bindings.agentId,agentId))) : [];
       return {id:b.id,generation:b.generation,revision:b.revision,status:b.status,paired:!!b.pairedAt,receiverDetected:!!b.receiverContactAt,backgroundReplyVerified:!!b.verifiedReplyAt,
@@ -282,7 +304,7 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
       if(q.query==="assignment.read") {const {a}=await authorizeAssignment(s,q.assignmentId);return {assignmentId:a.id,revision:a.revision,status:a.status,...a.projection,accounting:{usage:null,cost:null}};}
       if(q.query==="operation.receipt") return nativeBroker.operationStatus(s,q.assignmentId,q.requestId);
       if(q.query==="input.pending") {const {a}=await authorizeAssignment(s,q.assignmentId);const [delivery]=await db.select().from(inputs).where(and(eq(inputs.assignmentId,a.id),eq(inputs.requestId,q.nativeRequestId),eq(inputs.turnId,a.turnId)));return delivery?{assignmentId:a.id,bindingId:b.id,generation:b.generation,requestId:delivery.requestId,turnId:delivery.turnId,inputDigest:delivery.inputDigest,response:delivery.response,consumed:!!delivery.consumedAt}:{status:"pending"};}
-      if(q.query==="task.list"||q.query==="task.search") {const condition=await visible(s);const rows=await db.select({id:issues.id,identifier:issues.identifier,title:issues.title,status:issues.status,assigneeAgentId:issues.assigneeAgentId}).from(issues).where(and(eq(issues.companyId,s.companyId),condition,isNull(issues.hiddenAt),isNull(issues.harnessKind),q.after?gt(issues.id,q.after):undefined,q.query==="task.search"?sql`(${issues.title} ilike ${`%${q.text}%`} or ${issues.description} ilike ${`%${q.text}%`})`:undefined)).orderBy(asc(issues.id)).limit(50);return {tasks:rows,nextCursor:rows.at(-1)?.id??null};}
+      if(q.query==="task.list"||q.query==="task.search")return listReadableIssues(s,q);
       const issue=await assertIssue(s,q.issueId);
       if(q.query==="task.read")return {task:issue};
       if(q.query==="task.history")return {comments:await issueService(db).listComments(issue.id,{limit:100})};
@@ -290,11 +312,34 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
       if(!document)throw notFound("Document not found.");return {document};
     },
     async cleanup(s:AgentConnectionSubject,command:{command:"control.inspect"}|{command:"worker.quiescent";boundary:MuseStopBoundary;requestId:string}) {
-      if(command.command==="control.inspect") {const rows=await db.select({boundary:holds.stopBoundary,workerReportedAt:holds.workerReportedAt,nativeEffectsUnknown:holds.nativeEffectsUnknown}).from(holds).where(and(eq(holds.bindingId,s.bindingId),eq(holds.bindingGeneration,s.generation),eq(holds.companyId,s.companyId)));return {boundaries:rows,externalStopConfirmed:false};}
       const publications: ActivityPublication[] = [];
       const result = await db.transaction(tx=>withExternalAdmissionGuard(tx,s.companyId,s.agentId,async()=>{
-        const [hold]=await tx.select().from(holds).where(and(eq(holds.companyId,s.companyId),eq(holds.agentId,s.agentId),eq(holds.bindingId,s.bindingId),eq(holds.bindingGeneration,s.generation),eq(holds.assignmentId,command.boundary.assignmentId))).for("update");
+        const now=new Date();
+        const [binding]=await tx.select({revokedAt:bindings.revokedAt,cleanupExpiresAt:bindings.cleanupExpiresAt,status:bindings.status}).from(bindings)
+          .innerJoin(credentials,and(eq(credentials.id,s.credentialId),eq(credentials.companyId,bindings.companyId),eq(credentials.bindingId,bindings.id),eq(credentials.bindingGeneration,bindings.generation),eq(credentials.kind,"cleanup"),isNull(credentials.revokedAt),isNull(credentials.consumedAt),gt(credentials.expiresAt,now)))
+          .where(and(eq(bindings.id,s.bindingId),eq(bindings.companyId,s.companyId),eq(bindings.agentId,s.agentId),eq(bindings.generation,s.generation),eq(bindings.operatorId,s.authorizingUserId)));
+        if(s.provider!=="muse"||!binding||(binding.revokedAt?(!binding.cleanupExpiresAt||binding.cleanupExpiresAt<=now):!["connected","ready"].includes(binding.status)))throw forbidden("Cleanup authority is unavailable.");
+        const currentIds=museCleanupHoldIds(tx,s,!!binding.revokedAt,now);
+        if(command.command==="control.inspect") {
+          const rows=await tx.select({boundary:holds.stopBoundary,workerReportedAt:holds.workerReportedAt,nativeEffectsUnknown:holds.nativeEffectsUnknown}).from(holds).where(inArray(holds.id,currentIds));
+          if(!binding.revokedAt&&!rows.length)throw forbidden("Cleanup boundary is unavailable.");
+          return {boundaries:rows,externalStopConfirmed:false};
+        }
+        const [hold]=await tx.select().from(holds).where(and(eq(holds.provider,"muse"),eq(holds.companyId,s.companyId),eq(holds.agentId,s.agentId),eq(holds.bindingId,s.bindingId),eq(holds.bindingGeneration,s.generation),eq(holds.assignmentId,command.boundary.assignmentId))).for("update");
         if(!hold?.stopBoundary||externalOperationDigest("tool",{boundary:hold.stopBoundary})!==externalOperationDigest("tool",{boundary:command.boundary}))throw conflict("Cleanup boundary does not match.");
+        const [current]=await tx.select({id:holds.id}).from(holds).where(and(eq(holds.id,hold.id),inArray(holds.id,currentIds)));
+        if(!current) {
+          // Revoked credentials may replay the same durable historical report,
+          // but cannot create a new report for released or superseded work.
+          const [reported]=binding.revokedAt&&hold.workerReportedAt?await tx.select({id:activityLog.id}).from(activityLog).where(and(eq(activityLog.companyId,s.companyId),eq(activityLog.actorType,"agent"),eq(activityLog.actorId,s.agentId),eq(activityLog.agentId,s.agentId),eq(activityLog.entityType,"agent"),eq(activityLog.entityId,s.agentId),eq(activityLog.action,"muse.worker_quiescence_reported"),
+            sql`${activityLog.details}->>'bindingId' = ${s.bindingId}`,
+            sql`${activityLog.details}->>'generation' = ${String(s.generation)}`,
+            sql`${activityLog.details}->>'authorizingUserId' = ${s.authorizingUserId}`,
+            sql`${activityLog.details}->>'requestId' = ${command.requestId}`,
+            sql`${activityLog.details}->'boundary' = ${JSON.stringify(command.boundary)}::jsonb`)).limit(1):[];
+          if(!reported)throw conflict("Cleanup boundary is unavailable.");
+          return {status:"worker_reported",externalStopConfirmed:false,nativeEffectsUnknown:hold.nativeEffectsUnknown};
+        }
         if (!hold.workerReportedAt) {
           await tx.update(holds).set({workerReportedAt:new Date(),updatedAt:new Date()}).where(eq(holds.id,hold.id));
           await logActivity(tx as unknown as Db,{companyId:s.companyId,actorType:"agent",actorId:s.agentId,agentId:s.agentId,responsibleUserIdOverride:s.authorizingUserId,action:"muse.worker_quiescence_reported",entityType:"agent",entityId:s.agentId,details:{bindingId:s.bindingId,generation:s.generation,authorizingUserId:s.authorizingUserId,requestId:command.requestId,boundary:command.boundary,nativeEffectsUnknown:hold.nativeEffectsUnknown,externalStopConfirmed:false}},publications);

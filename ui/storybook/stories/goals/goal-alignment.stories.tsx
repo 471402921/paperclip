@@ -27,7 +27,18 @@ const meta = {
   title:
     "Projects and execution/Goals and work alignment/Aligned work and navigation",
   component: Goal,
-  parameters: { layout: "padded", initialEntries: ["/PAP/goals/goal-gap"] },
+  parameters: { layout: "padded", initialEntries: ["/PAP/goals/goal-gap"],
+    paperclip: {
+      "capabilities": [
+        "goals/alignment",
+        "goals/navigation"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "GoalDetail child navigation and aligned-project tab with empty/loading/failure/403. Current UI displays relationships but has no project goal-assignment control; no invented assignment UI."
+    },
+  },
   beforeEach: ({ parameters }) =>
     prepareFixtureApi(
       [

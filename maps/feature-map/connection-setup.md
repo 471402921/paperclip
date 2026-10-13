@@ -1,3 +1,7 @@
+---
+navigation: {"section":"Apps, channels, and extensions","sectionOrder":50,"order":10}
+---
+
 # Connection setup
 
 People connect an app or account, choose who may use it, and recover incomplete
@@ -104,6 +108,8 @@ Test no-auth and authenticated endpoints separately; never infer one from the ot
 Automated: [interaction card](../../ui/src/components/IssueThreadInteractionCard.test.tsx)
 checks addressed-user controls. AppsConnect tests cover page/dialog parity,
 task-bound OAuth, popup handoff, and verifying a saved connection before closing.
+Withdrawn requests render a terminal acknowledgement with no setup action; the
+interaction-body test and narrow Storybook journey cover this recovery state.
 The connection-intents browser suite above exercises fixture-backed continuation.
 
 Manual: ask an agent to use an unavailable app, open its request as the named
@@ -160,3 +166,7 @@ Slack setup does not qualify Discord, Telegram, GitHub, email, or iMessage.
 - Full provider matrix, AI-account selection, gateway/profile administration,
   and account revocation lifecycles remain outside this seed recipe.
 - For governed actions after setup, use [questions and approvals](./questions-and-approvals.md).
+
+### Documentation scope: App catalog and connection setup
+
+Provider-specific authentication/revocation, credential-only accounts, and aggregator administrative variants still need their own detailed matrices.

@@ -25,7 +25,19 @@ const meta = {
   title:
     "Automation and structured work/Cases/Structure, history and task links",
   component: CaseDetailHost,
-  parameters: { layout: "padded", initialEntries: ["/PAP/cases/PAP-C42"] },
+  parameters: { layout: "padded", initialEntries: ["/PAP/cases/PAP-C42"],
+    paperclip: {
+      "capabilities": [
+        "cases/structure",
+        "cases/history",
+        "cases/task-links"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "CaseDetail hierarchy and activity, CaseFieldsPanel arbitrary/empty data and IssueCasesPanel reverse links. Fixture relations/events; document revision history and persisted links remain production obligations."
+    },
+  },
   beforeEach: ({ parameters }) => {
     const cleanup = installCaseFixtures(
       parameters.fixtureState as FixtureState,

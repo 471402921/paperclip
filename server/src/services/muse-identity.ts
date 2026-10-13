@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { and, eq, gt, inArray, isNull } from "drizzle-orm";
-import { agents, companies, companyMemberships, authUsers, museAgentBindings as bindings, museCredentials as credentials, type Db } from "@paperclipai/db";
-import { MUSE_ACCESS_TTL_MS, MUSE_REFRESH_INACTIVITY_MS, type AgentConnectionSubject, type MuseCredentials } from "@paperclipai/shared";
+import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { agents, companies, companyMemberships, authUsers, museAgentBindings as bindings, museCredentials as credentials, museRunnerAssignments as assignments, museMailboxItems as mailbox, externalAgentHolds as holds, type Db } from "@paperclipai/db";
+import { MUSE_ACCESS_TTL_MS, MUSE_REFRESH_INACTIVITY_MS, MUSE_CLEANUP_TTL_MS, type AgentConnectionSubject, type MuseCredentials } from "@paperclipai/shared";
 import { instanceSettingsService } from "./instance-settings.js";
 import { unauthorized, forbidden } from "../errors.js";
 import { withExternalAdmissionGuard, type ExternalAdmissionTransaction } from "../modules/external-agents/index.js";
@@ -10,6 +10,24 @@ export const museCredentialHash = (value: string) => createHash("sha256").update
 const token = () => randomBytes(32).toString("base64url");
 export type MuseCredentialKind = typeof credentials.$inferSelect.kind;
 export type MuseIdentityDatabase = Db | ExternalAdmissionTransaction;
+/** Exact currently reportable fences. Shared by cleanup admission and the
+ * broker so one admitted boundary cannot lend authority to historical rows. */
+export function museCleanupHoldIds(db:MuseIdentityDatabase,s:AgentConnectionSubject,revoked=false,now=new Date()) {
+  return db.select({id:holds.id}).from(holds)
+    .innerJoin(assignments,and(eq(assignments.id,holds.assignmentId),eq(assignments.companyId,holds.companyId),eq(assignments.agentId,holds.agentId),eq(assignments.bindingId,holds.bindingId),eq(assignments.bindingGeneration,holds.bindingGeneration),eq(assignments.runId,holds.runId),eq(assignments.status,"fenced")))
+    .innerJoin(bindings,and(eq(bindings.id,holds.bindingId),eq(bindings.companyId,holds.companyId),eq(bindings.agentId,holds.agentId),eq(bindings.generation,holds.bindingGeneration),eq(bindings.operatorId,s.authorizingUserId),revoked?sql`${bindings.revokedAt} is not null`:isNull(bindings.revokedAt),revoked?gt(bindings.cleanupExpiresAt,now):inArray(bindings.status,["connected","ready"])))
+    .innerJoin(credentials,and(eq(credentials.id,s.credentialId),eq(credentials.kind,"cleanup"),eq(credentials.companyId,bindings.companyId),eq(credentials.bindingId,bindings.id),eq(credentials.bindingGeneration,bindings.generation),isNull(credentials.revokedAt),isNull(credentials.consumedAt),gt(credentials.expiresAt,now)))
+    .innerJoin(mailbox,and(eq(mailbox.companyId,holds.companyId),eq(mailbox.bindingId,holds.bindingId),eq(mailbox.bindingGeneration,holds.bindingGeneration),eq(mailbox.assignmentId,holds.assignmentId),eq(mailbox.kind,"authority_revoked"),sql`${mailbox.references}->'boundary' = ${holds.stopBoundary}`))
+    .where(and(sql`${s.provider} = 'muse'`,eq(holds.provider,"muse"),eq(holds.companyId,s.companyId),eq(holds.agentId,s.agentId),eq(holds.bindingId,s.bindingId),eq(holds.bindingGeneration,s.generation),isNull(holds.releasedAt),
+      sql`${holds.stopBoundary}->>'bindingId' = ${bindings.id}::text`,
+      sql`${holds.stopBoundary}->>'generation' = ${bindings.generation}::text`,
+      sql`${holds.stopBoundary}->>'assignmentId' = ${assignments.id}::text`,
+      sql`${holds.stopBoundary}->>'runId' = ${assignments.runId}::text`,
+      sql`${holds.stopBoundary}->>'turnId' = ${assignments.turnId}`,
+      sql`${holds.stopBoundary}->>'assignmentRevision' = ${assignments.revision}::text`))
+    .groupBy(holds.id)
+    .having(revoked?sql`true`:sql`min(${mailbox.createdAt}) > ${new Date(now.getTime()-MUSE_CLEANUP_TTL_MS).toISOString()}::timestamptz and min(${mailbox.createdAt}) <= ${now.toISOString()}::timestamptz`);
+}
 export async function assertMuseCurrentAuthority(db: MuseIdentityDatabase, b: typeof bindings.$inferSelect, allowSetup = false, allowPaused = false) {
   const [agent] = await db.select().from(agents).where(and(eq(agents.id,b.agentId),eq(agents.companyId,b.companyId)));
   const [company] = await db.select().from(companies).where(eq(companies.id,b.companyId));
@@ -85,7 +103,16 @@ export function museIdentity(db: Db) {
       if (!c || !b) throw unauthorized("Muse credential is unavailable.");
       const cleanup=kind==="cleanup" || kind==="detector_cleanup";
       if (cleanup) {
-        if (!b.revokedAt || !b.cleanupExpiresAt || b.cleanupExpiresAt<=new Date() || c.bindingGeneration!==b.generation) throw unauthorized("Cleanup authority expired.");
+        const now=new Date();
+        let allowed=!!b.revokedAt && !!b.cleanupExpiresAt && b.cleanupExpiresAt>now && c.bindingGeneration===b.generation;
+        if (!b.revokedAt && kind==="cleanup" && c.bindingGeneration===b.generation) {
+          // A connected worker may acknowledge only an existing fence. Holds
+          // start at acceptance and are updated during recovery; the earliest
+          // exact-boundary revocation receipt fixes the cleanup deadline.
+          const [fenced]=await museCleanupHoldIds(db,{provider:"muse",companyId:b.companyId,agentId:b.agentId,bindingId:b.id,generation:c.bindingGeneration,authorizingUserId:b.operatorId,credentialId:c.id},false,now).limit(1);
+          allowed=!!fenced;
+        }
+        if (!allowed) throw unauthorized("Cleanup authority expired.");
       } else {
         await expireQualification(b);
         if (!await enabled() || b.revokedAt || c.bindingGeneration!==b.generation) throw unauthorized("Muse authority was fenced.");
