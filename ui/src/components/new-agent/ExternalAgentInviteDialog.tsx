@@ -162,6 +162,10 @@ function MuseInvitationController({ companyId, companyName, onClose, onBack, ini
     retry: false, staleTime: 0, refetchOnMount: "always",
     refetchInterval: query => query.state.data?.agent.status === "pending_approval" ? 2500 : false });
   const resumedInvitation = resume.isFetchedAfterMount ? resume.data : null;
+  useEffect(() => {
+    if (resumedInvitation) setCreated(current => current?.scopeKey === scopeKey
+      ? current : { scopeKey, invitation: resumedInvitation });
+  }, [scopeKey, resumedInvitation]);
   const createdInvitation = created?.scopeKey === scopeKey ? created.invitation : null;
   // Resume omits completed bindings; keep this mounted hire while accepting its fresh server status.
   const invitation = createdInvitation

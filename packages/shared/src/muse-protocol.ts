@@ -62,6 +62,10 @@ const nativeRequestId = z.string().min(1).max(160).refine(
   "Native request IDs must contain only ASCII letters, digits, '.', '_', ':', or '-'.",
 );
 const utf8Encoder = new TextEncoder();
+const nativeQuestionSet = paperclipQuestionSetPayloadSchema.refine(
+  value => utf8Encoder.encode(JSON.stringify(value)).byteLength <= 196 * 1024,
+  "Question sets must not exceed Runner's 196 KiB durable UTF-8 byte bound.",
+);
 const progressText = z.string().trim().min(1).max(12000).refine(
   (value) => utf8Encoder.encode(value).byteLength <= 12000,
   "Progress text must not exceed 12000 UTF-8 bytes.",
@@ -79,7 +83,7 @@ export const museCommandSchema = z.discriminatedUnion("command", [
   z.object({ ...operation, command: z.literal("progress"), text: progressText }).strict(),
   z.object({ ...operation, command: z.literal("finish"), result: z.record(z.string(), z.unknown()) }).strict(),
   z.object({ ...operation, command: z.literal("renew"), expiresAtUnixMs: z.number().int().positive() }).strict(),
-  z.object({ ...operation, command: z.literal("request_user_input"), nativeRequestId, questionSet: paperclipQuestionSetPayloadSchema }).strict(),
+  z.object({ ...operation, command: z.literal("request_user_input"), nativeRequestId, questionSet: nativeQuestionSet }).strict(),
   z.object({ ...operation, command: z.literal("consume_input"), nativeRequestId, inputDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/), continuationReceiptId: id, continuationPersisted: z.literal(true) }).strict(),
 ]);
 export const museQuerySchema = z.discriminatedUnion("query", [

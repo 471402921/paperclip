@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within, waitFor, fn } from "storybook/test";
 import { ExternalAgentInvitePreview } from "../../support/external-agent-invite/ExternalAgentInvitePreview";
 import { MuseConnectionDetails } from "@/components/MuseRunnerConnection";
-import { museConnection, stoppedMuseConnection } from "./muse-fixtures";
+import { museConnection, stoppedMuseConnection } from "../../support/external-agent-invite/muse-fixtures";
 
 const meta = {
   title: "Onboarding/External agent invitation/Muse personal agent",

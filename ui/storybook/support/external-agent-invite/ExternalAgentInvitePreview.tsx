@@ -8,7 +8,7 @@ import { ExternalAgentInviteContent, type DotConnectionState, type ExternalAgent
 import { Dialog } from "@/components/ui/dialog";
 import { AnimatedDialogContent } from "@/components/AnimatedDialogContent";
 import { Button } from "@/components/ui/button";
-import { musePairing } from "../../stories/external-agent-invite/muse-fixtures";
+import { musePairing } from "./muse-fixtures";
 import type { MuseInvitationDraft } from "@/lib/muse-invitation-draft";
 import { dotInvitePrompt, externalInvitePrompt } from "./fixtures";
 

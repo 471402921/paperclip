@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApiError } from "@/api/client";
 import { ExternalAgentInviteDialog } from "./ExternalAgentInviteDialog";
-import { museBinding, museConnection, musePairing } from "../../../storybook/stories/external-agent-invite/muse-fixtures";
+import { museBinding, museConnection, musePairing } from "../../../storybook/support/external-agent-invite/muse-fixtures";
 import { readMuseInvitationDraft } from "@/lib/muse-invitation-draft";
 
 const identity = vi.hoisted(() => ({ userId: "operator", settled: true, failed: false }));
@@ -95,6 +95,26 @@ it("keeps every connection milestone behind the real hire approval", async () =>
   expect(document.querySelector('a[href="/approvals/hire"]')).not.toBeNull();
   expect(museApi.pair).not.toHaveBeenCalled();
   expect([...document.querySelectorAll("button")].some(b => b.textContent === "Done")).toBe(false);
+});
+
+it("keeps a resumed hire when a readiness refetch omits completed invitations", async () => {
+  museApi.resume.mockResolvedValue({ agent, approvalId: null, binding: museBinding });
+  museApi.connection.mockResolvedValue(museConnection);
+  museApi.verify.mockResolvedValue({ status: "pending" });
+  await render(); await click("Muse — Personal agentYour personal Muse at muse.ai");
+  museApi.resume.mockResolvedValue(null);
+  museApi.connection.mockResolvedValue({ ...museConnection, agentLifecycleState: "ready",
+    binding: { ...museBinding, status: "ready", backgroundReplyVerified: true } });
+  await act(async () => {
+    await Promise.all([
+      cache.invalidateQueries({ queryKey: ["muse-invitation", "company", "operator"] }),
+      cache.invalidateQueries({ queryKey: ["muse-binding", "company", "operator", agent.id] }),
+    ]);
+  }); await flush();
+  expect(document.querySelector('input[placeholder="Muse"]')).toBeNull();
+  await click("Done");
+  expect(close).toHaveBeenCalledTimes(1);
+  expect(museApi.create).not.toHaveBeenCalled();
 });
 
 it("starts one independent background challenge after fresh persisted pairing and receiver evidence", async () => {
