@@ -22,7 +22,7 @@ export interface MuseConnection {
 }
 export interface MusePairing {
   bindingId: string; generation: number; revision: number; ticket: string; expiresAt: string;
-  setupInstruction: string; assetVersion: 2 | 3;
+  setupInstruction: string; assetVersion: 2 | 3 | 4;
 }
 export interface MuseVerifyResult { bindingId: string; generation: number; revision: number; expiresAt: string; status: "pending" }
 export interface MuseInvitationInput { name: string; role: string }

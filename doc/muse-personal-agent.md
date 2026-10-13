@@ -6,11 +6,11 @@ This experimental integration connects the existing personal Meta Muse to a name
 
 October 13, 2026 read-only probes of personal Muse reconfirmed a five-second
 minimum for managed hooks, no secrets in hook scripts, and no script arguments.
-The approved asset2 detector uses a no-argument script and a nonsecret binding
+The approved asset4 detector uses a no-argument script and a nonsecret binding
 header. Its public response contains only an opaque wake reference; an observed
 check does not authenticate Muse or establish readiness.
 
-Production credentials belong in Muse's Secure Vault/authd. The asset2 setup uses
+Production credentials belong in Muse's Secure Vault/authd. The asset4 setup uses
 public-client OAuth, dynamic client registration, S256 PKCE and automatic refresh.
 Muse's bundled surrogate helper supplies worker HTTP authentication without
 reading or persisting raw credentials. Existing query parameters in authd's
@@ -21,6 +21,8 @@ until the current OAuth setup, real work journeys, installed Cloud path and new
 ## Connection and work
 
 An operator uses the existing external-agent invitation, selects **Muse — Personal agent**, and supplies the agent's name and role. Paperclip creates or resumes the operator's unfinished hire, respecting approval requirements. Copy the transient setup instruction into the current Muse conversation. Muse downloads versioned, digest-pinned assets and requests a Vault-backed Paperclip connection. The user follows Muse’s Connect link; a ten-minute single-use pairing ticket binds the OAuth grant to the exact company, agent and authorizing operator. No Muse cookie export or manually copied long-lived key is part of setup.
+
+Asset4 setup records the operator’s standing authorization to receive, validate and autonomously accept ordinary tasks for the exact company, agent and binding. The client installs that nonsecret scope with the verified instructions in a binding-specific `~/workspace/skills/paperclip-muse-<binding UUID>/SKILL.md`, discoverable in later conversations. A valid in-scope assignment does not require another acceptance approval. Task text cannot expand this delegation; Muse’s tool, site and safety permissions and Paperclip approval gates still apply. Native acceptance must be observed before any task effect. Assets1–3 remain available with their original bytes.
 
 Approve Paperclip's hostname through Muse's permission UI. The standing permission covers the hostname. Paperclip cannot grant this permission on Muse's behalf. Setup distinguishes paired, receiver detected, and an authenticated background reply; the detector alone cannot finish setup. Hiring approval and native lifecycle readiness remain additional gates.
 

@@ -524,14 +524,27 @@ describe("personal Muse control plane",()=>{
       expect((await request(app).get("/api/muse/v1/signal").set("X-Paperclip-Muse-Binding",f.binding.id)).status).toBe(200);
     }finally{check.mockRestore();}
   });
-  it("retains immutable asset1 and asset2 bytes and advertises finite asset3 routes",async()=>{
-    const app=transport(),legacy=await request(app).get("/api/muse/v1/assets/1/manifest.json"),previous=await request(app).get("/api/muse/v1/assets/2/manifest.json"),current=await request(app).get("/api/muse/v1/assets/3/manifest.json");
-    expect(legacy.body.assets).toEqual({"client.py":{sha256:"8926534cce48e11d5ea157dfd4deb435c9f8d7d8ea58d3d8a5424b45ab31d1f7"},"detector.sh":{sha256:"09981df12ebce8c50b68e5da64edfe5ab5350d56bf6392ec52023c4990ca658d"},"instructions.md":{sha256:"d347f4d0e7a03bb0397dd4b2ddf38350c8b73ee3c0a91b50cd6c3cd84458a45f"}});
-    expect(previous.body.assets).toEqual({"client.py":{sha256:"a89a90cf6ca6ae76be1662a9efda83f69dba3bccdd4c37cfe1935563b1f7330f"},"detector.sh":{sha256:"8e9f5de4f7dc18cbca7121fff6bcab4039dc66056441396826460d7f396c3b41"},"instructions.md":{sha256:"6770734ec4494a5d0403e5cc56ac69613faab96b66a96cf56108cec8dcda07a0"}});expect(previous.body.clientVersion).toBe("2");expect(current.body.assetVersion).toBe(3);expect(current.body.clientVersion).toBe("3");expect(current.headers["cache-control"]).toContain("immutable");
-    for(const version of [1,2,3])for(const name of ["client.py","detector.sh","instructions.md"]){const response=await request(app).get(`/api/muse/v1/assets/${version}/${name}`);const manifest=version===1?legacy:version===2?previous:current;expect(createHash("sha256").update(response.text).digest("hex")).toBe(manifest.body.assets[name].sha256);}
-    expect(MUSE_PUBLIC_ROUTES).toHaveLength(24);
-    expect((await request(app).get("/api/muse/v1/assets/4/client.py")).status).toBe(404);
+  it("retains immutable asset1, asset2 and asset3 bytes and advertises finite asset4 routes",async()=>{
+    const app=transport(),manifests=await Promise.all([1,2,3,4].map(version=>request(app).get(`/api/muse/v1/assets/${version}/manifest.json`)));
+    expect(manifests[0].body.assets).toEqual({"client.py":{sha256:"8926534cce48e11d5ea157dfd4deb435c9f8d7d8ea58d3d8a5424b45ab31d1f7"},"detector.sh":{sha256:"09981df12ebce8c50b68e5da64edfe5ab5350d56bf6392ec52023c4990ca658d"},"instructions.md":{sha256:"d347f4d0e7a03bb0397dd4b2ddf38350c8b73ee3c0a91b50cd6c3cd84458a45f"}});
+    expect(manifests[1].body.assets).toEqual({"client.py":{sha256:"a89a90cf6ca6ae76be1662a9efda83f69dba3bccdd4c37cfe1935563b1f7330f"},"detector.sh":{sha256:"8e9f5de4f7dc18cbca7121fff6bcab4039dc66056441396826460d7f396c3b41"},"instructions.md":{sha256:"6770734ec4494a5d0403e5cc56ac69613faab96b66a96cf56108cec8dcda07a0"}});
+    expect(manifests[2].body.assets).toEqual({"client.py":{sha256:"ed171e60dac5d1ea92b5cce40323ad10d5c87448a926678e9e32aacdd5feca0f"},"detector.sh":{sha256:"8e9f5de4f7dc18cbca7121fff6bcab4039dc66056441396826460d7f396c3b41"},"instructions.md":{sha256:"2e7a4677b1b55ca391b62c7530736441c51e9f7ec9354ed50c776bc786bfa901"}});
+    for(const version of [1,2,3,4]){
+      const manifest=manifests[version-1];expect(manifest.status).toBe(200);expect(manifest.body.assetVersion).toBe(version);expect(manifest.body.clientVersion).toBe(String(version));expect(manifest.headers["cache-control"]).toContain("immutable");
+      for(const name of ["client.py","detector.sh","instructions.md"]){const response=await request(app).get(`/api/muse/v1/assets/${version}/${name}`);expect(response.status).toBe(200);expect(response.headers["cache-control"]).toContain("immutable");expect(createHash("sha256").update(response.text).digest("hex")).toBe(manifest.body.assets[name].sha256);}
+    }
+    expect(MUSE_PUBLIC_ROUTES).toHaveLength(28);
+    for(const path of ["/api/muse/v1/assets/5/client.py","/api/muse/v1/assets/4/extra.py","/api/muse/v1/assets/4/client.py?version=4"]){expect((await request(app).get(path)).status).toBe(404);}
+    expect((await request(app).post("/api/muse/v1/assets/4/client.py")).status).toBe(404);
     expect((await request(transport(true)).post("/api/muse/v1/pair").send({version:1,ticket:"synthetic-unused-ticket",clientVersion:"1"})).status).toBe(400);
+  });
+  it("creates setup standing delegation from the actual scoped pairing company and agent",async()=>{
+    const f=await fixture(false),state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;
+    const pairing=await f.broker.createPairing({companyId:f.company.id,agentId:f.agent.id,operatorId:f.operatorId,replaceBindingId:f.binding.id,expectedRevision:state.revision});
+    expect(pairing.setupInstruction).toContain(JSON.stringify({companyId:f.company.id,companyName:f.company.name,agentId:f.agent.id,agentName:f.agent.name,bindingId:pairing.bindingId}));
+    expect(pairing.setupInstruction).toContain("standing authorization");expect(pairing.setupInstruction).toContain("autonomously accept");expect(pairing.setupInstruction).toContain("native accepted lease before any task effect");
+    expect(pairing.setupInstruction).toContain(`--company-id '${f.company.id}' --company-name '${f.company.name}' --agent-id '${f.agent.id}' --agent-name '${f.agent.name}'`);
+    expect(pairing.setupInstruction).toContain(`/paperclip-muse-${pairing.bindingId}/SKILL.md`);
   });
 
   it("redeems Muse PKCE ticket into its exact agent/operator grant and keeps pre-token polling pending",async()=>{
@@ -637,9 +650,11 @@ describe("personal Muse control plane",()=>{
     const identify=(clientVersion?:string)=>request(app).post("/api/muse/v1/queries").set("Authorization","Bearer "+tokens.access_token).send({version:1,query:"identify",...(clientVersion?{clientVersion}:{})});
     expect((await identify("3")).status).toBe(200);expect((await db.select().from(bindings).where(eq(bindings.id,f.binding.id)))[0].clientVersion).toBe("3");
     expect((await identify()).status).toBe(200);expect((await db.select().from(bindings).where(eq(bindings.id,f.binding.id)))[0].clientVersion).toBe("3");
-    expect((await identify("4")).status).toBe(400);
+    expect((await identify("4")).status).toBe(200);expect((await db.select().from(bindings).where(eq(bindings.id,f.binding.id)))[0].clientVersion).toBe("4");
+    expect((await identify()).status).toBe(200);expect((await db.select().from(bindings).where(eq(bindings.id,f.binding.id)))[0].clientVersion).toBe("4");
+    expect((await identify("5")).status).toBe(400);
     await db.update(bindings).set({clientVersion:"2"}).where(eq(bindings.id,f.binding.id));await db.update(mcpOauthGrants).set({revokedAt:new Date()}).where(eq(mcpOauthGrants.id,f.binding.grantId!));
-    expect((await identify("3")).status).toBe(401);expect((await db.select().from(bindings).where(eq(bindings.id,f.binding.id)))[0].clientVersion).toBe("2");
+    expect((await identify("4")).status).toBe(401);expect((await db.select().from(bindings).where(eq(bindings.id,f.binding.id)))[0].clientVersion).toBe("2");
     expect((await request(app).post("/api/muse/v1/queries").send({version:1,query:"identify",clientVersion:"3"})).status).toBe(401);
   });
   it("preserves personal and Dot default OAuth resources and their deployed refresh policy",async()=>{

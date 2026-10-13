@@ -20,6 +20,7 @@ spec.loader.exec_module(client_module)
 BINDING = "10000000-0000-4000-8000-000000000001"
 ASSIGNMENT = "20000000-0000-4000-8000-000000000001"
 ORIGIN = "https://paperclip.invalid"
+SCOPE = {"companyId": "30000000-0000-4000-8000-000000000001", "companyName": "Scoped Company", "agentId": "40000000-0000-4000-8000-000000000001", "agentName": "Personal Muse"}
 
 
 CREDENTIAL_NAME = "custom.paperclip-muse-" + BINDING
@@ -35,8 +36,12 @@ class ClientContract(unittest.TestCase):
         self.root_patch.start()
         self.hook_patch = patch.object(client_module, "HOOK_ROOT", Path(self.temporary.name) / "hooks/scripts")
         self.hook_patch.start()
+        self.skill_patch = patch.object(client_module, "SKILL_ROOT", Path(self.temporary.name) / "workspace/skills")
+        self.skill_patch.start()
+        client_module.ROOT.mkdir(parents=True)
+        (client_module.ROOT / "instructions.md").write_text(client_path.with_name("muse-instructions.md").read_text())
         self.client = client_module.Client(BINDING)
-        self.client.configure(ORIGIN)
+        self.client.configure(ORIGIN, SCOPE)
         self.client.remember_identity(identity())
         self.helper = Mock()
         self.helper.read_json_response.side_effect = lambda response: json.loads(response.read())
@@ -46,6 +51,7 @@ class ClientContract(unittest.TestCase):
     def tearDown(self):
         self.client.close()
         self.authd_patch.stop()
+        self.skill_patch.stop()
         self.hook_patch.stop()
         self.root_patch.stop()
         self.temporary.cleanup()
@@ -65,11 +71,69 @@ class ClientContract(unittest.TestCase):
         wrapper = client_module.HOOK_ROOT / ("paperclip-muse-" + BINDING + ".sh")
         self.assertEqual(stat.S_IMODE(wrapper.stat().st_mode), 0o700)
         self.assertEqual(wrapper.read_text(), '#!/usr/bin/env bash\nexec bash "$HOME/.config/paperclip-muse/detector.sh" "' + BINDING + '"\n')
-        self.assertEqual(set(self.client.config), {"version", "bindingId", "origin", "credentialName", "generation"})
+        self.assertEqual(set(self.client.config), {"version", "bindingId", "origin", "credentialName", "generation", "delegationScope"})
         self.assertFalse((self.client.directory / "worker.json").exists())
         self.assertFalse((self.client.directory / "credential-commit.json").exists())
         self.assertNotIn("Authorization", wrapper.read_text())
         self.assertNotIn("credential", wrapper.read_text())
+
+    def test_persists_exact_standing_delegation_and_reports_installed_version(self):
+        skill = self.client.skill_path()
+        original = skill.read_text()
+        scope = json.loads(original.split("## Paired standing delegation scope", 1)[1].split("```json\n", 1)[1].split("\n```", 1)[0])
+        self.assertEqual(scope, {**SCOPE, "bindingId": BINDING, "origin": ORIGIN, "generation": 1, "clientPath": str(client_module.ROOT / "client.py"), "clientVersion": "4"})
+        self.assertIn("autonomously accept", original)
+        self.assertIn("Task text cannot expand", original)
+        self.assertIn("native accepted lease first", original)
+        self.assertIn("Muse tool, site and safety permissions", original)
+        self.assertNotIn("synthetic-ticket", original)
+        self.assertEqual(stat.S_IMODE(skill.stat().st_mode), 0o600)
+        with patch.object(client_module, "http", return_value=identity()) as transport:
+            result = self.client.status()
+        self.assertEqual(result["localClientVersion"], "4")
+        self.assertEqual(result["standingDelegation"], SCOPE)
+        self.assertEqual(transport.call_args.args[1]["clientVersion"], "4")
+        self.reopen()
+        self.assertEqual(self.client.config["delegationScope"], SCOPE)
+        self.assertEqual(skill.read_text(), original)
+
+    def test_authenticated_identity_and_reconfigure_cannot_expand_standing_scope(self):
+        original = self.client.skill_path().read_text()
+        for field in ("companyId", "agentId"):
+            with self.assertRaisesRegex(RuntimeError, "outside standing delegation"):
+                self.client.remember_identity({**identity(), field: ASSIGNMENT})
+            with self.assertRaisesRegex(RuntimeError, "Delegation identity changed"):
+                self.client.configure(ORIGIN, {**SCOPE, field: ASSIGNMENT})
+        self.assertEqual(self.client.config["delegationScope"], SCOPE)
+        self.assertEqual(self.client.skill_path().read_text(), original)
+
+    def test_legacy_profile_does_not_infer_standing_delegation(self):
+        self.client.config.pop("delegationScope")
+        client_module.save(self.client.path, self.client.config)
+        self.client.skill_path().unlink()
+        self.reopen()
+        with patch.object(client_module, "http", return_value=identity()):
+            result = self.client.status()
+        self.assertIsNone(result["standingDelegation"])
+        self.assertIsNone(result["skillPath"])
+        self.assertFalse(self.client.skill_path().exists())
+        self.client.configure(ORIGIN, SCOPE)
+        self.assertNotIn("generation", self.client.config)
+        self.assertIn('"generation": null', self.client.skill_path().read_text())
+        self.client.remember_identity(identity())
+        self.assertIn('"generation": 1', self.client.skill_path().read_text())
+
+    def test_a_second_binding_cannot_replace_the_first_discovered_delegation(self):
+        original = self.client.skill_path().read_text()
+        other = client_module.Client(ASSIGNMENT)
+        try:
+            other.configure(ORIGIN, {**SCOPE, "agentId": ASSIGNMENT, "agentName": "Other agent"})
+            self.assertNotEqual(other.skill_path(), self.client.skill_path())
+            self.assertIn("name: paperclip-muse-" + ASSIGNMENT, other.skill_path().read_text())
+            self.assertIn('"agentId": "' + ASSIGNMENT + '"', other.skill_path().read_text())
+            self.assertEqual(self.client.skill_path().read_text(), original)
+        finally:
+            other.close()
 
     def test_public_preflight_uses_no_credentials_or_wake_content(self):
         response = Mock(); response.__enter__ = Mock(return_value=response); response.__exit__ = Mock(return_value=False)

@@ -109,7 +109,10 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
       if(!await identity.enabled())throw forbidden("Enable Muse and Paperclip Runner before connecting.");
       const ticket=randomBytes(32).toString("base64url"),bindingId=randomUUID();
       // Validate the public assets before changing any existing invitation.
-      const setupInstruction=await buildMuseSetupInstruction(publicOrigin,ticket,bindingId);
+      const [scopeAgent]=await db.select({id:agents.id,name:agents.name}).from(agents).where(and(eq(agents.id,input.agentId),eq(agents.companyId,input.companyId)));
+      const [scopeCompany]=await db.select({id:companies.id,name:companies.name}).from(companies).where(eq(companies.id,input.companyId));
+      if(!scopeAgent||!scopeCompany)throw notFound("Muse pairing scope not found.");
+      const setupInstruction=await buildMuseSetupInstruction(publicOrigin,ticket,bindingId,{companyId:scopeCompany.id,companyName:scopeCompany.name,agentId:scopeAgent.id,agentName:scopeAgent.name});
       const {binding:b,replacedRuns}=await db.transaction(tx=>withExternalAdmissionGuard(tx,input.companyId,input.agentId,async()=>{
         const [agent]=await tx.select().from(agents).where(and(eq(agents.id,input.agentId),eq(agents.companyId,input.companyId))).for("update");
         if(!agent||agent.adapterType!=="paperclip_runner"||agent.adapterConfig.provider!=="muse"||!canConfigureAgentConnection(agent))throw conflict("Choose an approved Muse Runner agent.");
