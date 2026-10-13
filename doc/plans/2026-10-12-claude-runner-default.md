@@ -651,3 +651,26 @@ from the source chat as current-chat authorization; the direct coordination
 question remains pending. Public PR/evidence updates continue within this task.
 Fresh exact-head cloud runner/native execution is required, including the failing
 late-bootstrap case. No package campaign or new paid task has been dispatched.
+
+## Current cloud ownership proof and durable test envelope — 2026-10-12
+
+Behavior `be0e68872fd5e043bc6242e0634471b2c1794336` passed all 54 current
+checks plus two conditional skips, required verify/E2E and fresh 5/5 review.
+Protocol `463ebb62661d81ef1fbd79ae0a7b43ece68830f8` and platform
+`66925e79c9d9e8f7e51fd9ee5a518a778d34acf8` passed the previously failing
+real late-bootstrap case and the new ownership controls. Their remaining runner
+lane failure was a different fake-transport durable-resume case: it reached the
+outer 5000 ms test timeout (1599 passed, one failed, three skipped). There was no
+ENOTEMPTY or primary semantic assertion failure in those runs. The exact cloud
+latency stage was not recorded and is not labeled an infrastructure flake.
+
+That fixture deliberately includes a 500 ms killed turn, a resumed turn with its
+own 5000 ms bound, and durable filesystem writes. A controlled 3800 ms resumed-
+turn delay (within the existing turn bound) reproduces the outer 5000 ms timeout;
+the identical treatment completes its semantic/usage/deduplication assertions
+with a 15000 ms outer budget. The temporary delay was removed. Only the outer
+fixture deadline and its rationale are committed; internal deadlines and all
+assertions remain unchanged. The full fake-transport suite passes 72 with one
+existing skip; runner noemit and maps pass. Fresh exact-head runner CI remains
+required after this test-only correction. No package campaign, paid provider
+call, local native build, Docker build or upstream prerequisite edit.
