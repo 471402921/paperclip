@@ -35,8 +35,6 @@ export function agentRunnerAvailability(harness: string, target: RunnerTarget = 
     && (harness === "claude_local"
       ? !!target.platform && paperclipRunnerSupportsPlatform(harness, target.platform, target.architecture ?? "", target.libc, target.glibcVersion)
       : !target.platform || paperclipRunnerSupportsPlatform(harness, target.platform, target.architecture ?? "", target.libc, target.glibcVersion));
-  // Darwin SSH execution needs operator-provided matching assets. It remains
-  // an explicit choice until automatic Darwin remote packs are qualified.
   const automatic = supported && !(harness === "claude_local" && target.driver === "ssh" && target.platform === "darwin");
   return { supportedRunners: supported ? ["paperclip", "legacy"] : ["legacy"], defaultRunner: automatic ? "paperclip" : "legacy" };
 }

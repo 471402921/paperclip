@@ -94,8 +94,6 @@ describeEmbeddedPostgres("POST /api/companies/:companyId/onboarding-seed", () =>
     // The seed's free-text role is a job title; the structural role stays `ceo`.
     expect(companyAgents[0]?.title).toBe("Chief of Staff");
     expect(companyAgents[0]?.role).toBe("ceo");
-    // Native PRP supplies the operational contract. The seeded CEO retains
-    // its role skills in its own desired set.
     expect(companyAgents[0]?.adapterConfig).toMatchObject({
       paperclipSkillSync: {
         desiredSkills: expect.arrayContaining([

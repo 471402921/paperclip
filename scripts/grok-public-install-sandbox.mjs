@@ -90,7 +90,6 @@ export function assertInstalledCodexPlatformProvenance(lock, installed, target) 
 export function installedClaudeProbeSource(indexPath, serverRoot) {
   return `
     import { pathToFileURL } from 'node:url';
-    // Match the production sidecar's published-server package authority.
     process.env.PAPERCLIP_ACPX_PROVIDER_PACKAGE_ROOT = ${JSON.stringify(serverRoot)};
     process.env.PAPERCLIP_ACPX_PROVIDER_PACKAGE_MANIFEST = ${JSON.stringify(join(serverRoot, 'package.json'))};
     const { probeAcpxClaudeInstallation } = await import(pathToFileURL(${JSON.stringify(indexPath)}).href);

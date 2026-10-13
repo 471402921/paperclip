@@ -40,8 +40,6 @@ const workflowRoot = path.join(repoRoot, ".github", "workflows");
 walk(workflowRoot, (filePath) => {
   if (!/\.ya?ml$/.test(filePath)) return;
   const source = fs.readFileSync(filePath, "utf8");
-  // Release packs ship the interpreter itself, so their producer must match
-  // the image's exact Node patch. Other CI jobs continue tracking Node 24.
   const packProducer = relative(filePath) === ".github/workflows/release-verify.yml"
     ? /(?:^|\n)  runner_binaries:\n[\s\S]*?(?=\n  [a-z_]+:\n|$)/.exec(source)
     : null;
