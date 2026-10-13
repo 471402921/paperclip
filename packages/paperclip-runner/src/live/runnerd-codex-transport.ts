@@ -3602,6 +3602,8 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
   #runAttachTemplate: Record<string, unknown> | null = null;
   #closed = false;
   #closePromise: Promise<void> | null = null;
+  #startupOperation: Promise<unknown> | null = null;
+  #startupDrainTimedOut = false;
   #controllerDetachedForRestart = false;
   #failure: Error | null = null;
   readonly #failureSignal: Promise<never>;
@@ -3715,7 +3717,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
       throw new Error("native_runner_warm_transition_completion_pending");
     }
     if (method === "initialize") return { user: {} };
-    if (method === "thread/start") return this.#start(params);
+    if (method === "thread/start") return this.#trackStartup(this.#start(params));
     if (method === "collaborationMode/list") {
       // runnerd negotiates the real Codex preset or the provider-proxy-owned
       // planning contract during session.open. This transport-level mask
@@ -3815,7 +3817,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
     if (method === "thread/read") {
       if (this.#core === null) {
         this.#recoveryTurnBindingPending = true;
-        await this.#resume();
+        await this.#trackStartup(this.#resume());
       }
       // Ask the authenticated runner for its live provider snapshot rather
       // than reading its filesystem. This both supports remote process owners
@@ -4455,8 +4457,33 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
     );
   }
 
+  #trackStartup<T>(operation: Promise<T>): Promise<T> {
+    this.#startupOperation = operation;
+    return operation;
+  }
+
+  #assertStartupOpen(): void {
+    if (this.#closed) throw new Error("runnerd transport closed during provider startup");
+  }
+
   async #closeOnce(): Promise<void> {
     this.#closed = true;
+    const { preparationDeadline, closeDeadline } = runnerCloseDeadlines(Date.now(), runnerCloseGraceMs(this.options));
+    let startupConfirmed = true;
+    if (this.#startupOperation !== null) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          this.#startupOperation.catch(() => undefined),
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => reject(new Error("Native startup drain timed out")), Math.max(0, preparationDeadline - Date.now()));
+          }),
+        ]);
+      } catch {
+        startupConfirmed = false;
+        this.#startupDrainTimedOut = true;
+      } finally { clearTimeout(timer); }
+    }
     this.#turnStartAdmission?.resolve(false);
     const adoptedRunner = this.options.adoptExistingRunner;
     // `settled` is a durable-state assertion, not merely the absence of a
@@ -4481,10 +4508,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
       // A terminal provider frame can become visible one control loop before
       // its durable provider suffix is ACKed. Drain it before suspension so a
       // fresh run authority never inherits the prior run's pending events.
-      const { preparationDeadline, closeDeadline } = runnerCloseDeadlines(
-        Date.now(),
-        runnerCloseGraceMs(this.options),
-      );
+
       if (!(await this.#runnerHasExited())) {
         // Let an already-admitted tool result reach its original provider
         // before turn.stop can retire that tool-call identity. This shares the
@@ -4611,7 +4635,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
     // an incomplete or identity-conflicting state remains fail-closed.
     const finalProviderState = this.#providerDrainState();
     const runnerSettled =
-      runnerSuspended &&
+      startupConfirmed && runnerSuspended &&
       providerDrained &&
       this.#core?.semanticToolResultsSettled() === true &&
       (finalProviderState === null ||
@@ -4662,6 +4686,9 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
         // Keep the settlement failure authoritative if its observer fails.
       }
       throw new NativeSessionCloseUnrecoverableError(settlement);
+    }
+    if (!startupConfirmed) {
+      throw new Error("Native runner startup cleanup is unconfirmed; recovery state retained.");
     }
     if (this.#ownsRoot && !adoptedRunner) {
       rmSync(this.#root, { recursive: true, force: true });
@@ -4756,6 +4783,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
         nativeMcp: nativeMcpLaunchBinding(this.options.environment),
       });
     }
+    this.#assertStartupOpen();
     const opencodeProxyPath =
       this.options.opencodeProxyPath ??
       (provider === "opencode" && !this.options.runnerFilesystemRoot
@@ -5056,6 +5084,12 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
       this.#controlPlaneCheckpoint = registration.checkpoint ?? null;
       this.#controlPlaneRelease = registration.release;
     }
+    if (this.#closed && this.#startupDrainTimedOut) {
+      const release = this.#controlPlaneRelease;
+      this.#controlPlaneRelease = null;
+      await release?.();
+    }
+    this.#assertStartupOpen();
     const admissionDeadline = this.#coldAdmissionDeadline();
     const handle = spawnRunner({
       connection: registration?.connection ?? {
@@ -5098,7 +5132,9 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
     this.#handle = handle;
     this.#watchRunner(handle);
     await this.#publishSpawnedProcess(handle);
+    this.#assertStartupOpen();
     await registration?.activate?.();
+    this.#assertStartupOpen();
     if (registration?.failure) {
       void registration.failure.catch((error: unknown) => {
         this.#failTransport(
@@ -5107,6 +5143,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
       });
     }
     await this.#awaitRegistrationReady(registration?.ready);
+    this.#assertStartupOpen();
     this.#evidence.runnerPid = handle.child.pid ?? null;
     this.#evidence.runnerProcessGroupId = handle.processGroupId ?? null;
     this.#publish();
@@ -5633,6 +5670,12 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
             }
           : registration.release;
     }
+    if (this.#closed && this.#startupDrainTimedOut) {
+      const release = this.#controlPlaneRelease;
+      this.#controlPlaneRelease = null;
+      await release?.();
+    }
+    this.#assertStartupOpen();
     // Route and immutable endpoint admission precedes every launch-material
     // write. A refused transition leaves its retained home/context untouched.
     if (runtimeContext !== null) {
@@ -5664,6 +5707,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
     if (warmRecovery) {
       await this.options.authorizeWarmTransitionRecovery?.("before_bootstrap");
     }
+    this.#assertStartupOpen();
     const bootstrapTicket = adoptedRunner
       ? null
       : warmRecovery
@@ -5679,6 +5723,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
       await this.options.authorizeWarmTransitionRecovery?.("before_spawn");
     }
     // A replacement executor restores its cold provider before acknowledging recovery.
+    this.#assertStartupOpen();
     const admissionDeadline = this.#coldAdmissionDeadline(adoptedRunner === undefined);
     const handle = adoptedRunner
       ? null
