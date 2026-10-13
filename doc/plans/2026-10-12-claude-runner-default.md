@@ -27,7 +27,7 @@ Local Apple Silicon API-key task and follow-up are the first gate. Keep existing
 ## Remaining gates
 
 1. Local API-key onboarding/task/follow-up passed; retain evidence while runtime components change.
-2. Core settings propagation, all preservation paths, subscription acceptance.
+2. Core settings propagation and preservation paths. The user redirected the remaining subscription acceptance to API-key qualification; subscription follow-up remains unverified.
 3. Four-target package and remote proof; enable additional defaults only after qualification.
 4. Required checks, final-source review, PRs, inspectable evidence and working preview.
 
@@ -837,3 +837,53 @@ pre-move IDs preserved. Fifty-three source-affected entries retain their prior
 review classifications. Six bounded fixture plays and reset pass; exact cases,
 source scope, simulated boundaries and omitted coverage are recorded in
 `maps/storybook-map/REVIEW.md`. This does not qualify the final installed runtime.
+
+## Task-workspace composition and qualification hold — 2026-10-12
+
+The source owner published canonical prerequisite
+`16a53254c495f3e49a28cc911f5dcd60c41779fc` against task-workspace master
+`f329b24ee12496e710ad17377ec7716e0eee22ef`. This chat composed it through
+additive merges, retaining the Claude settings and immutable profile changes:
+
+| Review slice | Local code identity | Files against local dependency |
+| --- | --- | --- |
+| Protocol prerequisite, PR #15994 | `12113e431e37379901f2a39103816c8f2afec14a` | 678 against the older Codex branch; publication held |
+| Claude behavior, PR #15993 | `cf1fa2e98285cf80d25b0681ab45761389b22a9d` | 88 |
+| Platform qualification, PR #15997 | `4ba521823f8a92ba3fffcb5d6f578144466d848f` | 42 |
+
+The existing published PR heads remain unchanged. The root-owned Codex branch
+still needs the same current-master dependency before the protocol can meet its
+review file limit. Canonical 16a's fresh CI has one failing runner test, which its
+owner is investigating; earlier 64c074fb success is not carried forward as a
+16a pass. The source owner's provider-free cloud qualification is separate from
+the final Claude package campaign.
+
+Current composition checks pass: 189 guided-creation/form controls, 18
+task-workspace admission/runtime-context controls, 25 platform consumer controls,
+and nine Storybook catalog controls. UI, server, runner and runner-surfaces noemit,
+map checks, token gates and profile generation checks pass. The platform tests
+retain both Claude corrupt-package admission and the root's bounded Intel install
+diagnostics. No provider task, Docker build or Rust build ran for these checks.
+Logs are `/private/tmp/claude-16a-creation-form-controls.log`,
+`/private/tmp/claude-16a-workspace-context-controls.log`,
+`/private/tmp/claude-16a-consumer-diagnostic-controls.log` and
+`/private/tmp/claude-16a-catalog-controls.log`.
+
+Server noemit initially found a stale plugin SDK declaration where `projectId`
+was still non-nullable. The source type was already correct. Refreshing ignored
+shared/SDK outputs with the installed TypeScript compiler restored server noemit;
+no product code or lockfile changed. The default pnpm wrapper's restricted-network
+fetch failure is retained in `/private/tmp/claude-16a-sdk-refresh.log`; signature
+checks were not bypassed. The successful compiler receipts are
+`/private/tmp/claude-16a-shared-refresh.log`,
+`/private/tmp/claude-16a-sdk-direct-refresh.log` and
+`/private/tmp/claude-16a-server-types-refreshed.log`.
+
+The usable preview remains `http://127.0.0.1:3105` on recorded installed source
+557c3064 with the previously declared controller overlays. Its successful API-key
+task/revision pairs and downloaded artifacts remain valid for those literal
+identities. They do not certify the current composition. Final gates remain a
+frozen Codex dependency, fresh checks/review on all three published slices,
+four-target cloud packages and clean consumers, and current installed-runtime
+acceptance within the existing $50 ceiling. Unknown-charge holds remain intact.
+Merging and production deployment remain separate actions.
