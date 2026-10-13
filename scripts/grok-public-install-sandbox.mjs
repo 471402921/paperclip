@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 
 // Keep public-package lifecycle code off the verification host. Resolve and
@@ -10,6 +10,79 @@ export const GROK_PUBLIC_INSTALL_IMAGE =
 export const GROK_PUBLIC_INSTALL_LIFECYCLE = [
   'npm', 'rebuild', '--offline', '--ignore-scripts=false', '--dangerously-allow-all-scripts',
 ];
+
+export function runMacInitialInstallWithDiagnostics(install, { sourceRevision, platform, architecture, cacheDirectory, receiptPath }) {
+  const started = performance.now();
+  try {
+    return install();
+  } catch (error) {
+    try {
+      const phases = new Set(['npm', 'load', 'config', 'command', 'idealTree', 'reify', 'build', 'extract', 'unpack', 'fetch', 'audit', 'cache', 'arborist', 'metavuln']);
+      const operations = new Set(['load', 'install', 'init', 'userRequests', 'buildDeps', 'inflate', 'fixDepFlags', 'diffTrees', 'loadTrees', 'retireShallow', 'markDeleted', 'loadBundles', 'unpack', 'unretire', 'build', 'trash', 'save', 'audit', 'manifest', 'failed']);
+      const safePhase = value => {
+        const [phase, detail] = value.split(':');
+        return phases.has(phase) ? phase + (operations.has(detail) ? ':' + detail : '') : null;
+      };
+      const tails = [];
+      try {
+        const logs = join(cacheDirectory, '_logs');
+        assert.equal(realpathSync(logs), logs);
+        for (const name of readdirSync(logs).filter(name => /^[0-9TZ_.:-]+-(?:debug-\d+\.log|timing\.json)$/.test(name)).sort().slice(-2)) {
+          const file = join(logs, name);
+          if (!lstatSync(file).isFile()) continue;
+          const fd = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+          try {
+            const stat = fstatSync(fd);
+            assert.ok(stat.isFile());
+            const size = stat.size;
+            const bytes = Buffer.alloc(Math.min(size, 16 * 1024));
+            const length = readSync(fd, bytes, 0, bytes.length, Math.max(0, size - bytes.length));
+            const text = bytes.subarray(0, length).toString('utf8');
+            const entries = [];
+            if (name.endsWith('-timing.json')) {
+              if (size > bytes.length) continue;
+              const timing = JSON.parse(text);
+              for (const [key, duration] of Object.entries(timing.timers ?? {})) {
+                const phase = safePhase(key);
+                if (phase && Number.isFinite(duration) && duration >= 0) entries.push({ phase, durationMilliseconds: duration });
+              }
+            } else {
+              for (const line of text.split('\n')) {
+                const match = line.match(/^\d+\s+(timing|silly|verbose|http)\s+(\S+)(?:\s+(\S+))?/);
+                if (!match) continue;
+                const phase = safePhase(match[2]);
+                if (!phase) continue;
+                const entry = { level: match[1], phase };
+                if (operations.has(match[3])) entry.operation = match[3];
+                const duration = line.match(/^\d+\s+timing\s+\S+\s+Completed in (\d{1,10})ms\s*$/);
+                if (duration) entry.durationMilliseconds = Number(duration[1]);
+                if (match[1] === 'http') {
+                  const response = line.match(/^\d+\s+http\s+fetch\s+(GET|POST|PUT|DELETE|HEAD)\s+(\d{3})\s+/);
+                  if (response) {
+                    entry.method = response[1]; entry.status = Number(response[2]);
+                    const fetched = line.match(/\s(\d{1,10})ms(?:\s+\(cache (?:hit|miss|revalidated|updated)\))?\s*$/);
+                    if (fetched) entry.durationMilliseconds = Number(fetched[1]);
+                  }
+                }
+                entries.push(entry);
+              }
+            }
+            tails.push({ kind: name.endsWith('-timing.json') ? 'npm-timing' : 'npm-debug', truncated: size > bytes.length || entries.length > 32, entries: entries.slice(-32) });
+          } finally { closeSync(fd); }
+        }
+      } catch {}
+      const codes = new Set(['ETIMEDOUT', 'ENOENT', 'EACCES', 'EPERM', 'ENOMEM', 'ENOBUFS', 'EIO', 'EPIPE', 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER']);
+      const signals = new Set(['SIGTERM', 'SIGKILL', 'SIGABRT', 'SIGINT', 'SIGHUP', 'SIGQUIT', 'SIGSEGV', 'SIGBUS']);
+      writeFileSync(receiptPath, JSON.stringify({ schema: 'paperclip.runner.mac-public-install-failure.v1',
+        sourceRevision, platform, architecture, phase: 'initial-npm-install', outcome: 'FAILED', qualified: false,
+        runtimeNotAttempted: true, providerCalls: 0, elapsedMilliseconds: Math.round(performance.now() - started), timeoutMilliseconds: 600000,
+        error: { code: codes.has(error?.code) ? error.code : null, status: Number.isInteger(error?.status) ? error.status : null,
+          signal: signals.has(error?.signal) ? error.signal : null, errno: Number.isInteger(error?.errno) ? error.errno : null },
+        npmDiagnosticTail: tails }, null, 2) + '\n');
+    } catch {}
+    throw error;
+  }
+}
 
 export function macNodeHeadersDirectory(nodeExecutable, nodeVersion) {
   assert.match(nodeVersion, /^\d+\.\d+\.\d+$/, 'Executing Node must have an exact release version');

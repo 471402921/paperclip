@@ -9,7 +9,7 @@ import { PluginLauncherProvider } from "@/plugins/launchers";
 import { ChatEndpointDetail } from "@/pages/apps/chat/ChatEndpointDetail";
 import { useCompany } from "@/context/CompanyContext";
 import type { ChatEndpoint, ChatEndpointResource, ChatIdentityLink } from "@/api/chatEndpoints";
-import { storybookAgents } from "../../../fixtures/paperclipData";
+import { storybookAgents, storybookExecutionWorkspaces } from "../../../fixtures/paperclipData";
 
 type Scenario = "populated" | "empty" | "error" | "channel-added" | "unlinked" | "invitation-expired";
 function ChatManagementPage({ tab = "settings", scenario = "populated" }: { tab?: string; scenario?: Scenario }) {
@@ -45,6 +45,10 @@ function ChatManagementPage({ tab = "settings", scenario = "populated" }: { tab?
       const json = (data: unknown) => Response.json(data);
       if (path === `/api/agents/${agent.id}`) return json(agent);
       if (path === "/api/companies/company-storybook/agents") return json([agent, ...storybookAgents.slice(1)]);
+      if (path === "/api/companies/company-storybook/execution-workspaces" && url.searchParams.get("selectableForTask") === "true") {
+        return json(storybookExecutionWorkspaces.filter(workspace =>
+          workspace.closedAt == null && ["active", "idle"].includes(workspace.status)));
+      }
       if (path === "/api/chat-endpoints/chat-management") {
         if (init?.method === "PATCH") endpoint = { ...endpoint, ...JSON.parse(String(init.body)) };
         return json(endpoint);

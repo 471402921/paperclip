@@ -233,3 +233,58 @@ baseline comparisons are not run. The retained product preview's separate mobile
 inspection remains bound to its earlier compiled source, and final installed
 product/provider checks remain pending. The catalog checker and nine checker
 controls pass; UI noemit, maps and token gates pass on the composed source.
+
+## Task workspace reconciliation — 2026-10-12
+
+Scope: the 26 declared-source entries affected by task-workspace work at
+`88b1d3a2`, compared with master `dabb8c5daf`, including subsequent comment-only
+cleanup and the fixture corrections below. This is a bounded source review,
+not a new review of all Storybook states. Reconciliation onto `b5046ec022`
+preserves its new feature folders, sidebar titles and explicit stable IDs, along
+with the existing exports, classification and simulation boundaries. Shared GitHub
+fixtures now live under `ui/storybook/support/github-bot-management/`.
+
+Twenty-one entries changed only through the expanded chat/workspace recipes.
+Their setup, identity, browser, artifact, picker and service examples are retained;
+the new recipe requirements do not become covered merely because they reference
+the same capability. Five entries also depend on changed production subjects:
+
+| Story file under `ui/storybook/stories/` | Source review and remaining scope |
+| --- | --- |
+| `chat-channels/chat-management/chat-management.stories.tsx` | Mounted endpoint includes connection/destination defaults. Added the missing selectable-workspace fixture response; existing endpoint PATCH and resource PUT retain defaults. No browser save, error, reload or inheritance proof in this pass. |
+| `chat-channels/github-bot-management/management.stories.tsx` | Mounted endpoint/repository editors include defaults. Fixed the endpoint mock to persist PATCH values instead of returning the original endpoint. Resource PUT already distinguishes omitted, null and concrete values. Project/workspace choices are intentionally empty fixtures. |
+| `chat-channels/imessage-photon.stories.tsx` | Existing scenarios mount setup/access and simulate task conversations. They do not exercise the newly added settings editor or its workspace-choice request. Kept unreviewed rather than claiming settings coverage. |
+| `projects/projects-goals-workspaces.stories.tsx` | Existing project-bound summaries still match the rendered components. New nullable project references and runtime invalidation branches have no projectless story scenario here. |
+| `workspaces/workspace-runtime-provisioning.stories.tsx` | The demonstrated status subcomponent is unchanged. Its local context row does not prove the full detail page's new projectless behavior. |
+
+The three endpoint-management entries now declare `ChatExecutionDefaults` and its
+API clients as review dependencies. AgentMail settings still demonstrates only
+the inbox subsection, not the surrounding endpoint defaults. Historical GitHub
+designs remain historical; existing unreviewed entries remain unreviewed. None of
+these fixture examples establishes source authorization, retained file privacy,
+pending workspace selection, sandbox admission or existing-conversation continuity.
+
+Executed: the GitHub fixture's two Vitest cases passed, including default save,
+subsequent GET, omitted-value preservation, explicit null clearing and fresh-mount
+reset. After the folder rebase, both fixture tests and all nine catalog checker
+tests passed again; token gates passed before the path-only reconciliation. After the final
+source freeze, only the 26 reviewed fingerprints were refreshed; catalog validation
+passed for all 223 files and all 2,210 source-parsed story IDs were unchanged.
+All 223 upstream file paths, explicit stable IDs and sidebar titles were preserved.
+Not run in this pass: Storybook build, browser rendering or `play`, screenshot
+comparisons, provider calls and live production acceptance. No new visual
+baselines were accepted. Fixture tests are boundary simulations, not server
+persistence or permission tests.
+
+## Workspace safety recipe follow-up — 2026-10-12
+
+Reviewed the twelve entries that depend on the workspace feature recipe: browser-use activity/footer/page, the three HTML-artifact suites, project execution strategy and project workspace summaries, searchable selection, workspace files, runtime provisioning and service controls. Their production subjects, fixtures, feature folders, sidebar titles and stable IDs are unchanged. The recipe now requires prospective child boundary checks, safe low-trust reopening, and coherent returned checkpoint ancestry. These backend safety contracts are not exercised by those fixtures. Each entry remains unreviewed for full production parity. Only the reviewed recipe fingerprints were refreshed; no browser render, play, screenshot baseline or production acceptance was run for this follow-up.
+
+
+## Remote provisioning recipe follow-up — 2026-10-13
+
+Reviewed the same twelve workspace-recipe-dependent entries after extending the controller-provisioning boundary to standard-trust sandbox and SSH selections. Their components, fixtures and stable IDs are unchanged. Project strategy stories demonstrate configuration fields with environment selection disabled; runtime provisioning stories demonstrate status values with a no-operation log handler. Browser, artifact, file and service-control fixtures do not execute source scripts or prove admission placement. The new recipe requires controller marker denial independent of source write grants while copying and dispatch remain available, including local copy-only selections, retained deny-only metadata and closed-worktree reopening. Implicit trusted local defaults remain separate positive controls. All twelve entries retain their unreviewed production classification. Refreshed only these recipe fingerprints after this source review; no browser render, play, screenshot, Storybook build or live runtime qualification is claimed.
+
+## Default-source recipe follow-up — 2026-10-13
+
+Reviewed the twelve unchanged workspace recipe subjects and fixtures after correcting implicit default selection. Task creation and controller classification now share configured-policy, primary, creation-time and ID precedence. Explicit choices and retained denial markers still suppress controller hooks. Project strategy fixtures show configuration, while runtime status and file/browser/artifact/service fixtures do not execute source scripts or prove this backend ordering. Refreshed only their reviewed recipe fingerprints and retained all classifications and stable IDs. No browser render, play, screenshot, Storybook build or live runtime acceptance was performed.

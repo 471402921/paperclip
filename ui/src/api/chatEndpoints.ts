@@ -36,6 +36,7 @@ export type ChatEndpointSetupAction =
   "configure" | "verify" | "pause" | "resume" | "reconnect" | "remove";
 
 export interface ChatEndpointResource {
+  executionDefaults?: import("@paperclipai/shared").ChatExecutionDefaults | null;
   metadata?: Record<string, unknown>;
   id: string;
   type: string;
@@ -101,6 +102,7 @@ export interface ChatIdentityLinkPreview {
 }
 
 export interface ChatEndpoint {
+  executionDefaults?: import("@paperclipai/shared").ChatExecutionDefaults | null;
   communicationInstructions?: string;
   publicationMode?: "automatic" | "explicit";
   externalExecutionPolicy?: "restricted" | "agent";
@@ -249,7 +251,7 @@ export const chatEndpointsApi = {
     ),
   updateResources: (
     endpointId: string,
-    resources: Array<{ id: string; enabled: boolean }>,
+    resources: Array<{ id: string; enabled?: boolean; executionDefaults?: import("@paperclipai/shared").ChatExecutionDefaults | null }>,
   ) =>
     api.put<ChatEndpointResource[]>(`/chat-endpoints/${endpointId}/resources`, {
       resources,
