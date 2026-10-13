@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import { agents, companies, activityLog, heartbeatRuns, issues, issueComments, issueDocuments, documents, nativeRunFinalizations, agentWakeupRequests,
+import { agents, companies, projects, activityLog, heartbeatRuns, issues, issueComments, issueDocuments, documents, nativeRunFinalizations, agentWakeupRequests,
   museAgentBindings as bindings, museCredentials as credentials, museRunnerAssignments as assignments, museRunnerOperations as operations,
   museMailboxItems as mailbox, museInputDeliveries as inputs, museIdleReceipts as idleReceipts, externalAgentHolds as holds,
   museReceiverContactBuckets, type Db } from "@paperclipai/db";
@@ -16,6 +16,9 @@ import { canConfigureAgentConnection, scheduleAgentLifecycle } from "../agent-li
 import { authorizationService, issueReadSqlCondition, type AuthorizationActor } from "../../services/authorization.js";
 import { logActivity, publishActivity, type ActivityPublication } from "../../services/activity-log.js";
 import { issueService } from "../../services/issues.js";
+import { resolveCoreTrustPreset } from "../../services/trust-preset-resolver.js";
+import { normalizeIssueExecutionPolicy } from "../../services/issue-execution-policy.js";
+import { buildLowTrustSourceTrust, resolveActorSourceTrustForIssue } from "../../services/source-trust.js";
 import { getNativeReviewAssignment, readNativeReviewAssignmentContext } from "../../services/native-runtime/native-review-participant.js";
 import { withExternalAdmissionGuard, assertNoExternalOverlap, type ExternalAdmissionTransaction } from "./admission.js";
 import { createNativeExternalBroker } from "./native-broker.js";
@@ -394,7 +397,8 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
         if(c.command==="task.comment") {
           const issue=await assertIssue(s,c.issueId,undefined,tx);
           await assertWrite(issue,"issue:comment");
-          const comment=await issueService(db).addComment(c.issueId,c.body,{agentId:s.agentId,onBehalfOfUserId:s.authorizingUserId},{},tx);
+          const sourceTrust=await resolveActorSourceTrustForIssue({db:tx as unknown as Db,issue,actor:{actorType:"agent",actorId:s.agentId,agentId:s.agentId,runId:null}});
+          const comment=await issueService(db).addComment(c.issueId,c.body,{agentId:s.agentId,onBehalfOfUserId:s.authorizingUserId},{sourceTrust},tx);
           outcome={status:"commented",issueId:c.issueId,commentId:comment.id};
         } else {
           const parent=c.parentId?await assertIssue(s,c.parentId,undefined,tx):null;
@@ -406,7 +410,14 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
             const decision=await authorization.decide({actor,action:"tasks:assign",resource:{type:"issue",companyId:s.companyId,...scope},scope});
             if(!decision.allowed)throw forbidden(decision.explanation);
           }
-          const issue=await issueService(tx as unknown as Db).create(s.companyId,{title:c.title,description:c.description,parentId:c.parentId,projectId,status:"todo",assigneeAgentId:scope.assigneeAgentId,createdByAgentId:s.agentId,responsibleUserId:s.authorizingUserId,actorResponsibleUserId:s.authorizingUserId},tx);
+          const [agent]=await tx.select({companyId:agents.companyId,permissions:agents.permissions}).from(agents).where(and(eq(agents.id,s.agentId),eq(agents.companyId,s.companyId)));
+          const project=projectId?(await tx.select({companyId:projects.companyId,executionWorkspacePolicy:projects.executionWorkspacePolicy}).from(projects).where(and(eq(projects.id,projectId),eq(projects.companyId,s.companyId))))[0]:null;
+          const trust=resolveCoreTrustPreset({companyId:s.companyId,agent,project,issue:parent});
+          if(trust.kind==="denied")throw forbidden(trust.detail);
+          const issueId=randomUUID();
+          const issue=await issueService(tx as unknown as Db).create(s.companyId,{id:issueId,title:c.title,description:c.description,parentId:c.parentId,projectId,status:"todo",assigneeAgentId:scope.assigneeAgentId,createdByAgentId:s.agentId,responsibleUserId:s.authorizingUserId,actorResponsibleUserId:s.authorizingUserId,
+            ...(trust.kind==="low_trust_review"?{executionPolicy:{...normalizeIssueExecutionPolicy({authorizationPolicy:{trustPreset:trust.preset,trustBoundary:trust.boundary}})},sourceTrust:buildLowTrustSourceTrust({issueId,agentId:s.agentId})}:{}),
+          },tx);
           outcome={status:"created",issueId:issue.id,identifier:issue.identifier};
         }
         await tx.insert(idleReceipts).values({companyId:s.companyId,bindingId:b.id,bindingGeneration:b.generation,requestId:c.requestId,digest,outcome});

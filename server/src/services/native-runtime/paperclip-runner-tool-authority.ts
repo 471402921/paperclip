@@ -21,7 +21,7 @@ import { assertAssignableAgent } from "../agent-assignability.js";
 import { approvalReadSqlCondition, canActorReadApproval, authorizationService, issueReadSqlCondition, type AuthorizationActor } from "../authorization.js";
 import { resolveCoreTrustPreset } from "../trust-preset-resolver.js";
 import { normalizeIssueExecutionPolicy, redactIssueMonitorExternalRef } from "../issue-execution-policy.js";
-import { buildLowTrustSourceTrust } from "../source-trust.js";
+import { buildLowTrustSourceTrust, isLowTrustQuarantined, resolveActorSourceTrustForIssue, sanitizeQuarantinedCommentForHigherTrust } from "../source-trust.js";
 import { handoffPlanContext } from "./handoff-plan-context.js";
 import { callCreateSkillTool, callUpdateSkillTool } from "../skill-tools.js";
 import { callProjectTool } from "../project-tools.js";
@@ -628,11 +628,14 @@ export class PaperclipRunnerToolAuthority {
         };
       }
       case "get_task_history": {
+        const readerSourceTrust = await resolveActorSourceTrustForIssue({ db: this.db, issue: context.issue,
+          actor: { actorType: "agent", actorId: this.binding.agentId, agentId: this.binding.agentId, runId: this.binding.runId } });
         const limit = boundedLimit(input.limit);
         const comments = await this.db.select({
           id: issueComments.id,
           body: issueComments.body,
           origin: issueComments.origin,
+          sourceTrust: issueComments.sourceTrust,
           authorAgentId: issueComments.authorAgentId,
           authorUserId: issueComments.authorUserId,
           createdAt: issueComments.createdAt,
@@ -644,7 +647,10 @@ export class PaperclipRunnerToolAuthority {
           ))
           .orderBy(desc(issueComments.createdAt))
           .limit(limit);
-        return { comments: comments.reverse().map(comment => ({ ...comment, body: fastResponseHistoryBody(comment) })) };
+        return { comments: comments.reverse().map(comment => {
+          const visible = isLowTrustQuarantined(readerSourceTrust) ? comment : sanitizeQuarantinedCommentForHigherTrust(comment);
+          return { ...visible, body: fastResponseHistoryBody(visible) };
+        }) };
       }
       case "search_tasks": {
         const tasks = await issueService(this.db).list(this.binding.companyId, { readCondition: await issueReadSqlCondition(this.db, this.#privacyActor(context.run)) });

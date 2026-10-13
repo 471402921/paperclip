@@ -14,6 +14,8 @@ import { museRunnerBroker } from "../services/muse-runner-broker.js";
 import { dotRunnerBroker } from "../services/dot-runner-broker.js";
 import { museReceiver } from "../services/muse-receiver.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import { LOW_TRUST_QUARANTINED_BODY, sanitizeQuarantinedCommentForHigherTrust } from "../services/source-trust.js";
+import { PaperclipRunnerToolAuthority } from "../services/native-runtime/paperclip-runner-tool-authority.js";
 import { assertNoExternalOverlap, withExternalAdmissionGuard } from "../modules/external-agents/index.js";
 import { digestPaperclipSemanticContent, externalOperationDigest, type ExternalProviderOperation } from "../vendor/paperclip-runner/index.js";
 
@@ -187,7 +189,7 @@ describe("personal Muse control plane",()=>{
     const result=await f.broker.act(f.subject,command);
     expect(result.status).toBe("created");expect(await f.broker.act(f.subject,command)).toEqual(result);
     const [issue]=await db.select().from(issues).where(eq(issues.id,String(result.issueId)));
-    expect(issue.createdByAgentId).toBe(f.agent.id);expect(issue.responsibleUserId).toBe(f.operatorId);expect(issue.status).toBe("todo");
+    expect(issue.createdByAgentId).toBe(f.agent.id);expect(issue.responsibleUserId).toBe(f.operatorId);expect(issue.status).toBe("todo");expect(issue.sourceTrust).toBeNull();
     await expect(f.broker.act(f.subject,{...command,title:"Changed intake"})).rejects.toThrow("changed input");
   });
   it("comments on an idle task using its complete current permission resource",async()=>{
@@ -195,10 +197,52 @@ describe("personal Muse control plane",()=>{
     const command={version:1 as const,command:"task.comment" as const,requestId:randomUUID(),issueId:issue.id,body:"Idle coordination"};
     const result=await f.broker.act(f.subject,command);expect(result.status).toBe("commented");expect(await f.broker.act(f.subject,command)).toEqual(result);
     const rows=await db.select().from(issueComments).where(eq(issueComments.issueId,issue.id));
-    expect(rows).toHaveLength(1);expect(rows[0]).toMatchObject({authorAgentId:f.agent.id,authorUserId:null,onBehalfOfUserId:f.operatorId,body:command.body});
+    expect(rows).toHaveLength(1);expect(rows[0]).toMatchObject({authorAgentId:f.agent.id,authorUserId:null,onBehalfOfUserId:f.operatorId,body:command.body,sourceTrust:null});
     await db.update(companyMemberships).set({membershipRole:"viewer"}).where(and(eq(companyMemberships.companyId,f.company.id),eq(companyMemberships.principalId,f.operatorId)));
     await expect(f.broker.act(f.subject,{...command,requestId:randomUUID()})).rejects.toThrow("authority");
     expect(await db.select().from(issueComments).where(eq(issueComments.issueId,issue.id))).toHaveLength(1);
+  });
+  it.each(["agent","project"] as const)("quarantines idle Muse output and retains the resolved %s trust boundary",async source=>{
+    const f=await fixture();
+    const [project]=await db.insert(projects).values({companyId:f.company.id,name:"Restricted idle coordination"}).returning();
+    const boundary={mode:"low_trust_review",companyId:f.company.id,projectIds:[project.id]};
+    const policy={trustPreset:"low_trust_review",trustBoundary:boundary};
+    if(source==="agent")await db.update(agents).set({permissions:{canCreateTasks:true,authorizationPolicy:policy}}).where(eq(agents.id,f.agent.id));
+    else await db.update(projects).set({executionWorkspacePolicy:{authorizationPolicy:policy}}).where(eq(projects.id,project.id));
+    const command={version:1 as const,command:"task.create" as const,requestId:randomUUID(),title:"Unreviewed idle task",description:"Untrusted task instructions",projectId:project.id};
+    const created=await f.broker.act(f.subject,command);
+    const [issue]=await db.select().from(issues).where(eq(issues.id,String(created.issueId)));
+    expect(issue.executionPolicy).toMatchObject({authorizationPolicy:policy});
+    expect(issue.sourceTrust).toMatchObject({preset:"low_trust_review",disposition:"quarantined",sourceIssueId:issue.id,sourceAgentId:f.agent.id,sourceRunId:null});
+    expect(issue).toMatchObject({createdByAgentId:f.agent.id,responsibleUserId:f.operatorId,projectId:project.id});
+    expect(await f.broker.act(f.subject,command)).toEqual(created);
+    const [coordination]=await db.insert(issues).values({companyId:f.company.id,projectId:project.id,title:"Existing coordination",status:"todo",assigneeAgentId:f.agent.id,responsibleUserId:f.operatorId}).returning();
+    const commentCommand={version:1 as const,command:"task.comment" as const,requestId:randomUUID(),issueId:coordination.id,body:"Untrusted idle instructions"};
+    const written=await f.broker.act(f.subject,commentCommand);
+    expect(await f.broker.act(f.subject,commentCommand)).toEqual(written);
+    const comments=await db.select().from(issueComments).where(eq(issueComments.issueId,coordination.id));
+    expect(comments).toHaveLength(1);
+    expect(comments[0]).toMatchObject({body:commentCommand.body,authorAgentId:f.agent.id,onBehalfOfUserId:f.operatorId,sourceTrust:{preset:"low_trust_review",disposition:"quarantined",sourceIssueId:coordination.id,sourceAgentId:f.agent.id,sourceRunId:null}});
+    expect(sanitizeQuarantinedCommentForHigherTrust(comments[0]).body).toBe(LOW_TRUST_QUARANTINED_BODY);
+    const runId=randomUUID();
+    await db.insert(heartbeatRuns).values({id:runId,companyId:f.company.id,agentId:f.agent.id,nativeIssueId:coordination.id,responsibleUserId:f.operatorId,status:"running",runtimeMode:"native",invocationSource:"assignment"});
+    await db.update(issues).set({executionRunId:runId}).where(eq(issues.id,coordination.id));
+    const authority=new PaperclipRunnerToolAuthority(db,{companyId:f.company.id,agentId:f.agent.id,issueId:coordination.id,runId,museRuntime:true,externalAuthorizingUserId:f.operatorId,assertBridgeAuthority:async()=>{}});
+    const before=await authority.execute({tool:"get_task_history",callId:"restricted-history",arguments:{limit:50}}) as {comments:Array<{id:string,body:string}>};
+    expect(before.comments.find(comment=>comment.id===comments[0].id)?.body).toBe(commentCommand.body);
+    await db.update(agents).set({permissions:{canCreateTasks:true}}).where(eq(agents.id,f.agent.id));
+    await db.update(projects).set({executionWorkspacePolicy:{}}).where(eq(projects.id,project.id));
+    const ordinary=await f.broker.act(f.subject,{...commentCommand,requestId:randomUUID(),body:"Reviewed ordinary coordination"});
+    const after=await authority.execute({tool:"get_task_history",callId:"higher-trust-history",arguments:{limit:50}}) as {comments:Array<{id:string,body:string}>};
+    expect(after.comments.map(comment=>comment.id)).toEqual([comments[0].id,ordinary.commentId]);
+    expect(after.comments[0].body).toBe(LOW_TRUST_QUARANTINED_BODY);
+    expect(after.comments[1].body).toBe("Reviewed ordinary coordination");
+    await db.update(agents).set({permissions:{canCreateTasks:true,...(source==="agent"?{authorizationPolicy:policy}:{})}}).where(eq(agents.id,f.agent.id));
+    const [outside]=await db.insert(projects).values({companyId:f.company.id,name:"Outside idle boundary"}).returning();
+    if(source==="agent"){
+      await expect(f.broker.act(f.subject,{...command,requestId:randomUUID(),projectId:outside.id})).rejects.toThrow();
+      expect(await db.select().from(issues).where(and(eq(issues.companyId,f.company.id),eq(issues.projectId,outside.id)))).toEqual([]);
+    }
   });
   it("applies idle creation grants to the actual inherited parent project",async()=>{
     const f=await fixture();const [project]=await db.insert(projects).values({companyId:f.company.id,name:"Protected intake",executionWorkspacePolicy:{authorizationPolicy:{assignmentPolicy:{mode:"protected"}}}}).returning();
