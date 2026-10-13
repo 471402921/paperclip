@@ -340,7 +340,7 @@ function Setup({
         !adapter.disabled &&
         !getAdapterDisplay(adapterType).comingSoon,
     ) && (requestAdapterType !== "paperclip_runner" || adapterType === "paperclip_runner" || adapterInventory.data?.some(adapter => adapter.type === "paperclip_runner" && adapter.loaded && !adapter.disabled));
-  const ready = Boolean(
+  const connectionSettingsReady = Boolean(
     available &&
     (!["codex_local", "claude_local"].includes(adapterType) || runner !== "auto" || Boolean(adapters.data)) &&
     !environmentError &&
@@ -358,6 +358,14 @@ function Setup({
     !caps.error &&
     (!(managedOnly || forced.forced) || environmentId),
   );
+  const needsCurrentSetup = ["codex_local", "claude_local"].includes(adapterType);
+  const ready = connectionSettingsReady && (!needsCurrentSetup || (
+    envs.isSuccess && !envs.isFetching
+    && settings.isSuccess && !settings.isFetching
+    && experimental.isSuccess && !experimental.isFetching
+    && general.isSuccess && !general.isFetching
+    && (runner !== "auto" || (adapters.isSuccess && !adapters.isFetching))
+  ));
   const busy = testState === "running" || saving;
 
   function buildConfig(
@@ -762,7 +770,7 @@ function Setup({
                         center
                       />
                     </div>
-                    {ready ? <AgentProviderConnection
+                    {connectionSettingsReady ? <fieldset disabled={!ready} className="contents"><AgentProviderConnection
                       key={environmentId ?? "local"}
                       companyId={companyId}
                       adapterType={connectionAdapter}
@@ -814,7 +822,7 @@ function Setup({
                         setRuntimeAiBinding(undefined);
                         setScreen("runtime");
                       }}
-                    /> : <p role="status" className="text-sm text-muted-foreground">Loading connection settings…</p>}
+                    /></fieldset> : <p role="status" className="text-sm text-muted-foreground">Loading connection settings…</p>}
                     {["codex_local", "claude_local"].includes(adapterType) && <details className="mt-5 space-y-3">
                       <summary className="cursor-pointer text-sm text-muted-foreground">Advanced</summary>
                       <AgentRunnerSelect value={runner} disabled={busy}

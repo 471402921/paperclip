@@ -205,12 +205,17 @@ function registerModuleMocks() {
   }));
 }
 
-async function createApp(transaction: (callback: (tx: Record<string, never>) => Promise<unknown>) => Promise<unknown> =
-  async (callback) => callback({})) {
-  const [{ errorHandler }, { issueRoutes }] = await Promise.all([
+function loadRouteFixture() {
+  return Promise.all([
     vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
     vi.importActual<typeof import("../routes/issues.js")>("../routes/issues.js"),
   ]);
+}
+let routeFixture: Awaited<ReturnType<typeof loadRouteFixture>>;
+
+async function createApp(transaction: (callback: (tx: Record<string, never>) => Promise<unknown>) => Promise<unknown> =
+  async (callback) => callback({})) {
+  const [{ errorHandler }, { issueRoutes }] = routeFixture;
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -253,7 +258,7 @@ function makeIssue(overrides: Record<string, unknown> = {}) {
 }
 
 describe("issue update comment wakeups", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
     vi.doUnmock("../routes/issues.js");
     vi.doUnmock("../routes/authz.js");
@@ -271,6 +276,9 @@ describe("issue update comment wakeups", () => {
     mockIssueService.getWakeableParentAfterChildCompletion.mockResolvedValue(null);
     mockIssueService.getCurrentScheduledRetry.mockResolvedValue(null);
     mockIssueService.listReviewAttention.mockResolvedValue(new Map());
+    // A fresh route graph is fixture preparation, not request execution. Keep
+    // per-case module resets while charging the cold transform to hookTimeout.
+    routeFixture = await loadRouteFixture();
   });
 
   it.each(["post", "patch"] as const)("rejects %s board messages under an inherited pause before any mutation", async (method) => {

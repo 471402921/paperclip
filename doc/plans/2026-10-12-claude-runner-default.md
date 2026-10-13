@@ -674,3 +674,85 @@ assertions remain unchanged. The full fake-transport suite passes 72 with one
 existing skip; runner noemit and maps pass. Fresh exact-head runner CI remains
 required after this test-only correction. No package campaign, paid provider
 call, local native build, Docker build or upstream prerequisite edit.
+
+## Guided creation with refreshed settings — 2026-10-12
+
+Review 4253594222 on behavior head `4440df2e44e346080308e40ec3287c94c7f776a2`
+identified stale cached environment selection during a background instance-settings
+read. The mounted reproduction actually calls setup against cached SSH/Legacy
+before the pending current settings select local/native, rather than merely
+observing a loading label. Guided Claude/Codex setup now requires current completed
+environment, settings, execution policy, experimental policy and matching Auto
+runner discovery reads before testing or hiring. Existing connection controls stay
+mounted inside a disabled fieldset while refreshing, preserving an API-key draft.
+Both the cached SSH-to-local case and same-environment discovery refresh pass;
+all 65 guided setup controls, UI noemit, token gates and structural maps pass.
+Logs: `/private/tmp/claude-guided-current-settings-before.log`,
+`/private/tmp/claude-guided-current-settings-draft-controls.log`, and
+`/private/tmp/claude-guided-current-settings-final-{types,tokens,maps}.log`.
+This repair is prepared locally while the source owner integrates the common
+transport correction; published behavior head remains the literal 4440 revision.
+No paid turns, local native builds or Docker builds were performed.
+
+Platform head `173a73ec95386d7b9eac50d87699a16ec27da3b3` failed a credential
+fixture during its two-port reservation (EADDRINUSE before the production staging
+call). The existing bounded three-port fixture reservation helper is extended to
+hold two candidates, retrying fixture preparation only and never a production
+staging call. A foreign-collision control verifies that foreign ownership survives,
+the auth sentinel stays unchanged, and preparation stops within eight attempts.
+All 42 credential controls and runner noemit pass locally after supplying the
+worktree's declared tsx test loader. Logs:
+`/private/tmp/claude-quorum-fixture-complete-controls.log` and
+`/private/tmp/claude-quorum-fixture-final-types.log`. This test-only correction
+is prepared in the protocol worktree and has not been published during the parent
+integration hold. The independent serialized issue-route timeout remains under
+phase diagnosis; a subsequent full mocked suite passes 36 controls but does not
+waive the cloud failure or prove its latency cause. Final source composition,
+required CI and the provider-free cloud packaging campaign remain pending.
+
+## Serialized route fixture initialization — 2026-10-12
+
+The failing inherited-pause cloud case timed out at its 15000 ms outer test bound.
+Temporary local phase instrumentation measured cold route imports at 9741 ms
+(and 11920 ms in a separate diagnostic attempt), followed by a POST 409 response
+in 11 ms and PATCH 409 in 4 ms. The subsequent full mocked suite passed 36 cases;
+these measurements do not establish the exact unrecorded cloud latency. Route
+module loading now runs in beforeEach after the same per-case module reset,
+unmocking and mock initialization. It uses the existing 30000 ms setup-hook bound;
+the 15000 ms request/test bound, application construction, policy assertions and
+mutation/wakeup checks are unchanged. All 36 treatment controls pass. Temporary
+phase instrumentation was removed. Evidence:
+`/private/tmp/claude-pause-route-phases.txt`,
+`/private/tmp/claude-pause-route-targeted-phases.log`, and
+`/private/tmp/claude-pause-route-hook-controls.log`. Exact-head cloud verification
+is still required; no timeout is waived and no provider or native build was run.
+
+## Mobile retained-preview inspection — 2026-10-12
+
+The in-app browser's viewport override did not apply, including to a fresh tab,
+so it supplies no mobile acceptance evidence. The existing Product E2E
+`openConnectionBrowser` helper then opened a private temporary Chromium profile
+against the retained preview. At an actual 390×844 viewport, light and dark
+runner menus fit within the document's 390 px scroll width. Enter opens the
+Runner listbox with native/Legacy choices; Escape preserves the saved native
+choice. Screenshots fast-forward CSS color transitions. Mutation requests were
+blocked by the test browser (none attempted); no provider prompts or setup probes
+were sent. This is a bounded UI inspection, not a catalog workflow grade.
+
+Evidence remains tied to compiled source
+`557c3064a30779e86e1ae312eab3d1d42c3a8b8d` with the recorded controller
+overlays, and must be repeated against final installed packages. The older
+preview's Linux Legacy default label is not evidence for the later platform Auto
+change. Report, light screenshot and dark screenshot are attached to the completed
+isolated x64 task as work products, with independently downloaded SHA-256 matches.
+The task stays done and the agent stays idle. The Product E2E helper's local source
+is `42e5d9bae436254bba6747e7d26be0cce13b3d0c`.
+Report attachment: `e6206748-a785-4c02-9bbf-f4db8a3b22f9`, work product
+`e7f6a023-e754-424b-bdc5-eb4087a79172`; light attachment
+`7c324aa1-d1c0-45cd-b314-c3106cac302d`, work product
+`e81b6b06-e64d-4ed5-aca7-c936a5235c81`; dark attachment
+`2815f32b-86d5-48ed-a0f4-7e35554e54ca`, work product
+`6fb9753e-19e0-496f-bf0a-f2de4d331895`.
+Local receipts: `/private/tmp/claude-responsive-preview-evidence.json`,
+`/private/tmp/claude-responsive-evidence-upload.json`, and
+`/private/tmp/claude-responsive-evidence-independent-check.json`.
