@@ -341,3 +341,68 @@ the real research/document/clarification task. Follow-up and fresh-conversation
 proactive intake must then pass before starting the new24-hour campaign. The old
 experiment remains stopped, Muse remains experimental and disabled by default,
 and no Cloud tenant or production rollout is claimed qualified.
+
+
+## Frozen asset7 verification and next candidate, October 13
+
+The assembled serving candidate634da654bbb11ad5edeef4a726818bb17a81382d
+passed normal full workspace typecheck and build. Typecheck first failed because
+a newly declared master dependency was absent from inherited installed packages;
+a normal cached install restored the declared dependency without source or lock
+changes. Both attempts are retained. The normal debug Runner compiled; the
+release artifact and serving revision were recorded separately.
+
+The required full test command on634 was stopped after602.360 seconds at its
+original ten-minute bound while fixtures were still progressing. PostgreSQL
+initialization worked in this attempt. There is no completed aggregate result;
+this is an incomplete budget-limited attempt, not the earlier shared-memory
+failure. The next frozen candidate requires a fresh normal full command with a
+ninety-minute bound and completion of all healthy phases.
+
+The original three-suite Muse check had142 passes and one failed race assertion.
+The claim test relied on an arbitrary50-millisecond delay before reassignment
+committed. A test-only repair waits for the actual database lock blocked by the
+held reassignment transaction, then requires the precise under-lock rejection,
+no sent command and an unclaimed assignment. On that isolated repair over634,
+all143 cases passed. The original failure is retained.
+
+All20 current Muse Storybook journeys rendered and the CopyAndVerify play passed.
+The broader selected normal functional batch was37 of40; original intermittent
+and fixture failures remain retained. Accessibility reporters failed24 of40,
+including shared sidebar/panel failures also observed on Dot. Visual inspection
+does not establish an unpublished Linux visual baseline or provider readiness.
+
+Personal Muse installed pinned immutable asset7 with its existing Vault grant
+and five-second hook. The independent background verification was accepted at
+22:46:53.253 UTC, about19.839 seconds after the helper recorded its request.
+A new ordinary research assignment was offered2.854 seconds after the recorded
+queue time, claimed after152.833 seconds and accepted natively another540
+milliseconds later. No Muse chat nudge was used. It submitted the structured
+audience question. The answer is still pending: automatic approval review
+requires the human's specific audience choice despite the disposable-test
+authorization. No input consumption, document or completion is claimed yet.
+This prelude is not an unattended qualification sample.
+
+The fixed master cutoff advanced to e0f30a4c7186498b71b2637f253b3399997dac7d.
+Its new agent-creator migration is preserved. Foundation reconciliation passed
+five normal-engine rehearsals with unchanged existing migration/grant/token
+records. The four unchanged Muse migrations are0344–0347; actual final OAuth
+requires normal generation as0348, retaining its SQL hash and original timestamp.
+The live database has not been reset.
+
+Review uncovered two independent compatibility/security defects. Idle Muse
+creates/comments must preserve the resolved source-trust policy, and both modern
+and legacy native history readers must sanitize quarantined comments for a
+higher-trust current run while preserving legitimate low-trust access. Meaningful
+before/after cases cover both boundaries. The published client also rejected
+65–128 selected options that the canonical question contract accepts. Immutable
+asset8 corrects that cap; versions1–7 retain their exact bytes. Its three Muse
+suites passed148 outer Vitest tests including53 Python assertions (separate
+count). The finite Core/Cloud protocol now has44 method/path pairs; future asset9
+is rejected. Full candidate, review and live gates remain pending.
+
+The new24-hour campaign has not started. Real task completion, follow-up and
+fresh-conversation proactive activity must pass on the frozen release candidate
+before that campaign. The old experiment stays stopped. The provider remains
+experimental and disabled by default; no managed Cloud tenant or rollout is
+claimed qualified.

@@ -22,7 +22,6 @@ const MODEL_ADAPTERS = new Set([
   "gemini_local", "cursor", "cursor_cloud", "grok_local", "hermes_local", "paperclip_runner",
 ]);
 
-/** Muse owns its model and effort; Paperclip cannot override them per task. */
 export function supportsComposerModel(agent: Agent | undefined): boolean {
   return Boolean(agent && MODEL_ADAPTERS.has(agent.adapterType)
     && !(agent.adapterType === "paperclip_runner" && agent.adapterConfig.provider === "muse"));
