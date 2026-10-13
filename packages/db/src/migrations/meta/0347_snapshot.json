@@ -1,6 +1,6 @@
 {
-  "id": "ca8966fd-d3f0-45af-9f18-e4826a02d679",
-  "prevId": "d054c235-a5db-49f9-97bf-c4d82990b1cb",
+  "id": "d418f620-e6d3-4e3d-ac4a-96bf7c7ca369",
+  "prevId": "42e04543-6c13-4339-8988-f4e833441df4",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4095,6 +4095,12 @@
         "metadata": {
           "name": "metadata",
           "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -60251,12 +60257,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "grant_id": {
-          "name": "grant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "generation": {
           "name": "generation",
           "type": "integer",
@@ -60445,22 +60445,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "muse_bindings_active_grant_uq": {
-          "name": "muse_bindings_active_grant_uq",
-          "columns": [
-            {
-              "expression": "grant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"muse_agent_bindings\".\"revoked_at\" IS NULL AND \"muse_agent_bindings\".\"grant_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -60488,19 +60472,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "muse_agent_bindings_grant_id_mcp_oauth_grants_id_fk": {
-          "name": "muse_agent_bindings_grant_id_mcp_oauth_grants_id_fk",
-          "tableFrom": "muse_agent_bindings",
-          "tableTo": "mcp_oauth_grants",
-          "columnsFrom": [
-            "grant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
