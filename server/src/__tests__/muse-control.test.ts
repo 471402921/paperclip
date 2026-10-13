@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { activityLog } from "@paperclipai/db";
+import { activityLog, documents, issueDocuments } from "@paperclipai/db";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { agents, agentWakeupRequests, authUsers, companies, companyMemberships, createDb, closeRegisteredClients, applyPendingMigrations, dotAgentBindings, dotRunnerAssignments, dotRunnerOperations, externalAgentHolds, heartbeatRuns, issueAccessGrants, issueComments, issues, projects, principalPermissionGrants, museAgentBindings as bindings, museCredentials, museInputDeliveries, museMailboxItems as mailbox, museRunnerAssignments as assignments, museRunnerOperations as operations, nativeRunFinalizations } from "@paperclipai/db";
@@ -99,6 +99,88 @@ describe("personal Muse control plane",()=>{
     expect((await f.broker.inspect(f.subject,{version:1,query:"task.list"}) as {tasks:unknown[]}).tasks).toHaveLength(1);
     await db.update(companyMemberships).set({status:"inactive"}).where(and(eq(companyMemberships.companyId,f.company.id),eq(companyMemberships.principalId,f.operatorId)));
     await expect(f.broker.inspect(f.subject,{version:1,query:"task.read",issueId:issue.id})).rejects.toThrow();vi.unstubAllEnvs();
+  });
+  async function idleReadFixture() {
+    const f=await fixture();
+    const [allowedProject,outsideProject]=await db.insert(projects).values([
+      {companyId:f.company.id,name:"Allowed project"},{companyId:f.company.id,name:"Outside project"},
+    ]).returning();
+    await db.update(agents).set({permissions:{trustPreset:"low_trust_review",authorizationPolicy:{trustBoundary:{mode:"low_trust_review",companyId:f.company.id,projectIds:[allowedProject.id]}}}}).where(eq(agents.id,f.agent.id));
+    const [allowed,outside]=await db.insert(issues).values([
+      {companyId:f.company.id,projectId:allowedProject.id,title:"idle-scope allowed",description:"allowed task content"},
+      {companyId:f.company.id,projectId:outsideProject.id,title:"idle-scope forbidden",description:"outside task content"},
+    ]).returning();
+    for(const issue of [allowed,outside]) {
+      await db.insert(issueComments).values({companyId:f.company.id,issueId:issue.id,authorType:"user",authorUserId:f.operatorId,body:issue.title+" history"});
+      const [document]=await db.insert(documents).values({companyId:f.company.id,title:issue.title,latestBody:issue.title+" document"}).returning();
+      await db.insert(issueDocuments).values({companyId:f.company.id,issueId:issue.id,documentId:document.id,key:"plan"});
+    }
+    return {...f,allowedProject,outsideProject,allowed,outside};
+  }
+  it.each(["task.read","task.history","task.document.read"] as const)("enforces ordinary low-trust authorization for idle %s",async(query)=>{
+    const f=await idleReadFixture();
+    const request=(issueId:string)=>query==="task.document.read"?{version:1 as const,query,issueId,key:"plan"}:{version:1 as const,query,issueId};
+    await expect(f.broker.inspect(f.subject,request(f.outside.id))).rejects.toThrow("unavailable");
+    expect(JSON.stringify(await f.broker.inspect(f.subject,request(f.allowed.id)))).toContain("idle-scope allowed");
+    await db.update(agents).set({permissions:{trustPreset:"low_trust_review",authorizationPolicy:{trustBoundary:{mode:"low_trust_review",companyId:f.company.id,projectIds:[f.outsideProject.id]}}}}).where(eq(agents.id,f.agent.id));
+    await expect(f.broker.inspect(f.subject,request(f.allowed.id))).rejects.toThrow("unavailable");
+    expect(JSON.stringify(await f.broker.inspect(f.subject,request(f.outside.id)))).toContain("idle-scope forbidden");
+  });
+  it.each(["task.list","task.search"] as const)("filters idle %s with ordinary authorization without exposing restricted cursors",async(query)=>{
+    const f=await idleReadFixture();
+    const request=query==="task.search"?{version:1 as const,query,text:"idle-scope"}:{version:1 as const,query};
+    const page=await f.broker.inspect(f.subject,request) as {tasks:Array<{id:string;title:string}>,nextCursor:string|null};
+    expect(page.tasks.map(task=>task.id)).toEqual([f.allowed.id]);expect(page.nextCursor).toBe(f.allowed.id);
+    expect(JSON.stringify(page)).not.toContain(f.outside.id);expect(JSON.stringify(page)).not.toContain(f.outside.title);
+  });
+  it.each(["task.list","task.search"] as const)("fills bounded authorized pages after rejected idle %s candidates",async(query)=>{
+    const f=await idleReadFixture();await db.delete(issues).where(eq(issues.companyId,f.company.id));
+    const ids=(high:boolean)=>Array.from({length:51},()=>`${high?"f0000000":"00000000"}-${randomBytes(2).toString("hex")}-4${randomBytes(2).toString("hex").slice(1)}-8${randomBytes(2).toString("hex").slice(1)}-${randomBytes(6).toString("hex")}`).sort();
+    const denied=ids(false),allowed=ids(true);
+    await db.insert(issues).values([...denied.map(id=>({id,companyId:f.company.id,projectId:f.outsideProject.id,title:"pagination-forbidden"})),...allowed.map(id=>({id,companyId:f.company.id,projectId:f.allowedProject.id,title:"pagination-allowed"}))]);
+    const request=query==="task.search"?{version:1 as const,query,text:"pagination"}:{version:1 as const,query};
+    const first=await f.broker.inspect(f.subject,request) as {tasks:Array<{id:string}>,nextCursor:string};
+    expect(first.tasks.map(task=>task.id)).toEqual(allowed.slice(0,50));expect(first.nextCursor).toBe(allowed[49]);
+    const last=await f.broker.inspect(f.subject,{...request,after:first.nextCursor}) as {tasks:Array<{id:string}>,nextCursor:string};
+    expect(last.tasks.map(task=>task.id)).toEqual(allowed.slice(50));expect(last.nextCursor).toBe(allowed[50]);
+    expect((await f.broker.inspect(f.subject,{...request,after:last.nextCursor}) as {tasks:unknown[]}).tasks).toEqual([]);
+    for(const id of denied)expect(JSON.stringify([first,last])).not.toContain(id);
+  });
+  it.each(["task.list","task.search"] as const)("fails closed at the authorized scan limit for idle %s and accepts narrower search",async(query)=>{
+    const f=await idleReadFixture();await db.delete(issues).where(eq(issues.companyId,f.company.id));
+    const denied=Array.from({length:201},()=>`00000000-${randomBytes(2).toString("hex")}-4${randomBytes(2).toString("hex").slice(1)}-8${randomBytes(2).toString("hex").slice(1)}-${randomBytes(6).toString("hex")}`);
+    const allowedId=`f0000000-${randomBytes(2).toString("hex")}-4${randomBytes(2).toString("hex").slice(1)}-8${randomBytes(2).toString("hex").slice(1)}-${randomBytes(6).toString("hex")}`;
+    await db.insert(issues).values([...denied.map(id=>({id,companyId:f.company.id,projectId:f.outsideProject.id,title:"bounded-collection forbidden"})),{id:allowedId,companyId:f.company.id,projectId:f.allowedProject.id,title:"bounded-collection narrow-match"}]);
+    const request=query==="task.search"?{version:1 as const,query,text:"bounded-collection"}:{version:1 as const,query};
+    await expect(f.broker.inspect(f.subject,request)).rejects.toMatchObject({status:422,message:"Task collection exceeds its read limit. Use task.search with a narrower query."});
+    const narrow=await f.broker.inspect(f.subject,{version:1,query:"task.search",text:"narrow-match"}) as {tasks:Array<{id:string}>,nextCursor:string};
+    expect(narrow.tasks.map(task=>task.id)).toEqual([allowedId]);expect(narrow.nextCursor).toBe(allowedId);
+  },30000);
+  it("uses only the current server-derived human-directed run context for native assignment reads",async()=>{
+    const f=await active();try {
+      const [project]=await db.insert(projects).values({companyId:f.company.id,name:"Unrelated allowed project"}).returning();
+      await db.update(agents).set({permissions:{trustPreset:"low_trust_review",authorizationPolicy:{trustBoundary:{mode:"low_trust_review",companyId:f.company.id,projectIds:[project.id]}}}}).where(eq(agents.id,f.agent.id));
+      await db.update(issues).set({visibility:"private"}).where(eq(issues.id,f.issue.id));
+      await db.update(heartbeatRuns).set({contextSnapshot:{issueId:f.issue.id}}).where(eq(heartbeatRuns.id,f.runId));
+      const [wake]=await db.insert(agentWakeupRequests).values({companyId:f.company.id,agentId:f.agent.id,runId:f.runId,source:"assignment",status:"claimed",requestedByActorType:"user",requestedByActorId:f.operatorId,payload:{issueId:f.issue.id,_paperclipWakeContext:{source:"issue.update"}}}).returning();
+      const idleRequest={version:1 as const,query:"task.read" as const,issueId:f.issue.id,runId:f.runId};
+      await expect(f.broker.inspect(f.subject,idleRequest)).rejects.toThrow("unavailable");
+      expect(await f.broker.inspect(f.subject,{version:1,query:"assignment.read",assignmentId:f.assignment.id})).toMatchObject({assignmentId:f.assignment.id,status:"offered"});
+      await db.update(agentWakeupRequests).set({status:"cancelled"}).where(eq(agentWakeupRequests.id,wake.id));
+      await expect(f.broker.inspect(f.subject,{version:1,query:"assignment.read",assignmentId:f.assignment.id})).rejects.toThrow("unavailable");
+    }finally{await f.detach();}
+  });
+  it("rechecks current authorizer grants for every idle task read surface",async()=>{
+    const f=await idleReadFixture(),other=randomUUID();
+    await db.insert(authUsers).values({id:other,name:"Other author",email:other+"@example.test",createdAt:new Date(),updatedAt:new Date()});
+    await db.update(issues).set({visibility:"private",responsibleUserId:other,assigneeAgentId:f.agent.id}).where(eq(issues.id,f.allowed.id));
+    const reads=[{version:1 as const,query:"task.read" as const,issueId:f.allowed.id},{version:1 as const,query:"task.history" as const,issueId:f.allowed.id},{version:1 as const,query:"task.document.read" as const,issueId:f.allowed.id,key:"plan"}];
+    for(const request of reads)await expect(f.broker.inspect(f.subject,request)).rejects.toThrow();
+    const [grant]=await db.insert(issueAccessGrants).values({issueId:f.allowed.id,subjectType:"user",subjectId:f.operatorId,source:"explicit"}).returning();
+    for(const request of reads)expect(JSON.stringify(await f.broker.inspect(f.subject,request))).toContain("idle-scope allowed");
+    await db.delete(issueAccessGrants).where(eq(issueAccessGrants.id,grant.id));
+    for(const request of reads)await expect(f.broker.inspect(f.subject,request)).rejects.toThrow();
+    expect((await f.broker.inspect(f.subject,{version:1,query:"task.list"}) as {tasks:unknown[]}).tasks).toEqual([]);
   });
   it("creates visible idle tasks with supported creation authority and a stable mutation receipt",async()=>{
     const f=await fixture(),command={version:1 as const,command:"task.create" as const,requestId:randomUUID(),title:"Idle intake",description:"Ordinary task intake"};
@@ -208,6 +290,31 @@ describe("personal Muse control plane",()=>{
       await expect(db.transaction(tx=>withExternalAdmissionGuard(tx,f.company.id,f.agent.id,()=>assertNoExternalOverlap(tx,f.company.id,f.agent.id)))).rejects.toMatchObject({details:{code:"external_agent_overlap"}});
     }finally{await f.detach();}
   });
+  it.each([false,true])("excludes fenced historical answers from pending health while retaining stop barriers:effects=%s",async(nativeEffectsUnknown)=>{
+    const f=await active();try {
+      await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+      const requestId="cancelled_question",response={schema:"paperclip.question_response.v1",answers:[]},inputDigest=digestPaperclipSemanticContent({requestId,turnId:f.ref.turnId,response});
+      await f.port.inputAvailable({sourceEventId:randomUUID(),payload:{binding:f.ref,requestId,turnId:f.ref.turnId,inputDigest,response}});
+      const [answer]=await db.select().from(museInputDeliveries).where(eq(museInputDeliveries.assignmentId,f.assignment.id));
+      expect((await f.broker.bindingForAgent(f.company.id,f.agent.id))!.pendingInputs).toBe(1);
+      if(nativeEffectsUnknown)await db.insert(operations).values({companyId:f.company.id,assignmentId:f.assignment.id,requestId:randomUUID(),digest:"pending",command:{action:"tool"},status:"pending"});
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      await db.update(heartbeatRuns).set({status:"cancelled",finishedAt:new Date()}).where(eq(heartbeatRuns.id,f.runId));
+      const stopped=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;
+      expect(stopped.pendingInputs).toBe(0);expect(stopped.stop.nativeEffectsUnknown).toBe(nativeEffectsUnknown);
+      expect((await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id)))[0].workerUnknown).toBe(true);
+      await expect(f.broker.act(f.subject,{version:1,command:"consume_input",assignmentId:f.assignment.id,requestId:randomUUID(),nativeRequestId:requestId,inputDigest,continuationReceiptId:randomUUID(),continuationPersisted:true})).rejects.toThrow();
+      await f.broker.attestStop(f.company.id,f.agent.id,f.operatorId,{boundary:stopped.stop.boundary!,expectedRevision:stopped.stop.bindingRevision!,workerStopped:true});
+      const [hold]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      expect(hold.workerUnknown).toBe(false);expect(hold.nativeEffectsUnknown).toBe(nativeEffectsUnknown);
+      const admission=db.transaction(tx=>withExternalAdmissionGuard(tx,f.company.id,f.agent.id,()=>assertNoExternalOverlap(tx,f.company.id,f.agent.id)));
+      if(nativeEffectsUnknown){expect(hold.releasedAt).toBeNull();await expect(admission).rejects.toMatchObject({details:{code:"external_agent_overlap"}});}
+      else {expect(hold.releasedAt).toBeInstanceOf(Date);await expect(admission).resolves.toBeUndefined();}
+      expect((await f.broker.bindingForAgent(f.company.id,f.agent.id))!.pendingInputs).toBe(0);
+      expect((await db.select().from(museInputDeliveries).where(eq(museInputDeliveries.id,answer.id)))[0]).toEqual(answer);expect(answer.consumedAt).toBeNull();
+    }finally{await f.detach();}
+  });
+
   it("persists canonical input before ACK and separates client proof from exact native input",async()=>{
     const f=await active();try {
       await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
