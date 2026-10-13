@@ -615,3 +615,39 @@ The retained installed preview has been inspected in light/dark mode with the
 original theme restored and agent Save disabled. The browser's requested mobile
 override did not affect its actual 1150-pixel viewport, so that attempt is not
 mobile proof and its override was reset. Final responsive qualification remains.
+
+## Warm metadata, dependency recovery and owned startup — 2026-10-12
+
+Three warm-cache regressions reproduced configuration construction while required
+metadata was unresolved. Onboarding now waits for current environment, settings
+and policy reads as well as matching runner discovery, including refetch over
+cached successful data. Each prerequisite failure is visible and Retry setup
+refetches the required reads without testing or hiring early. This also closes
+fresh review 4253377849. The neutral-role step fixture's empty discovery response
+reproduced the exact cloud failure; it now supplies valid Legacy discovery while
+retaining role/name assertions. All 193 wizard/step/guided-setup/builder controls,
+UI noemit, maps and token gates pass. Exploratory guided-connection changes were
+removed; its existing connection flow remains intact.
+
+Cloud platform job 115058187599 exposed ENOTEMPTY during late-bootstrap cleanup.
+A deterministic held-writer test proves transport close returned before owned
+credential preparation settled. A separate production-probe test proves the
+helper called cleanup-confirmed during that unconfirmed preparation. These are
+actual ownership defects, not a waived filesystem retry. Protocol repair
+`463ebb62661d81ef1fbd79ae0a7b43ece68830f8` tracks startup, joins it within the
+existing close budget and blocks later activation/launch. A drain timeout retains
+state; late registration retires only its owned route. Primary setup timeout and
+unconfirmed cleanup both remain in the failure. Six no-provider controls pass,
+including writer drain, bounded retention, late release/error and the actual
+probe callback fence. Runner noemit, declaration generation and maps pass; no
+provider process, local Rust or Docker build was used. Historical Pi/Copilot
+identities are unchanged by this transport-only correction.
+
+The repair is in this chat's protocol worktree, not the frozen upstream #16028.
+Its placement must be reconciled with the source owner's normal merge sequence
+before either default rollout merges. Automatic approval review rejected cross-
+chat status messages because it did not accept the earlier approval retrieved
+from the source chat as current-chat authorization; the direct coordination
+question remains pending. Public PR/evidence updates continue within this task.
+Fresh exact-head cloud runner/native execution is required, including the failing
+late-bootstrap case. No package campaign or new paid task has been dispatched.

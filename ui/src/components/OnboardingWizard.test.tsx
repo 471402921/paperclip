@@ -3170,6 +3170,57 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
         } finally { await act(async () => root.unmount()); }
       });
 
+      it.each(["environments", "settings", "policy"] as const)("does not use warm Claude discovery before %s resolves", async pending => {
+        let finish!: (value: any) => void;
+        const delayed = new Promise<any>(resolve => { finish = resolve; });
+        if (pending === "environments") mockEnvironmentsApi.list.mockReturnValue(delayed);
+        else if (pending === "settings") mockInstanceSettingsApi.get.mockReturnValue(delayed);
+        else mockInstanceSettingsApi.getExperimental.mockReturnValue(delayed);
+        mockAdapterBuild.buildAdapterConfig.mockImplementation(values => buildClaudeLocalConfig(values!));
+        const { root, queryClient } = await openStep4({ adapterType: "claude_local" });
+        try {
+          await act(async () => {
+            // A warm value remains successful while its current fetch is pending.
+            if (pending === "environments") queryClient.setQueryData(queryKeys.environments.list("company-new"), [LOCAL_ENVIRONMENT]);
+            else if (pending === "settings") queryClient.setQueryData(queryKeys.instance.settings, { defaultEnvironmentId: null });
+            else queryClient.setQueryData(queryKeys.instance.experimentalSettings, { enableManagedSandboxOnly: false });
+            for (const environmentId of [null, LOCAL_ENVIRONMENT.id]) queryClient.setQueryData(queryKeys.adapters.availability("company-new", environmentId), [{ type: "claude_local", defaultRunner: "paperclip" }]);
+            queryClient.setQueryData(["ai-connections", "company-new"], { currentUserId: "user-1", connections: [{ id: "saved", grantId: "grant", companyId: "company-new", provider: "anthropic", method: "subscription", ownership: "personal", ownerUserId: "user-1", status: "connected", isDefault: true }] });
+          });
+          await pickSource(/Claude/);
+          await settle();
+          expect(mockAdapterBuild.buildAdapterConfig).not.toHaveBeenCalled();
+          expect(mockAgentsApi.testEnvironment).not.toHaveBeenCalled();
+          expect(mockAgentsApi.hire).not.toHaveBeenCalled();
+          await act(async () => finish(pending === "environments" ? [LOCAL_ENVIRONMENT] : pending === "settings" ? { defaultEnvironmentId: null } : { enableManagedSandboxOnly: false }));
+          await settle();
+          expect(mockAgentsApi.hire).toHaveBeenCalledTimes(1);
+          const hired = mockAgentsApi.hire.mock.calls[0] as unknown as [string, { adapterConfig: Record<string, unknown> }];
+          expect(hired[1].adapterConfig.maxTurnsPerRun).toBe(1000);
+        } finally { await act(async () => root.unmount()); }
+      });
+
+      it.each(["environments", "settings", "policy"] as const)("reports failed Claude %s resolution and retries without early verification", async failed => {
+        if (failed === "environments") mockEnvironmentsApi.list.mockRejectedValue(new Error("Unavailable"));
+        else if (failed === "settings") mockInstanceSettingsApi.get.mockRejectedValue(new Error("Unavailable"));
+        else mockInstanceSettingsApi.getExperimental.mockRejectedValue(new Error("Unavailable"));
+        const { root, queryClient } = await openStep4({ adapterType: "claude_local" });
+        try {
+          await act(async () => queryClient.setQueryData(["ai-connections", "company-new"], { currentUserId: "user-1", connections: [{ id: "saved", grantId: "grant", companyId: "company-new", provider: "anthropic", method: "subscription", ownership: "personal", ownerUserId: "user-1", status: "connected", isDefault: true }] }));
+          await pickSource(/Claude/);
+          await settle();
+          expect(document.body.textContent).toContain("Could not load execution environment settings");
+          expect(mockAgentsApi.testEnvironment).not.toHaveBeenCalled();
+          expect(mockAgentsApi.hire).not.toHaveBeenCalled();
+          mockEnvironmentsApi.list.mockResolvedValue([LOCAL_ENVIRONMENT]);
+          mockInstanceSettingsApi.get.mockResolvedValue({ defaultEnvironmentId: null });
+          mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableManagedSandboxOnly: false });
+          await click("Retry setup");
+          expect(mockAgentsApi.testEnvironment).toHaveBeenCalledTimes(1);
+          expect(mockAgentsApi.hire).toHaveBeenCalledTimes(1);
+        } finally { await act(async () => root.unmount()); }
+      });
+
       it("does not hire from obsolete Claude discovery after the target changes during verification", async () => {
         mockAdapterBuild.buildAdapterConfig.mockImplementation(values => buildClaudeLocalConfig(values!));
         mockAdaptersApi.list.mockImplementation(async ({ environmentId }: { environmentId: string | null }) => [{ type: "claude_local", defaultRunner: environmentId === "new-local-default" ? "paperclip" : "legacy" }]);

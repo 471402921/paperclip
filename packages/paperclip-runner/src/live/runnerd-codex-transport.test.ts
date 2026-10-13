@@ -69,6 +69,7 @@ import {
   codexSemanticToolSpecs,
 } from "../drivers/codex/codex-app-server-driver.js";
 import { releaseMaterializedNativeRuntimeSkills } from "../drivers/runtime-context-materializer.js";
+import * as runtimeMaterializer from "../drivers/runtime-context-materializer.js";
 import { RUNNERD_CANONICAL_ITEM } from "../drivers/codex/codex-driver-values.js";
 
 import {
@@ -2810,6 +2811,150 @@ function fakeCodexArgs(stateDirectory: string, ...args: string[]): string[] {
     ...args,
   ];
 }
+
+it("joins owned credential preparation before close returns and never launches after close", async () => {
+  const root = await mkdtemp(join(tmpdir(), "runnerd-owned-startup-"));
+  const artifact = join(root, "unexecuted-runner-artifact");
+  await writeFile(artifact, "fixture artifact bytes; never executed");
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const preparation = vi.spyOn(runtimeMaterializer, "prepareIsolatedCodexHome").mockImplementation(async ({ codexHome }) => {
+    entered();
+    await gate;
+    await mkdir(codexHome, { recursive: true });
+    await writeFile(join(codexHome, "owned-write.txt"), "completed owned preparation");
+  });
+  const registration = vi.fn(async () => ({ connectUrl: "ws://127.0.0.1:1", release: async () => {} }));
+  const launch = vi.fn(() => { throw new Error("unexecuted late launch"); });
+  const bundle = createCapabilityRunnerdCodexTransport({ stateDirectory: root, runnerBinary: artifact, codexCommand: artifact, provider: "codex", closeGraceMs: 1000,
+    controlPlaneRegistration: registration, runnerProcessLauncher: launch });
+  let opening: Promise<unknown> | undefined;
+  let closing: Promise<void> | undefined;
+  try {
+    opening = bundle.transport.request("thread/start", { cwd: root, model: "gpt-test", dynamicTools: [] });
+    void opening.catch(() => {});
+    await started;
+    let closeReturned = false;
+    closing = bundle.transport.close("owned preparation test");
+    void closing.then(() => { closeReturned = true; }, () => {});
+    await new Promise(resolve => setTimeout(resolve, 25));
+    expect(closeReturned).toBe(false);
+    release();
+    await expect(opening).rejects.toThrow(/closed/);
+    await closing;
+    expect(await readFile(join(root, "codex-home", "owned-write.txt"), "utf8")).toBe("completed owned preparation");
+    expect(registration).not.toHaveBeenCalled();
+    expect(launch).not.toHaveBeenCalled();
+  } finally {
+    release();
+    await Promise.allSettled([opening, closing]);
+    preparation.mockRestore();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("retains owned state when credential preparation outlives bounded close", async () => {
+  const root = await mkdtemp(join(tmpdir(), "runnerd-retained-startup-"));
+  const artifact = join(root, "unexecuted-artifact");
+  await writeFile(artifact, "never executed");
+  let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const preparation = vi.spyOn(runtimeMaterializer, "prepareIsolatedCodexHome").mockImplementation(async () => { entered(); await gate; });
+  const registration = vi.fn(async () => ({ connectUrl: "ws://127.0.0.1:1", release: async () => {} }));
+  const launch = vi.fn(() => { throw new Error("unexpected launch"); });
+  const bundle = createCapabilityRunnerdCodexTransport({ stateDirectory: root, runnerBinary: artifact, codexCommand: artifact, provider: "codex", closeGraceMs: 100,
+    controlPlaneRegistration: registration, runnerProcessLauncher: launch });
+  const opening = bundle.transport.request("thread/start", { cwd: root, model: "gpt-test", dynamicTools: [] });
+  void opening.catch(() => {});
+  try {
+    await started;
+    await expect(bundle.transport.close("bounded preparation")).rejects.toThrow("startup cleanup is unconfirmed");
+    expect((await stat(root)).isDirectory()).toBe(true);
+    release();
+    await expect(opening).rejects.toThrow(/closed/);
+    expect(registration).not.toHaveBeenCalled();
+    expect(launch).not.toHaveBeenCalled();
+  } finally {
+    release(); await opening.catch(() => {}); preparation.mockRestore();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it.each(["settled", "late", "late-release-error"] as const)("retires owned startup registration without post-close launch (%s)", async mode => {
+  const root = await mkdtemp(join(tmpdir(), "runnerd-startup-registration-"));
+  const artifact = join(root, "unexecuted-artifact");
+  await writeFile(artifact, "never executed");
+  let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const registered = new Promise<void>(resolve => { entered = resolve; });
+  const preparation = vi.spyOn(runtimeMaterializer, "prepareIsolatedCodexHome").mockResolvedValue(undefined);
+  const retire = vi.fn(async () => { if (mode === "late-release-error") throw new Error("owned registration release failed"); });
+  const registration = vi.fn(async () => { entered(); await gate; return { connectUrl: "ws://127.0.0.1:1", release: retire }; });
+  const launch = vi.fn(() => { throw new Error("unexpected launch"); });
+  const bundle = createCapabilityRunnerdCodexTransport({ stateDirectory: root, runnerBinary: artifact, codexCommand: artifact, provider: "codex", closeGraceMs: mode === "settled" ? 1000 : 100,
+    controlPlaneRegistration: registration, runnerProcessLauncher: launch });
+  const opening = bundle.transport.request("thread/start", { cwd: root, model: "gpt-test", dynamicTools: [] });
+  void opening.catch(() => {});
+  let closing: Promise<void> | undefined;
+  try {
+    await registered;
+    let closeReturned = false;
+    closing = bundle.transport.close("owned registration");
+    void closing.then(() => { closeReturned = true; }, () => {});
+    if (mode === "settled") {
+      await new Promise(resolve => setTimeout(resolve, 25));
+      expect(closeReturned).toBe(false);
+    } else {
+      await expect(closing).rejects.toThrow("startup cleanup is unconfirmed");
+      expect((await stat(root)).isDirectory()).toBe(true);
+    }
+    release();
+    await expect(opening).rejects.toThrow(mode === "late-release-error" ? "owned registration release failed" : /closed/);
+    if (mode === "settled") await closing;
+    expect(retire).toHaveBeenCalledTimes(1);
+    expect(launch).not.toHaveBeenCalled();
+  } finally {
+    release(); await Promise.allSettled([opening, closing]); preparation.mockRestore();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("does not certify probe cleanup while owned credential preparation is unconfirmed", async () => {
+  const root = await mkdtemp(join(tmpdir(), "runnerd-probe-owned-preparation-"));
+  const artifact = join(root, "unexecuted-artifact");
+  await writeFile(artifact, "never executed");
+  let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const preparation = vi.spyOn(runtimeMaterializer, "prepareIsolatedCodexHome").mockImplementation(async () => { entered(); await gate; });
+  const cleanup = vi.fn(async () => {});
+  const launch = vi.fn(() => { throw new Error("unexpected launch"); });
+  const probe = probeNativeRunnerEnvironment({ runtimeDirectory: root, provider: "codex", model: "gpt-test", timeoutMs: 100,
+    environment: { OPENAI_API_KEY: "fixture" }, onCleanupConfirmed: cleanup,
+    transportOptions: { runnerBinary: artifact, codexCommand: artifact, runnerProcessLauncher: launch,
+      controlPlaneRegistration: async () => ({ connectUrl: "ws://127.0.0.1:1", release: async () => {} }) },
+  });
+  const result = probe.catch(error => error);
+  try {
+    await started;
+    const error = await result;
+    expect(cleanup).not.toHaveBeenCalled();
+    expect(error).toBeInstanceOf(AggregateError);
+    expect(error.message).toContain("hello probe timed out");
+    expect(error.message).toContain("startup cleanup is unconfirmed");
+    expect((await stat(root)).isDirectory()).toBe(true);
+    release();
+    await new Promise(resolve => setTimeout(resolve, 25));
+    expect(launch).not.toHaveBeenCalled();
+  } finally {
+    release(); await result; preparation.mockRestore();
+    await new Promise(resolve => setTimeout(resolve, 25));
+    await rm(root, { recursive: true, force: true });
+  }
+}, 15_000);
 
 it.each(["complete", "api-key", "default-model", "mismatched-model", "model-refresh-error", "model-cleanup-error", "missing-model", "missing-runtime", "missing-completion", "late-bootstrap", "remote-complete", "remote-mismatched-model", "late-remote-preparation", "late-remote-release-error"] as const)("native Codex setup requires its daemon/app-server hello (%s)", async mode => {
   const root = await mkdtemp(join(tmpdir(), "runnerd-native-setup-"));

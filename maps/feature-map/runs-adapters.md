@@ -84,3 +84,11 @@ different observations, both required in the evidence.
 - The run log is instance database data; it is not the opt-out first-party Telemetry system or operator-configured OpenTelemetry tracing.
 - Authentication/model discovery does not establish tool, image, steering, or resumption capability parity.
 - Use [recovery](./recovery.md) for interrupted runs and [execution environments](./execution-environments.md) for local/SSH/sandbox differences.
+
+Native setup retirement must join owned startup before cleanup can be confirmed.
+[Transport ownership controls](../../packages/paperclip-runner/src/live/runnerd-codex-transport.test.ts)
+hold credential preparation or registration without launching a provider, then
+verify bounded close, no later launch, and retention of unconfirmed state. A
+primary setup timeout remains a failure even when teardown also fails. These
+controls cover the lifecycle boundary; final packaged provider execution is
+separate evidence.
