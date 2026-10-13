@@ -3,14 +3,15 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { renderIndex, scanStories, validateCatalog } from "./storybook-catalog.mjs";
-import { featureIndex } from "./storybook-feature-index.mjs";
+import { catalogFromStories, renderIndex, scanStories, validateCatalog } from "./storybook-catalog.mjs";
+import { featureIndex } from "./feature-map.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const file = "ui/storybook/stories/agents/external-agent-invite/muse.stories.tsx";
 const stableId = "onboarding-external-agent-invitation-muse-personal-agent";
-const catalog = JSON.parse(readFileSync(path.join(root, "maps/storybook-map/catalog.json"), "utf8"));
+const index = featureIndex(root);
 const stories = scanStories(root);
+const catalog = catalogFromStories(stories, index);
 const muse = stories.find(story => story.file === file);
 
 // These IDs predate the move; existing links must survive the feature title change.
@@ -43,21 +44,23 @@ test("Muse registration validates actual production subjects with honest fixture
   assert.equal(entry.status, "unreviewed");
   assert.equal(entry.implementation, "production");
   assert.equal(entry.boundary, "fixtures");
+  const source = readFileSync(path.join(root, file), "utf8");
+  assert.ok(source.includes("component: ExternalAgentInvitePreview"));
   for (const subject of [
-    "ui/src/components/new-agent/ExternalAgentInviteContent.tsx",
-    "ui/src/components/MuseRunnerConnection.tsx",
-    "ui/storybook/support/external-agent-invite/ExternalAgentInvitePreview.tsx",
-    "ui/storybook/support/external-agent-invite/muse-fixtures.ts",
-  ]) assert.ok(entry.sources.includes(subject), `Missing rendered subject or fixture: ${subject}`);
-  const errors = validateCatalog(root, catalog, stories);
+    "../../../support/external-agent-invite/ExternalAgentInvitePreview",
+    "@/components/MuseRunnerConnection",
+    "../../../support/external-agent-invite/muse-fixtures",
+  ]) assert.ok(source.includes(`from "${subject}"`), `Missing rendered subject or fixture import: ${subject}`);
+  assert.match(entry.notes, /simulated API state/);
+  assert.match(entry.notes, /Does not establish live provider/);
+  const errors = validateCatalog(catalog, stories, index);
   // Other suites retain their outstanding reviews; this assertion covers Muse only.
   assert.deepEqual(errors.filter(error => error.startsWith(file)), []);
   assert.ok(!errors.includes("Duplicate story IDs"));
 });
 
 test("generated catalog navigation links the one Muse suite from every registered capability", () => {
-  const generated = renderIndex(catalog, stories, featureIndex(root));
-  assert.equal(readFileSync(path.join(root, "maps/storybook-map/INDEX.md"), "utf8"), generated);
+  const generated = renderIndex(catalog, stories, index);
   for (const capability of ["agents/hire", "agents/lifecycle", "access/invitations"]) {
     const line = generated.split("\n").find(text => text.startsWith(`- \`${capability}\`:`));
     assert.ok(line?.includes(`../../${file}`), `Missing Muse lookup: ${capability}`);

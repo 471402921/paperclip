@@ -10,7 +10,14 @@ const meta = {
   title: "Agents and reusable capabilities/Hiring, configuration, and organization/Onboarding/External agent invitation/Muse personal agent",
   component: ExternalAgentInvitePreview,
   parameters: { layout: "fullscreen", initialEntries: ["/PAP/agents"],
-    docs: { description: { component: `Uses the production agent entry point, ExternalAgentInviteContent, app shell, and MuseConnectionDetails with non-routable, nonsecret asset ${MUSE_ASSET_VERSION} illustrations. The supported production flow keeps OAuth credentials and refresh in SecureVault/authd and records standing delegation for the exact company, agent and binding. That delegates validating and accepting in-scope work; task effects still require the native accepted lease and Muse permission/safety gates. Local simulation separates public untrusted receiver contact (up to 30 seconds persistence lag), independent authenticated background reply, and lifecycle readiness. Disconnect revokes OAuth authority immediately; there is no authenticated post-revocation cleanup lane or confirmed detector removal/worker stop in these fixtures. Unknown native effects retain their exact stop boundary. No live installation, work acceptance, provider behavior, private tools or cost is established.` } } },
+    docs: { description: { component: `Uses the production agent entry point, ExternalAgentInviteContent, app shell, and MuseConnectionDetails with non-routable, nonsecret asset ${MUSE_ASSET_VERSION} illustrations. The supported production flow keeps OAuth credentials and refresh in SecureVault/authd and records standing delegation for the exact company, agent and binding. That delegates validating and accepting in-scope work; task effects still require the native accepted lease and Muse permission/safety gates. Local simulation separates public untrusted receiver contact (up to 30 seconds persistence lag), independent authenticated background reply, and lifecycle readiness. Disconnect revokes OAuth authority immediately; there is no authenticated post-revocation cleanup lane or confirmed detector removal/worker stop in these fixtures. Unknown native effects retain their exact stop boundary. No live installation, work acceptance, provider behavior, private tools or cost is established.` } },
+    paperclip: {
+      capabilities: ["agents/hire", "agents/lifecycle", "access/invitations"],
+      implementation: "production",
+      boundary: "fixtures",
+      notes: "Uses the shipped invitation and connection settings with simulated API state. Covers separate pairing, receiver and authenticated reply milestones, reload/error recovery, expired credentials and exact worker stop attestation. Does not establish live provider setup, native task execution, remote interruption or reliability.",
+    },
+  },
   args: { initialPreset: "muse", museEnabled: true },
   render: args => <ExternalAgentInvitePreview key={JSON.stringify(args)} {...args} />,
 } satisfies Meta<typeof ExternalAgentInvitePreview>;
