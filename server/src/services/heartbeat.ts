@@ -320,12 +320,6 @@ import {
 import { HttpError, notFound } from "../errors.js";
 
 import { logger } from "../middleware/logger.js";
-import {
-  scrubGitCredentialText,
-} from "./git-credentials.js";
-// Re-exported because heartbeat's workspace surface exposed the scrubber before the
-// git-credentials module became its canonical home; existing importers keep working.
-export { scrubGitCredentialText };
 import { publishLiveEvent } from "./live-events.js";
 
 import {
