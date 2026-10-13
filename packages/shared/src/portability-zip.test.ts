@@ -1,7 +1,6 @@
 import { deflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import {
-  bytesToPortableFileEntry,
   isBlobStorePath,
   readZipArchive,
 } from "./portability-zip.js";
@@ -95,28 +94,6 @@ describe("isBlobStorePath", () => {
   });
 });
 
-describe("bytesToPortableFileEntry", () => {
-  it("keeps blobs/ entries as base64 octet streams regardless of extension", () => {
-    const bytes = new Uint8Array([0x00, 0x01, 0x80, 0xfe, 0xff]);
-    expect(bytesToPortableFileEntry("blobs/4f2d1c9a", bytes)).toEqual({
-      encoding: "base64",
-      data: Buffer.from(bytes).toString("base64"),
-      contentType: "application/octet-stream",
-    });
-  });
-
-  it("decodes valid UTF-8 entries to text and falls back to base64 for invalid bytes", () => {
-    const text = new TextEncoder().encode("# Notes\n\ncafé ✅\n");
-    expect(bytesToPortableFileEntry("tasks/pap-1/TASK.md", text)).toBe("# Notes\n\ncafé ✅\n");
-    const invalid = new Uint8Array([0x68, 0x69, 0xff, 0xfe, 0xc0]);
-    expect(bytesToPortableFileEntry("tasks/pap-1/raw", invalid)).toEqual({
-      encoding: "base64",
-      data: Buffer.from(invalid).toString("base64"),
-      contentType: "application/octet-stream",
-    });
-  });
-});
-
 describe("readZipArchive", () => {
   it("round-trips STORE, DEFLATE, and base64 blob entries byte-exactly and strips the shared root", async () => {
     const blobBytes = new Uint8Array([0x68, 0x69]);
@@ -130,6 +107,7 @@ describe("readZipArchive", () => {
         { path: "COMPANY.md", bytes: new TextEncoder().encode("---\nname: Demo\n---\n"), method: 0 },
         { path: "reports/weekly.md", bytes: new TextEncoder().encode(deflated), method: 8 },
         { path: "blobs/4f2d1c9a", bytes: blobBytes, method: 0 },
+        { path: "tasks/pap-1/TASK.md", bytes: new TextEncoder().encode("# Notes\n\ncafé ✅\n"), method: 0 },
         { path: "notes/raw", bytes: invalidUtf8, method: 0 },
       ],
       "paperclip-demo",
@@ -140,6 +118,7 @@ describe("readZipArchive", () => {
       files: {
         "COMPANY.md": "---\nname: Demo\n---\n",
         "reports/weekly.md": deflated,
+        "tasks/pap-1/TASK.md": "# Notes\n\ncafé ✅\n",
         "blobs/4f2d1c9a": {
           encoding: "base64",
           data: Buffer.from(blobBytes).toString("base64"),
