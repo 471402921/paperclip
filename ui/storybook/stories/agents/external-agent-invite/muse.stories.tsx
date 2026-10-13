@@ -1,14 +1,22 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within, waitFor, fn } from "storybook/test";
-import { ExternalAgentInvitePreview } from "../../support/external-agent-invite/ExternalAgentInvitePreview";
+import { ExternalAgentInvitePreview } from "../../../support/external-agent-invite/ExternalAgentInvitePreview";
 import { MuseConnectionDetails } from "@/components/MuseRunnerConnection";
-import { museConnection, stoppedMuseConnection } from "../../support/external-agent-invite/muse-fixtures";
+import { museConnection, stoppedMuseConnection } from "../../../support/external-agent-invite/muse-fixtures";
 
 const meta = {
-  title: "Onboarding/External agent invitation/Muse personal agent",
+  id: "onboarding-external-agent-invitation-muse-personal-agent",
+  title: "Agents and reusable capabilities/Hiring, configuration, and organization/Onboarding/External agent invitation/Muse personal agent",
   component: ExternalAgentInvitePreview,
   parameters: { layout: "fullscreen", initialEntries: ["/PAP/agents"],
-    docs: { description: { component: "Uses the production agent entry point, ExternalAgentInviteContent, and app shell. Local simulation shows pairing, persisted receiver contact, independent background reply, and lifecycle readiness separately. No Muse installation or credentials are used. Connection settings use the production MuseConnectionDetails. The connected worker’s private tools and cost remain unavailable." } } },
+    docs: { description: { component: "Uses the production agent entry point, ExternalAgentInviteContent, and app shell. Local simulation shows pairing, persisted receiver contact, independent background reply, and lifecycle readiness separately. No Muse installation or credentials are used. Connection settings use the production MuseConnectionDetails. The connected worker’s private tools and cost remain unavailable." } },
+    paperclip: {
+      capabilities: ["agents/hire", "agents/lifecycle", "access/invitations"],
+      implementation: "production",
+      boundary: "fixtures",
+      notes: "Uses the shipped invitation and connection settings with simulated API state. Covers separate pairing, receiver and authenticated reply milestones, reload/error recovery, expired credentials and exact worker stop attestation. Does not establish live provider setup, native task execution, remote interruption or reliability.",
+    },
+  },
   args: { initialPreset: "muse", museEnabled: true },
   render: args => <ExternalAgentInvitePreview key={JSON.stringify(args)} {...args} />,
 } satisfies Meta<typeof ExternalAgentInvitePreview>;
