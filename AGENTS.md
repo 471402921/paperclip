@@ -181,9 +181,11 @@ Its structural checks do not prove live behavior or authorization.
 
 Storybook has a downstream [feature catalog](maps/storybook-map/README.md).
 Use `maintain-storybook` for story/fixture drift and `review-storybook` for browser
-evidence. Keep the feature-map skills independent of this catalog. After story
-or declared review-source changes, reconcile affected entries and run
-`node scripts/storybook-catalog.mjs`; its checks are not production acceptance.
+evidence. Keep the feature-map skills independent of this catalog. After story or recipe changes, update the affected source annotations or
+recipe and run `node scripts/storybook-catalog.mjs`. Indexes are generated and
+ignored; never commit aggregate catalogs, refresh review fingerprints, or append
+a shared review journal. Use Git diffs and keep review evidence in the PR or issue.
+Structural checks are not production acceptance.
 
 Default local/agent test path:
 

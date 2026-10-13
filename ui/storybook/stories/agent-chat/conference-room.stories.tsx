@@ -19,6 +19,15 @@ const meta = {
           "Shipped Conference Room with isolated conversation receipts and SSE. This does not execute a provider or verify server access.",
       },
     },
+    paperclip: {
+      "capabilities": [
+        "agent-chat/conference-room"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "BoardChat empty, reply, send pending/error/403 through fixture SSE and persisted comment reads. 403 uses the shipped generic unavailable message; route gates and real Claude execution remain separate."
+    },
   },
   beforeEach: ({ parameters }) => {
     let comments: unknown[] = [];

@@ -26,6 +26,15 @@ const meta = {
           "Production sidebar with isolated saved order responses. Section collapse is session-local; recents are browser-local. No server persistence is claimed.",
       },
     },
+    paperclip: {
+      "capabilities": [
+        "navigation-preferences/preferences"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Production Sidebar inside PluginLauncherProvider with saved-order reads, pending/error/403 fallback and session-only section collapse. Favorites, recents and actual order persistence still need the recipe checks."
+    },
   },
   beforeEach: ({ parameters }) =>
     prepareFixtureApi(

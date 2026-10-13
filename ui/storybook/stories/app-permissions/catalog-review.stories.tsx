@@ -84,6 +84,15 @@ const meta = {
           "Shipped action section and quarantine reviewer with local catalog props. Discovery failures belong to the owning AppDetail API boundary; permissions and review persistence need production checks.",
       },
     },
+    paperclip: {
+      "capabilities": [
+        "app-permissions/catalog-change"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Shipped ActionsSection quarantine reviewer with allowed/blocked decisions, empty/refreshing/saving/read-only props. Callbacks simulate catalog persistence; discovery failures belong to AppDetail and backend authority remains separate."
+    },
   },
 } satisfies Meta<typeof CatalogReview>;
 export default meta;

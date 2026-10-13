@@ -26,6 +26,15 @@ const meta = {
   parameters: {
     layout: "padded",
     initialEntries: ["/PAP/plugins/plugin-gap/settings"],
+    paperclip: {
+      "capabilities": [
+        "plugins/configuration"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "PluginSettings configuration route with hydrated values, read pending/unavailable and saved/error/403 responses. Real config storage and plugin worker validation are not proved."
+    },
   },
   beforeEach: ({ parameters }) =>
     installPluginFixtures(parameters.fixtureState as FixtureState),

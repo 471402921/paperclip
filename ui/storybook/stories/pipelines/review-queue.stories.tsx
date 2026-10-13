@@ -21,6 +21,15 @@ const meta = {
           "Shipped ReviewQueue with isolated API receipts. Guards, durable transitions, automation execution and learning provenance require production tests.",
       },
     },
+    paperclip: {
+      "capabilities": [
+        "pipelines/review"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Production ReviewQueue with empty/loading/error/403, approval removal and failure recovery marked Needs attention. Fixture decisions do not prove real review leases, version checks or transitions."
+    },
   },
   beforeEach: ({ parameters }) =>
     installPipelineFixture(parameters.fixtureState as FixtureState).cleanup,

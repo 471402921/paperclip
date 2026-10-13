@@ -21,6 +21,15 @@ const meta = {
   parameters: {
     layout: "fullscreen",
     initialEntries: ["/PAP/skills/studio/skill-gap"],
+    paperclip: {
+      "capabilities": [
+        "skills/testing"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "SkillStudio test history statuses and result detail with immutable fixture output/version. No agent/provider runs; authoring, harness execution, persisted costs and snapshots require production tests."
+    },
   },
   beforeEach: ({ parameters }) => {
     const skill = makeSkill();

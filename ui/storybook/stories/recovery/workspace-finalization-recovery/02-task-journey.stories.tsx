@@ -34,7 +34,17 @@ function Journey({ saved = false }: { saved?: boolean }) {
 const meta = {
   id: "workspace-finalization-recovery-02-task-journey",
   title: "Projects and execution/Recovery/Workspace finalization recovery/02 Task journey", component: Journey, args: { saved: false },
-  parameters: { layout: "fullscreen", initialEntries: ["/PAP/issues/PAP-24"], docs: { description: { component: "A composed task conversation in the production app shell, using the shipped recovery notice, task bubbles and composer. Recovery happens automatically with no form or user action. This is a composed UI preview; finalization and approval resolution are verified separately by server tests." }, story: { inline: false } } },
+  parameters: { layout: "fullscreen", initialEntries: ["/PAP/issues/PAP-24"], docs: { description: { component: "A composed task conversation in the production app shell, using the shipped recovery notice, task bubbles and composer. Recovery happens automatically with no form or user action. This is a composed UI preview; finalization and approval resolution are verified separately by server tests." }, story: { inline: false } },
+    paperclip: {
+      "capabilities": [
+        "recovery/workspace",
+        "recovery/source-action"
+      ],
+      "implementation": "mixed",
+      "boundary": "fixtures",
+      "notes": "Production shell, status, bubbles and composer in a local conversation composition; shows restoration and saved work waiting for confirmation. Fixture messages; not the shipped task page or live provider acceptance."
+    },
+  },
 } satisfies Meta<typeof Journey>;
 export default meta;
 type Story = StoryObj<typeof meta>;

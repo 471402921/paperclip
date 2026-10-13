@@ -1,4 +1,8 @@
-# Secrets, personal credentials, and proposals
+---
+navigation: {"section":"Apps, channels, and extensions","sectionOrder":50,"order":50}
+---
+
+# Secrets and proposals
 
 Operators manage company secret references, users supply their own credentials where required, and reviewers decide proposed secret changes without exposing secret values in ordinary UI evidence.
 
@@ -49,3 +53,16 @@ Manual: Review a dummy proposal, reject one and accept another, then inspect the
 - A displayed reference name is not proof that the actor can resolve its value at runtime.
 - Company secrets and user-specific values have different ownership.
 - Redaction needs verification in errors, activity, and run logs as well as the form.
+
+### Storybook verification
+
+#### `proposals`
+
+Scope: ui
+Storybook: Mount ProposalsTab pending secret/binding proposals, blocked authority, expired/resolved proposal, approval/rejection pending/error, and redacted metadata.
+Production: GET /companies/{id}/secret-proposals and POST approve/reject must enforce company/admin/target authority, durable resolution and redaction; verified run-bound agent proposal creation is separate.
+Sources: Source: [ProposalsTab.tsx](../../ui/src/pages/secrets/ProposalsTab.tsx), [secrets.ts](../../server/src/routes/secrets.ts), [secret-proposal-authorization.ts](../../server/src/services/secret-proposal-authorization.ts). Tests: [ProposalsTab.render.test.tsx](../../ui/src/pages/secrets/ProposalsTab.render.test.tsx), [secret-proposals-routes.test.ts](../../server/src/__tests__/secret-proposals-routes.test.ts)
+
+### Documentation scope: Secrets and secret proposals
+
+Company/user/proposal/vault and runtime-binding paths are mapped; every secret provider, rotation scenario, and delivery context needs separate validation.

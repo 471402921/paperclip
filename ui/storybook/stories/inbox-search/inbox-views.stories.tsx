@@ -16,7 +16,17 @@ const meta = {
     "Tasks and conversations/Inbox, decisions, and search/Personal task views",
   component: InboxHost,
   args: { tab: "mine" },
-  parameters: { layout: "padded" },
+  parameters: { layout: "padded",
+    paperclip: {
+      "capabilities": [
+        "inbox-search/views"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Shipped Inbox host with Mine/Recent/Unread/Blocked under combined-inbox flags and list states. Approvals/join requests/run lists are isolated alongside tasks. Failed/denied list queries currently fall back to Inbox zero; personal participation/read metadata and server counts remain production verification. Mine/recent fixture tasks are human-created; the upstream agent-created-task filter changes are separate visibility scenarios."
+    },
+  },
   beforeEach: ({ parameters }) => {
     const api = prepareFixtureApi(
       [

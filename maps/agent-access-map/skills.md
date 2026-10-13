@@ -142,3 +142,37 @@ remaining operations before qualifying the whole capability.
 Gaps: No dedicated native orchestration binding; generic REST calls retain
 skills.test policy, task-assignment authorization, responsible-user intersection and
 admitted skill-test JWT scope.
+
+Project-source API additions: GET `/api/companies/{companyId}/skill-sources/project-repositories`,
+POST `/api/companies/{companyId}/skill-sources/adopt-project` with `workspaceId`, and
+PATCH `/api/companies/{companyId}/skill-sources/{sourceId}/settings` with expected revision
+and update/connection preferences. Native API discovery uses the OpenAPI registration.
+
+Project-derived read/use permission follows current project authorization, with access
+through either originating project. File/version reads, source metadata, mutations,
+editable copies, tests and runtime delivery retain that boundary. Unattended refresh
+uses the revalidated setup identity and connection, not the requesting agent's token.
+These additions need actual permitted/denied agent-run acceptance; service tests alone
+are not live credential proof.
+
+Direct GitHub source imports share the project setup-identity boundary. API-key
+agents may import permitted public content, but their responsible-user field
+does not authorize unattended credential use. They need human connection repair
+for automatic refresh. Authenticated agent runs derive the setup person from
+the persisted active run. Legacy agent activity without a matching run cannot
+recover a refresh person. Route and database tests cover these distinctions;
+this addition makes no new live-provider acceptance claim.
+
+Initial project imports check skills.import before provider reads; denied jobs
+do not retry automatically. Deferred jobs remain durable behind per-project and
+company admission limits. Scheduled refresh compares immutable tree identity and
+uses a persistent work allowance; manual refresh still requires its existing
+policy/access checks. These limits grant no content or execution access.
+
+Agent repository setup preserves the active run's selected GitHub connection/grant
+IDs. Missing selections require human repair; the worker never searches the
+responsible person's other grants for an agent-created source.
+
+Initial automatic imports reserve company work credits before provider reads.
+Failures retain the reservation; completed jobs cannot replenish the queue's
+work allowance. Jobs remain durable and resume as company credits refill.

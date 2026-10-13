@@ -24,6 +24,15 @@ const meta = {
   parameters: {
     layout: "fullscreen",
     initialEntries: ["/auth?next=/companies"],
+    paperclip: {
+      "capabilities": [
+        "access/login"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "AuthPage email form, session read loading/error, submission pending/failure and navigation to Companies after a fixture session. Real authentication, bootstrap claim and sign-out remain separate."
+    },
   },
   beforeEach: ({ parameters }) => {
     let session: unknown = null;

@@ -25,6 +25,15 @@ const meta = {
           "Shipped Pipelines with isolated API receipts. Guards, durable transitions, automation execution and learning provenance require production tests.",
       },
     },
+    paperclip: {
+      "capabilities": [
+        "pipelines/items"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Production Pipelines board with stages/items and loading/empty/error/403. Snapshot rows only; transitions, liveness, guards and automation execution remain separate."
+    },
   },
   beforeEach: ({ parameters }) =>
     installPipelineFixture(parameters.fixtureState as FixtureState).cleanup,

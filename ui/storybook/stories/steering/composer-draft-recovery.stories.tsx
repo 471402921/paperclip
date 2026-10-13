@@ -37,7 +37,17 @@ const meta = {
   id: "feature-composer-draft-recovery",
   title: "Tasks and conversations/Steering and queued messages/Draft recovery",
   component: Drafts,
-  parameters: { layout: "padded" },
+  parameters: { layout: "padded",
+    paperclip: {
+      "capabilities": [
+        "steering/drafts"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "TaskChatComposer uses owned task-keyed browser drafts, uncertain submission fence, switch/restore and failed/accepted send callbacks. API receipt authority and real submission durability remain separate. Storybook-owned draft keys are reset using the matching retained submission ID on setup and cleanup; same-browser uncertain-to-empty/send switching is covered separately."
+    },
+  },
   beforeEach: ({ parameters }) => {
     resetFixtureDraft(first);
     resetFixtureDraft(second);

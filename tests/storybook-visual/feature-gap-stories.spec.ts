@@ -1,20 +1,14 @@
 import { assertRenderState } from "./feature-gap-render-states";
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
-import { scanStories } from "../../scripts/storybook-catalog.mjs";
+import { generateStorybook } from "../../scripts/storybook-catalog.mjs";
 const root = new URL("../../", import.meta.url).pathname;
-const catalog = JSON.parse(
-  readFileSync(
-    new URL("../../maps/storybook-map/catalog.json", import.meta.url),
-    "utf8",
-  ),
-);
+const { catalog, stories: parsed } = generateStorybook(root, { write: false });
 const suites = catalog.entries.filter(
   (entry: { stableId: string }) =>
     entry.stableId.startsWith("feature-") &&
     !entry.stableId.startsWith("feature-map-"),
 );
-const parsed = scanStories(root);
 let index: { entries: Record<string, { tags: string[] }> };
 test.beforeAll(async ({ request }) => {
   const response = await request.get("/index.json");
@@ -42,6 +36,7 @@ for (const suite of suites) {
   const file = parsed.find(
     (story: { file: string }) => story.file === suite.file,
   );
+  if (!file) throw new Error(`Missing parsed story: ${suite.file}`);
   for (const id of file.ids) {
     test(id, async ({ page }, info) => {
       expect(
