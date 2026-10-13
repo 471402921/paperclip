@@ -15,9 +15,17 @@ describe("personal Muse client durability", () => {
 
 
 describe("Muse approval-aware setup",()=>{
-  it("orders current-chat consent, pinned asset4, public preflight, authenticated status and hook registration",async()=>{
+  it("preserves the published asset4 pins after a receiver update", async () => {
+    const assets = await museReceiverAssets(4);
+    expect(assets.manifest.assets).toEqual({
+      "client.py": { sha256: "42d9a1a9d795da54393bc9616e9e3ae6e9d9f6735d7728148e6080608aafdfc7" },
+      "detector.sh": { sha256: "8e9f5de4f7dc18cbca7121fff6bcab4039dc66056441396826460d7f396c3b41" },
+      "instructions.md": { sha256: "d57f1c43c0d3c7a76f9ed99e73a5a5cdb46c2b7e470efd451519bc3cc3d7d8f3" },
+    });
+  });
+  it("orders current-chat consent, pinned asset5, public preflight, authenticated status and hook registration",async()=>{
     const assets=await museReceiverAssets(),instruction=await buildMuseSetupInstruction("https://approval.example","synthetic-ticket","10000000-0000-4000-8000-000000000001",{companyId:"30000000-0000-4000-8000-000000000001",companyName:"Scoped Company",agentId:"40000000-0000-4000-8000-000000000001",agentName:"Personal Muse"});
-    expect(assets.manifest.assetVersion).toBe(4);expect(instruction).toContain("/assets/4/");expect(instruction).toContain(assets.manifest.assets["client.py"].sha256);
+    expect(assets.manifest.assetVersion).toBe(5);expect(instruction).toContain("/assets/5/");expect(instruction).toContain(assets.manifest.assets["client.py"].sha256);
     expect(instruction.indexOf("credentials.request_api_access")).toBeLessThan(instruction.indexOf("After consent, download"));
     expect(instruction.indexOf(" preflight.")).toBeLessThan(instruction.indexOf("Then run the client status"));
     expect(instruction.indexOf("Then run the client status")).toBeLessThan(instruction.indexOf("hooks.add"));

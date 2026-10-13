@@ -12,7 +12,7 @@ import urllib.error
 import urllib.request
 import uuid
 from urllib.parse import urlparse
-VERSION = "4"
+VERSION = "5"
 REQUEST_TIMEOUT_SECONDS = 120
 ROOT = Path.home() / ".config" / "paperclip-muse"
 HOOK_ROOT = Path.home() / "hooks" / "scripts"

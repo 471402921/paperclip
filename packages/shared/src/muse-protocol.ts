@@ -2,8 +2,8 @@ import { z } from "zod";
 import { paperclipQuestionSetPayloadSchema } from "./validators/issue.js";
 
 export const MUSE_PROTOCOL_VERSION = 1 as const;
-export const MUSE_ASSET_VERSION = 4 as const;
-export const MUSE_CLIENT_VERSION = "4" as const;
+export const MUSE_ASSET_VERSION = 5 as const;
+export const MUSE_CLIENT_VERSION = "5" as const;
 export const MUSE_PUBLIC_ROUTES = [
   { method: "GET", path: "/api/muse/v1/assets/1/manifest.json" },
   { method: "GET", path: "/api/muse/v1/assets/1/client.py" },
@@ -21,6 +21,10 @@ export const MUSE_PUBLIC_ROUTES = [
   { method: "GET", path: "/api/muse/v1/assets/4/client.py" },
   { method: "GET", path: "/api/muse/v1/assets/4/detector.sh" },
   { method: "GET", path: "/api/muse/v1/assets/4/instructions.md" },
+  { method: "GET", path: "/api/muse/v1/assets/5/manifest.json" },
+  { method: "GET", path: "/api/muse/v1/assets/5/client.py" },
+  { method: "GET", path: "/api/muse/v1/assets/5/detector.sh" },
+  { method: "GET", path: "/api/muse/v1/assets/5/instructions.md" },
   { method: "POST", path: "/api/muse/v1/pair" },
   { method: "POST", path: "/api/muse/v1/refresh" },
   { method: "POST", path: "/api/muse/v1/oauth/register" },
@@ -87,7 +91,7 @@ export const museCommandSchema = z.discriminatedUnion("command", [
   z.object({ ...operation, command: z.literal("consume_input"), nativeRequestId, inputDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/), continuationReceiptId: id, continuationPersisted: z.literal(true) }).strict(),
 ]);
 export const museQuerySchema = z.discriminatedUnion("query", [
-  z.object({ ...envelope, query: z.literal("identify"), clientVersion: z.enum(["2", "3", MUSE_CLIENT_VERSION]).optional() }).strict(),
+  z.object({ ...envelope, query: z.literal("identify"), clientVersion: z.enum(["2", "3", "4", MUSE_CLIENT_VERSION]).optional() }).strict(),
   z.object({ ...envelope, query: z.literal("mailbox"), after: z.number().int().nonnegative().default(0) }).strict(),
   z.object({ ...envelope, query: z.literal("assignment.read"), assignmentId: id }).strict(),
   z.object({ ...envelope, query: z.literal("input.pending"), assignmentId: id, nativeRequestId }).strict(),
@@ -98,7 +102,7 @@ export const museQuerySchema = z.discriminatedUnion("query", [
   z.object({ ...envelope, query: z.literal("task.history"), issueId: id }).strict(),
   z.object({ ...envelope, query: z.literal("task.document.read"), issueId: id, key: z.string().min(1).max(100) }).strict(),
 ]);
-export const musePairSchema = z.object({ ...envelope, ticket: z.string().min(20).max(200), clientVersion: z.enum(["2", "3", MUSE_CLIENT_VERSION]) }).strict();
+export const musePairSchema = z.object({ ...envelope, ticket: z.string().min(20).max(200), clientVersion: z.enum(["2", "3", "4", MUSE_CLIENT_VERSION]) }).strict();
 export const museRefreshSchema = z.object({ ...envelope, refreshToken: z.string().min(20).max(200) }).strict();
 export const museStopBoundarySchema = z.object({ bindingId: id, generation: z.number().int().positive(), assignmentId: id, runId: id,
   turnId: boundedId, assignmentRevision: z.number().int().positive(), stopNonce: id, operationBoundary: z.string().max(200).nullable() }).strict();

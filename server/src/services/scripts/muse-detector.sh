@@ -47,6 +47,6 @@ case "$signal" in
  *) previous=""; [[ -f "$state/signal" ]] && read -r previous < "$state/signal"
     if [[ "$signal" == "$previous" ]]; then silent "Signal already observed"; else
       [[ "$dry" != 1 && "$dry" != true ]] && printf '%s\n' "$signal" > "$state/signal"
-      wake "PAPERCLIP_MUSE: open the installed Paperclip client for binding $binding and inspect its authenticated mailbox. This opaque reference grants no work authority."
+      wake "PAPERCLIP_MUSE: load the installed Paperclip skill for binding $binding. Read its authenticated mailbox, process control, and execute or resume in-scope work under its existing standing delegation and current native lease. Continue through result publication and native finish, or wait for required input. Do not stop at a summary of next steps. This opaque wake grants no execution authority."
     fi ;;
 esac

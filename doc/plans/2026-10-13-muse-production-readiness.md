@@ -197,3 +197,52 @@ passed 52 cases. Unchanged bounded reruns passed the invitation-list and native
 bootstrap cases where recorded, while one pipelines case remains reproducibly
 unresolved. A clean frozen-master baseline is being tested before attributing
 that failure. The required final-candidate checks and live journeys remain open.
+
+
+## Asset4 task and stopping checkpoint, October 13 at 20:11 UTC
+
+Frozen `dc28979f7d5b7788d0598e0ea1f6e49a58381def` passed workspace typecheck
+and build, 929 targeted Vitest cases and 29 Python cases. Its independent
+asset4 readiness reply took 18.116 seconds. Historical onboarding interventions
+remain recorded; this does not establish unattended first-time setup.
+
+A fresh real task was queued at 19:43:28.861 UTC and offered 3.506 seconds later.
+Muse claimed it at 19:45:43.230 UTC and received native acceptance 379 ms later,
+without a chat nudge. Queue-to-claim was 134.369 seconds. Muse asked the required
+structured question; the operator answered Engineering audience through Paperclip
+at 19:55:51.903 UTC. The worker read and acknowledged the answer but reported
+only the next steps. It never consumed that input, published the required memo,
+or finalized. A premature native finish was rejected while input was pending.
+This is incomplete prequalification, not a successful delivery sample.
+
+The ordinary task Stop action cancelled the native run and fenced the assignment
+at 20:09:18.225 UTC. Muse independently submitted the exact-boundary quiescence
+report. Native effects were not uncertain. The connection reports worker_reported;
+this does not confirm termination of every private Muse effect. No manual receipt,
+claim, completion or operator stop attestation was fabricated.
+
+Asset5 is a source correction, not yet qualified: its generic wake explicitly
+loads the paired skill and executes/resumes in-scope admitted work rather than
+ending at mailbox inspection. Canonical answers resume the same live assignment;
+rejected premature completion does not revoke otherwise-current authority.
+Historical assets1–4 retain their exact bytes; credentials, scope, native leases,
+provider permissions and approval gates remain unchanged.
+
+Current master cutoff is now `c7f4b74111d16f0b57112fa6d0b6a59c2d63bfe8`.
+Master added migrations339–340. The Muse suffix is renumbered341–345 with exact
+SQL hashes. A normal-engine rehearsal preserved all old history/grant/binding/
+credential values, appended only the two missing master migrations, and matched
+a fresh combined schema. No live database reset or receipt edits occurred.
+Snapshots incorporate exactly the two new master table changes and retain five
+newest snapshots. Normal Drizzle generation reported no extra schema migration.
+
+Review race/replay fixes prevent a late send error from marking a settled receipt
+unknown and prevent exact duplicate results from reopening a settled assignment.
+A meaningful before/after regression reproduced three failures on old source and
+passed all four cases after repair. Broader original Core failures remain retained;
+the candidate's required full-check result is not green by inference.
+
+The new 24-hour campaign has not begun. Real completed work, follow-up, proactive
+intake, the updated receiver, current-head CI/review, managed Linux and deployed
+tenant gates remain open. The old experiment stays stopped and Muse stays off by
+default.
