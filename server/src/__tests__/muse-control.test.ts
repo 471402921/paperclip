@@ -219,6 +219,104 @@ describe("personal Muse control plane",()=>{
       expect(f.sent.at(-1)?.input).toEqual({requestId,inputDigest});expect((await db.select().from(museInputDeliveries).where(eq(museInputDeliveries.assignmentId,f.assignment.id)))[0].continuationReceiptId).toBe(proof);
     }finally{await f.detach();}
   });
+  it("allows connected fenced cleanup without granting normal or detector authority",async()=>{
+    const f=await active();try {
+      await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+      // Acceptance precedes the fence: the hold's creation time is not its cleanup deadline.
+      await db.update(externalAgentHolds).set({createdAt:new Date(Date.now()-48*60*60_000)}).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      await db.insert(operations).values({companyId:f.company.id,assignmentId:f.assignment.id,requestId:randomUUID(),digest:"cleanup-pending",command:{action:"tool"},status:"pending"});
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      const [binding]=await db.select().from(bindings).where(eq(bindings.id,f.binding.id));
+      expect(binding.revokedAt).toBeNull();
+      const [before]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      const subject=await f.identity.authenticate(f.credentials.cleanupToken,"cleanup");
+      await expect(f.identity.authenticate(f.credentials.cleanupToken)).rejects.toThrow();
+      await expect(f.broker.inspect(subject,{version:1,query:"task.list"})).rejects.toThrow("normal authority");
+      await expect(f.identity.authenticate(f.credentials.detectorCleanupToken,"detector_cleanup")).rejects.toThrow();
+      const inspection=await f.broker.cleanup(subject,{command:"control.inspect"});
+      expect(inspection.externalStopConfirmed).toBe(false);
+      expect(inspection).toMatchObject({boundaries:[{boundary:before.stopBoundary,nativeEffectsUnknown:true}]});
+      await expect(f.broker.cleanup(subject,{command:"worker.quiescent",boundary:{...before.stopBoundary!,stopNonce:randomUUID()},requestId:randomUUID()})).rejects.toThrow("boundary");
+      const report=await f.broker.cleanup(subject,{command:"worker.quiescent",boundary:before.stopBoundary!,requestId:randomUUID()});
+      expect(report).toMatchObject({status:"worker_reported",externalStopConfirmed:false,nativeEffectsUnknown:true});
+      const [after]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      expect(after.workerReportedAt).toBeInstanceOf(Date);expect(after.workerUnknown).toBe(true);
+      expect(after.nativeEffectsUnknown).toBe(true);expect(after.releasedAt).toBeNull();
+      await expect(f.broker.act(subject,{version:1,command:"tool",assignmentId:f.assignment.id,requestId:randomUUID(),name:"paperclip_task_read",arguments:{}})).rejects.toThrow();
+    }finally{await f.detach();}
+  });
+
+  it("does not renew connected cleanup from mutable holds or later revocation receipts",async()=>{
+    const f=await active();try {
+      await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      const [original]=await db.select().from(mailbox).where(and(eq(mailbox.assignmentId,f.assignment.id),eq(mailbox.kind,"authority_revoked")));
+      await db.update(mailbox).set({createdAt:new Date(Date.now()-24*60*60_000-60_000)}).where(eq(mailbox.id,original.id));
+      await db.update(externalAgentHolds).set({updatedAt:new Date()}).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      await db.update(assignments).set({lastActivityAt:new Date()}).where(eq(assignments.id,f.assignment.id));
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      const receipts=await db.select().from(mailbox).where(and(eq(mailbox.assignmentId,f.assignment.id),eq(mailbox.kind,"authority_revoked")));
+      expect(receipts).toHaveLength(2);expect(receipts.some(row=>row.createdAt.getTime()>Date.now()-60_000)).toBe(true);
+      await expect(f.identity.authenticate(f.credentials.cleanupToken,"cleanup")).rejects.toThrow("Cleanup authority");
+    }finally{await f.detach();}
+  });
+
+  it.each(["no hold","released hold","other provider","hold company","hold agent","hold binding","hold generation","binding generation","assignment company","assignment agent","assignment binding","assignment generation","live assignment","missing boundary","boundary binding","boundary generation","boundary run","boundary turn","boundary revision","missing fence receipt","expired credential","revoked credential","consumed credential"])(
+    "denies connected cleanup with %s",async(reason)=>{
+      const f=await active();try {
+        await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+        await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+        const [hold]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+        const other=reason.endsWith("company")||reason.endsWith("agent")||reason.endsWith("binding")?await fixture():null;
+        const holdChanges:Partial<typeof externalAgentHolds.$inferInsert>={
+          ...(reason==="released hold"?{releasedAt:new Date()}:{}),
+          ...(reason==="other provider"?{provider:"openai_dot"}:{}),
+          ...(reason==="hold company"?{companyId:other!.company.id}:{}),
+          ...(reason==="hold agent"?{agentId:other!.agent.id}:{}),
+          ...(reason==="hold binding"?{bindingId:other!.binding.id}:{}),
+          ...(reason==="hold generation"?{bindingGeneration:2}:{}),
+          ...(reason==="missing boundary"?{stopBoundary:null}:{}),
+        };
+        if(reason.startsWith("boundary "))holdChanges.stopBoundary={...hold.stopBoundary!,
+          ...(reason==="boundary binding"?{bindingId:other!.binding.id}:{}),
+          ...(reason==="boundary generation"?{generation:2}:{}),
+          ...(reason==="boundary run"?{runId:randomUUID()}:{}),
+          ...(reason==="boundary turn"?{turnId:"different-turn"}:{}),
+          ...(reason==="boundary revision"?{assignmentRevision:99}:{}),
+        };
+        if(reason==="no hold")await db.delete(externalAgentHolds).where(eq(externalAgentHolds.id,hold.id));
+        else if(Object.keys(holdChanges).length)await db.update(externalAgentHolds).set(holdChanges).where(eq(externalAgentHolds.id,hold.id));
+        const assignmentChanges:Partial<typeof assignments.$inferInsert>={
+          ...(reason==="assignment company"?{companyId:other!.company.id}:{}),
+          ...(reason==="assignment agent"?{agentId:other!.agent.id}:{}),
+          ...(reason==="assignment binding"?{bindingId:other!.binding.id}:{}),
+          ...(reason==="assignment generation"?{bindingGeneration:2}:{}),
+          ...(reason==="live assignment"?{status:"accepted"}:{}),
+        };
+        if(Object.keys(assignmentChanges).length)await db.update(assignments).set(assignmentChanges).where(eq(assignments.id,f.assignment.id));
+        if(reason==="binding generation")await db.update(bindings).set({generation:2}).where(eq(bindings.id,f.binding.id));
+        if(reason==="missing fence receipt")await db.delete(mailbox).where(and(eq(mailbox.assignmentId,f.assignment.id),eq(mailbox.kind,"authority_revoked")));
+        if(reason.endsWith("credential"))await db.update(museCredentials).set({
+          ...(reason==="expired credential"?{expiresAt:new Date(Date.now()-1)}:{}),
+          ...(reason==="revoked credential"?{revokedAt:new Date()}:{}),
+          ...(reason==="consumed credential"?{consumedAt:new Date()}:{}),
+        }).where(eq(museCredentials.tokenHash,museCredentialHash(f.credentials.cleanupToken)));
+        await expect(f.identity.authenticate(f.credentials.cleanupToken,"cleanup")).rejects.toThrow();
+      }finally{await f.detach();}
+    },
+  );
+
+  it("keeps revoked cleanup bounded to its existing deadline and current generation",async()=>{
+    const f=await fixture();const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;
+    await f.broker.revoke(f.company.id,f.agent.id,f.operatorId,{bindingId:f.binding.id,generation:1,expectedRevision:state.revision});
+    await expect(f.identity.authenticate(f.credentials.cleanupToken,"cleanup")).resolves.toMatchObject({bindingId:f.binding.id,generation:1});
+    await db.update(bindings).set({generation:2}).where(eq(bindings.id,f.binding.id));
+    await expect(f.identity.authenticate(f.credentials.cleanupToken,"cleanup")).rejects.toThrow();
+    await db.update(bindings).set({generation:1,cleanupExpiresAt:new Date(Date.now()-1)}).where(eq(bindings.id,f.binding.id));
+    await expect(f.identity.authenticate(f.credentials.cleanupToken,"cleanup")).rejects.toThrow();
+    await expect(f.identity.authenticate(f.credentials.detectorCleanupToken,"detector_cleanup")).rejects.toThrow();
+  });
+
   it("fences without fabricating private stop and retains unknown native effects across operator attestation",async()=>{
     const f=await active();try {
       await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
