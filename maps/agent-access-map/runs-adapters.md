@@ -14,6 +14,11 @@ Scoped runner-default source review: 2026-10-12 at
 selected-runtime testing and saved execution/session preservation. The original
 baseline source and review depth remain unchanged for unrelated operations.
 
+Scoped native cancellation source review: 2026-10-12 at
+`ce23716503a2c9158b5a7ab74ab61571ff4ee7a3`, limited to owned startup and
+shutdown/readiness ordering. The original baseline and review depth remain for
+unrelated operations; no live provider or agent authorization is claimed.
+
 ## `availability`
 
 Review: `baseline`.
@@ -152,10 +157,15 @@ for active/recovered runs. Explicit runner changes use revisions and session
 invalidation. Verify saved configuration, current versus historical run identity,
 restart and follow-up without granting session-reset authority to an agent.
 
-Scoped source-only evidence: the
+Scoped Evidence: `source-only` — the
 [native transport](../../packages/paperclip-runner/src/live/runnerd-codex-transport.ts)
-joins owned startup before certifying cleanup. Unconfirmed preparation or
-registration retains recovery state; late registration may retire only its own
-route and cannot launch a provider after close. This does not grant an agent
-account-setup, cleanup-override or session-reset authority. Verify the no-provider
-ownership controls independently from installed/live provider acceptance.
+joins owned startup before certifying cleanup. Rejected duplicates cannot replace
+that owner or mutate recovery state. Unconfirmed preparation or registration
+retains recovery state; late registration may release only its own route and
+cannot launch after close. Shutdown interrupts readiness without granting
+authority over an unauthenticated adopted process.
+
+Scoped Verification: `not-run` — verify allowed/denied access using the actual
+actor independently from the credential-free ownership controls. This correction
+adds no account-setup, cleanup-override or session-reset authority. The real native
+readiness/recovery fixtures and installed provider acceptance remain separate gates.

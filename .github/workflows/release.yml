@@ -341,8 +341,6 @@ jobs:
         run: node scripts/cloud-source-verification.mjs "$SOURCE_SHA"
 
   release_runner_source:
-    # Old promotions retain their already-shipped packaging contract. New
-    # sources opt into source-declared native target assembly in their release.sh.
     needs: [verify_canary, select_nightly, select_beta, preflight_stable]
     if: >-
       !cancelled() && (
@@ -357,7 +355,7 @@ jobs:
       sha: ${{ steps.source.outputs.sha }}
       required: ${{ steps.source.outputs.required }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ needs.preflight_stable.outputs.sha || needs.select_beta.outputs.sha || needs.select_nightly.outputs.sha || github.sha }}
           persist-credentials: false
@@ -427,7 +425,7 @@ jobs:
 
       - name: Download exact-source release daemon receipts
         if: needs.release_runner_source.outputs.required == 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           pattern: ${{ needs.release_runner_binaries.outputs.runner_artifact_prefix }}-*
           path: ${{ runner.temp }}/release-runner-inputs
@@ -724,7 +722,7 @@ jobs:
 
       - name: Download exact-source release daemon receipts
         if: needs.release_runner_source.outputs.required == 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           pattern: ${{ needs.release_runner_binaries.outputs.runner_artifact_prefix }}-*
           path: ${{ runner.temp }}/release-runner-inputs
@@ -1003,7 +1001,7 @@ jobs:
 
       - name: Download exact-source release daemon receipts
         if: needs.release_runner_source.outputs.required == 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           pattern: ${{ needs.release_runner_binaries.outputs.runner_artifact_prefix }}-*
           path: ${{ runner.temp }}/release-runner-inputs
@@ -1384,7 +1382,7 @@ jobs:
 
       - name: Download exact-source release daemon receipts
         if: needs.release_runner_source.outputs.required == 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           pattern: ${{ needs.release_runner_binaries.outputs.runner_artifact_prefix }}-*
           path: ${{ runner.temp }}/release-runner-inputs
@@ -1442,7 +1440,7 @@ jobs:
 
       - name: Download exact-source release daemon receipts
         if: needs.release_runner_source.outputs.required == 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           pattern: ${{ needs.release_runner_binaries.outputs.runner_artifact_prefix }}-*
           path: ${{ runner.temp }}/release-runner-inputs

@@ -149,7 +149,6 @@ describe("paperclip runner native dev prerequisite", () => {
     fs.utimesSync(target, current, current);
     const input = { repoRoot: checkout.root, nativeRunnerRequired: true, platform: "darwin", architecture };
     expect(paperclipRunnerBinaryNeedsBuild(input)).toBe(false);
-    // A newer Linux build-host output cannot mask the remote Mac artifact.
     fs.writeFileSync(checkout.binary, nativeHeader("linux", "x64"));
     const wrongHostNewer = new Date(Date.now() + 4000);
     fs.utimesSync(checkout.binary, wrongHostNewer, wrongHostNewer);

@@ -284,9 +284,6 @@ release_info ""
 release_info "==> Step 2/7: Building workspace artifacts..."
 cd "$REPO_ROOT"
 pnpm build
-# Hosted producers supply data-only, hash/source/architecture-bound daemon
-# receipts. Assemble after the build (which stages its host binary), before
-# public packages are packed. The server vendors this same compiled runner.
 if [ -n "${PAPERCLIP_RELEASE_RUNNER_ARTIFACTS_DIR:-}" ]; then
   node "$REPO_ROOT/packages/paperclip-runner/scripts/stage-release-runner-binaries.mjs" \
     assemble-daemons "$PAPERCLIP_RELEASE_RUNNER_ARTIFACTS_DIR" "$(git rev-parse HEAD)"

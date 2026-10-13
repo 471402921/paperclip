@@ -227,17 +227,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ inputs.qualification_source_sha }}
           persist-credentials: false
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
         with:
           version: 9.15.4
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           pattern: ${{ needs.qualification_daemons.outputs.runner_artifact_prefix }}-*
           path: ${{ runner.temp }}/release-runner-inputs
@@ -275,7 +275,7 @@ jobs:
           fi
       - name: Retain completed package assembly even after a later Linux failure
         if: ${{ !cancelled() && steps.pack_identity.outputs.available == 'true' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ inputs.artifact_name }}-public-packages
           path: ${{ runner.temp }}/public-runner-packs/
@@ -292,17 +292,17 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.qualification_daemons.outputs.native_consumer_matrix) }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ inputs.qualification_source_sha }}
           persist-credentials: false
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
         with:
           version: 9.15.4
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ inputs.artifact_name }}-public-packages
           path: ${{ runner.temp }}/public-runner-packs
@@ -310,9 +310,8 @@ jobs:
         run: pnpm install --ignore-scripts --no-frozen-lockfile
       - name: Checkout immutable ARM qualification tooling
         if: ${{ matrix.target == 'linux-arm64' }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          # job.workflow_* identifies this reusable workflow, not its caller.
           repository: ${{ job.workflow_repository }}
           ref: ${{ job.workflow_sha }}
           path: .qualification-tooling
@@ -363,7 +362,7 @@ jobs:
           if [[ "$TARGET" == linux-arm64 ]]; then mode=--linux-arm64-consumer; fi
           node scripts/verify-grok-npm-install.mjs "$mode" \
             "$RUNNER_TEMP/public-runner-packs" "$SOURCE_SHA" "$RUNNER_TEMP/native-public-install.json"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: ${{ inputs.artifact_name }}-${{ matrix.target }}

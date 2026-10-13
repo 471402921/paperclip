@@ -2,8 +2,6 @@ function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-/** Native mode is independent of permissions. Every connection must prove its
- * current mode before a prompt; a persisted ACPX preference is not proof. */
 export function createAcpxConfigAdmission(expected: string, options: { label: string; configId: string; supportedValues: readonly string[]; restoring?: boolean; sessionMode?: boolean }) {
   type State = { sessionId: string | null; mode: string | null; error: Error | null };
   let current: State | null = null;
@@ -17,8 +15,6 @@ export function createAcpxConfigAdmission(expected: string, options: { label: st
     const configs = Array.isArray(result.configOptions) ? result.configOptions.filter(value => object(value).id === options.configId) : [];
     if (configs.length !== 1) throw failure("native mode configuration is missing or ambiguous");
     const mode = object(configs[0]).currentValue;
-    // Before exact model selection, Pi can legitimately report a different
-    // native model's level. Observation alone never admits the first prompt.
     if (typeof mode !== "string" || !options.supportedValues.includes(mode)) throw failure("native mode is unsupported");
     if (session && options.sessionMode && object(result.modes).currentModeId !== mode) throw failure("native mode acknowledgements conflict");
     return mode;
@@ -56,16 +52,12 @@ export function createAcpxConfigAdmission(expected: string, options: { label: st
               pending.set(message.id, { method, sessionId: params.sessionId, selectsMode: params.configId === options.configId });
             } else if (options.sessionMode && method === "session/set_mode") {
               if (!state.sessionId || params.sessionId !== state.sessionId || params.modeId !== expected) throw failure("mode control changes the selected mode");
-              // This method only returns {}; require a later config/session
-              // acknowledgement rather than treating that empty result as proof.
               state.mode = null;
             }
             return;
           }
           if (message.method === "session/update" && object(params.update).sessionUpdate === "config_option_update") {
             const update = object(params.update);
-            // Config updates may contain only model options. A mode entry is
-            // authoritative observation, but never an admission acknowledgement.
             if (Array.isArray(update.configOptions) && update.configOptions.some(value => object(value).id === options.configId)) {
               if (state.sessionId && params.sessionId !== state.sessionId) throw failure("mode update belongs to a different session");
               const observed = readMode(update, false);

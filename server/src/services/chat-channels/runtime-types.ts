@@ -1,5 +1,5 @@
 import type { Db, chatEndpoints } from "@paperclipai/db";
-import type { ToolCredentialSecretRef } from "@paperclipai/shared";
+import type { ToolCredentialSecretRef, ChatEndpointSetupState, ChatEndpointCallbackSurfaces } from "@paperclipai/shared";
 import type { ChatEndpointRuntime } from "../voice/voice-runtime.js";
 
 export type EndpointRow = typeof chatEndpoints.$inferSelect;
@@ -35,4 +35,18 @@ export type EndpointRecord = {
   connectionName: string;
   applicationId: string;
   credentialSecretRefs: ToolCredentialSecretRef[];
+};
+
+export type SlackCallbackSurface = keyof ChatEndpointCallbackSurfaces;
+
+export type SlackCallbackObservation = { url: string; observedAt: string };
+
+export type InternalSetupState = ChatEndpointSetupState & {
+  photonIntakeAfter?: string;
+  runtimeGeneration?: number;
+  /** Binds pre-install URL verification to the signing secret later configured. */
+  slackVerificationSigningFingerprint?: string;
+  slackCallbackSurfaces?: Partial<
+    Record<SlackCallbackSurface, SlackCallbackObservation>
+  >;
 };
