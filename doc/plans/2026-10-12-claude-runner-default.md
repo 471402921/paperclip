@@ -905,3 +905,34 @@ under the contribution rules. The controlled before/after receipts and full
 72-pass/one-skip suite remain the evidence stated above. The separate callback
 fixture failure is being diagnosed by the source owner and is not covered by
 that correction.
+
+## Canonical dae808fe composition — 2026-10-12
+
+Canonical prerequisite `dae808fe02694d13d322c535944910813b21f6d6` is published
+against master `e168512f7bdbb6af6ea01954c6d7ed80b91e903e`. Additive composition
+uses protocol `f34a1c81a93e755ed867ab71c2d016ed612baa07`, behavior
+`81ce173e57` and platform `bfba2c6a5453a88c624077cec57000cfb3152d90` before
+this evidence update. The durable-resume and callback tests have no remaining
+diff against the canonical parent. Common production transport differences stay
+limited to Claude effort. Two Storybook combined fingerprints were reconciled
+after inspecting the activity/recovery map changes; classification, declared
+sources and story IDs are retained.
+
+Current runner, surface, server and UI noemit pass. Maps, tokens, nine catalog
+controls, four profile/protocol/capability generation checks and 25 clean-install
+consumer controls pass. The fake-transport live-session suite passes 72 with one
+existing skip. Receipts use `/private/tmp/claude-dae-*.log`; native transport
+execution and required full checks remain cloud gates. The older Codex dependency
+still makes the protocol review contain 703 files, so the three PR code heads
+remain unchanged until that dependency is reconciled. Local behavior/platform
+review slices remain 88/42 files.
+
+The source owner's provider-free campaign
+[38338806076](https://github.com/paperclipai/paperclip/actions/runs/38338806076)
+passed four native producers and all clean consumers, including Intel Mac, on
+literal source 16a53254. That result is not relabeled as the Claude v7/Pi25
+composition. A separate immutable qualification ref will carry this composition
+through the existing release-smoke producer/consumer workflow in the cloud, with
+zero provider prompts and no package publication or deployment. This preserves
+the existing PR boundaries while current package evidence is collected. Any
+later source changes require an explicit evidence applicability check.
