@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
   adapterModels: vi.fn(),
   list: vi.fn(),
   hire: vi.fn(),
+  retryLifecycle: vi.fn(),
   testEnvironment: vi.fn(),
   getAdapterAuthSignal: vi.fn(),
   getClaudeOAuthTokenStatus: vi.fn(),
@@ -179,6 +180,8 @@ beforeEach(() => {
   api.hire.mockImplementation(async (_company, input) => ({
     agent: { ...input, id: "new-agent", status: "idle", urlKey: "atlas" },
   }));
+  api.get.mockImplementation(async () => (await api.hire.mock.results.at(-1)?.value)?.agent);
+  api.retryLifecycle.mockResolvedValue({});
   envApi.list.mockResolvedValue([
     { id: "local-1", name: "Local", driver: "local", config: {} },
   ]);
@@ -799,6 +802,48 @@ describe("New agent setup", () => {
     expect(container.textContent).toContain("This adapter is unavailable");
     expect(api.testEnvironment).not.toHaveBeenCalled();
     expect(api.hire).not.toHaveBeenCalled();
+  });
+  it.each(["preparing", "verifying"])("refreshes %s to ready before enabling the first task", async lifecycleState => {
+    const agent = { id: "new-agent", companyId: "company-1", name: "Atlas", status: "paused", lifecycleState };
+    api.hire.mockResolvedValue({ agent });
+    api.get.mockResolvedValue(agent);
+    await render();
+    await fill("Model", "openrouter/anthropic/claude-sonnet-4.6");
+    await click("Finish setup");
+    const assign = () => [...container.querySelectorAll("button")].find(b => b.textContent?.includes("Assign Atlas a Task"))!;
+    expect(assign().disabled).toBe(true);
+    expect(container.textContent).not.toContain("Your agent is ready");
+    expect(container.textContent).toContain(lifecycleState === "preparing" ? "Preparing agent" : "Verifying agent");
+    // Refresh the same cache entry used by polling. The creation snapshot remains paused.
+    api.get.mockResolvedValue({ ...agent, lifecycleState: "ready", status: "idle" });
+    await act(async () => { await cache.invalidateQueries({ queryKey: [...queryKeys.agents.detail(agent.id), "lifecycle", agent.companyId] }); });
+    await settle();
+    expect(container.textContent).toContain("Your agent is ready");
+    expect(assign().disabled).toBe(false);
+    await click("Assign Atlas a Task");
+    expect(state.openNewIssue).toHaveBeenCalledWith({ assigneeAgentId: agent.id, status: "todo" });
+  });
+  it("shows failed verification and retries without enabling assignment", async () => {
+    const agent = { id: "new-agent", companyId: "company-1", name: "Atlas", status: "paused", lifecycleState: "verifying", lifecycleError: "Verification failed" };
+    api.hire.mockResolvedValue({ agent });
+    api.get.mockResolvedValue(agent);
+    await render();
+    await fill("Model", "openrouter/anthropic/claude-sonnet-4.6");
+    await click("Finish setup");
+    expect(container.textContent).toContain("Verification failed");
+    await click("Retry");
+    expect(api.retryLifecycle).toHaveBeenCalledWith(agent.id, agent.companyId);
+    expect([...container.querySelectorAll("button")].find(b => b.textContent?.includes("Assign Atlas a Task"))!.disabled).toBe(true);
+  });
+  it("does not enable first-task assignment for an actual paused agent", async () => {
+    const agent = { id: "new-agent", companyId: "company-1", name: "Atlas", status: "paused", lifecycleState: "paused" };
+    api.hire.mockResolvedValue({ agent });
+    api.get.mockResolvedValue(agent);
+    await render();
+    await fill("Model", "openrouter/anthropic/claude-sonnet-4.6");
+    await click("Finish setup");
+    expect(container.textContent).toContain("Resume this agent in configuration");
+    expect([...container.querySelectorAll("button")].find(b => b.textContent?.includes("Assign Atlas a Task"))!.disabled).toBe(true);
   });
   it("keeps pending agents behind approval and disables task assignment", async () => {
     api.hire.mockResolvedValue({

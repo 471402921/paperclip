@@ -1,3 +1,4 @@
+import { AgentLifecycleStatus, useAgentLifecycleStatus } from "./AgentLifecycleStatus";
 import { usePrimaryAgentPresentation } from "./primary-agent/PrimaryAgentPresentation";
 import { useWorkspaceIsolationControls } from "@/hooks/useWorkspaceIsolationControls";
 import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties, type DragEvent } from "react";
@@ -416,6 +417,14 @@ export function NewIssueDialog() {
     () => (agents ?? []).find((agent) => agent.id === selectedAssigneeAgentId) ?? null,
     [agents, selectedAssigneeAgentId],
   );
+  const assigneeLifecycle = useAgentLifecycleStatus(selectedAssigneeAgent ?? undefined);
+  const assigneeLifecycleAgent = selectedAssigneeAgent
+    ? { ...selectedAssigneeAgent, ...assigneeLifecycle.data }
+    : null;
+  const retryAssigneeLifecycle = useMutation({
+    mutationFn: () => agentsApi.retryLifecycle(selectedAssigneeAgent!.id, selectedAssigneeAgent!.companyId),
+    onSuccess: () => assigneeLifecycle.refetch(),
+  });
   const assigneeAdapterType = selectedAssigneeAgent?.adapterType ?? null;
   const mentionOptions = useMemo<MentionOption[]>(() => {
     return buildMarkdownMentionOptions({
@@ -1340,18 +1349,27 @@ export function NewIssueDialog() {
                       </div>
                     ) : null}
 
-                    {selectedAssigneeAgent?.status === "paused" ? (
+                    {assigneeLifecycleAgent && (assigneeLifecycleAgent.lifecycleState
+                      ? assigneeLifecycleAgent.lifecycleState === "paused"
+                      : assigneeLifecycleAgent.status === "paused") ? (
                       <div data-testid="new-issue-paused-assignee-note" className="mx-4 mb-2">
                         <InlineBanner tone="warning" icon={PauseCircle} compact>
-                          <span className="font-medium">{selectedAssigneeAgent.name}</span> is paused and will not start
+                          <span className="font-medium">{assigneeLifecycleAgent.name}</span> is paused and will not start
                           work on this task until it is resumed
-                          {selectedAssigneeAgent.pauseReason === "import"
+                          {assigneeLifecycleAgent.pauseReason === "import"
                             ? " — it arrived paused from an organization import"
                             : ""}
                           . You can resume it from the task page after creating the task.
                         </InlineBanner>
                       </div>
                     ) : null}
+
+                    {assigneeLifecycleAgent && <div className="mx-4 mb-2">
+                      <AgentLifecycleStatus agent={assigneeLifecycleAgent}
+                        onRetry={() => retryAssigneeLifecycle.mutate()}
+                        retryPending={retryAssigneeLifecycle.isPending} refreshError={assigneeLifecycle.isError} />
+                      {retryAssigneeLifecycle.error && <p role="alert" className="text-sm text-destructive">{retryAssigneeLifecycle.error.message}</p>}
+                    </div>}
 
                     {currentAssigneeLowTrust ? (
                       <div

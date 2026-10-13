@@ -37,7 +37,7 @@ Preconditions: follow the [baseline](./README.md#before-driving-a-journey). Use 
 
 Automated: [new agent page](../../ui/src/pages/NewAgent.test.tsx) and [configuration form](../../ui/src/components/AgentConfigForm.render.test.tsx) cover mocked UI behavior.
 
-Manual: Hire an agent with a distinct name and role. Complete any required approval, reload the roster, and open its configuration. Confirm manager, adapter, and model persisted; run a small task to prove execution readiness.
+Manual: Hire an agent with a distinct name and role. Complete any required approval, reload the roster, and open its configuration. Confirm manager, adapter, and model persisted; run a small task to prove execution readiness. On the creation screen, preparation and verification must show progress and keep task assignment disabled. After readiness, assignment becomes available. A failed verification must show its error and offer Retry. The task dialog must show setup progress instead of pause/resume guidance for a preparing or verifying agent.
 
 The current hiring wizard assigns the first hire CEO and subsequent hires
 General reporting to the CEO. Change manager/role afterward through supported

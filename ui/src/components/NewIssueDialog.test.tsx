@@ -69,6 +69,8 @@ const mockProjectsApi = vi.hoisted(() => ({
 }));
 
 const mockAgentsApi = vi.hoisted(() => ({
+  get: vi.fn(),
+  retryLifecycle: vi.fn(),
   list: vi.fn(),
   adapterModels: vi.fn(),
 }));
@@ -391,6 +393,8 @@ describe("NewIssueDialog", () => {
         color: "#445566",
       },
     ]);
+    mockAgentsApi.get.mockImplementation(async (id) => (await mockAgentsApi.list()).find((agent: { id: string }) => agent.id === id));
+    mockAgentsApi.retryLifecycle.mockResolvedValue({});
     mockAgentsApi.list.mockResolvedValue([]);
     mockAgentsApi.adapterModels.mockResolvedValue([]);
     mockAuthApi.getSession.mockResolvedValue({ user: { id: "user-1" } });
@@ -923,6 +927,16 @@ describe("NewIssueDialog", () => {
     });
     expect(container.textContent).not.toContain("Codex options");
 
+    act(() => root.unmount());
+  });
+
+  it.each(["preparing", "verifying", "resuming"])("shows %s progress instead of a pause warning", async lifecycleState => {
+    dialogState.newIssueDefaults = { title: "First task", assigneeAgentId: "agent-1" };
+    mockAgentsApi.list.mockResolvedValue([{ id: "agent-1", companyId: "company-1", name: "Coder", status: "paused", lifecycleState, adapterType: "claude_local", adapterConfig: {}, runtimeConfig: {}, permissions: {} }]);
+    const { root } = renderDialog(container);
+    await waitForAssertion(() => expect(container.textContent).toContain(lifecycleState === "preparing" ? "Preparing agent" : lifecycleState === "verifying" ? "Verifying agent" : "Resuming agent"));
+    expect(container.querySelector('[data-testid="new-issue-paused-assignee-note"]')).toBeNull();
+    expect(container.textContent).not.toContain("until it is resumed");
     act(() => root.unmount());
   });
 

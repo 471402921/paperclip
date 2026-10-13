@@ -1,3 +1,4 @@
+import { AgentLifecycleStatus, useAgentLifecycleStatus } from "../AgentLifecycleStatus";
 import { useConnectionModels } from "../ai-connections/useConnectionModels";
 import { AgentCharacter } from "../AgentCharacter";
 import { useAgentAppearanceDraft } from "../../hooks/useAgentAppearanceDraft";
@@ -14,7 +15,7 @@ import { testAgentSetup } from "@/lib/test-agent-setup";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { isNewAgentAdapterAllowed } from "@/lib/new-agent-adapters";
 import { useEffect, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { ArrowLeft, ArrowRight, Check, Settings2 } from "lucide-react";
 import type {
@@ -168,9 +169,20 @@ function Setup({
     enabled: Boolean(createdAgentId),
     retry: false,
   });
-  const created =
+  const createdSnapshot =
     createdInSession ??
     (savedAgent.data?.companyId === companyId ? savedAgent.data : null);
+  const lifecycle = useAgentLifecycleStatus(createdSnapshot ?? undefined);
+  const created = createdSnapshot
+    ? { ...createdSnapshot, ...lifecycle.data }
+    : null;
+  const retryLifecycle = useMutation({
+    mutationFn: () => agentsApi.retryLifecycle(created!.id, companyId),
+    onSuccess: () => lifecycle.refetch(),
+  });
+  const createdReady = Boolean(created && (created.lifecycleState
+    ? created.lifecycleState === "ready"
+    : ["active", "idle", "running", "error"].includes(created.status)));
   const [saving, setSaving] = useState(false);
   const [testState, setTestState] = useState<TestState | "warn">("idle");
   const [result, setResult] = useState<AdapterEnvironmentTestResult | null>(
@@ -795,7 +807,7 @@ function Setup({
                         <Check className="size-5" />
                         {created.status === "pending_approval"
                           ? "Agent submitted for approval"
-                          : isDot ? "Your Dot agent has been created" : "Your agent is ready"}
+                          : isDot ? "Your Dot agent has been created" : createdReady ? "Your agent is ready" : "Your agent has been created"}
                       </h2>
                       <dl className="grid grid-cols-2 gap-4 text-sm">
                         <dt className="text-muted-foreground">Adapter</dt>
@@ -814,8 +826,11 @@ function Setup({
                       <p className="text-sm text-muted-foreground">
                         {created.status === "pending_approval"
                           ? "An organization administrator must approve this agent before it can work."
-                          : isDot ? "Pair your Dot and test event delivery in configuration before assigning work." : "Assign a task when you’re ready for this agent to work."}
+                          : isDot ? "Pair your Dot and test event delivery in configuration before assigning work." : createdReady ? "Assign a task when you’re ready for this agent to work." : created.lifecycleState === "paused" ? "Resume this agent in configuration before assigning work." : "Setup must finish before this agent can work."}
                       </p>
+                      <AgentLifecycleStatus agent={created} onRetry={() => retryLifecycle.mutate()}
+                        retryPending={retryLifecycle.isPending} refreshError={lifecycle.isError} />
+                      {retryLifecycle.error && <p role="alert" className="text-sm text-destructive">{retryLifecycle.error.message}</p>}
                     </div>
                     <div className="flex flex-wrap justify-between gap-3">
                       <Button
@@ -826,7 +841,7 @@ function Setup({
                         {isDot ? "Back to Agents" : "Edit configuration"}
                       </Button>
                       <Button
-                        disabled={created.status === "pending_approval"}
+                        disabled={isDot ? created.status === "pending_approval" : !createdReady}
                         onClick={() => isDot
                           ? navigate(`${agentUrl(created)}/runtime`)
                           : openNewIssue({ assigneeAgentId: created.id, status: "todo" })
