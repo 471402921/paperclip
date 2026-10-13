@@ -414,7 +414,8 @@ export async function selectHeartbeatEnvironment(db: Db, input: HeartbeatEnviron
   if (!isDotRun && taskWorkspaceIntent && !boundSourceWorkspace && !nativeRecoveryExecutionWorkspaceId) {
     await executionWorkspacesSvc.validateSelection({ companyId: agent.companyId,
       actor: { type: "agent", agentId: agent.id, companyId: agent.companyId, runId: run.id, source: "agent_jwt", onBehalfOfUserId: responsibleUserId === "local-board" ? null : responsibleUserId },
-      selection: taskWorkspaceIntent.selection, issueId });
+      selection: taskWorkspaceIntent.selection, issueId,
+      preserveImplicitDefaultSettings: ["project", "task_default"].includes(taskWorkspaceIntent.source) });
   }
   const explicitTaskDirectory = !isDotRun && taskWorkspaceIntent?.selection.kind === "task_directory";
   const useIsolatedTaskDirectory = !isDotRun && issueRef !== null && shouldUseIsolatedTaskDirectory({

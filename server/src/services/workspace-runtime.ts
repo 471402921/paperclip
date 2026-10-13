@@ -1,4 +1,5 @@
 import { sanitizeRuntimeServiceBaseEnv } from "./runtime-service-env.js";
+import { verifiedRecordedIsolatedRemoteSource } from "./isolated-remote-workspace-source.js";
 export { sanitizeRuntimeServiceBaseEnv } from "./runtime-service-env.js";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
@@ -4155,6 +4156,7 @@ async function deleteGitBranchAtVerifiedTip(input: {
 export async function cleanupExecutionWorkspaceArtifacts(input: {
   workspace: {
     id: string;
+    companyId: string;
     cwd: string | null;
     providerType: string;
     providerRef: string | null;
@@ -4181,15 +4183,16 @@ export async function cleanupExecutionWorkspaceArtifacts(input: {
 }) {
   const warnings: string[] = [];
   const workspacePath = input.workspace.providerRef ?? input.workspace.cwd;
+  const isolatedSource = await verifiedRecordedIsolatedRemoteSource(input.workspace);
   const repoRoot = input.workspace.providerType === "git_worktree" && workspacePath
     ? await resolveGitRepoRootForWorkspaceCleanup(
       workspacePath,
-      input.projectWorkspace?.cwd ?? null,
+      isolatedSource ?? input.projectWorkspace?.cwd ?? null,
     )
     : null;
   const cleanupEnv = buildExecutionWorkspaceCleanupEnv({
     workspace: input.workspace,
-    projectWorkspaceCwd: input.projectWorkspace?.cwd ?? null,
+    projectWorkspaceCwd: isolatedSource ?? input.projectWorkspace?.cwd ?? null,
   });
   // Callers can require the workspace to match an assessed snapshot before
   // cleanup begins. Destructive paths recheck immediately before removal.

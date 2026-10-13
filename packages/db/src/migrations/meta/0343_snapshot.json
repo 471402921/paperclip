@@ -1,6 +1,6 @@
 {
-  "id": "54a1dfa7-fcaf-4c07-820c-145b8ab4e7d5",
-  "prevId": "c1d07b97-1b2e-42e5-882a-a88efec0bfc6",
+  "id": "8d2191b5-07d1-432e-a4d9-f0a4e63ab8df",
+  "prevId": "ebff3947-c566-4465-bf64-45325b14a970",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -16324,6 +16324,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "owner_agent_id": {
+          "name": "owner_agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "owner_plugin_id": {
+          "name": "owner_plugin_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "user_secret_definition_id": {
           "name": "user_secret_definition_id",
           "type": "uuid",
@@ -16552,6 +16564,40 @@
           "method": "btree",
           "with": {}
         },
+        "company_secrets_instance_owner_key_uq": {
+          "name": "company_secrets_instance_owner_key_uq",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "owner_agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "owner_plugin_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"company_secrets\".\"scope\" = 'instance' and \"company_secrets\".\"deleted_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "company_secrets_provider_config_idx": {
           "name": "company_secrets_provider_config_idx",
           "columns": [
@@ -16654,6 +16700,19 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
+        "company_secrets_owner_plugin_id_plugins_id_fk": {
+          "name": "company_secrets_owner_plugin_id_plugins_id_fk",
+          "tableFrom": "company_secrets",
+          "tableTo": "plugins",
+          "columnsFrom": [
+            "owner_plugin_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
         "company_secrets_user_secret_definition_id_user_secret_definitions_id_fk": {
           "name": "company_secrets_user_secret_definition_id_user_secret_definitions_id_fk",
           "tableFrom": "company_secrets",
@@ -16692,6 +16751,21 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "company_secrets_company_id_owner_agent_id_agents_company_id_id_fk": {
+          "name": "company_secrets_company_id_owner_agent_id_agents_company_id_id_fk",
+          "tableFrom": "company_secrets",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "company_id",
+            "owner_agent_id"
+          ],
+          "columnsTo": [
+            "company_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -16700,7 +16774,7 @@
       "checkConstraints": {
         "company_secrets_scope_shape_check": {
           "name": "company_secrets_scope_shape_check",
-          "value": "(\n        \"company_secrets\".\"scope\" = 'company'\n        and \"company_secrets\".\"owner_user_id\" is null\n        and \"company_secrets\".\"user_secret_definition_id\" is null\n      ) or (\n        \"company_secrets\".\"scope\" = 'user'\n        and \"company_secrets\".\"owner_user_id\" is not null\n        and \"company_secrets\".\"user_secret_definition_id\" is not null\n      )"
+          "value": "(\n        \"company_secrets\".\"scope\" = 'company'\n        and \"company_secrets\".\"owner_user_id\" is null\n        and \"company_secrets\".\"user_secret_definition_id\" is null\n        and \"company_secrets\".\"owner_agent_id\" is null and \"company_secrets\".\"owner_plugin_id\" is null\n      ) or (\n        \"company_secrets\".\"scope\" = 'user'\n        and \"company_secrets\".\"owner_user_id\" is not null\n        and \"company_secrets\".\"user_secret_definition_id\" is not null\n        and \"company_secrets\".\"owner_agent_id\" is null and \"company_secrets\".\"owner_plugin_id\" is null\n      ) or (\n        \"company_secrets\".\"scope\" = 'instance'\n        and \"company_secrets\".\"owner_user_id\" is null and \"company_secrets\".\"user_secret_definition_id\" is null\n        and \"company_secrets\".\"owner_agent_id\" is not null and \"company_secrets\".\"owner_plugin_id\" is not null\n      )"
         }
       },
       "isRLSEnabled": false
@@ -46126,7 +46200,7 @@
         },
         "resource_lifecycle_events_action_check": {
           "name": "resource_lifecycle_events_action_check",
-          "value": "\"resource_lifecycle_events\".\"action\" = 'create' OR (\"resource_lifecycle_events\".\"resource_type\" = 'project' AND \"resource_lifecycle_events\".\"action\" IN ('update', 'archive')) OR (\"resource_lifecycle_events\".\"resource_type\" = 'agent' AND \"resource_lifecycle_events\".\"action\" IN ('pause', 'resume', 'terminate'))"
+          "value": "\"resource_lifecycle_events\".\"action\" = 'create' OR (\"resource_lifecycle_events\".\"resource_type\" = 'project' AND \"resource_lifecycle_events\".\"action\" IN ('update', 'archive', 'delete')) OR (\"resource_lifecycle_events\".\"resource_type\" = 'agent' AND \"resource_lifecycle_events\".\"action\" IN ('pause', 'resume', 'terminate'))"
         }
       },
       "isRLSEnabled": false
@@ -59774,12 +59848,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "grant_id": {
-          "name": "grant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "generation": {
           "name": "generation",
           "type": "integer",
@@ -59968,22 +60036,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "muse_bindings_active_grant_uq": {
-          "name": "muse_bindings_active_grant_uq",
-          "columns": [
-            {
-              "expression": "grant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"muse_agent_bindings\".\"revoked_at\" IS NULL AND \"muse_agent_bindings\".\"grant_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -60011,19 +60063,6 @@
             "id"
           ],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "muse_agent_bindings_grant_id_mcp_oauth_grants_id_fk": {
-          "name": "muse_agent_bindings_grant_id_mcp_oauth_grants_id_fk",
-          "tableFrom": "muse_agent_bindings",
-          "tableTo": "mcp_oauth_grants",
-          "columnsFrom": [
-            "grant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -61069,12 +61108,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
-        },
-        "continuation_receipt_id": {
-          "name": "continuation_receipt_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         },
         "digest": {
           "name": "digest",

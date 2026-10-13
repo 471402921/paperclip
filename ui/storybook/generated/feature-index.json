@@ -817,7 +817,7 @@
             {
               "id": "secrets/runtime-delivery",
               "label": "Runtime delivery",
-              "description": "deliver only the secret references authorized for the run/actor."
+              "description": "deliver only the secret references authorized for the run/actor. Agent-owned instance secrets stay in the trusted server runtime and are never delivered to an agent."
             }
           ]
         },

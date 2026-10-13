@@ -101,7 +101,9 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
     await logActivity(tx as unknown as Db,{companyId:b.companyId,actorType,actorId:operatorId,action:"muse.binding_revoked",entityType:"agent",entityId:b.agentId,details:{bindingId:b.id,generation:b.generation,authorizingUserId:b.operatorId,source:reason,externalStopConfirmed:false}});
     return runs;
   }
-  const nativeBroker=createNativeExternalBroker<AgentConnectionSubject>(db,"muse",{enabled:identity.enabled,expectedResource:connectionResource,authorize:async(s,id,settled)=>{const {b,a}=await authorizeAssignment(s,id,settled);return {binding:b,assignment:a};}});
+  const nativeBroker=createNativeExternalBroker<AgentConnectionSubject>(db,"muse",{enabled:identity.enabled,expectedResource:connectionResource,
+    assertSubjectCredential:async(tx,s)=>{await assertMuseSubjectCredential(tx,s,s.credentialSource==="oauth"?connectionResource():undefined);},
+    authorize:async(s,id,settled)=>{const {b,a}=await authorizeAssignment(s,id,settled);return {binding:b,assignment:a};}});
   const operation=nativeBroker.operation;
   const broker={
     enabled:identity.enabled,
@@ -140,7 +142,9 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
       if(!b)return null;
       const live=await db.select({id:assignments.id}).from(assignments).where(and(eq(assignments.companyId,companyId),eq(assignments.agentId,agentId),inArray(assignments.status,["offered","claimed","accepted"])));
       const unknown=await db.select({id:operations.id}).from(operations).innerJoin(assignments,eq(assignments.id,operations.assignmentId)).where(and(eq(assignments.companyId,companyId),eq(assignments.agentId,agentId),inArray(operations.status,["unknown","dispatched","pending"])));
-      const pending=await db.select({id:inputs.id}).from(inputs).innerJoin(assignments,eq(assignments.id,inputs.assignmentId)).where(and(eq(assignments.companyId,companyId),eq(assignments.agentId,agentId),isNull(inputs.consumedAt)));
+      // Fenced/settled answers remain audit history and cannot be consumed by
+      // their former worker. Independent stop/effect holds still block work.
+      const pending=await db.select({id:inputs.id}).from(inputs).innerJoin(assignments,eq(assignments.id,inputs.assignmentId)).where(and(eq(assignments.companyId,companyId),eq(assignments.agentId,agentId),inArray(assignments.status,["offered","claimed","accepted"]),isNull(inputs.consumedAt)));
       const [stop]=await db.select().from(holds).where(and(eq(holds.companyId,companyId),eq(holds.agentId,agentId),eq(holds.provider,"muse"),isNull(holds.releasedAt))).orderBy(desc(holds.createdAt)).limit(1);
       const [stopBinding]=stop?.stopBoundary ? await db.select({revision:bindings.revision}).from(bindings).where(and(eq(bindings.id,stop.stopBoundary.bindingId),eq(bindings.generation,stop.stopBoundary.generation),eq(bindings.companyId,companyId),eq(bindings.agentId,agentId))) : [];
       const credential=await inspectMuseConnectionCredential(db,b,b.grantId?connectionResource():undefined);
@@ -247,17 +251,27 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
       const contactLimit=20_000;
       const contactRows=await db.select().from(museReceiverContactBuckets).where(and(eq(museReceiverContactBuckets.bindingId,bindingId),eq(museReceiverContactBuckets.bindingGeneration,b.generation),sql`${museReceiverContactBuckets.bucketAt} >= ${new Date(Math.floor(startedAt.getTime()/30_000)*30_000).toISOString()}::timestamptz`,sql`${museReceiverContactBuckets.bucketAt} <= ${endAt.toISOString()}::timestamptz`)).orderBy(asc(museReceiverContactBuckets.bucketAt)).limit(contactLimit);
       const contacts=contactRows.map(c=>({...c,timestamps:c.timestamps.filter(at=>Date.parse(at)>=startedAt.getTime()&&Date.parse(at)<=endAt.getTime())})).filter(c=>c.timestamps.length>0);
-      const samples=await db.select({id:assignments.id,runId:assignments.runId,issueId:heartbeatRuns.nativeIssueId,status:assignments.status,offeredAt:assignments.offeredAt,claimedAt:assignments.claimedAt,nativeAcceptedAt:assignments.nativeAcceptedAt,acceptedResultAt:assignments.acceptedResultAt,finalizedAt:assignments.finalizedAt}).from(assignments).innerJoin(heartbeatRuns,eq(heartbeatRuns.id,assignments.runId)).where(and(eq(assignments.bindingId,bindingId),sql`${assignments.offeredAt} >= ${startedAt.toISOString()}::timestamptz`,sql`${assignments.offeredAt} <= ${endAt.toISOString()}::timestamptz`)).orderBy(asc(assignments.offeredAt)).limit(100);
-      const inputPeriods=await db.select({start:inputs.createdAt,end:inputs.consumedAt}).from(inputs).innerJoin(assignments,eq(assignments.id,inputs.assignmentId)).where(and(eq(assignments.agentId,agentId),eq(assignments.companyId,companyId))).limit(1000);
+      const samples=await db.select({id:assignments.id,runId:assignments.runId,issueId:heartbeatRuns.nativeIssueId,status:assignments.status,offeredAt:assignments.offeredAt,claimedAt:assignments.claimedAt,nativeAcceptedAt:assignments.nativeAcceptedAt,acceptedResultAt:assignments.acceptedResultAt,finalizedAt:assignments.finalizedAt,runFinishedAt:heartbeatRuns.finishedAt}).from(assignments).innerJoin(heartbeatRuns,eq(heartbeatRuns.id,assignments.runId)).where(and(eq(assignments.bindingId,bindingId),sql`${assignments.offeredAt} >= ${startedAt.toISOString()}::timestamptz`,sql`${assignments.offeredAt} <= ${endAt.toISOString()}::timestamptz`)).orderBy(asc(assignments.offeredAt)).limit(100);
+      const inputRows=await db.select({start:inputs.createdAt,consumedAt:inputs.consumedAt,finishedAt:heartbeatRuns.finishedAt,finalizedAt:assignments.finalizedAt}).from(inputs).innerJoin(assignments,eq(assignments.id,inputs.assignmentId)).innerJoin(heartbeatRuns,eq(heartbeatRuns.id,assignments.runId)).where(and(eq(assignments.agentId,agentId),eq(assignments.companyId,companyId))).limit(1000);
+      // An answer remains an immutable audit fact after cancellation. Its busy
+      // period ends at consumption or recorded native termination, never just
+      // because today's assignment status is fenced. Unknown private/effect
+      // activity remains occupied independently, including previous bindings.
+      const terminalEnd=(finishedAt:Date|null,finalizedAt:Date|null)=>{
+        const times=[finishedAt,finalizedAt].filter((at):at is Date=>at!==null).map(at=>at.getTime());
+        return times.length?new Date(Math.min(...times)):null;
+      };
+      const inputPeriods=inputRows.map(row=>({start:row.start,end:row.consumedAt??terminalEnd(row.finishedAt,row.finalizedAt)}));
+      const holdPeriods=await db.select({start:holds.createdAt,end:holds.releasedAt}).from(holds).where(and(eq(holds.companyId,companyId),eq(holds.agentId,agentId),eq(holds.provider,"muse"),sql`(${holds.releasedAt} is null or ${holds.releasedAt} >= ${startedAt.toISOString()}::timestamptz)`)).limit(1000);
       const runPeriods=await db.select({start:heartbeatRuns.startedAt,end:heartbeatRuns.finishedAt}).from(heartbeatRuns).where(and(eq(heartbeatRuns.agentId,agentId),eq(heartbeatRuns.companyId,companyId),eq(heartbeatRuns.driverKind,"muse_external"),sql`(${heartbeatRuns.finishedAt} is null or ${heartbeatRuns.finishedAt} >= ${startedAt.toISOString()}::timestamptz)`)).limit(1000);
       const idleWindows:Array<{startedAt:string;endedAt:string}>=[];
       // Receiver gaps beyond the 30s persistence interval break idle coverage;
       // the separate cadence qualification still requires 90% of gaps <=7s.
       // Only receiver-observed intervals with no run/assignment/input period
       // count as idle. Missing ingress or bounded-reader overflow proves none.
-      if(!b.cadenceEvidenceIncompleteAt&&!contacts.some(c=>c.incomplete)&&contactRows.length<contactLimit&&samples.length<100&&inputPeriods.length<1000&&runPeriods.length<1000) {
+      if(!b.cadenceEvidenceIncompleteAt&&!contacts.some(c=>c.incomplete)&&contactRows.length<contactLimit&&samples.length<100&&inputPeriods.length<1000&&runPeriods.length<1000&&holdPeriods.length<1000) {
         const minimum=startedAt.getTime(),maximum=Math.min(endAt.getTime(),b.qualificationExpiresAt!.getTime());
-        const occupied=[...samples.map(a=>({start:a.offeredAt,end:a.finalizedAt})),...inputPeriods,...runPeriods].map(p=>[Math.max(minimum,p.start?.getTime()??minimum),Math.min(maximum,p.end?.getTime()??maximum)] as const).filter(([start,end])=>start<end).sort((a,b)=>a[0]-b[0]);
+        const occupied=[...samples.map(a=>({start:a.offeredAt,end:terminalEnd(a.runFinishedAt,a.finalizedAt)})),...inputPeriods,...runPeriods,...holdPeriods].map(p=>[Math.max(minimum,p.start?.getTime()??minimum),Math.min(maximum,p.end?.getTime()??maximum)] as const).filter(([start,end])=>start<end).sort((a,b)=>a[0]-b[0]);
         const ingress=[...new Set(contacts.flatMap(c=>c.timestamps.map(Date.parse)))].filter(at=>at>=minimum&&at<=maximum).sort((a,b)=>a-b);
         let start=ingress[0],previous=start;
         const append=(from:number,to:number)=>{
@@ -270,7 +284,7 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
       }
       return {qualificationId,startedAt:startedAt.toISOString(),expiresAt:b.qualificationExpiresAt!.toISOString(),stoppedAt:iso(b.revokedAt),deadlineEnforcedAt:iso(b.deadlineEnforcedAt),authorityRevoked:!!b.revokedAt,
         contacts:contacts.map(c=>({trust:"public_untrusted" as const,replicaId:c.replicaId,bucketAt:c.bucketAt.toISOString(),firstAt:c.timestamps[0]!,lastAt:c.timestamps.at(-1)!,contacts:c.timestamps.length,gapsAtMostSevenSeconds:c.gapsAtMostSevenSeconds,maxGapMs:c.maxGapMs,timestamps:c.timestamps,incomplete:c.incomplete})),
-        assignments:samples.map(a=>({...a,offeredAt:a.offeredAt.toISOString(),claimedAt:iso(a.claimedAt),nativeAcceptedAt:iso(a.nativeAcceptedAt),acceptedResultAt:iso(a.acceptedResultAt),finalizedAt:iso(a.finalizedAt)})),idleWindows,persistenceLagMs:30000,cadenceEvidenceComplete:!b.cadenceEvidenceIncompleteAt&&!contacts.some(c=>c.incomplete)&&contactRows.length<contactLimit&&samples.length<100&&inputPeriods.length<1000&&runPeriods.length<1000&&!!b.revokedAt};
+        assignments:samples.map(({runFinishedAt:_runFinishedAt,...a})=>({...a,offeredAt:a.offeredAt.toISOString(),claimedAt:iso(a.claimedAt),nativeAcceptedAt:iso(a.nativeAcceptedAt),acceptedResultAt:iso(a.acceptedResultAt),finalizedAt:iso(a.finalizedAt)})),idleWindows,persistenceLagMs:30000,cadenceEvidenceComplete:!b.cadenceEvidenceIncompleteAt&&!contacts.some(c=>c.incomplete)&&contactRows.length<contactLimit&&samples.length<100&&inputPeriods.length<1000&&runPeriods.length<1000&&holdPeriods.length<1000&&!!b.revokedAt};
     },
     async act(s:AgentConnectionSubject,c:MuseCommand):Promise<Record<string,unknown>> {
       if(c.command==="challenge.confirm") {

@@ -28,6 +28,13 @@ reason; it is not available for arbitrary feature homes.
 Foundations/guides and proposals without a mapped capability need an exception
 reason. An absent story is not automatically a feature gap.
 
+[Verification routes](VERIFICATION.md) classifies the currently unassociated
+capabilities: UI examples to add, CLI/operator operations, and real browser checks.
+It records source review and existing test starting points, not executed proof.
+Update its rows/counts and source revision when associations or upstream
+capabilities change. A capability with a story still needs production verification
+for permissions, persistence, execution and provider behavior.
+
 ## Folders and sidebar
 
 Story files live in `ui/storybook/stories/<primary-feature-area>/`, using the first

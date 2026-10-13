@@ -246,3 +246,45 @@ The new 24-hour campaign has not begun. Real completed work, follow-up, proactiv
 intake, the updated receiver, current-head CI/review, managed Linux and deployed
 tenant gates remain open. The old experiment stays stopped and Muse stays off by
 default.
+
+
+## Current-master assembly and asset6 repairs
+
+The test fixture is deliberately offline during assembly. The persistent OAuth
+grant, database and bounded HTTPS path remain intact. Asset6 has not yet been
+installed in Muse. Its source uses immutable version-specific directories for
+all six asset versions, with no mutable historical aliases. The client repairs a
+crash between saving verified identity and publishing the persistent paired skill.
+A definitively rejected premature finish can progress to a new completion phase
+only after canonical input consumption; unknown or accepted effects retain their
+original identities and are never blindly repeated.
+
+Current admission rechecks the presented access credential after every lock wait,
+before reserving new work. Durable reservations recover under current native and
+grant authority without retaining an obsolete bearer across ordinary refresh.
+Cancelled answers remain in audit history but do not appear as actionable pending
+input. Qualification occupancy ends at recorded native termination and includes
+independent stop/effect holds across reconnects; it cannot count unresolved remote
+work as idle. Before/after cases reproduced eight product failures and passed the
+repaired ten-case subset. All three assembled Muse server suites passed 78 Vitest
+cases, including 68 control cases and the wrapper's 30 Python assertions. Server
+typecheck and module boundaries passed; original failed attempts remain retained.
+
+Task retry controls now treat waiting_for_provider as active execution, so a prior
+failure cannot offer overlapping retry while Muse/Dot awaits acceptance. The full
+TaskChatThread suite passed 229 cases. Storybook fingerprint changes are reviewed
+against the fixed current-master cutoff; source-only review does not imply live
+render or accessibility qualification. Fresh final renders remain a separate gate.
+
+Cloud candidate 14ce9db6da196bbf27f35686475aa0cf8b3ee240 passed typecheck and the full
+suite: 3,279 passed and 92 skipped. Its 36 exact protocol routes match Core manifest
+71fc2c8550eb52fe4842d0ce4bde021ee0ad35d9eadaa7038316857a79b24b2b.
+It depends on a separate conditional cleanup repair for a computer claim committed
+after lease cancellation, before provider allocation. The repair preserves started
+provider resources and replacement claims; no real provider allocation occurred.
+Neither candidate is deployed to a managed Muse tenant.
+
+The last real assignment remains incomplete and its worker_reported stop hold
+is not released. Any release requires an honest ordinary exact-boundary operator
+attestation. No new assignment or 24-hour campaign begins over that hold. The old
+experiment remains stopped.

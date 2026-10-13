@@ -1073,6 +1073,7 @@ export function projectService(db: Db, options: { captureWorkspaceUpdates?: bool
       if (retained) throw conflict("This project still supplies access policy for retained task workspaces. Archive the project or explicitly clean up its workspaces before deleting it.");
       const workspaces = await tx.select().from(projectWorkspaces).where(eq(projectWorkspaces.projectId, id)).for("update");
       for (const workspace of workspaces) await preserveConfiguredProjectWorkspaceRootProvenance(tx, workspace);
+      await recordProjectLifecycleEvent(tx as unknown as Db, project.companyId, id, "delete");
       const [row] = await tx.delete(projects).where(eq(projects.id, id)).returning();
       return row ? { ...row, urlKey: deriveProjectUrlKey(row.name, row.id) } : null;
     }),

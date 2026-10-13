@@ -24,7 +24,12 @@ interface Binding extends Record<string,unknown> {id:string;companyId:string;age
 interface Assignment extends Record<string,unknown> {id:string;companyId:string;agentId:string;bindingId:string;bindingGeneration:number;runId:string;normalizedSessionId:string;turnId:string;revision:number;controllerGeneration:number;status:string;acceptBy:Date;expiresAt:Date;createdAt:Date;claimedAt:Date|null;projection:Record<string,unknown>}
 interface Receipt extends Record<string,unknown> {id:string;companyId:string;assignmentId:string;requestId:string;digest:string;command:Record<string,unknown>;status:string;outcome:Record<string,unknown>|null;continuationReceiptId:string|null}
 interface Authority {binding:{id:string;companyId:string;agentId:string;generation:number};assignment:Pick<Assignment,"id"|"companyId"|"agentId"|"bindingId"|"bindingGeneration"|"runId"|"normalizedSessionId"|"turnId"|"revision"|"controllerGeneration"|"status"|"expiresAt"|"createdAt"> & {claimedAt?:Date|null}}
-interface Identity<S> {authorize(subject:S,assignmentId:string,settled?:boolean):Promise<Authority>;enabled():Promise<boolean>;expectedResource?():string}
+interface Identity<S> {
+  authorize(subject:S,assignmentId:string,settled?:boolean):Promise<Authority>;
+  enabled():Promise<boolean>;
+  expectedResource?():string;
+  assertSubjectCredential?(tx:ExternalAdmissionTransaction,subject:S):Promise<void>;
+}
 type Execution={binding:{companyId:string;agentId:string;runId:string};provider:{binding:DotBindingSnapshot}};
 const bindingSchema=z.object({bindingId:z.uuid(),bindingGeneration:z.number().int().positive(),companyId:z.uuid(),agentId:z.uuid(),runId:z.uuid(),normalizedSessionId:z.string().min(1),turnId:z.string().min(1),assignmentRevision:z.number().int().positive()});
 const commandSchema=z.object({requestId:z.uuid(),bindingId:z.uuid(),bindingGeneration:z.number().int().positive(),runId:z.uuid(),normalizedSessionId:z.string().min(1),turnId:z.string().min(1),assignmentRevision:z.number().int().positive(),digest:z.string(),action:z.enum(["accept","tool","progress","finish","renew","request_user_input","consume_input"]),input:z.record(z.string(),z.unknown())}).strict();
@@ -103,17 +108,31 @@ export function createNativeExternalBroker<S>(db:Db,provider:Provider,identity:I
     } catch(error) {
       const rejected=error&&typeof error==="object"&&("dotOperationRejected" in error||"externalOperationRejected" in error);
       if(rejected)await db.execute(sql`update ${operationTable} set status='rejected',outcome=${JSON.stringify({status:"rejected",message:"Runner rejected this operation; inspect the assignment and arguments before proceeding."})}::jsonb,updated_at=now() where id=${row.id}::uuid and status=${provider==="muse"?"dispatched":"reserved"}`);
-      else if(provider==="muse")await db.transaction(async tx=>{await tx.execute(sql`update ${operationTable} set status='unknown',updated_at=now() where id=${row.id}::uuid and status in ('dispatched','pending')`);await tx.update(externalAgentHolds).set({nativeEffectsUnknown:true,updatedAt:new Date()}).where(and(eq(externalAgentHolds.provider,provider),eq(externalAgentHolds.assignmentId,a.id)));});
+      else if(provider==="muse")await db.transaction(tx=>withExternalAdmissionGuard(tx,a.companyId,a.agentId,async()=>{
+        await tx.execute(sql`select id from ${bindingTable} where id=${a.bindingId}::uuid for update`);
+        // A result can commit before the command acknowledgement is lost.
+        // Only an actual unresolved-send transition adds an effect barrier.
+        const changed=await tx.execute(sql`update ${operationTable} set status='unknown',updated_at=now() where id=${row.id}::uuid and status in ('dispatched','pending') returning id`);
+        if(changed.length)await tx.update(externalAgentHolds).set({nativeEffectsUnknown:true,releasedAt:null,updatedAt:new Date()}).where(and(eq(externalAgentHolds.provider,provider),eq(externalAgentHolds.assignmentId,a.id)));
+      }));
       else throw error;
     }
   }
-  async function reserveNativeOperation(authority:Authority,command:ExternalProviderOperation,proof?:{continuationReceiptId:string;continuationPersisted:true}) {
+  async function reserveNativeOperation(subject:S,authority:Authority,command:ExternalProviderOperation,proof?:{continuationReceiptId:string;continuationPersisted:true}) {
     const id=authority.assignment.id;
     return db.transaction(tx=>withExecutionAdmission(tx,authority.binding.companyId,authority.binding.agentId,authority.assignment.runId,async()=>{
       const b=await currentBinding(tx,authority.binding.id,authority.binding.generation);await assertCurrentAuthority(tx,b);
       const [a]=await tx.execute<Assignment>(sql`select ${assignmentColumns} from ${assignmentTable} where id=${id}::uuid and company_id=${b.companyId}::uuid and agent_id=${b.agentId}::uuid and binding_id=${b.id}::uuid and binding_generation=${b.generation} for update`);
       if(!a||a.status==="fenced"||a.status==="settled"||a.expiresAt<=new Date()||a.controllerGeneration!==authority.assignment.controllerGeneration)throw conflict("Assignment changed before operation admission.");
       await authorizeController(tx,a,a.controllerGeneration);
+      if(provider==="muse") {
+        // Validate the presented access after every admission lock wait, before
+        // this request can reserve or claim anything. A durable reservation is
+        // recovered by forward/attach under current native and grant authority;
+        // it does not retain the obsolete bearer across normal token rotation.
+        if(!identity.assertSubjectCredential)throw forbidden("Muse credential admission is unavailable.");
+        await identity.assertSubjectCredential(tx,subject);
+      }
       const [old]=await tx.execute<Receipt>(sql`select ${receiptColumns} from ${operationTable} where assignment_id=${id}::uuid and request_id=${command.requestId}::uuid`);
       if(old){if(old.digest!==command.digest||old.continuationReceiptId!==(proof?.continuationReceiptId??null))throw conflict("requestId was reused with different arguments.");return old;}
       const [count]=await tx.execute<{count:number}>(sql`select count(*)::int as count from ${operationTable} where assignment_id=${id}::uuid`);if(count&&count.count>=4000)throw conflict("Assignment operation limit reached.");
@@ -143,7 +162,7 @@ export function createNativeExternalBroker<S>(db:Db,provider:Provider,identity:I
     if(action==="request_user_input")parsePaperclipQuestionSet(input.questionSet);
     if(action==="renew"&&(!Number.isSafeInteger(input.expiresAtUnixMs)||Number(input.expiresAtUnixMs)<=Date.now()||Number(input.expiresAtUnixMs)>Date.now()+2*60*60_000||Number(input.expiresAtUnixMs)>a.createdAt.getTime()+24*60*60_000))throw conflict("Renewal must stay within the two-hour rolling and 24-hour total lease bounds.");
     const command:ExternalProviderOperation={requestId,bindingId:b.id,bindingGeneration:b.generation,runId:a.runId,normalizedSessionId:a.normalizedSessionId,turnId:a.turnId,assignmentRevision:a.revision,action,input,digest:externalOperationDigest(action,input)};
-    const reserved=await reserveNativeOperation(authority,command,proof);
+    const reserved=await reserveNativeOperation(subject,authority,command,proof);
     if(store.replay.some(status=>status===reserved.status))void forward(reserved).catch(()=>{});
     const deadline=Date.now()+1500;
     while(Date.now()<deadline) {
@@ -254,7 +273,12 @@ export function createNativeExternalBroker<S>(db:Db,provider:Provider,identity:I
           const a=await eventAssignment(tx,b);
           const [op]=a?await tx.execute<Receipt>(sql`select ${receiptColumns} from ${operationTable} where assignment_id=${a.id}::uuid and request_id=${requestId}::uuid for update`):[];
           if(!a||!op)throw conflict("Runner operation has no reserved receipt.");
-          if(op.outcome&&externalOperationDigest("tool",op.outcome)!==externalOperationDigest("tool",outcome))throw conflict("Runner operation result conflicts with its durable receipt.");
+          if(op.outcome) {
+            if(externalOperationDigest("tool",op.outcome)!==externalOperationDigest("tool",outcome))throw conflict("Runner operation result conflicts with its durable receipt.");
+            // Receipt and assignment transitions committed together. Replaying
+            // the same fact must preserve later work and its original evidence.
+            return;
+          }
           await tx.execute(sql`update ${operationTable} set status=${provider==="muse"&&outcome.status==="rejected"?"rejected":store.completed},outcome=${JSON.stringify(outcome)}::jsonb,source_event_id=${event.sourceEventId},updated_at=now() where id=${op.id}::uuid`);
           const action=op.command.action;
           await tx.execute(sql`update ${assignmentTable} set last_activity_at=now() where id=${a.id}::uuid`);
