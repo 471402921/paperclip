@@ -947,14 +947,14 @@ function OnboardingWizardInner({
   // managed-sandbox-only redirect (see AgentConfigForm.tsx:618-640). A render
   // must not throw, so a resolver error yields no login environment rather
   // than an error boundary.
-  const { data: loginEnvironmentList = [], isSuccess: loginEnvironmentsReady } = useQuery({
+  const { data: loginEnvironmentList = [], isSuccess: loginEnvironmentsReady, isFetching: loginEnvironmentsFetching, isError: loginEnvironmentsFailed, refetch: refetchLoginEnvironments } = useQuery({
     queryKey: createdCompanyId
       ? queryKeys.environments.list(createdCompanyId)
       : ["environments", "none"],
     queryFn: () => environmentsApi.list(createdCompanyId!),
     enabled: Boolean(createdCompanyId) && effectiveOnboardingOpen && step === 4,
   });
-  const { data: instanceSettingsForLogin, isSuccess: loginSettingsReady } = useQuery({
+  const { data: instanceSettingsForLogin, isSuccess: loginSettingsReady, isFetching: loginSettingsFetching, isError: loginSettingsFailed, refetch: refetchLoginSettings } = useQuery({
     queryKey: queryKeys.instance.settings,
     queryFn: () => instanceSettingsApi.get(),
     enabled: effectiveOnboardingOpen && step === 4,
@@ -962,7 +962,7 @@ function OnboardingWizardInner({
   // Wanted across the whole arc, not just the connect step. The progress strip
   // reads it too — see `enteredFromCloud` — and a value fetched only on step 4
   // would let the strip change length as the customer walked through it.
-  const { data: experimentalSettingsForLogin, isSuccess: loginPolicyReady } = useQuery({
+  const { data: experimentalSettingsForLogin, isSuccess: loginPolicyReady, isFetching: loginPolicyFetching, isError: loginPolicyFailed, refetch: refetchLoginPolicy } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
     enabled: effectiveOnboardingOpen && step >= 3 && step <= 5,
@@ -985,23 +985,35 @@ function OnboardingWizardInner({
     loginEnvironmentList,
     experimentalSettingsForLogin?.enableManagedSandboxOnly,
   ]);
+  const loginEnvironmentSettingsReady = loginEnvironmentsReady && loginSettingsReady && loginPolicyReady
+    && !loginEnvironmentsFetching && !loginSettingsFetching && !loginPolicyFetching;
   const runnerDiscovery = useQuery({
     queryKey: queryKeys.adapters.availability(createdCompanyId, resolvedLoginEnvironmentId),
     queryFn: () => adaptersApi.list({ companyId: createdCompanyId!, environmentId: resolvedLoginEnvironmentId }),
     enabled: Boolean(createdCompanyId) && effectiveOnboardingOpen && step === 4
-      && loginEnvironmentsReady && loginSettingsReady && loginPolicyReady,
+      && loginEnvironmentSettingsReady,
   });
   const needsRunnerDiscovery = ["codex_local", "claude_local"].includes(adapterType) && runner === "auto";
   const resolvedRunner = runner === "auto"
     ? runnerDiscovery.data?.find(item => item.type === adapterType)?.defaultRunner
     : runner;
   const runnerDiscoveryReady = !needsRunnerDiscovery
-    || (runnerDiscovery.isSuccess && !runnerDiscovery.isFetching && resolvedRunner !== undefined);
-  const runnerDiscoveryError = needsRunnerDiscovery && runnerDiscovery.isError
-    ? "Could not load runner availability. Retry setup."
+    || (loginEnvironmentSettingsReady
+      && runnerDiscovery.isSuccess && !runnerDiscovery.isFetching && resolvedRunner !== undefined);
+  const runnerDiscoveryError = needsRunnerDiscovery && (loginEnvironmentsFailed || loginSettingsFailed || loginPolicyFailed)
+    ? "Could not load execution environment settings. Retry setup."
+    : needsRunnerDiscovery && runnerDiscovery.isError
+      ? "Could not load runner availability. Retry setup."
     : needsRunnerDiscovery && runnerDiscovery.isSuccess && resolvedRunner === undefined
       ? "Runner availability is missing for this harness. Retry setup."
       : null;
+  async function retryRunnerAvailability() {
+    if (!loginEnvironmentSettingsReady) {
+      await Promise.all([refetchLoginEnvironments(), refetchLoginSettings(), refetchLoginPolicy()]);
+    } else {
+      await runnerDiscovery.refetch();
+    }
+  }
   const visibleAdapterEnvError = adapterEnvError ?? runnerDiscoveryError;
   const runnerSelectionKey = JSON.stringify([createdCompanyId, resolvedLoginEnvironmentId, adapterType, runner, resolvedRunner]);
   const runnerSelectionRef = useRef(runnerSelectionKey);
@@ -2966,7 +2978,7 @@ function OnboardingWizardInner({
                       )}
 
                       {runnerDiscoveryError && (
-                        <Button type="button" variant="outline" disabled={runnerDiscovery.isFetching} onClick={() => void runnerDiscovery.refetch()}>
+                        <Button type="button" variant="outline" disabled={runnerDiscovery.isFetching || loginEnvironmentsFetching || loginSettingsFetching || loginPolicyFetching} onClick={() => void retryRunnerAvailability()}>
                           Retry setup
                         </Button>
                       )}

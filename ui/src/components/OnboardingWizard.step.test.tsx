@@ -178,7 +178,10 @@ describe("OnboardingWizard — which step it lands on", () => {
     dialogState.onboardingOpen = false;
     dialogState.onboardingOptions = {};
     dialogState.onboardingRouteDismissed = false;
-    mockAdaptersApi.list.mockResolvedValue([]);
+    // The scoped discovery contract must resolve before the hire seam runs.
+    mockAdaptersApi.list.mockResolvedValue(["claude_local", "codex_local"].map(type => ({
+      type, loaded: true, disabled: false, defaultRunner: "legacy", supportedRunners: ["legacy"],
+    })));
     mockGoalsApi.list.mockResolvedValue([]);
     mockAgentsApi.adapterModels.mockResolvedValue([]);
     // The hire step lists the company's agents first so it can adopt one that
