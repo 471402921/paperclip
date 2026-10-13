@@ -1,3 +1,4 @@
+import { nativeExecutionUsesTaskWorkspace } from "./external-provider.js";
 import {
   resolveWorkspaceAfterLowTrustPreflight,
   WorkspaceValidationFailure,
@@ -221,8 +222,8 @@ export async function prepareHeartbeatWorkspace(db: Db, input: HeartbeatWorkspac
     resolveWorkspace: async () => {
       if (isDotRun) {
         // This is private controller storage, never a provider filesystem.
-        // v6 projects workspace.access=none and cwd=null to Dot.
-        const cwd = path.resolve(resolvePaperclipInstanceRoot(), "runtime", "paperclip-runner", "dot-controllers", agent.companyId, run.id);
+        // External providers receive workspace.access=none and cwd=null.
+        const cwd = path.resolve(resolvePaperclipInstanceRoot(), "runtime", "paperclip-runner", (persistedNativeExecutionInput?.provider.kind ?? mergedConfig.provider) === "muse" ? "muse-controllers" : "dot-controllers", agent.companyId, run.id);
         await fs.mkdir(cwd, { recursive: true, mode: 0o700 });
         return { cwd, source: "agent_home" as const, projectId: null, workspaceId: null, repoUrl: null, repoRef: null,
           workspaceHints: [], warnings: [], baseCwdFallback: false, materializationFailures: [], additionalWorkspaces: [], referencedProjectFailures: [] };
@@ -628,7 +629,7 @@ export async function prepareHeartbeatWorkspace(db: Db, input: HeartbeatWorkspac
   const resolvedProjectWorkspaceId =
     resolvedWorkspaceReusePolicy.shouldRestoreExistingWorkspace && reusableExistingExecutionWorkspace?.strategyType === "git_worktree"
       ? reusableExistingExecutionWorkspace.projectWorkspaceId
-      : issueRef?.projectWorkspaceId ?? resolvedWorkspace.workspaceId ?? null;
+      : isDotRun ? null : issueRef?.projectWorkspaceId ?? resolvedWorkspace.workspaceId ?? null;
   let persistedExecutionWorkspace: ExecutionWorkspace | null = null;
   let issueExecutionWorkspaceIdForRun =
     issueRef?.executionWorkspaceId ?? null;
@@ -649,7 +650,7 @@ export async function prepareHeartbeatWorkspace(db: Db, input: HeartbeatWorkspac
   const bindIssueToPersistedExecutionWorkspace = async (
     workspace: ExecutionWorkspace | null,
   ) => {
-    if (!issueId || !workspace || nativeRecoveryExecutionWorkspaceId) {
+    if (isDotRun || !issueId || !workspace || nativeRecoveryExecutionWorkspaceId) {
       return;
     }
     const nextIssueWorkspaceMode =
@@ -912,7 +913,7 @@ export async function prepareHeartbeatWorkspace(db: Db, input: HeartbeatWorkspac
   }
   await bindIssueToPersistedExecutionWorkspace(persistedExecutionWorkspace);
   const projectRepositoryPaths: string[] = [];
-  if (persistedExecutionWorkspace && issueId && !persistedNativeExecutionInput && !nativeRecoveryExecutionWorkspaceId) {
+  if (!isDotRun && persistedExecutionWorkspace && issueId && !persistedNativeExecutionInput && !nativeRecoveryExecutionWorkspaceId) {
     const taskRepositories = await executionWorkspacesSvc.prepareTaskRepositoriesForAdmission({ companyId: agent.companyId,
       issueId, workspaceId: persistedExecutionWorkspace.id, cwd: executionWorkspace.cwd,
       agentId: agent.id, runId: run.id, responsibleUserId });
@@ -1122,7 +1123,7 @@ export async function prepareHeartbeatWorkspace(db: Db, input: HeartbeatWorkspac
     }
     const cwd = reference
       ? await readNativeWorkspaceSyncLocalCwd({ companyId: agent.companyId, runId: run.id, workspaceId, reference })
-      : persistedNativeExecutionInput && persistedNativeExecutionInput.schema !== "paperclip.native-execution-input.v6"
+      : nativeExecutionUsesTaskWorkspace(persistedNativeExecutionInput)
         && executionTarget?.kind !== "remote"
         ? persistedNativeExecutionInput.workspace.cwd
         : executionWorkspace.cwd;

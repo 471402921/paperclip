@@ -1,3 +1,4 @@
+import { museRunnerBroker } from "../muse-runner-broker.js";
 import {
   ConfigurationIncompleteFailure,
   type buildPaperclipWakePayload,
@@ -506,7 +507,7 @@ export async function selectHeartbeatRuntime(db: Db, input: HeartbeatRuntimeSele
     const supportsManagedWarmSession = agent.adapterType === "paperclip_runner" &&
       nativeRuntimeResolution.profile.backend === "codex_app_server";
     const effectiveLifecyclePolicy = persistedNativeExecutionInput?.session.lifecyclePolicy ??
-      (nativeRuntimeResolution.profile.backend === "openai_dot_mcp" || managedAiRuntime && !supportsManagedWarmSession
+      (["openai_dot_mcp", "muse_external"].includes(nativeRuntimeResolution.profile.backend) || managedAiRuntime && !supportsManagedWarmSession
         ? { mode: "per_turn" as const, idleTimeoutMs: null }
         : environmentLifecyclePolicy ?? agentLifecyclePolicy);
     if (
@@ -686,6 +687,8 @@ export async function selectHeartbeatRuntime(db: Db, input: HeartbeatRuntimeSele
             })
           : null;
       const pinnedPlanMarkdown = pinnedPlan?.body ?? "";
+      const museBinding = nativeRuntimeResolution.profile.backend === "muse_external"
+        ? await museRunnerBroker(db).snapshot(agent.companyId, agent.id, String(parseObject(agent.adapterConfig).museBindingId ?? "")) : undefined;
       const dotBinding = nativeRuntimeResolution.profile.backend === "openai_dot_mcp"
         ? await dotRunnerBroker(db).snapshot(agent.companyId, agent.id, String(parseObject(agent.adapterConfig).dotBindingId ?? "")) : undefined;
       const nativeRuntimeContext = await buildNativeRuntimeContext({
@@ -708,7 +711,7 @@ export async function selectHeartbeatRuntime(db: Db, input: HeartbeatRuntimeSele
         : agent.adapterConfig;
       const requestedNativeProvider = resolvePaperclipRunnerNativeProviderInput({
         backend: nativeRuntimeResolution.profile.backend,
-        adapterConfig: nativeProviderConfig, managedProfile, agentCoreProfile, dotBinding,
+        adapterConfig: nativeProviderConfig, managedProfile, agentCoreProfile, dotBinding, museBinding,
       });
       const codexCliVersion = agent.adapterType === "paperclip_runner" && requestedNativeProvider.provider === "codex"
         ? await readRemoteCodexModelCliVersion({
@@ -720,7 +723,7 @@ export async function selectHeartbeatRuntime(db: Db, input: HeartbeatRuntimeSele
       const nativeProvider = codexCliVersion
         ? resolvePaperclipRunnerNativeProviderInput({
             backend: nativeRuntimeResolution.profile.backend,
-            adapterConfig: nativeProviderConfig, codexCliVersion, managedProfile, agentCoreProfile, dotBinding,
+            adapterConfig: nativeProviderConfig, codexCliVersion, managedProfile, agentCoreProfile, dotBinding, museBinding,
           }) : requestedNativeProvider;
       if (nativeProvider.model !== requestedNativeProvider.model) {
         await postNativeModelFallbackWarning({
@@ -743,7 +746,7 @@ export async function selectHeartbeatRuntime(db: Db, input: HeartbeatRuntimeSele
                   }),
                 ) ??
                 `# ${issueRef.identifier ?? issueRef.id}: ${issueRef.title}`,
-                nativeRuntimeResolution.profile.backend !== "openai_dot_mcp" && projectRepositoryPaths.length > 0
+                nativeRuntimeResolution.profile.backend !== "openai_dot_mcp" && nativeRuntimeResolution.profile.backend !== "muse_external" && projectRepositoryPaths.length > 0
                   ? `## Project repositories\nThe task workspace also contains these editable Git repositories:\n${projectRepositoryPaths.map((repo) => `- ${repo}`).join("\n")}`
                   : null,
               ].filter(Boolean).join("\n\n"),

@@ -2878,6 +2878,8 @@ export * from "./validators/task-workspace.js";
 
 export { prepareWorkspaceRepositorySchema, type PrepareWorkspaceRepository } from "./validators/workspace-repository.js";
 
+export * from "./muse-protocol.js";
+export * from "./muse-invitations.js";
 export * from "./fast-response.js";
 
 export { HUMAN_TASK_ORIGIN_KINDS, isAgentCreatedIssue, type IssueCreationSourceFields } from "./issue-creation-source.js";
