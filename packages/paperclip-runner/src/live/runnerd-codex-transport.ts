@@ -3601,6 +3601,8 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
   #authorizedTools: Record<string, unknown> | null = null;
   #runAttachTemplate: Record<string, unknown> | null = null;
   #closed = false;
+  readonly #closedSignal: Promise<void>;
+  #resolveClosedSignal!: () => void;
   #closePromise: Promise<void> | null = null;
   #startupOperation: Promise<unknown> | null = null;
   #startupDrainTimedOut = false;
@@ -3640,6 +3642,9 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
     }
     this.#failureSignal = new Promise<never>((_resolve, reject) => {
       this.#rejectFailureSignal = reject;
+    });
+    this.#closedSignal = new Promise<void>(resolve => {
+      this.#resolveClosedSignal = resolve;
     });
     // Failure is also observed by request/notification paths. Register an
     // internal handler so a process exit after the owner has closed the
@@ -3717,7 +3722,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
       throw new Error("native_runner_warm_transition_completion_pending");
     }
     if (method === "initialize") return { user: {} };
-    if (method === "thread/start") return this.#trackStartup(this.#start(params));
+    if (method === "thread/start") return this.#trackStartup(() => this.#start(params));
     if (method === "collaborationMode/list") {
       // runnerd negotiates the real Codex preset or the provider-proxy-owned
       // planning contract during session.open. This transport-level mask
@@ -3816,8 +3821,10 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
     }
     if (method === "thread/read") {
       if (this.#core === null) {
-        this.#recoveryTurnBindingPending = true;
-        await this.#trackStartup(this.#resume());
+        await this.#trackStartup(() => {
+          this.#recoveryTurnBindingPending = true;
+          return this.#resume();
+        });
       }
       // Ask the authenticated runner for its live provider snapshot rather
       // than reading its filesystem. This both supports remote process owners
@@ -4431,6 +4438,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
     if (this.#closed) return;
     this.#controllerDetachedForRestart = true;
     this.#closed = true;
+    this.#resolveClosedSignal();
     this.#turnStartAdmission?.resolve(false);
     if (this.#pump !== null) clearInterval(this.#pump);
     this.#pump = null;
@@ -4457,7 +4465,16 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
     );
   }
 
-  #trackStartup<T>(operation: Promise<T>): Promise<T> {
+  #trackStartup<T>(start: () => Promise<T>): Promise<T> {
+    // Admit one owner before invoking startup. A duplicate request's rejection
+    // must never replace the preparation that close is responsible for joining.
+    if (this.#startupOperation !== null) {
+      return Promise.reject(new Error("PRP provider thread is already started"));
+    }
+    const operation = Promise.resolve().then(() => {
+      this.#assertStartupOpen();
+      return start();
+    });
     this.#startupOperation = operation;
     return operation;
   }
@@ -4468,6 +4485,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
 
   async #closeOnce(): Promise<void> {
     this.#closed = true;
+    this.#resolveClosedSignal();
     const { preparationDeadline, closeDeadline } = runnerCloseDeadlines(Date.now(), runnerCloseGraceMs(this.options));
     let startupConfirmed = true;
     if (this.#startupOperation !== null) {
@@ -5598,6 +5616,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
     >;
     let oldTransitionRegistration: RecoveryRegistration | null = null;
     let newTransitionRegistration: RecoveryRegistration | null = null;
+    this.#assertStartupOpen();
     if (warmRecovery && this.options.controlPlaneRegistration) {
       try {
         oldTransitionRegistration = await this.options.controlPlaneRegistration(
@@ -5616,6 +5635,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
             "native_runner_warm_transition_registered_endpoint_mismatch",
           );
         }
+        this.#assertStartupOpen();
         newTransitionRegistration = await this.options.controlPlaneRegistration(
           core,
           warmRecovery.proof.receipt.newIdentity,
@@ -5691,6 +5711,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
       await releaseMaterializedNativeRuntimeSkills(
         resolve(localCodexHome, "skills"),
       );
+      this.#assertStartupOpen();
       await prepareIsolatedCodexHome({
         context: sourceRuntimeContext,
         codexHome: localCodexHome,
@@ -5769,10 +5790,13 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
       this.#watchRunner(handle);
       await this.#publishSpawnedProcess(handle);
     }
+    this.#assertStartupOpen();
     if (oldTransitionRegistration && newTransitionRegistration) {
       await oldTransitionRegistration.activate?.();
+      this.#assertStartupOpen();
       await newTransitionRegistration.activate?.();
     } else await registration?.activate?.();
+    this.#assertStartupOpen();
     if (registration?.failure) {
       void registration.failure.catch((error: unknown) => {
         this.#failTransport(
@@ -5781,6 +5805,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
       });
     }
     if (!adoptedRunner) await this.#awaitRegistrationReady(registration?.ready);
+    this.#assertStartupOpen();
     if (adoptedRunner) {
       this.#evidence.runnerPid = adoptedRunner.pid;
       this.#evidence.runnerProcessGroupId = adoptedRunner.processGroupId;
@@ -5797,6 +5822,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
         !recoveryIdentityMatches(core.store.state.identity, desiredIdentity) ||
         core.store.state.warmTransition !== undefined
       ) {
+        this.#assertStartupOpen();
         if (Date.now() >= deadline || (await this.#runnerHasExited())) {
           throw new Error("native_runner_warm_transition_recovery_pending");
         }
@@ -5811,11 +5837,13 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
       this.#deferredTurnStartEvents = [];
       if (oldTransitionRegistration && newTransitionRegistration) {
         await oldTransitionRegistration.release();
+        this.#assertStartupOpen();
         this.#controlPlaneRelease = newTransitionRegistration.release;
         this.#controlPlaneCheckpoint =
           newTransitionRegistration.checkpoint ?? null;
       }
     }
+    this.#assertStartupOpen();
     this.#pump = setInterval(() => this.#pumpEventsSafely(), 5);
     if (adoptedRunner) {
       await this.#awaitAdoptedRunnerConnection(
@@ -6855,8 +6883,11 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
       await awaitAdoptedRunnerAuthentication({
         activeConnectionCount: () => core.activeRunnerConnectionCount(),
         isAlive: () => adoptedRunner.isAlive(),
-        throwIfFailed: () => this.#throwIfFailed(),
-        failure: this.#failureSignal,
+        throwIfFailed: () => { this.#assertStartupOpen(); this.#throwIfFailed(); },
+        failure: Promise.race([
+          this.#failureSignal,
+          this.#closedSignal.then(() => { throw new Error("runnerd transport closed during provider startup"); }),
+        ]),
         ready,
         timeoutMs: this.options.runnerReconnectGraceMs ?? 30_000,
       });
@@ -6865,6 +6896,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
       this.#failTransport(failure);
       throw failure;
     }
+    this.#assertStartupOpen();
     this.#adoptedRunnerAuthenticated = true;
     this.#diagnostic(
       `adopted runner ${adoptedRunner.pid} authenticated to its durable PRP authority`,
@@ -7069,11 +7101,18 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
   async #awaitRegistrationReady(
     ready: (() => Promise<void>) | undefined,
   ): Promise<void> {
+    this.#assertStartupOpen();
     if (ready === undefined) {
       this.#throwIfFailed();
       return;
     }
-    await Promise.race([ready(), this.#failureSignal]);
+    await Promise.race([
+      ready(), this.#failureSignal,
+      // Readiness is a notification wait, not launch-material preparation.
+      // Its route owner is released by close; joining it first would cycle.
+      this.#closedSignal.then(() => { this.#assertStartupOpen(); }),
+    ]);
+    this.#assertStartupOpen();
     this.#throwIfFailed();
   }
 

@@ -396,6 +396,9 @@ it("publishes spawned runner ownership before waiting for provider startup", asy
   });
   const opening = bundle.transport.request("thread/start", { cwd: tmpdir(), dynamicTools: codexSemanticToolSpecs() });
   try {
+    // Same-tick recovery must not mutate an already admitted fresh startup.
+    await expect(bundle.transport.request("thread/read", { threadId: "rejected-duplicate" }))
+      .rejects.toThrow("PRP provider thread is already started");
     await vi.waitFor(() => expect(onSpawn).toHaveBeenCalledOnce());
     expect(onSpawn).toHaveBeenCalledWith({ pid: expect.any(Number), processGroupId: expect.any(Number), startedAt: expect.any(String) });
     expect(bundle.transport.processInfo?.().pid).toBeGreaterThan(0);
@@ -403,13 +406,17 @@ it("publishes spawned runner ownership before waiting for provider startup", asy
     releaseOwnership();
     await opening;
     expect(activate).toHaveBeenCalledOnce();
+    const turnStarted = expectTurnStarted(bundle.transport.notifications()[Symbol.asyncIterator]());
+    void turnStarted.catch(() => undefined);
+    await bundle.transport.request("turn/start", { input: [{ type: "text", text: "Verify fixture turn delivery." }] });
+    await turnStarted;
   } finally {
     releaseOwnership();
     await opening.catch(() => undefined);
     await bundle.transport.close();
     await rm(stateDirectory, { recursive: true, force: true });
   }
-});
+}, 30_000);
 
 it("launches runnerd with its production durable outbox limits", () => {
   expect(runnerdLaunchProfileInternals.maxOutboxBytes).toBe(16 * 1024 * 1024);
@@ -2173,6 +2180,115 @@ it.each(["installed", "explicit"] as const)("records the selected %s Codex comma
   } finally {
     resolver.mockRestore();
     await transport.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("does not invoke deferred startup preparation after immediate close", async () => {
+  const prepare = vi.spyOn(runtimeMaterializer, "prepareIsolatedCodexHome").mockResolvedValue(undefined);
+  const registration = vi.fn(async () => ({ connectUrl: "ws://127.0.0.1:1", release: () => undefined }));
+  const launch = vi.fn(() => { throw new Error("unexpected launch"); });
+  const { transport } = createCapabilityRunnerdCodexTransport({
+    runnerBinary: resolve(import.meta.dirname, "../../package.json"), codexCommand: "/unused-fixture-command", sourceCodexHome: "",
+    controlPlaneRegistration: registration, runnerProcessLauncher: launch,
+  });
+  const opening = transport.request("thread/start", { cwd: tmpdir(), dynamicTools: [] });
+  void opening.catch(() => undefined);
+  try {
+    await transport.close();
+    await expect(opening).rejects.toThrow(/closed/);
+    expect(prepare).not.toHaveBeenCalled();
+    expect(registration).not.toHaveBeenCalled();
+    expect(launch).not.toHaveBeenCalled();
+  } finally {
+    await opening.catch(() => undefined);
+    await transport.close().catch(() => undefined);
+    prepare.mockRestore();
+  }
+});
+
+it("owns blocked Codex home preparation through driver abort without later registration or launch", async () => {
+  const root = await mkdtemp(join(tmpdir(), "runnerd-blocked-home-preparation-"));
+  const runnerBinary = join(root, "runnerd");
+  const command = join(root, "codex");
+  await writeFile(runnerBinary, "unexecuted fixture artifact", { mode: 0o700 });
+  await writeFile(command, "#!/bin/sh\nexit 99\n", { mode: 0o700 });
+  let releasePreparation!: () => void;
+  const preparationReleased = new Promise<void>(resolve => { releasePreparation = resolve; });
+  let markPreparationStarted!: () => void;
+  const preparationStarted = new Promise<void>(resolve => { markPreparationStarted = resolve; });
+  let closeSettled = false;
+  let preparationContinuedAfterClose = false;
+  const prepare = vi.spyOn(runtimeMaterializer, "prepareIsolatedCodexHome").mockImplementation(async input => {
+    markPreparationStarted();
+    await preparationReleased;
+    preparationContinuedAfterClose = closeSettled;
+    // A synthetic, credential-free write makes the owned preparation visible.
+    await mkdir(input.codexHome, { mode: 0o700 });
+    await writeFile(join(input.codexHome, "preparation-marker"), "fixture preparation drained\n", { mode: 0o600 });
+  });
+  const registration = vi.fn(async () => ({
+    connection: { mode: "connect" as const, connectUrl: "ws://127.0.0.1:1/fixture-never-connected" },
+    release: () => undefined,
+  }));
+  const launch = vi.fn(() => { throw new Error("fixture_stop_before_runner_launch"); });
+  const { transport } = createCapabilityRunnerdCodexTransport({
+    provider: "codex", runnerBinary, codexCommand: command, stateDirectory: root,
+    sourceCodexHome: "", environment: {}, controlPlaneRegistration: registration, runnerProcessLauncher: launch,
+  });
+  const request = transport.request.bind(transport);
+  let bootstrapOperation: Promise<Record<string, unknown>> | undefined;
+  const requestSpy = vi.spyOn(transport, "request").mockImplementation((method, params) => {
+    const operation = request(method, params);
+    if (method === "thread/start") bootstrapOperation = operation;
+    return operation;
+  });
+  const closeTransport = transport.close.bind(transport);
+  let closeOperation: Promise<void> | undefined;
+  const closeSpy = vi.spyOn(transport, "close").mockImplementation(reason => {
+    closeOperation ??= closeTransport(reason).then(() => { closeSettled = true; });
+    return closeOperation;
+  });
+  const controller = new AbortController();
+  const cancelled = new Error("fixture Codex bootstrap cancelled");
+  const driver = new CodexAppServerDriver({
+    taskEnvelope: {
+      schema: "paperclip.skillless_task.v1", objective: "Credential-free bootstrap ownership fixture.",
+      completionContract: { revision: "blocked-preparation-v1", criteria: [] },
+      constraints: [], expectedResultSchema: "paperclip.run_result.v1",
+    },
+    conversationMode: "direct", environment: {}, transportFactory: () => transport,
+  });
+  let openingSettled = false;
+  const opening = driver.openSession({ runId: "fixture-blocked-home", normalizedSessionId: "fixture-blocked-home", workingDirectory: root, signal: controller.signal })
+    .then(value => { openingSettled = true; return { value }; }, error => { openingSettled = true; return { error }; });
+  try {
+    await preparationStarted;
+    // A rejected duplicate must not replace the first admitted startup owner.
+    await expect(transport.request("thread/start", { cwd: root, dynamicTools: [] }))
+      .rejects.toThrow("PRP provider thread is already started");
+    controller.abort(cancelled);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect.soft(closeOperation).toBeDefined();
+    expect.soft(closeSettled).toBe(false);
+    expect.soft(openingSettled).toBe(false);
+    releasePreparation();
+    const outcome = await opening;
+    await closeOperation;
+    await bootstrapOperation?.catch(() => undefined);
+    expect.soft(preparationContinuedAfterClose).toBe(false);
+    expect.soft(registration.mock.calls.length).toBe(0);
+    expect.soft(launch.mock.calls.length).toBe(0);
+    expect.soft(outcome).toHaveProperty("error");
+    expect.soft(outcome).toHaveProperty("error", cancelled);
+  } finally {
+    releasePreparation();
+    await opening;
+    await bootstrapOperation?.catch(() => undefined);
+    await transport.close().catch(() => undefined);
+    requestSpy.mockRestore();
+    closeSpy.mockRestore();
+    prepare.mockRestore();
     await rm(root, { recursive: true, force: true });
   }
 });
@@ -8008,6 +8124,41 @@ it("binds buffered mid-goal items only after the authenticated recovery snapshot
 it("keeps an adopted runner alive when the detached controller finalizer closes", () => verifyLiveRunnerAdoption(false, false, true, true), 30_000);
 
 it("adopts an opening session without a checkpoint instead of bootstrapping a duplicate provider", () => verifyLiveRunnerAdoption(false, false, false, false, true), 30_000);
+
+it("cancels startup readiness before releasing the route that settles its ready callback", async () => {
+  const root = await mkdtemp(join(tmpdir(), "runnerd-ready-release-cycle-"));
+  let releaseReady!: () => void;
+  const readyReleased = new Promise<void>(resolve => { releaseReady = resolve; });
+  let markReadyStarted!: () => void;
+  const readyStarted = new Promise<void>(resolve => { markReadyStarted = resolve; });
+  const release = vi.fn(async () => { releaseReady(); });
+  let core!: DurablePrpControlPlane;
+  const bundle = createCapabilityRunnerdCodexTransport({
+    runnerBinary: defaultCapabilityRunnerdBinary(), codexCommand: fakeCodex,
+    codexArgs: fakeCodexArgs(root), stateDirectory: root, sourceCodexHome: "", environment: {}, closeGraceMs: 2_000,
+    controlPlaneRegistration: async authority => {
+      core = authority;
+      await authority.start();
+      return { ready: () => { markReadyStarted(); return readyReleased; }, release };
+    },
+  });
+  const opening = bundle.transport.request("thread/start", { cwd: root, dynamicTools: [] });
+  void opening.catch(() => undefined);
+  try {
+    await readyStarted;
+    await vi.waitFor(() => expect(core.store.state.commands.find(command => command.type === "session.open")?.status).toBe("completed"));
+    await expect(bundle.transport.close("cancel pending ingress authentication")).resolves.toBeUndefined();
+    await expect(opening).rejects.toThrow(/closed/);
+    expect(release).toHaveBeenCalledOnce();
+    expect(bundle.evidence().runnerExited).toBe(true);
+    expect(bundle.evidence().diagnostics.join("\n")).not.toContain("startup cleanup is unconfirmed");
+  } finally {
+    releaseReady();
+    await opening.catch(() => undefined);
+    await bundle.transport.close().catch(() => undefined);
+    await rm(root, { recursive: true, force: true });
+  }
+}, 30_000);
 
 it("surfaces a runner exit while provider-ingress readiness is still pending", async () => {
   const neverReady = new Promise<void>(() => undefined);
