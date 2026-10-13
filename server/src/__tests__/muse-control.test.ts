@@ -353,6 +353,45 @@ describe("personal Muse control plane",()=>{
     }finally{await f.detach();}
   });
 
+  it.each(["expired older hold","released older hold","Dot older hold","live older assignment"])("scopes connected cleanup to its current boundary despite %s",async(kind)=>{
+    const f=await active();try {
+      await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      const [current]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      const [olderAssignment]=await db.insert(assignments).values({...f.assignment,id:randomUUID(),turnId:"older_"+randomUUID(),status:kind==="live older assignment"?"accepted":"fenced"}).returning();
+      const boundary={...current.stopBoundary!,assignmentId:olderAssignment.id,turnId:olderAssignment.turnId,stopNonce:randomUUID()};
+      const [older]=await db.insert(externalAgentHolds).values({companyId:f.company.id,agentId:f.agent.id,provider:kind==="Dot older hold"?"openai_dot":"muse",bindingId:f.binding.id,bindingGeneration:1,assignmentId:olderAssignment.id,runId:f.runId,stopBoundary:boundary,releasedAt:kind==="released older hold"?new Date():null}).returning();
+      await db.insert(mailbox).values({companyId:f.company.id,bindingId:f.binding.id,bindingGeneration:1,assignmentId:olderAssignment.id,kind:"authority_revoked",sourceEventId:randomUUID(),references:{boundary},createdAt:kind==="expired older hold"?new Date(Date.now()-25*60*60_000):new Date()});
+      const cleanup=await f.identity.authenticate(f.credentials.cleanupToken,"cleanup");
+      expect(await f.broker.cleanup(cleanup,{command:"control.inspect"})).toMatchObject({boundaries:[{boundary:current.stopBoundary}],externalStopConfirmed:false});
+      await expect(f.broker.cleanup(cleanup,{command:"worker.quiescent",boundary,requestId:randomUUID()})).rejects.toThrow("boundary");
+      expect((await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.id,older.id)))[0]).toEqual(older);
+      expect(await f.broker.cleanup(cleanup,{command:"worker.quiescent",boundary:current.stopBoundary!,requestId:randomUUID()})).toMatchObject({status:"worker_reported",externalStopConfirmed:false});
+      expect((await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.id,current.id)))[0]).toMatchObject({workerUnknown:true,releasedAt:null});
+    }finally{await f.detach();}
+  });
+  it("replays an identical revoked historical cleanup report without mutating or accepting a new report",async()=>{
+    const f=await active();try {
+      await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!,boundary=state.stop.boundary!,requestId=randomUUID();
+      const command={command:"worker.quiescent" as const,boundary,requestId};
+      const connected=await f.identity.authenticate(f.credentials.cleanupToken,"cleanup");
+      const report=await f.broker.cleanup(connected,command);
+      await f.broker.attestStop(f.company.id,f.agent.id,f.operatorId,{boundary,expectedRevision:state.stop.bindingRevision!,workerStopped:true});
+      const attested=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;
+      await f.broker.revoke(f.company.id,f.agent.id,f.operatorId,{bindingId:f.binding.id,generation:1,expectedRevision:attested.revision});
+      const revoked=await f.identity.authenticate(f.credentials.cleanupToken,"cleanup");
+      const [before]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));expect(before.releasedAt).toBeInstanceOf(Date);
+      const logsBefore=await db.select().from(activityLog).where(and(eq(activityLog.companyId,f.company.id),eq(activityLog.action,"muse.worker_quiescence_reported")));
+      expect(await f.broker.cleanup(revoked,command)).toEqual(report);
+      await expect(f.broker.cleanup(revoked,{...command,requestId:randomUUID()})).rejects.toThrow("boundary");
+      expect(await f.broker.cleanup(revoked,{command:"control.inspect"})).toEqual({boundaries:[],externalStopConfirmed:false});
+      expect((await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id)))[0]).toEqual(before);
+      expect(await db.select().from(activityLog).where(and(eq(activityLog.companyId,f.company.id),eq(activityLog.action,"muse.worker_quiescence_reported")))).toEqual(logsBefore);
+    }finally{await f.detach();}
+  });
+
   it("does not renew connected cleanup from mutable holds or later revocation receipts",async()=>{
     const f=await active();try {
       await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});

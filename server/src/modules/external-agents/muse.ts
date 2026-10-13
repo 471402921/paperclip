@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
-import { agents, companies, heartbeatRuns, issues, issueComments, issueDocuments, documents, nativeRunFinalizations, agentWakeupRequests,
+import { agents, companies, activityLog, heartbeatRuns, issues, issueComments, issueDocuments, documents, nativeRunFinalizations, agentWakeupRequests,
   museAgentBindings as bindings, museCredentials as credentials, museRunnerAssignments as assignments, museRunnerOperations as operations,
   museMailboxItems as mailbox, museInputDeliveries as inputs, museIdleReceipts as idleReceipts, externalAgentHolds as holds,
   museReceiverContactBuckets, type Db } from "@paperclipai/db";
@@ -9,7 +9,7 @@ import { MUSE_TICKET_TTL_MS, MUSE_CLEANUP_TTL_MS, museStopBoundarySchema, type A
   type MuseQuery, type MusePairing, type MuseStopBoundary, type MuseQualificationEvidence, type MuseQualificationBeginResult } from "@paperclipai/shared";
 import { externalOperationDigest, parsePaperclipQuestionSet, type MuseBindingSnapshot, type ExternalProviderPort, type ExternalProviderOperation } from "../../vendor/paperclip-runner/index.js";
 import { conflict, forbidden, notFound, unprocessable } from "../../errors.js";
-import { museIdentity, museCredentialHash, assertMuseCurrentAuthority } from "../../services/muse-identity.js";
+import { museIdentity, museCredentialHash, assertMuseCurrentAuthority, museCleanupHoldIds } from "../../services/muse-identity.js";
 import { instanceSettingsService } from "../../services/instance-settings.js";
 import { updateAgentConfigurationInTransaction } from "../../services/agent-configuration-transaction.js";
 import { canConfigureAgentConnection, scheduleAgentLifecycle } from "../agent-lifecycle/index.js";
@@ -312,11 +312,34 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
       if(!document)throw notFound("Document not found.");return {document};
     },
     async cleanup(s:AgentConnectionSubject,command:{command:"control.inspect"}|{command:"worker.quiescent";boundary:MuseStopBoundary;requestId:string}) {
-      if(command.command==="control.inspect") {const rows=await db.select({boundary:holds.stopBoundary,workerReportedAt:holds.workerReportedAt,nativeEffectsUnknown:holds.nativeEffectsUnknown}).from(holds).where(and(eq(holds.bindingId,s.bindingId),eq(holds.bindingGeneration,s.generation),eq(holds.companyId,s.companyId)));return {boundaries:rows,externalStopConfirmed:false};}
       const publications: ActivityPublication[] = [];
       const result = await db.transaction(tx=>withExternalAdmissionGuard(tx,s.companyId,s.agentId,async()=>{
-        const [hold]=await tx.select().from(holds).where(and(eq(holds.companyId,s.companyId),eq(holds.agentId,s.agentId),eq(holds.bindingId,s.bindingId),eq(holds.bindingGeneration,s.generation),eq(holds.assignmentId,command.boundary.assignmentId))).for("update");
+        const now=new Date();
+        const [binding]=await tx.select({revokedAt:bindings.revokedAt,cleanupExpiresAt:bindings.cleanupExpiresAt,status:bindings.status}).from(bindings)
+          .innerJoin(credentials,and(eq(credentials.id,s.credentialId),eq(credentials.companyId,bindings.companyId),eq(credentials.bindingId,bindings.id),eq(credentials.bindingGeneration,bindings.generation),eq(credentials.kind,"cleanup"),isNull(credentials.revokedAt),isNull(credentials.consumedAt),gt(credentials.expiresAt,now)))
+          .where(and(eq(bindings.id,s.bindingId),eq(bindings.companyId,s.companyId),eq(bindings.agentId,s.agentId),eq(bindings.generation,s.generation),eq(bindings.operatorId,s.authorizingUserId)));
+        if(s.provider!=="muse"||!binding||(binding.revokedAt?(!binding.cleanupExpiresAt||binding.cleanupExpiresAt<=now):!["connected","ready"].includes(binding.status)))throw forbidden("Cleanup authority is unavailable.");
+        const currentIds=museCleanupHoldIds(tx,s,!!binding.revokedAt,now);
+        if(command.command==="control.inspect") {
+          const rows=await tx.select({boundary:holds.stopBoundary,workerReportedAt:holds.workerReportedAt,nativeEffectsUnknown:holds.nativeEffectsUnknown}).from(holds).where(inArray(holds.id,currentIds));
+          if(!binding.revokedAt&&!rows.length)throw forbidden("Cleanup boundary is unavailable.");
+          return {boundaries:rows,externalStopConfirmed:false};
+        }
+        const [hold]=await tx.select().from(holds).where(and(eq(holds.provider,"muse"),eq(holds.companyId,s.companyId),eq(holds.agentId,s.agentId),eq(holds.bindingId,s.bindingId),eq(holds.bindingGeneration,s.generation),eq(holds.assignmentId,command.boundary.assignmentId))).for("update");
         if(!hold?.stopBoundary||externalOperationDigest("tool",{boundary:hold.stopBoundary})!==externalOperationDigest("tool",{boundary:command.boundary}))throw conflict("Cleanup boundary does not match.");
+        const [current]=await tx.select({id:holds.id}).from(holds).where(and(eq(holds.id,hold.id),inArray(holds.id,currentIds)));
+        if(!current) {
+          // Revoked credentials may replay the same durable historical report,
+          // but cannot create a new report for released or superseded work.
+          const [reported]=binding.revokedAt&&hold.workerReportedAt?await tx.select({id:activityLog.id}).from(activityLog).where(and(eq(activityLog.companyId,s.companyId),eq(activityLog.actorType,"agent"),eq(activityLog.actorId,s.agentId),eq(activityLog.agentId,s.agentId),eq(activityLog.entityType,"agent"),eq(activityLog.entityId,s.agentId),eq(activityLog.action,"muse.worker_quiescence_reported"),
+            sql`${activityLog.details}->>'bindingId' = ${s.bindingId}`,
+            sql`${activityLog.details}->>'generation' = ${String(s.generation)}`,
+            sql`${activityLog.details}->>'authorizingUserId' = ${s.authorizingUserId}`,
+            sql`${activityLog.details}->>'requestId' = ${command.requestId}`,
+            sql`${activityLog.details}->'boundary' = ${JSON.stringify(command.boundary)}::jsonb`)).limit(1):[];
+          if(!reported)throw conflict("Cleanup boundary is unavailable.");
+          return {status:"worker_reported",externalStopConfirmed:false,nativeEffectsUnknown:hold.nativeEffectsUnknown};
+        }
         if (!hold.workerReportedAt) {
           await tx.update(holds).set({workerReportedAt:new Date(),updatedAt:new Date()}).where(eq(holds.id,hold.id));
           await logActivity(tx as unknown as Db,{companyId:s.companyId,actorType:"agent",actorId:s.agentId,agentId:s.agentId,responsibleUserIdOverride:s.authorizingUserId,action:"muse.worker_quiescence_reported",entityType:"agent",entityId:s.agentId,details:{bindingId:s.bindingId,generation:s.generation,authorizingUserId:s.authorizingUserId,requestId:command.requestId,boundary:command.boundary,nativeEffectsUnknown:hold.nativeEffectsUnknown,externalStopConfirmed:false}},publications);

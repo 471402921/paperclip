@@ -10,6 +10,24 @@ export const museCredentialHash = (value: string) => createHash("sha256").update
 const token = () => randomBytes(32).toString("base64url");
 export type MuseCredentialKind = typeof credentials.$inferSelect.kind;
 export type MuseIdentityDatabase = Db | ExternalAdmissionTransaction;
+/** Exact currently reportable fences. Shared by cleanup admission and the
+ * broker so one admitted boundary cannot lend authority to historical rows. */
+export function museCleanupHoldIds(db:MuseIdentityDatabase,s:AgentConnectionSubject,revoked=false,now=new Date()) {
+  return db.select({id:holds.id}).from(holds)
+    .innerJoin(assignments,and(eq(assignments.id,holds.assignmentId),eq(assignments.companyId,holds.companyId),eq(assignments.agentId,holds.agentId),eq(assignments.bindingId,holds.bindingId),eq(assignments.bindingGeneration,holds.bindingGeneration),eq(assignments.runId,holds.runId),eq(assignments.status,"fenced")))
+    .innerJoin(bindings,and(eq(bindings.id,holds.bindingId),eq(bindings.companyId,holds.companyId),eq(bindings.agentId,holds.agentId),eq(bindings.generation,holds.bindingGeneration),eq(bindings.operatorId,s.authorizingUserId),revoked?sql`${bindings.revokedAt} is not null`:isNull(bindings.revokedAt),revoked?gt(bindings.cleanupExpiresAt,now):inArray(bindings.status,["connected","ready"])))
+    .innerJoin(credentials,and(eq(credentials.id,s.credentialId),eq(credentials.kind,"cleanup"),eq(credentials.companyId,bindings.companyId),eq(credentials.bindingId,bindings.id),eq(credentials.bindingGeneration,bindings.generation),isNull(credentials.revokedAt),isNull(credentials.consumedAt),gt(credentials.expiresAt,now)))
+    .innerJoin(mailbox,and(eq(mailbox.companyId,holds.companyId),eq(mailbox.bindingId,holds.bindingId),eq(mailbox.bindingGeneration,holds.bindingGeneration),eq(mailbox.assignmentId,holds.assignmentId),eq(mailbox.kind,"authority_revoked"),sql`${mailbox.references}->'boundary' = ${holds.stopBoundary}`))
+    .where(and(sql`${s.provider} = 'muse'`,eq(holds.provider,"muse"),eq(holds.companyId,s.companyId),eq(holds.agentId,s.agentId),eq(holds.bindingId,s.bindingId),eq(holds.bindingGeneration,s.generation),isNull(holds.releasedAt),
+      sql`${holds.stopBoundary}->>'bindingId' = ${bindings.id}::text`,
+      sql`${holds.stopBoundary}->>'generation' = ${bindings.generation}::text`,
+      sql`${holds.stopBoundary}->>'assignmentId' = ${assignments.id}::text`,
+      sql`${holds.stopBoundary}->>'runId' = ${assignments.runId}::text`,
+      sql`${holds.stopBoundary}->>'turnId' = ${assignments.turnId}`,
+      sql`${holds.stopBoundary}->>'assignmentRevision' = ${assignments.revision}::text`))
+    .groupBy(holds.id)
+    .having(revoked?sql`true`:sql`min(${mailbox.createdAt}) > ${new Date(now.getTime()-MUSE_CLEANUP_TTL_MS).toISOString()}::timestamptz and min(${mailbox.createdAt}) <= ${now.toISOString()}::timestamptz`);
+}
 export async function assertMuseCurrentAuthority(db: MuseIdentityDatabase, b: typeof bindings.$inferSelect, allowSetup = false, allowPaused = false) {
   const [agent] = await db.select().from(agents).where(and(eq(agents.id,b.agentId),eq(agents.companyId,b.companyId)));
   const [company] = await db.select().from(companies).where(eq(companies.id,b.companyId));
@@ -91,21 +109,7 @@ export function museIdentity(db: Db) {
           // A connected worker may acknowledge only an existing fence. Holds
           // start at acceptance and are updated during recovery; the earliest
           // exact-boundary revocation receipt fixes the cleanup deadline.
-          const [fenced]=await db.select({id:holds.id}).from(holds)
-            .innerJoin(assignments,and(eq(assignments.id,holds.assignmentId),eq(assignments.companyId,holds.companyId),eq(assignments.agentId,holds.agentId),eq(assignments.bindingId,holds.bindingId),eq(assignments.bindingGeneration,holds.bindingGeneration),eq(assignments.runId,holds.runId),eq(assignments.status,"fenced")))
-            .innerJoin(bindings,and(eq(bindings.id,holds.bindingId),eq(bindings.companyId,holds.companyId),eq(bindings.agentId,holds.agentId),eq(bindings.generation,holds.bindingGeneration),isNull(bindings.revokedAt),inArray(bindings.status,["connected","ready"])))
-            .innerJoin(credentials,and(eq(credentials.id,c.id),eq(credentials.tokenHash,c.tokenHash),eq(credentials.kind,"cleanup"),eq(credentials.companyId,bindings.companyId),eq(credentials.bindingId,bindings.id),eq(credentials.bindingGeneration,bindings.generation),isNull(credentials.revokedAt),isNull(credentials.consumedAt),gt(credentials.expiresAt,now)))
-            .innerJoin(mailbox,and(eq(mailbox.companyId,holds.companyId),eq(mailbox.bindingId,holds.bindingId),eq(mailbox.bindingGeneration,holds.bindingGeneration),eq(mailbox.assignmentId,holds.assignmentId),eq(mailbox.kind,"authority_revoked"),sql`${mailbox.references}->'boundary' = ${holds.stopBoundary}`))
-            .where(and(eq(holds.provider,"muse"),eq(holds.companyId,b.companyId),eq(holds.agentId,b.agentId),eq(holds.bindingId,b.id),eq(holds.bindingGeneration,b.generation),isNull(holds.releasedAt),eq(bindings.operatorId,b.operatorId),
-              sql`${holds.stopBoundary}->>'bindingId' = ${bindings.id}::text`,
-              sql`${holds.stopBoundary}->>'generation' = ${bindings.generation}::text`,
-              sql`${holds.stopBoundary}->>'assignmentId' = ${assignments.id}::text`,
-              sql`${holds.stopBoundary}->>'runId' = ${assignments.runId}::text`,
-              sql`${holds.stopBoundary}->>'turnId' = ${assignments.turnId}`,
-              sql`${holds.stopBoundary}->>'assignmentRevision' = ${assignments.revision}::text`))
-            .groupBy(holds.id)
-            .having(sql`min(${mailbox.createdAt}) > ${new Date(now.getTime()-MUSE_CLEANUP_TTL_MS).toISOString()}::timestamptz and min(${mailbox.createdAt}) <= ${now.toISOString()}::timestamptz`)
-            .limit(1);
+          const [fenced]=await museCleanupHoldIds(db,{provider:"muse",companyId:b.companyId,agentId:b.agentId,bindingId:b.id,generation:c.bindingGeneration,authorizingUserId:b.operatorId,credentialId:c.id},false,now).limit(1);
           allowed=!!fenced;
         }
         if (!allowed) throw unauthorized("Cleanup authority expired.");
