@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApiError } from "@/api/client";
 import { ExternalAgentInviteDialog } from "./ExternalAgentInviteDialog";
-import { museBinding, museConnection, musePairing } from "../../../storybook/stories/external-agent-invite/muse-fixtures";
+import { museBinding, museConnection, musePairing } from "../../../storybook/support/external-agent-invite/muse-fixtures";
 import { readMuseInvitationDraft } from "@/lib/muse-invitation-draft";
 
 const identity = vi.hoisted(() => ({ userId: "operator", settled: true, failed: false }));

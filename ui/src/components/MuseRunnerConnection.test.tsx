@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MuseConnectionDetails, MuseRunnerConnection } from "./MuseRunnerConnection";
 import { MuseConnectionChecks } from "./new-agent/ExternalAgentInviteContent";
 import { museConnectionState } from "@/hooks/useMuseConnection";
-import { museConnection, stoppedMuseConnection, museStopBoundary, musePairing } from "../../storybook/stories/external-agent-invite/muse-fixtures";
+import { museConnection, stoppedMuseConnection, museStopBoundary, musePairing } from "../../storybook/support/external-agent-invite/muse-fixtures";
 import { museInvitationsApi } from "@/api/museInvitations";
 import type { MuseConnection } from "@paperclipai/shared";
 

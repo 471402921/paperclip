@@ -867,6 +867,25 @@ describe("LiveUpdatesProvider issue invalidation", () => {
     });
   });
 
+  it("refetches visible comments when an authenticated event omits hydration details", () => {
+    const client = new QueryClient();
+    client.setQueryData(queryKeys.issues.detail("PAP-759"), {
+      id: "issue-1", companyId: "company-1", identifier: "PAP-759",
+    });
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    __liveUpdatesTestUtils.invalidateActivityQueries(client, "company-1", {
+      entityType: "issue", entityId: "issue-1", action: "issue.comment_added",
+      actorType: "user", actorId: "another-user",
+    }, { userId: "viewer", agentId: null }, {
+      pathname: "/PAP/issues/PAP-759", isForegrounded: true,
+    });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.issues.comments("PAP-759") });
+    expect(invalidate).not.toHaveBeenCalledWith({
+      queryKey: queryKeys.issues.comments("PAP-759"), refetchType: "inactive",
+    });
+    client.clear();
+  });
+
   it("refreshes visible issue run queries when the displayed run changes status", () => {
     const invalidations: unknown[] = [];
     const cache = new Map<string, unknown>([
