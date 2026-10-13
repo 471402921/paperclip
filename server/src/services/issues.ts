@@ -2842,6 +2842,16 @@ const ISSUE_USER_PARTICIPATION_ACTIVITY_ACTIONS = [
   "issue.work_product_updated",
 ] as const;
 
+// Old read projections attributed this automatic cleanup to the reader. Keep
+// the audit rows, but do not count them as participation or issue activity.
+function automaticReadRecoveryCleanupCondition() {
+  return sql<boolean>`(
+    ${activityLog.action} = 'issue.recovery_action_resolved'
+    AND COALESCE(${activityLog.details}->>'source', '') = 'source_revalidation'
+    AND COALESCE(${activityLog.details}->>'trigger', '') = 'read_projection'
+  )`;
+}
+
 function touchedByUserCondition(companyId: string, userId: string) {
   return sql<boolean>`
     (
@@ -2855,6 +2865,7 @@ function touchedByUserCondition(companyId: string, userId: string) {
           AND ${activityLog.companyId} = ${companyId}
           AND ${activityLog.actorType} = 'user'
           AND ${activityLog.actorId} = ${userId}
+          AND NOT ${automaticReadRecoveryCleanupCondition()}
           AND ${activityLog.action} IN (${sql.join(
             ISSUE_USER_PARTICIPATION_ACTIVITY_ACTIONS.map(
               (action) => sql`${action}`,
@@ -2960,6 +2971,7 @@ function issueLatestLogAtExpr(companyId: string) {
       WHERE ${activityLog.companyId} = ${companyId}
         AND ${activityLog.entityType} = 'issue'
         AND ${activityLog.entityId} = ${issues.id}::text
+        AND NOT ${automaticReadRecoveryCleanupCondition()}
         AND ${activityLog.action} NOT IN (${sql.join(
           ISSUE_LOCAL_INBOX_ACTIVITY_ACTIONS.map((action) => sql`${action}`),
           sql`, `,
@@ -5138,6 +5150,7 @@ async function lastActivityStatsForIssues(
             eq(activityLog.companyId, companyId),
             eq(activityLog.entityType, "issue"),
             inArray(activityLog.entityId, issueIdChunk),
+            sql`NOT ${automaticReadRecoveryCleanupCondition()}`,
             sql`${activityLog.action} NOT IN (${sql.join(
               ISSUE_LOCAL_INBOX_ACTIVITY_ACTIONS.map(
                 (action) => sql`${action}`,

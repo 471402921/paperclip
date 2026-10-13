@@ -2,6 +2,68 @@
 
 Updated 2026-10-12.
 
+## Final CI fixture corrections and current master
+
+Published prerequisite `16a53254c495f3e49a28cc911f5dcd60c41779fc`
+has fresh Greptile 5/5 and all four review threads resolved. Full CI records
+52 successful checks, four conditional skips and two failures: the runner
+Vitest first shard and its aggregate. The actual failing shard passes 1,671
+cases and skips three; its two failures remain recorded in
+`/private/tmp/pr2-16a532-runner-vitest-failure.log`.
+
+The durable-resume case exceeded its outer five-second test envelope. Reuse
+Claude owner's existing correction from `c60bf4b6`, changing only that case's
+outer limit to 15 seconds. On canonical Node 24, controlled 3,800 ms fake
+latency reproduces the old outer timeout, while corrected and ordinary cases
+pass. Internal 500 ms/5 second turn deadlines, distinct attempts, same thread,
+effect deduplication and the complete usage assertions remain unchanged.
+Receipt: `/private/tmp/pr2-16a532-durable-resume-correction-receipt.json`.
+
+The warm-recovery callback fixture polled callback installation with Vitest's
+implicit one-second wait, despite its existing five-second request bound.
+Replace polling with actual callback-entry notification raced against request
+settlement under that same bound. Controlled 1,250 ms scheduling delay fails
+the original assertion and passes the correction; an early recovery error now
+surfaces unchanged. All fence, snapshot, retry and side-effect assertions remain.
+The original hosted request outcome was hidden, so its underlying cause remains
+inconclusive until fresh hosted CI. These controls use recorded historical mock
+binaries and do not qualify a final native package. Receipt:
+`/private/tmp/ci-final-16a532-warm-callback-signal-receipt.json`.
+Independent matching-source review of both test-only changes is clear:
+`/private/tmp/pr2-16a532-fixture-corrections-independent-review.json`.
+
+Current master `e168512f7bdbb6af6ea01954c6d7ed80b91e903e` merges cleanly.
+Runner/surfaces/server/E2E no-emit checks pass on the composed source. Maps
+remain aligned at 35 areas/171 IDs and token gates pass. Master changed three
+activity/inbox/recovery recipes without synchronizing 25 catalog fingerprints.
+Independent inspection verifies those entries are exact inherited master drift;
+all 92 declared non-map story/component/wrapper/fixture inputs are unchanged.
+Only their guarded fingerprints and a source-only review note are synchronized.
+Existing 24 unreviewed/one current classifications, IDs, fixtures and INDEX stay
+unchanged. The catalog check passes 223 files/2,210 stories. No new live or
+visual coverage is claimed for the inherited backend requirements.
+
+The exact `16a532` remote package campaign is
+https://github.com/paperclipai/paperclip/actions/runs/38338806076.
+The campaign completed successfully. All four native producers, public Linux
+package assembly and the Apple Silicon, Intel Mac and Linux ARM64 installed
+consumers pass. The earlier Intel timeout remains a separate failed receipt;
+this success does not establish its cause or a diagnostic-code fix.
+This remains literal source evidence after the current master/test changes.
+No queued job is rerun or obsolete package result relabeled.
+
+Next action: preserve the completed package result, publish this ordinary master
+reconciliation with both scoped fixture corrections, require fresh full CI and
+review, and qualify the final package source. The prerequisite remains draft,
+auto-merge off, and actual code-owner review is pending. Codex stays `1a0ca662`
+until actual prerequisite merge and source reconciliation; the Claude owner
+retains its branches and separate $50 allowance. Final immutable managed QA,
+actual private Cloud distribution, warm/cold signup and backward-image or
+forward-recovery evidence remain required. Production Admin sign-in is pending.
+Nothing is merged, deployed or production-ready. The idle root test-drive and
+its data are preserved. Paid holds remain $248.179254104/$250; no provider turn,
+new paid host, local native/Docker build, rollout or default promotion occurred.
+
 ## Master reconciliation and installed-package checkpoint
 
 The published prerequisite `64c074fb8da1b31f8d6042c4fef48dc4164e759b`

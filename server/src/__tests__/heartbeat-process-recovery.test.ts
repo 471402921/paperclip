@@ -2415,7 +2415,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       .toMatchObject({ status: "active", resolvedAt: null });
   });
 
-  it("keeps existing terminal-task disposition for a native finalization hold", async () => {
+  it("retains the exact native owner hold without changing a terminal task's disposition", async () => {
     const f = await seedPendingNativeFinalization();
     await db.update(heartbeatRuns).set({ runnerProfileJson: { nativeWorkspaceFinalizationOwner: { unknown: true } } })
       .where(eq(heartbeatRuns.id, f.runId));
@@ -2423,6 +2423,13 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     await heartbeat.recoverNativeRunsAfterRestart();
     const [hold] = await db.select().from(issueRecoveryActions).where(eq(issueRecoveryActions.sourceIssueId, f.issueId));
     await db.update(issues).set({ status: "done" }).where(eq(issues.id, f.issueId));
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await heartbeat.reconcileStrandedAssignedIssues();
+      expect((await db.select().from(issueRecoveryActions).where(eq(issueRecoveryActions.id, hold.id)))[0])
+        .toEqual(hold);
+      expect((await db.select().from(issues).where(eq(issues.id, f.issueId)))[0].status).toBe("done");
+    }
+    await db.update(heartbeatRuns).set({ runnerProfileJson: {} }).where(eq(heartbeatRuns.id, f.runId));
     await heartbeat.reconcileStrandedAssignedIssues();
     expect((await db.select().from(issueRecoveryActions).where(eq(issueRecoveryActions.id, hold.id)))[0])
       .toMatchObject({ status: "resolved", resolutionNote: "source_terminal" });
