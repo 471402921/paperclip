@@ -146,3 +146,11 @@ retain existing execution on unrelated edits and use recorded run configuration
 for active/recovered runs. Explicit runner changes use revisions and session
 invalidation. Verify saved configuration, current versus historical run identity,
 restart and follow-up without granting session-reset authority to an agent.
+
+Scoped source-only evidence: the
+[native transport](../../packages/paperclip-runner/src/live/runnerd-codex-transport.ts)
+joins owned startup before certifying cleanup. Unconfirmed preparation or
+registration retains recovery state; late registration may retire only its own
+route and cannot launch a provider after close. This does not grant an agent
+account-setup, cleanup-override or session-reset authority. Verify the no-provider
+ownership controls independently from installed/live provider acceptance.
