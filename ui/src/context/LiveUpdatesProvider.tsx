@@ -773,6 +773,9 @@ function shouldDeferVisibleIssueCommentActivity(
 
   if (entityType !== "issue" || !entityId) return false;
   if (action !== "issue.comment_added") return false;
+  // Authenticated events omit comment details. Only defer a refetch when
+  // the event contains the ID needed to hydrate the new comment separately.
+  if (!readString(details?.commentId)) return false;
 
   const context = resolveVisibleIssueRouteContext(
     queryClient,
@@ -1367,6 +1370,20 @@ function invalidateActivityQueries(
         entityId,
         details,
       );
+      const visibleContext = options?.pathname
+        ? resolveVisibleIssueRouteContext(queryClient, options.pathname, {
+            isForegrounded: options.isForegrounded,
+          })
+        : null;
+      if (
+        visibleContext &&
+        overlaps(visibleContext.issueRefs, buildIssueRefsForPayload(entityId, details)) &&
+        !issueRefs.includes(visibleContext.routeIssueRef)
+      ) {
+        // Authenticated payloads omit the identifier. Include the visible
+        // route's cache key when its loaded task matches the event's UUID.
+        issueRefs.push(visibleContext.routeIssueRef);
+      }
       for (const ref of issueRefs) {
         const invalidationOptions =
           selfCommentActivity ||
@@ -1729,7 +1746,7 @@ function handleLiveEvent(
     invalidateVisibleIssueRunQueries(queryClient, pathname, payload);
     if (event.type === "heartbeat.run.status") {
       const toast = buildRunStatusToast(payload, nameOf);
-      if (toast && !suppressRunToast) {
+      if (toast && event.toastEligible === true && !suppressRunToast) {
         gatedPushToast(gate, pushToast, "run-status", toast);
       }
     }
@@ -1761,22 +1778,8 @@ function handleLiveEvent(
       queryClient.invalidateQueries({
         queryKey: queryKeys.agents.detail(agentId),
       });
-    const toast = buildAgentStatusToast(
-      payload,
-      nameOf,
-      queryClient,
-      expectedCompanyId,
-    );
-    if (
-      toast &&
-      !shouldSuppressAgentStatusToastForVisibleIssue(
-        queryClient,
-        pathname,
-        payload,
-      )
-    ) {
-      gatedPushToast(gate, pushToast, "agent-status", toast);
-    }
+    // Agent-wide errors have no task participation context. Task-linked
+    // failures are announced through the personally scoped run-status event.
     return;
   }
 
@@ -1795,12 +1798,12 @@ function handleLiveEvent(
     }
     const action = readString(payload.action);
     const toast =
-      buildActivityToast(
+      (event.toastEligible === true ? buildActivityToast(
         queryClient,
         expectedCompanyId,
         payload,
         currentActor,
-      ) ?? buildJoinRequestToast(payload);
+      ) : null) ?? buildJoinRequestToast(payload);
     if (
       toast &&
       !shouldSuppressActivityToastForVisibleIssue(
@@ -2031,6 +2034,7 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
       };
 
       nextSocket.onmessage = (message) => {
+        if (closed || socket !== nextSocket) return;
         if (!getPageVisibility().visible) return;
         const raw = typeof message.data === "string" ? message.data : "";
         if (!raw) return;

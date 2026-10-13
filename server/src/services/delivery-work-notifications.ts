@@ -6,6 +6,12 @@ export const DELIVERY_QUEUES = {
   chatTaskStarts: "chat-task-starts",
   chatReceiptReactions: "chat-receipt-reactions",
   chatSessionStops: "chat-session-stops",
+  chatProviderEffects: "chat-provider-effects",
+  chatGitHubIngress: "chat-github-ingress",
+  chatFailedRunRetries: "chat-failed-run-retries",
+  chatTelegramMaintenance: "chat-telegram-maintenance",
+  chatTelegramSubscriptions: "chat-telegram-subscriptions",
+  chatSessionSyncs: "chat-session-syncs",
   chatVerification: "chat-verification",
   chatInbound: "chat-inbound",
   chatPublications: "chat-publications",
@@ -21,8 +27,8 @@ export const DELIVERY_QUEUES = {
 } as const;
 export type DeliveryQueue = typeof DELIVERY_QUEUES[keyof typeof DELIVERY_QUEUES];
 
-export async function notifyDeliveryWork(transaction: object, queue: DeliveryQueue): Promise<void> {
-  await signalDatabaseWork(transaction, queue);
+export async function notifyDeliveryWork(transaction: object, queue: DeliveryQueue, hint?: string): Promise<void> {
+  await signalDatabaseWork(transaction, queue, hint);
 }
 // Public delivery notification observers only see settled work. The coordinator
 // uses the lower-level lifecycle subscription to also fence in-flight writes.

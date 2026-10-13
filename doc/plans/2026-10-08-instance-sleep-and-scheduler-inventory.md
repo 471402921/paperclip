@@ -399,6 +399,13 @@ flowchart LR
   explicit deep readiness still tests DB health, and signed claim/bootstrap
   mutations retain their existing validation and tracking.
 
+  Implementation progress: `/api/liveness` reports startup state and the public
+  commit without auth/session resolution, SQL, or provider I/O. It is mounted
+  after hostname and signed-bootstrap validation, before standby/auth, and its
+  exact GET/HEAD route stays reachable without adding a sleep hold. `/api/health`
+  retains database readiness and signed bootstrap. Callers must opt into the
+  liveness endpoint; this does not claim all external probes are migrated.
+
 - [ ] **DB-05 — Audit external probes and configured endpoints.** Inspect the
   fleet gateway, uptime monitors, deployment checks, DB pool settings, and Neon
   suspend configuration. The [ECS example](../../docker/ecs-task-definition.json)
@@ -434,9 +441,37 @@ Longer polling intervals alone do not complete an item.
   Startup restores existing rows, and empty workers disarm. No new tables.
   Tests cover an idle hour, real producer notifications, PostgreSQL deadline
   selection, stale claims, outer-transaction wakes, and callback-driven setup.
-  Remaining **1s** maintenance: provider runtimes, other provider action
-  outboxes, run milestone/wake-notice projection, GitHub operation recovery,
-  Teams protocol maintenance, and Slack session sync. GitHub pre-ingress recovery
+  Three more existing action queues now use commit/deadline workers: provider
+  messages/notices, accepted GitHub webhook receipts, and Slack session sync.
+  Foreground claims, retries, operator resolution, and settlement writes signal
+  in their transaction. Shared predicates select pending rows and deadlines;
+  terminal history and uncertain provider sends have no deadline. Stale provider
+  sends remain quarantined, while GitHub receipts retain bounded replay and
+  their existing attempt fences. Slack sync retains the 30-minute refresh for
+  running sessions and pauses without rescheduling until an endpoint change.
+  Tests exercise real producers with deferred fast paths disabled, retry and
+  startup recovery, stale-send quarantine, and zero scans after settlement.
+  Failed chat-run retries now also use commit wakes and durable deadlines from
+  existing action rows. Issued retries honor `retryAt`; processing claims wait
+  for both stale-claim expiry and any saved retry time. Startup recovers unfinished
+  requests. Claim and settlement writes signal in their own short transactions,
+  with agent wakeup outside those transactions. Empty and terminal queues disarm.
+  Telegram maintenance now has separate commit-driven discovery and action
+  workers. Discovery restores legacy subscription obligations on startup and
+  after endpoint or chat-connection configuration commits, without recurring
+  empty scans. Startup walks keyset pages with at most 100 endpoints per run,
+  so endpoints beyond the first page remain discoverable. Configuration commits
+  carry connection hints through outer settlement and uncertainty recovery;
+  they only revisit the changed connection. Failed discovery retains its page,
+  and concurrent edits queue a fresh scoped pass. Existing action rows provide retry and stale-claim
+  deadlines. Stop-subscription repair parks while the endpoint or connection
+  is inactive; registration and removal keep their existing eligibility.
+  The explicit bounded recovery helper remains available. Provider subscription
+  proof, credential ownership, and idempotent provider mutations stay in the
+  Telegram service. Provider responses are simulated in the PostgreSQL tests.
+  Remaining **1s** maintenance: provider runtimes,
+  run milestone/wake-notice projection, GitHub operation
+  recovery, and Teams protocol maintenance. GitHub pre-ingress recovery
   must still inspect provider history: a lost callback has no local queue row.
   This slice does **not** yet make the whole chat subsystem quiet. Independent
   DB roots/direct SQL require startup recovery, as with the other migrated queues.

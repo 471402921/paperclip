@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { agents, agentWakeupRequests, authUsers, companies, companyMemberships, createDb, closeRegisteredClients, applyPendingMigrations, externalAgentHolds, heartbeatRuns, issueAccessGrants, issueComments, issues, projects, principalPermissionGrants, museAgentBindings as bindings, museCredentials, museInputDeliveries, museMailboxItems as mailbox, museRunnerAssignments as assignments, museRunnerOperations as operations, nativeRunFinalizations } from "@paperclipai/db";
 import { heartbeatService } from "../services/heartbeat.js";
@@ -138,7 +138,8 @@ describe("personal Muse control plane",()=>{
     expect(await db.select().from(issues).where(eq(issues.companyId,f.company.id))).toHaveLength(1);
   });
   it("atomically reserves a work identity across competing issue locks and replays its original run",async()=>{
-    const f=await active(),heartbeat=heartbeatService(db),wakeup=vi.fn(heartbeat.wakeup);
+    // This fixture exercises ordinary admission independently of a managed worktree env.
+    const f=await active(),heartbeat=heartbeatService(db,{runtimeEnv:{}}),wakeup=vi.fn(heartbeat.wakeup);
     museRunnerBroker(db,{heartbeat:{wakeup,cancelRun:heartbeat.cancelRun}});
     await db.update(companies).set({defaultResponsibleUserId:f.operatorId}).where(eq(companies.id,f.company.id));
     await db.update(agents).set({runtimeConfig:{heartbeat:{maxConcurrentRuns:20,wakeOnDemand:true}}}).where(eq(agents.id,f.agent.id));
@@ -163,7 +164,8 @@ describe("personal Muse control plane",()=>{
     }finally{await db.update(heartbeatRuns).set({status:"cancelled",finishedAt:new Date()}).where(eq(heartbeatRuns.agentId,f.agent.id));await f.detach();}
   },30000);
   it("keeps concurrent turn retries on one assigned intake and one durable wake",async()=>{
-    const f=await active(),heartbeat=heartbeatService(db),wakeup=vi.fn(heartbeat.wakeup);
+    // This fixture exercises ordinary admission independently of a managed worktree env.
+    const f=await active(),heartbeat=heartbeatService(db,{runtimeEnv:{}}),wakeup=vi.fn(heartbeat.wakeup);
     museRunnerBroker(db,{heartbeat:{wakeup,cancelRun:heartbeat.cancelRun}});
     await db.update(companies).set({defaultResponsibleUserId:f.operatorId}).where(eq(companies.id,f.company.id));
     await db.update(agents).set({runtimeConfig:{heartbeat:{maxConcurrentRuns:20,wakeOnDemand:true}}}).where(eq(agents.id,f.agent.id));
@@ -259,7 +261,7 @@ describe("personal Muse control plane",()=>{
     const reassignment=db.transaction(async tx=>{await tx.select({id:issues.id}).from(issues).where(eq(issues.id,f.issue.id)).for("update");held();await gate;await tx.update(issues).set({assigneeAgentId:null,checkoutRunId:null,executionRunId:null}).where(eq(issues.id,f.issue.id));});
     await locked;let settled=false;
     const claim=f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()}).finally(()=>{settled=true;});
-    try {await new Promise(resolve=>setTimeout(resolve,50));expect(settled).toBe(false);unlock();await reassignment;await expect(claim).rejects.toThrow("task");expect(f.sent).toEqual([]);expect((await db.select().from(assignments).where(eq(assignments.id,f.assignment.id)))[0].claimedAt).toBeNull();}finally{unlock();await f.detach();}
+    try {await expect.poll(async()=>{const [row]=await db.execute<{count:number}>(sql`select count(*)::int as count from pg_stat_activity where datname=current_database() and wait_event='transactionid' and query ilike '%"issues"%' and query ilike '%for update%'`);return row?.count??0;},{timeout:5000,interval:25}).toBeGreaterThan(0);expect(settled).toBe(false);unlock();await reassignment;await expect(claim).rejects.toThrow("task");expect(f.sent).toEqual([]);expect((await db.select().from(assignments).where(eq(assignments.id,f.assignment.id)))[0].claimedAt).toBeNull();}finally{unlock();await f.detach();}
   });
   it("reconciles pending sends to an independent unknown barrier on controller recovery",async()=>{
     const f=await active();await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});await f.detach();

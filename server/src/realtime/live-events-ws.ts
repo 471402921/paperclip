@@ -9,6 +9,7 @@ import type { DeploymentMode, LiveEvent } from "@paperclipai/shared";
 import type { BetterAuthSessionResult } from "../auth/better-auth.js";
 import { logger } from "../middleware/logger.js";
 import { activityToastIdentity } from "./activity-toast-identity.js";
+import { taskToastEligible } from "./task-toast-eligibility.js";
 import { subscribeCompanyLiveEvents } from "../services/live-events.js";
 import { trackIdleWork } from "../services/task-admission.js";
 
@@ -338,7 +339,18 @@ export function setupLiveEventsWebSocketServer(
         // Check at delivery time, including after a grant is revoked while the
         // subscription remains open. Never cache successful privacy decisions.
         const visible = await visibleEvent(event);
-        if (visible && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(visible));
+        if (visible) {
+          // Relevance is independent of authorization and cache delivery. A
+          // failed relevance lookup must keep the authorized update flowing.
+          let toastEligible = false;
+          try {
+            toastEligible = await taskToastEligible(db, visible,
+              context.actor.type === "board" ? context.actor.userId ?? null : null);
+          } catch (err) {
+            logger.warn({ err, companyId: context.companyId }, "task toast eligibility failed");
+          }
+          if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ ...visible, toastEligible }));
+        }
       }).catch(err => logger.warn({ err, companyId: context.companyId }, "live event authorization failed"))
         .finally(() => { pending -= 1; });
     });
