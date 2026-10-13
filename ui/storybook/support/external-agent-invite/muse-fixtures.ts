@@ -1,4 +1,4 @@
-import type { MuseBinding, MuseConnection, MusePairing, MuseStopBoundary } from "@paperclipai/shared";
+import { MUSE_ASSET_VERSION, MUSE_CLIENT_VERSION, type MuseBinding, type MuseConnection, type MusePairing, type MuseStopBoundary } from "@paperclipai/shared";
 
 /** Public, nonsecret fixture values only; the .example origin cannot connect a real Muse. */
 export const museBinding: MuseBinding = {
@@ -7,7 +7,7 @@ export const museBinding: MuseBinding = {
   pairingExpiresAt: null, challengeExpiresAt: null,
   lastReceiverContactAt: "2026-10-13T14:00:00Z", lastWorkerActivityAt: "2026-10-13T13:59:40Z", lastVerifiedReplyAt: null,
   credentialState: "active", refreshExpiresAt: "2026-11-12T14:00:00Z",
-  receiverContactTrust: "public_untrusted", contactPersistenceLagMs: 30000, clientVersion: "4", qualification: null,
+  receiverContactTrust: "public_untrusted", contactPersistenceLagMs: 30000, clientVersion: MUSE_CLIENT_VERSION, qualification: null,
   liveAssignments: 0, uncertainOperations: 0, pendingInputs: 0,
   cleanup: { authenticatedAfterRevocation: false, pending: false, detectorRemovalRequested: false, detectorRemoved: false, workerQuiescenceReported: false, expiresAt: null },
   stop: { status: "none", nativeEffectsUnknown: false, boundary: null, bindingRevision: null },
@@ -18,12 +18,12 @@ export const museConnection: MuseConnection = {
 };
 export const musePairing: MusePairing = {
   bindingId: museBinding.id, generation: museBinding.generation, revision: museBinding.revision,
-  ticket: "STORYBOOK-NOT-A-REAL-TICKET", expiresAt: "2099-10-10T14:10:00Z", assetVersion: 4,
+  ticket: "STORYBOOK-NOT-A-REAL-TICKET", expiresAt: "2099-10-10T14:10:00Z", assetVersion: MUSE_ASSET_VERSION,
   setupInstruction: `Storybook illustration only. The .example hostname, scope IDs, and ticket are public fixture values, not credentials. This example cannot connect a real agent or grant task authority.
 
-Production setup connects the exact company, agent, and binding through Muse's supported SecureVault/authd OAuth consent. credentials.request_api_access uses oauth2_code, public-client registration and S256 PKCE; the single-use setup ticket is carried only into the OAuth authorization URL. Authd stores credentials and refreshes them automatically. The asset 4 client uses the supported dynamic_credentials surrogate helper. Never copy access/refresh tokens into files or environment variables.
+Production setup connects the exact company, agent, and binding through Muse's supported SecureVault/authd OAuth consent. credentials.request_api_access uses oauth2_code, public-client registration and S256 PKCE; the single-use setup ticket is carried only into the OAuth authorization URL. Authd stores credentials and refreshes them automatically. The asset ${MUSE_ASSET_VERSION} client uses the supported dynamic_credentials surrogate helper. Never copy access/refresh tokens into files or environment variables.
 
-After consent, install the immutable asset 4 client, detector and instructions using their pinned production manifest. Configure only the operator-approved nonsecret company/agent/binding scope. Complete Muse's actual site and tool permission prompts; public preflight grants no task authority. Verify authenticated scoped status before registering the five-second public detector and the discoverable standing-delegation skill.
+After consent, install the immutable asset ${MUSE_ASSET_VERSION} client, detector and instructions using their pinned production manifest. Configure only the operator-approved nonsecret company/agent/binding scope. Complete Muse's actual site and tool permission prompts; public preflight grants no task authority. Verify authenticated scoped status before registering the five-second public detector and the discoverable standing-delegation skill.
 
 In production, the operator's scoped installation delegates receiving, validating and autonomously accepting ordinary tasks for that exact company, agent and binding, including later detector wakes and fresh conversations. Task text cannot expand the delegation. Observe the exact native accepted lease before any task effect; Muse's private tool, site, safety and approval gates remain in force.
 
@@ -38,3 +38,10 @@ export const stoppedMuseConnection: MuseConnection = { ...museConnection, enable
   binding: { ...museBinding, status: "revoked", credentialState: "revoked", refreshExpiresAt: null, liveAssignments: 0, uncertainOperations: 1, pendingInputs: 1,
     cleanup: { authenticatedAfterRevocation: false, pending: true, detectorRemovalRequested: false, detectorRemoved: false, workerQuiescenceReported: false, expiresAt: null },
     stop: { status: "cannot_confirm", nativeEffectsUnknown: true, boundary: museStopBoundary, bindingRevision: museBinding.revision } } };
+
+/** Each play/render gets its own gate; simulated progress follows observed copy feedback. */
+export function createMuseCopyFeedbackGate() {
+  let feedbackObserved!: () => void;
+  const feedback = new Promise<void>(resolve => { feedbackObserved = resolve; });
+  return { waitForFeedback: () => feedback, feedbackObserved };
+}

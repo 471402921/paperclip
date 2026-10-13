@@ -8,7 +8,7 @@ import { MuseConnectionChecks } from "./new-agent/ExternalAgentInviteContent";
 import { museConnectionState } from "@/hooks/useMuseConnection";
 import { museConnection, stoppedMuseConnection, museStopBoundary, musePairing } from "../../storybook/support/external-agent-invite/muse-fixtures";
 import { museInvitationsApi } from "@/api/museInvitations";
-import type { MuseConnection } from "@paperclipai/shared";
+import { MUSE_CLIENT_VERSION, type MuseConnection } from "@paperclipai/shared";
 
 vi.mock("@/api/companies-query", () => ({ useAccountIdentity: () => ({ userId: "operator", settled: true, failed: false }) }));
 
@@ -37,7 +37,7 @@ it("shows contact lag, exact last verified reply, version, and unavailable costs
   expect(container.textContent).toContain("Last persisted public receiver contact");
   expect(container.textContent).toContain("Authenticated worker activity");
   expect(container.textContent).toContain("Last verified replyNot observed");
-  expect(container.textContent).toContain("Client version4");
+  expect(container.textContent).toContain(`Client version${MUSE_CLIENT_VERSION}`);
   expect(container.textContent).toContain("may lag by up to 30 seconds");
   expect(container.textContent).toContain("Usage and costUnavailable");
   expect(container.textContent).not.toContain("$0");

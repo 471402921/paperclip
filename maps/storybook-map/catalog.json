@@ -2305,7 +2305,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Real invitation, roster/shell, and MuseConnectionDetails with non-routable, nonsecret asset 4 illustrations of SecureVault/authd OAuth and exact company/agent/binding standing delegation. Contact remains public untrusted with 30-second persistence lag; authenticated background reply and lifecycle readiness are separate. Simulated revoked credentials have no authenticated cleanup lane, confirmed detector removal, or worker stop; unresolved native effects preserve the exact stop boundary. Task effects still require native accepted authority and Muse permission/safety gates. Runtime, provider, and private-effect parity remain unreviewed; no live connection or work acceptance is established.",
+      "notes": "Real invitation, roster/shell, and MuseConnectionDetails with non-routable, nonsecret asset 5 illustrations (versions come from the shared contract) of SecureVault/authd OAuth and exact company/agent/binding standing delegation. Contact remains public untrusted with 30-second persistence lag; authenticated background reply and lifecycle readiness are separate. Simulated revoked credentials have no authenticated cleanup lane, confirmed detector removal, or worker stop; unresolved native effects preserve the exact stop boundary. Task effects still require native accepted authority and Muse permission/safety gates. Runtime, provider, and private-effect parity remain unreviewed; no live connection or work acceptance is established. The copy play advances simulated milestones only after observing real visible clipboard feedback.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/access.md",
@@ -2323,9 +2323,11 @@
         "ui/storybook/stories/agents/external-agent-invite/muse.stories.tsx",
         "ui/storybook/support/external-agent-invite/muse-fixtures.ts",
         "ui/storybook/support/external-agent-invite/ExternalAgentInvitePreview.tsx",
-        "ui/storybook/support/external-agent-invite/fixtures.ts"
+        "ui/storybook/support/external-agent-invite/fixtures.ts",
+        "packages/shared/src/muse-protocol.ts",
+        "packages/shared/src/muse-invitations.ts"
       ],
-      "fingerprint": "cf55c392b64083ba8152b4d0ca212bf3708c02d616b2886a1dc8b949f83c0bc0",
+      "fingerprint": "a671015e8b48e5a1e97783405fad4032b0e05bc8eaf896c612f3efbd77dd379b",
       "stableId": "onboarding-external-agent-invitation-muse-personal-agent",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Onboarding/External agent invitation/Muse personal agent"
     },

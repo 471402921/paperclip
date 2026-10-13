@@ -24,6 +24,8 @@ export interface ExternalAgentInvitePreviewProps {
   simulate?: boolean;
   failTest?: boolean;
   stepDelayMs?: number;
+  /** The copy play releases simulated Muse progress after asserting real visible feedback. */
+  beforeMuseSimulation?: () => Promise<void>;
   shell?: boolean;
   preparing?: boolean;
   invitationUnavailable?: boolean;
@@ -31,7 +33,7 @@ export interface ExternalAgentInvitePreviewProps {
 }
 
 /**
- * Offline asset 4 presentation only: copying this fixture simulates milestones;
+ * Offline versioned Muse presentation only: copying this fixture simulates milestones;
  * it never installs credentials, records operator delegation, or accepts work.
  * Public contact, authenticated background reply, and lifecycle readiness stay separate.
  */
@@ -39,7 +41,7 @@ export function ExternalAgentInvitePreview({
   initialScreen = "entry", initialPreset = "dot", initialConnection = { phase: "waiting" },
   initialMuseConnection = { paired: false, receiverDetected: false, backgroundReplyVerified: false, ready: false },
   museDetails = false, museEnabled = false, pendingApproval = false,
-  companyName = "Paperclip", simulate = true, failTest = false, stepDelayMs = 2000, shell = true, preparing = false, invitationUnavailable = false, error,
+  companyName = "Paperclip", simulate = true, failTest = false, stepDelayMs = 2000, beforeMuseSimulation, shell = true, preparing = false, invitationUnavailable = false, error,
 }: ExternalAgentInvitePreviewProps) {
   const [screen, setScreen] = useState<"entry" | "picker" | "setup" | "closed">(initialScreen);
   const [preset, setPreset] = useState<ExternalAgentPreset>(initialPreset);
@@ -90,7 +92,10 @@ export function ExternalAgentInvitePreview({
           onSelect={value => { setPreset(value); if (value === "muse") setMuseDraft({ name: "", role: "general" }); setScreen("setup"); }}
           onBack={() => setScreen("picker")}
           onClose={() => setScreen("closed")}
-          onCopied={() => { if (preset === "dot" || preset === "muse") setWatching(true); }}
+          onCopied={() => {
+            if (preset === "muse" && beforeMuseSimulation) void beforeMuseSimulation().then(() => setWatching(true));
+            else if (preset === "dot" || preset === "muse") setWatching(true);
+          }}
           onRetry={() => { setMuseConnection(previous => ({ ...previous, problem: undefined })); setConnection(previous => ({ phase: previous.phase })); setRetrying(true); setWatching(true); }}
           onNewPrompt={() => { setMuseConnection({ paired: false, receiverDetected: false, backgroundReplyVerified: false, ready: false }); setGeneration(value => value + 1); setConnection({ phase: "waiting" }); setWatching(false); }}
         />
