@@ -1699,9 +1699,6 @@ async function silentPrimaryQuorumFixture(
         if (failure?.status === "rejected") throw failure.reason;
       },
     };
-    // Only fixture preparation may retry. Release the unselected candidates
-    // immediately before the caller stages once. A foreign bind racing this
-    // handoff remains a visible production-call failure, never a hidden retry.
     const released = await Promise.allSettled(
       owned
         .filter((_, index) => !occupiedIndices.includes(index))

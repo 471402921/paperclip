@@ -1766,9 +1766,6 @@ describe("Capability live runnerd and Codex session", () => {
     expect((await store.load(replacement.id))?.status).toBe("suspended");
   });
 
-  // This case includes a deliberate 500 ms killed turn, a resumed turn with
-  // its own 5-second bound, and durable writes. The enclosing test must not
-  // expire at the resumed turn's deadline before those assertions can finish.
   it("durably resumes a distinct attempt, preserves partial usage, and deduplicates the semantic effect", async () => {
     const state = providerState();
     const directory = await mkdtemp(join(tmpdir(), "capability-live-durable-"));

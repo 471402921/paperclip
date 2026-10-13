@@ -483,8 +483,6 @@ export class AcpxRuntimeHost {
         });
       }
       options.signal?.throwIfAborted();
-      // Await this write under ownership even if cancellation arrives. Releasing
-      // the lease before it settles could let a late write affect the next owner.
       await sandbox.initializeOwnedConfiguration?.();
       options.signal?.throwIfAborted();
       assertAcpxProfileEnvironment(options.agent, sandbox.launchEnvironment);

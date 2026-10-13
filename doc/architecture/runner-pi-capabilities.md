@@ -2,7 +2,7 @@
 
 ## Current source integration — 2026-10-12
 
-Pi profile 24 (`sha256:d25d674cda9a0853bdbf0521025099f1424c573d2f533630cb67d90e1bfcda3b`)
+Pi profile 25 (`sha256:dd67387487dadb08da76534c057dc0aa059f7698d1779cbd5fc452813828167a`)
 advances the shared sandbox source attestation after Claude settings initialization
 moved behind provider lifetime ownership. Profile 23 remains an immutable
 historical identity. Pi's provider executable closures, model/effort options and
