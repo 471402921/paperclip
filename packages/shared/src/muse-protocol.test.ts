@@ -67,3 +67,28 @@ describe("Muse progress UTF-8 bounds", () => {
     expect(validate(" \n\t ").success).toBe(false);
   });
 });
+
+describe("Muse native question-set durable byte bound", () => {
+  const encoder = new TextEncoder();
+  const validate = (questionSet: unknown) => museCommandSchema.safeParse({
+    ...operation, command: "request_user_input", nativeRequestId: "scope-01", questionSet,
+  });
+  const body = (initialText: string) => ({ ...questionSet, title: "t".repeat(1000),
+    description: "d".repeat(100000), questions: [{ ...questionSet.questions[0], initialText }] });
+
+  it("accepts the exact serialized 196 KiB boundary and rejects one more byte", () => {
+    const length = 196 * 1024 - encoder.encode(JSON.stringify(body(""))).byteLength;
+    const boundary = body("a".repeat(length));
+    expect(encoder.encode(JSON.stringify(boundary))).toHaveLength(196 * 1024);
+    expect(validate(boundary).success).toBe(true);
+    expect(validate(body("a".repeat(length + 1))).success).toBe(false);
+  });
+
+  it.each(["é", "答", "😀", "\n", '"'])("counts UTF-8 and JSON escaping for %s", character => {
+    const budget = 196 * 1024 - encoder.encode(JSON.stringify(body(""))).byteLength;
+    const unit = encoder.encode(JSON.stringify(character)).byteLength - 2;
+    const count = Math.floor(budget / unit), padding = "a".repeat(budget % unit);
+    expect(validate(body(character.repeat(count) + padding)).success).toBe(true);
+    expect(validate(body(character.repeat(count) + padding + "a")).success).toBe(false);
+  });
+});
