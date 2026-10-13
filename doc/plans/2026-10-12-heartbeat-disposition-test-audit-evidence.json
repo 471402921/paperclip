@@ -261,28 +261,28 @@
       "failedCase": "heartbeat orphaned process recovery repairs missing disposition independently of the productive diagnostic label",
       "expected": "issue.deliberate_wait_disposition_repair",
       "actual": "issue.wrong_disposition_repair",
-      "note": "Counter oracle expects 0 and receives 1; source oracle expects canonical and receives corrupted source."
+      "note": "Source mutation changes the persisted retry source; the source oracle expects the canonical value and observes the corrupted value."
     },
     {
       "phase": "mutation-source-keeper",
       "failedCase": "heartbeat orphaned process recovery does not treat a productive terminal run as healthy when in-progress work has no live path",
       "expected": "issue.deliberate_wait_disposition_repair",
       "actual": "issue.wrong_disposition_repair",
-      "note": "Counter oracle expects 0 and receives 1; source oracle expects canonical and receives corrupted source."
+      "note": "Source mutation changes the persisted retry source; the source oracle expects the canonical value and observes the corrupted value."
     },
     {
       "phase": "mutation-counter-original",
       "failedCase": "heartbeat orphaned process recovery re-enqueues recovery when the latest in-progress continuation made progress but left no live path",
       "expected": 0,
       "actual": 1,
-      "note": "Counter oracle expects 0 and receives 1; source oracle expects canonical and receives corrupted source."
+      "note": "Counter mutation increments successfulContinuationObserved; the keeper counter oracle expects 0 and observes 1."
     },
     {
       "phase": "mutation-counter-keeper",
       "failedCase": "heartbeat orphaned process recovery does not treat a productive terminal run as healthy when in-progress work has no live path",
       "expected": 0,
       "actual": 1,
-      "note": "Counter oracle expects 0 and receives 1; source oracle expects canonical and receives corrupted source."
+      "note": "Counter mutation increments successfulContinuationObserved; the keeper counter oracle expects 0 and observes 1."
     }
   ],
   "cleanup": {
