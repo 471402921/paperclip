@@ -23,6 +23,7 @@ export const DELIVERY_QUEUES = {
   chatCompletion: "chat-completions",
   connection: "connection-continuations",
   question: "question-responses",
+  pluginLifecycle: "plugin-resource-lifecycle",
   toolAction: "tool-action-receipts",
 } as const;
 export type DeliveryQueue = typeof DELIVERY_QUEUES[keyof typeof DELIVERY_QUEUES];

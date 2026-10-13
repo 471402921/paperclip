@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { activityLog } from "@paperclipai/db";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { agents, agentWakeupRequests, authUsers, companies, companyMemberships, createDb, closeRegisteredClients, applyPendingMigrations, externalAgentHolds, heartbeatRuns, issueAccessGrants, issueComments, issues, projects, principalPermissionGrants, museAgentBindings as bindings, museCredentials, museInputDeliveries, museMailboxItems as mailbox, museRunnerAssignments as assignments, museRunnerOperations as operations, nativeRunFinalizations } from "@paperclipai/db";
+import { agents, agentWakeupRequests, authUsers, companies, companyMemberships, createDb, closeRegisteredClients, applyPendingMigrations, dotAgentBindings, dotRunnerAssignments, dotRunnerOperations, externalAgentHolds, heartbeatRuns, issueAccessGrants, issueComments, issues, projects, principalPermissionGrants, museAgentBindings as bindings, museCredentials, museInputDeliveries, museMailboxItems as mailbox, museRunnerAssignments as assignments, museRunnerOperations as operations, nativeRunFinalizations } from "@paperclipai/db";
 import { heartbeatService } from "../services/heartbeat.js";
 import { startAgentLifecycle } from "../services/agent-lifecycle.js";
 import { agentHarnessVerificationService } from "../services/agent-harness-verification.js";
@@ -11,6 +11,7 @@ import type { MuseCredentials } from "@paperclipai/shared";
 import { startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { museIdentity, museCredentialHash } from "../services/muse-identity.js";
 import { museRunnerBroker } from "../services/muse-runner-broker.js";
+import { dotRunnerBroker } from "../services/dot-runner-broker.js";
 import { museReceiver } from "../services/muse-receiver.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { assertNoExternalOverlap, withExternalAdmissionGuard } from "../modules/external-agents/index.js";
@@ -38,7 +39,7 @@ describe("personal Muse control plane",()=>{
     if(ready)await db.update(bindings).set({status:"ready",receiverContactAt:new Date(),verifiedReplyAt:new Date()}).where(eq(bindings.id,binding.id));
     return {company,agent,operatorId,binding,ticket,identity,credentials,broker,subject:await identity.authenticate(credentials.accessToken)};
   }
-  async function active() {
+  async function active(afterSettle?: (command:ExternalProviderOperation)=>Promise<void>) {
     const f=await fixture(),runId=randomUUID(),session=randomUUID(),turnId="turn_"+randomUUID();
     const [issue]=await db.insert(issues).values({companyId:f.company.id,title:"Muse task",status:"in_progress",assigneeAgentId:f.agent.id,responsibleUserId:f.operatorId}).returning();
     await db.insert(heartbeatRuns).values({id:runId,companyId:f.company.id,agentId:f.agent.id,status:"running",runtimeMode:"native",driverKind:"muse_external",nativeIssueId:issue.id,nativeSessionId:session,nativePhase:"turn_running",responsibleUserId:f.operatorId});
@@ -46,7 +47,7 @@ describe("personal Muse control plane",()=>{
     await db.insert(nativeRunFinalizations).values({runId,companyId:f.company.id,issueId:issue.id,phase:"running",controllerGeneration:1,leaseExpiresAt:new Date(Date.now()+600000)});
     const execution={binding:{companyId:f.company.id,agentId:f.agent.id,runId},provider:{binding:await f.broker.snapshot(f.company.id,f.agent.id,f.binding.id)}};
     const port=f.broker.port(execution),sent:ExternalProviderOperation[]=[];
-    const detach=await port.attach(async command=>{sent.push(command);await port.settle({sourceEventId:"settle_"+command.requestId,payload:{binding:ref,requestId:command.requestId,outcome:command.action==="consume_input"?{status:"consumed",requestId:command.input.requestId,inputDigest:command.input.inputDigest}:{status:command.action==="accept"?"accepted":"completed"}}});});
+    const detach=await port.attach(async command=>{sent.push(command);await port.settle({sourceEventId:"settle_"+command.requestId,payload:{binding:ref,requestId:command.requestId,outcome:command.action==="consume_input"?{status:"consumed",requestId:command.input.requestId,inputDigest:command.input.inputDigest}:{status:command.action==="accept"?"accepted":"completed"}}});await afterSettle?.(command);});
     const ref={...execution.provider.binding,runId,normalizedSessionId:session,turnId,assignmentRevision:1};
     await port.dispatch({sourceEventId:"offer_"+randomUUID(),payload:{kind:"assignment",binding:ref,tools:[],acceptByUnixMs:Date.now()+600000,expiresAtUnixMs:Date.now()+3600000}});
     const [assignment]=await db.select().from(assignments).where(eq(assignments.runId,runId));
@@ -292,6 +293,90 @@ describe("personal Muse control plane",()=>{
     const send=vi.fn(),detach=await f.port.attach(send,undefined,true);
     try {expect((await db.select().from(operations).where(eq(operations.requestId,requestId)))[0].status).toBe("unknown");expect((await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id)))[0].nativeEffectsUnknown).toBe(true);expect((await f.broker.act(f.subject,{version:1,command:"tool",assignmentId:f.assignment.id,requestId,name:input.name,arguments:{}})).status).toBe("unknown");expect(send).not.toHaveBeenCalled();}finally{await detach();}
   });
+  it("does not restore native uncertainty when a saved result precedes a lost command acknowledgement",async()=>{
+    let releaseFailure!:()=>void;
+    const failAfterResult=new Promise<void>(resolve=>{releaseFailure=resolve;});
+    const f=await active(async command=>{if(command.action==="accept"){await failAfterResult;throw new Error("Command acknowledgement lost after result");}});
+    let transaction:ReturnType<typeof vi.spyOn>|undefined;
+    try {
+      const requestId=randomUUID();
+      expect(await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId})).toMatchObject({status:"accepted"});
+      await f.broker.act(f.subject,{version:1,command:"finish",assignmentId:f.assignment.id,requestId:randomUUID(),result:{}});
+      const [saved]=await db.select().from(operations).where(eq(operations.requestId,requestId));
+      // Observe completion of the real failure transaction, without timing the
+      // negative hold assertion or replacing the database implementation.
+      transaction=vi.spyOn(db,"transaction");
+      releaseFailure();
+      await expect.poll(()=>transaction!.mock.results.length).toBeGreaterThan(0);
+      await transaction.mock.results[0].value;
+      transaction.mockRestore();transaction=undefined;
+      expect((await db.select().from(operations).where(eq(operations.id,saved.id)))[0]).toEqual(saved);
+      expect((await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id)))[0].nativeEffectsUnknown).toBe(false);
+      await db.update(heartbeatRuns).set({status:"succeeded",finishedAt:new Date()}).where(eq(heartbeatRuns.id,f.runId));
+      await f.broker.reconcileTerminalAssignments(f.company.id,f.agent.id,f.binding.id);
+      const [hold]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      expect(hold.workerUnknown).toBe(false);expect(hold.nativeEffectsUnknown).toBe(false);expect(hold.releasedAt).toBeInstanceOf(Date);
+      await expect(db.transaction(tx=>withExternalAdmissionGuard(tx,f.company.id,f.agent.id,()=>assertNoExternalOverlap(tx,f.company.id,f.agent.id)))).resolves.toBeUndefined();
+    }finally{releaseFailure();transaction?.mockRestore();await f.detach();}
+  });
+
+  it("retains native uncertainty for an unconfirmed failed send until its actual result arrives",async()=>{
+    const f=await active();await f.detach();
+    const detach=await f.port.attach(async()=>{throw new Error("No command acknowledgement or result");},undefined,true);
+    try {
+      const requestId=randomUUID();
+      expect(await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId})).toMatchObject({status:"unknown",canReplay:false});
+      const [pending]=await db.select().from(operations).where(eq(operations.requestId,requestId));expect(pending.status).toBe("unknown");expect(pending.outcome).toBeNull();
+      const [held]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));expect(held.workerUnknown).toBe(true);expect(held.nativeEffectsUnknown).toBe(true);expect(held.releasedAt).toBeNull();
+      await f.port.settle({sourceEventId:randomUUID(),payload:{binding:f.ref,requestId,outcome:{status:"accepted"}}});
+      const [resolved]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.id,held.id));expect(resolved.workerUnknown).toBe(true);expect(resolved.nativeEffectsUnknown).toBe(false);expect(resolved.releasedAt).toBeNull();
+    }finally{await detach();}
+  });
+
+  it("makes identical native result replay idempotent after finish and finalization",async()=>{
+    const f=await active();try {
+      const acceptId=randomUUID(),finishId=randomUUID();
+      await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:acceptId});
+      await f.broker.act(f.subject,{version:1,command:"finish",assignmentId:f.assignment.id,requestId:finishId,result:{}});
+      const [finished]=await db.select().from(assignments).where(eq(assignments.id,f.assignment.id));expect(finished.status).toBe("settled");
+      const receipts=await db.select().from(operations).where(eq(operations.assignmentId,f.assignment.id));
+      const replay=(requestId:string,status:string)=>f.port.settle({sourceEventId:randomUUID(),payload:{binding:f.ref,requestId,outcome:{status}}});
+      await Promise.all([replay(acceptId,"accepted"),replay(acceptId,"accepted"),replay(finishId,"completed")]);
+      expect((await db.select().from(assignments).where(eq(assignments.id,f.assignment.id)))[0]).toEqual(finished);
+      expect(await db.select().from(operations).where(eq(operations.assignmentId,f.assignment.id)).orderBy(operations.id)).toEqual([...receipts].sort((a,b)=>a.id.localeCompare(b.id)));
+      await db.update(heartbeatRuns).set({status:"succeeded",finishedAt:new Date()}).where(eq(heartbeatRuns.id,f.runId));
+      await f.broker.reconcileTerminalAssignments(f.company.id,f.agent.id,f.binding.id);
+      const [finalized]=await db.select().from(assignments).where(eq(assignments.id,f.assignment.id));
+      const [released]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));expect(released.releasedAt).toBeInstanceOf(Date);
+      await Promise.all([replay(acceptId,"accepted"),replay(finishId,"completed")]);
+      await expect(replay(acceptId,"completed")).rejects.toThrow("conflicts");
+      expect((await db.select().from(assignments).where(eq(assignments.id,f.assignment.id)))[0]).toEqual(finalized);
+      expect((await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.id,released.id)))[0]).toEqual(released);
+      await expect(db.transaction(tx=>withExternalAdmissionGuard(tx,f.company.id,f.agent.id,()=>assertNoExternalOverlap(tx,f.company.id,f.agent.id)))).resolves.toBeUndefined();
+    }finally{await f.detach();}
+  });
+
+  it("keeps historical Dot result replay idempotent after provider replacement",async()=>{
+    const f=await fixture(),runId=randomUUID(),session=randomUUID(),turnId="dot_"+randomUUID();
+    // A retained Dot journal can settle after its agent switches provider. It
+    // grants no fresh work authority and does not require a live connection.
+    const [binding]=await db.insert(dotAgentBindings).values({companyId:f.company.id,agentId:f.agent.id,operatorId:f.operatorId,status:"revoked",revokedAt:new Date()}).returning();
+    await db.insert(heartbeatRuns).values({id:runId,companyId:f.company.id,agentId:f.agent.id,status:"succeeded",runtimeMode:"native",driverKind:"openai_dot_mcp",nativeSessionId:session});
+    const [assignment]=await db.insert(dotRunnerAssignments).values({companyId:f.company.id,agentId:f.agent.id,bindingId:binding.id,bindingGeneration:1,runId,normalizedSessionId:session,turnId,controllerGeneration:1,catalogDigest:"dot",status:"offered",projection:{},acceptBy:new Date(),expiresAt:new Date(Date.now()+60000)}).returning();
+    const acceptId=randomUUID(),finishId=randomUUID();
+    await db.insert(dotRunnerOperations).values([{companyId:f.company.id,assignmentId:assignment.id,requestId:acceptId,digest:"accept",command:{action:"accept"},status:"admitted"},{companyId:f.company.id,assignmentId:assignment.id,requestId:finishId,digest:"finish",command:{action:"finish"},status:"admitted"}]);
+    const ref={bindingId:binding.id,bindingGeneration:1,companyId:f.company.id,agentId:f.agent.id,acceptByUnixMs:Date.now(),expiresAtUnixMs:Date.now()+60000,runId,normalizedSessionId:session,turnId,assignmentRevision:1};
+    const port=dotRunnerBroker(db).port({binding:{companyId:f.company.id,agentId:f.agent.id,runId},provider:{binding:ref}});
+    const settle=(requestId:string,status:string)=>port.settle({sourceEventId:randomUUID(),payload:{binding:ref,requestId,outcome:{status}}});
+    await settle(acceptId,"accepted");await settle(finishId,"completed");
+    const [finished]=await db.select().from(dotRunnerAssignments).where(eq(dotRunnerAssignments.id,assignment.id));expect(finished.status).toBe("settled");
+    const receipts=await db.select().from(dotRunnerOperations).where(eq(dotRunnerOperations.assignmentId,assignment.id)).orderBy(dotRunnerOperations.id);
+    await Promise.all([settle(acceptId,"accepted"),settle(finishId,"completed")]);
+    await expect(settle(acceptId,"completed")).rejects.toThrow("conflicts");
+    expect((await db.select().from(dotRunnerAssignments).where(eq(dotRunnerAssignments.id,assignment.id)))[0]).toEqual(finished);
+    expect(await db.select().from(dotRunnerOperations).where(eq(dotRunnerOperations.assignmentId,assignment.id)).orderBy(dotRunnerOperations.id)).toEqual(receipts);
+  });
+
   it("rearms an unclaimed offer after a lost wake but never restarts a claimed assignment",async()=>{
     const f=await active();try {
       const signal=await f.identity.authenticate(f.credentials.signalToken,"signal"),first=await museReceiver(db).signal(signal);

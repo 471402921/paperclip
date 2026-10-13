@@ -83,7 +83,15 @@ are the demonstrated subject. Do not cap the number of source references.
 Update review fingerprints only after inspecting the changed source; do not refresh hashes merely
 to silence drift checks.
 
-Update the catalog and run `node scripts/storybook-catalog.mjs --write` to refresh
+Update the catalog. Keep [verification routes](../../../maps/storybook-map/VERIFICATION.md)
+aligned with the unassociated capability IDs: distinguish missing shipped UI
+examples from CLI/operator operations and real browser checks. Record source
+revision, concrete reasons, production contracts and existing test starting points;
+test presence is not passing evidence. Do not exempt a mixed UI/API capability
+wholesale. When associating a new example, update this gap inventory without
+discarding its separate production verification obligations.
+
+Run `node scripts/storybook-catalog.mjs --write` to refresh
 its generated indexes and feature pages, then run the checker without flags and
 `node --test scripts/storybook-catalog.test.mjs scripts/storybook-feature-index.test.mjs`.
 The script validates
