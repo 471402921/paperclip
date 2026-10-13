@@ -696,3 +696,51 @@ Report attachment: `e6206748-a785-4c02-9bbf-f4db8a3b22f9`, work product
 Local receipts: `/private/tmp/claude-responsive-preview-evidence.json`,
 `/private/tmp/claude-responsive-evidence-upload.json`, and
 `/private/tmp/claude-responsive-evidence-independent-check.json`.
+
+## Canonical composition and current contribution rules — 2026-10-12
+
+The source owner committed the stronger shared startup repair as
+`ce23716503a2c9158b5a7ab74ab61571ff4ee7a3`. Local additive merges preserve
+that parent and this chat's Claude effort/resume changes. Eight controls that do
+not need native executables and runner noemit pass in the combined protocol.
+The ninth selected readiness-cycle case timed out while waiting for readiness;
+read-only resolution confirms both the default runner artifact and fake provider
+fixture are absent, with no private runner override. That native case remains a
+hosted CI gate, not a pass. No local native build was performed. Logs:
+`/private/tmp/claude-canonical-startup-composition-controls.log`,
+`/private/tmp/claude-canonical-startup-no-process-controls.log`, and
+`/private/tmp/claude-canonical-startup-composition-types.log`.
+
+The source owner then reconciled current master in `9f59ff36cf`, adding the
+Storybook catalog and contribution rules against new code comments and code files
+crossing 1000 lines. The guided-creation fixture is extracted to
+`ui/src/pages/NewAgent.test-support.tsx`; all 65 cases remain and pass, with UI
+noemit and token gates passing. Fixture component rendering stays inside its
+mock-owning module, including the saved-confirmation reload case. The active test
+file no longer crosses the threshold. Our added explanatory comments are removed;
+the source owner handles the common transport's comment cleanup. Semantic code
+and internal deadlines stay unchanged.
+
+Removing this chat's added sandbox comments changes its raw source attestation to
+`144d62b3415cfedf272b5b052e14af1e41fe50a644af84247fc9c20c7ef7edde`.
+Immutable Pi profiles 23 and 24 remain retained. New Pi profile 25 binds only that
+source revision plus its profile version, digest
+`sha256:dd67387487dadb08da76534c057dc0aa059f7698d1779cbd5fc452813828167a`.
+SDK/executable closures, platforms, model/effort contract and other providers'
+qualification boundaries do not change. Copilot remains pending profile 18.
+Generated TS/Rust descriptors, Rust current/prior fixtures, Docker context and
+current documentation are synchronized. All 119 profile/factory/admission/effort
+controls pass with one existing historical skip, including corrupt-byte rejection
+before spawn/bridge; runner noemit and generation checks pass. The first restricted
+attempt stopped at loopback lease admission and is retained, not counted as byte
+validation. Native/Rust execution and final package qualification remain cloud gates.
+
+The maintain-storybook source review found concrete fixture incompatibilities:
+the general-settings endpoint and scoped runner-discovery defaults were absent.
+The shared preview now returns that settings contract and explicitly simulated
+Legacy discovery for Claude/Codex, exposes the loaded native adapter, and includes
+Opus 5.5 while retaining explicit older-model examples. These fixture defaults are
+not rollout qualification. Catalog fingerprints/classification and affected story
+rendering must be reconciled after the final parent is frozen; source-only review
+is not an executed Storybook or provider pass. Published draft heads remain fixed
+while the source owner finishes the canonical contribution/catalog cleanup.

@@ -10,8 +10,6 @@ import { buildPaperclipServerEnvironment, buildRunnerE2EProcessEnvironment } fro
 const cells = runnerMatrix.filter(e => e.profile.id === "runner-acpx-pi");
 const roots: string[] = [];
 beforeEach(() => {
-  // pnpm's test shim can inject NODE_PATH. Installed-startup fixtures model
-  // the production launcher's clean environment, not that test shim.
   vi.stubEnv("NODE_PATH", undefined);
   vi.stubEnv("NODE_OPTIONS", undefined);
 });

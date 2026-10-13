@@ -11,8 +11,6 @@ import {
 } from "./helpers/embedded-postgres.js";
 import { teamsCatalogService } from "../services/teams-catalog.js";
 
-// Bind the real creation resolver to the release target under test so the
-// catalog contract is stable across the machines running this fixture.
 vi.mock("../services/agent-runner-selection.js", async importOriginal => {
   const actual = await importOriginal<typeof import("../services/agent-runner-selection.js")>();
   return { ...actual, resolveNewAgentRunnerForCompany: async (_db: unknown, _companyId: string, input: Parameters<typeof actual.resolveNewAgentRunnerForCompany>[2]) =>

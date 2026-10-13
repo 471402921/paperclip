@@ -3180,7 +3180,6 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
         const { root, queryClient } = await openStep4({ adapterType: "claude_local" });
         try {
           await act(async () => {
-            // A warm value remains successful while its current fetch is pending.
             if (pending === "environments") queryClient.setQueryData(queryKeys.environments.list("company-new"), [LOCAL_ENVIRONMENT]);
             else if (pending === "settings") queryClient.setQueryData(queryKeys.instance.settings, { defaultEnvironmentId: null });
             else queryClient.setQueryData(queryKeys.instance.experimentalSettings, { enableManagedSandboxOnly: false });

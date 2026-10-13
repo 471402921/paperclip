@@ -7,7 +7,6 @@ export interface AgentRunnerAvailability {
   defaultRunner: AgentRunner;
 }
 
-/** Only qualified harnesses graduate their creation default. */
 export function paperclipRunnerProfileForHarness(harness: string): { provider: "codex" } | { provider: "acpx"; acpxAgent: "claude" } | undefined {
   if (harness === "codex_local") return { provider: "codex" };
   if (harness === "claude_local") return { provider: "acpx", acpxAgent: "claude" };
@@ -31,7 +30,6 @@ function supportsLinuxLibc(libc?: "glibc" | "musl" | "unknown", version?: string
 
 /** Creation defaults follow GNU/Linux and macOS artifacts; Alpine/musl is deferred. */
 export function paperclipRunnerSupportsPlatform(harness: string, platform: string, architecture: string, libc?: "glibc" | "musl" | "unknown", glibcVersion?: string): boolean {
-  // Claude graduates on Apple Silicon first; other targets await package and live qualification.
   if (harness === "claude_local") return platform === "darwin" && architecture === "arm64";
   return !!paperclipRunnerProfileForHarness(harness)
     // Omitted libc preserves platform-only callers; detected unknown Linux is not qualified.

@@ -1775,8 +1775,6 @@ export function CompanyImport() {
           applyChanges(original.adapterSchemaValues ?? {}, configVals.adapterSchemaValues ?? {});
           applyChanges(baseline, edited);
           if (selectedType === "claude_local") {
-            // The native builder preserves source schema fields. Project common
-            // form edits separately so a removed binding cannot be restored there.
             const commonBuild = getUIAdapter("claude_local").buildAdapterConfig;
             const commonBefore = commonBuild(original);
             const commonAfter = commonBuild(configVals);
