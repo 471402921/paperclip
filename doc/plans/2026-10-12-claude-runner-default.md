@@ -614,3 +614,38 @@ assertions remain unchanged. The full fake-transport suite passes 72 with one
 existing skip; runner noemit and maps pass. Fresh exact-head runner CI remains
 required after this test-only correction. No package campaign, paid provider
 call, local native build, Docker build or upstream prerequisite edit.
+
+## Guided creation with refreshed settings — 2026-10-12
+
+Review 4253594222 on behavior head `4440df2e44e346080308e40ec3287c94c7f776a2`
+identified stale cached environment selection during a background instance-settings
+read. The mounted reproduction actually calls setup against cached SSH/Legacy
+before the pending current settings select local/native, rather than merely
+observing a loading label. Guided Claude/Codex setup now requires current completed
+environment, settings, execution policy, experimental policy and matching Auto
+runner discovery reads before testing or hiring. Existing connection controls stay
+mounted inside a disabled fieldset while refreshing, preserving an API-key draft.
+Both the cached SSH-to-local case and same-environment discovery refresh pass;
+all 65 guided setup controls, UI noemit, token gates and structural maps pass.
+Logs: `/private/tmp/claude-guided-current-settings-before.log`,
+`/private/tmp/claude-guided-current-settings-draft-controls.log`, and
+`/private/tmp/claude-guided-current-settings-final-{types,tokens,maps}.log`.
+This repair is prepared locally while the source owner integrates the common
+transport correction; published behavior head remains the literal 4440 revision.
+No paid turns, local native builds or Docker builds were performed.
+
+Platform head `173a73ec95386d7b9eac50d87699a16ec27da3b3` failed a credential
+fixture during its two-port reservation (EADDRINUSE before the production staging
+call). The existing bounded three-port fixture reservation helper is extended to
+hold two candidates, retrying fixture preparation only and never a production
+staging call. A foreign-collision control verifies that foreign ownership survives,
+the auth sentinel stays unchanged, and preparation stops within eight attempts.
+All 42 credential controls and runner noemit pass locally after supplying the
+worktree's declared tsx test loader. Logs:
+`/private/tmp/claude-quorum-fixture-complete-controls.log` and
+`/private/tmp/claude-quorum-fixture-final-types.log`. This test-only correction
+is prepared in the protocol worktree and has not been published during the parent
+integration hold. The independent serialized issue-route timeout remains under
+phase diagnosis; a subsequent full mocked suite passes 36 controls but does not
+waive the cloud failure or prove its latency cause. Final source composition,
+required CI and the provider-free cloud packaging campaign remain pending.

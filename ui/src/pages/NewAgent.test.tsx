@@ -200,6 +200,61 @@ afterEach(async () => {
   container.remove();
 });
 describe("New agent setup", () => {
+  it("waits for the current instance default instead of testing cached SSH discovery", async () => {
+    let finish!: (value: object) => void;
+    settings.get.mockReturnValue(new Promise<object>(resolve => { finish = resolve; }));
+    const environments = [
+      { id: "local-1", name: "Local", driver: "local", config: {} },
+      { id: "linux-ssh", name: "SSH", driver: "ssh", config: {} },
+    ];
+    envApi.list.mockResolvedValue(environments);
+    cache.setQueryData(queryKeys.environments.list("company-1"), environments);
+    cache.setQueryData(queryKeys.instance.settings, { defaultEnvironmentId: "linux-ssh" });
+    adapterApi.list.mockImplementation(async (context?: { environmentId?: string | null }) => state.adapters.map((adapter: any) => adapter.type === "claude_local"
+      ? { ...adapter, supportedRunners: ["paperclip", "legacy"], defaultRunner: context?.environmentId === "local-1" ? "paperclip" : "legacy" } : adapter));
+    await render("claude_local");
+    await connect("Claude");
+    expect(api.testEnvironment).not.toHaveBeenCalled();
+    expect(api.hire).not.toHaveBeenCalled();
+    await act(async () => finish({ defaultEnvironmentId: "local-1" }));
+    await settle();
+    await connect("Claude");
+    await click("Finish setup");
+    expect(api.testEnvironment).toHaveBeenCalledTimes(1);
+    expect(api.testEnvironment.mock.calls[0][2].environmentId).toBe("local-1");
+    expect(api.hire.mock.calls[0][1].adapterConfig).not.toHaveProperty("maxTurnsPerRun");
+  });
+
+  it("keeps the API key draft while waiting for refreshed discovery", async () => {
+    state.adapters = state.adapters.map((adapter: any) => adapter.type === "claude_local"
+      ? { ...adapter, defaultRunner: "paperclip", supportedRunners: ["paperclip", "legacy"] } : adapter);
+    await render("claude_local");
+    await click("ClaudeAPI key");
+    await fill("API key", "example-test-secret");
+    const draft = container.querySelector('[aria-label="API key"]') as HTMLInputElement;
+    let finish!: (value: object[]) => void;
+    adapterApi.list.mockReturnValue(new Promise<object[]>(resolve => { finish = resolve; }));
+    let refresh!: Promise<void>;
+    await act(async () => {
+      refresh = cache.invalidateQueries({ queryKey: queryKeys.adapters.availability("company-1", "local-1") });
+    });
+    await settle();
+    expect(container.querySelector('[aria-label="API key"]')).toBe(draft);
+    expect(draft.value).toBe("example-test-secret");
+    await click("Connect");
+    expect(managedApi.create).not.toHaveBeenCalled();
+    expect(api.testEnvironment).not.toHaveBeenCalled();
+    await act(async () => { finish(state.adapters); await refresh; });
+    await settle();
+    expect(container.querySelector('[aria-label="API key"]')).toBe(draft);
+    expect(draft.value).toBe("example-test-secret");
+    await click("Connect");
+    await click("Finish setup");
+    expect(api.testEnvironment).toHaveBeenCalledTimes(1);
+    expect(api.hire).toHaveBeenCalledTimes(1);
+    expect(api.hire.mock.calls[0][1].adapterConfig).not.toHaveProperty("maxTurnsPerRun");
+  });
+
   it.each(["paperclip", "legacy", undefined] as const)("uses Claude's discovered %s default for Auto setup and hire", async (defaultRunner) => {
     settings.getExperimental.mockResolvedValue({ enableNativeRunner: false });
     state.adapters = (state.adapters as any[]).map(adapter => adapter.type === "claude_local"
