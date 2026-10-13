@@ -396,7 +396,6 @@ it("publishes spawned runner ownership before waiting for provider startup", asy
   });
   const opening = bundle.transport.request("thread/start", { cwd: tmpdir(), dynamicTools: codexSemanticToolSpecs() });
   try {
-    // Same-tick recovery must not mutate an already admitted fresh startup.
     await expect(bundle.transport.request("thread/read", { threadId: "rejected-duplicate" }))
       .rejects.toThrow("PRP provider thread is already started");
     await vi.waitFor(() => expect(onSpawn).toHaveBeenCalledOnce());
@@ -2223,7 +2222,6 @@ it("owns blocked Codex home preparation through driver abort without later regis
     markPreparationStarted();
     await preparationReleased;
     preparationContinuedAfterClose = closeSettled;
-    // A synthetic, credential-free write makes the owned preparation visible.
     await mkdir(input.codexHome, { mode: 0o700 });
     await writeFile(join(input.codexHome, "preparation-marker"), "fixture preparation drained\n", { mode: 0o600 });
   });
@@ -2264,7 +2262,6 @@ it("owns blocked Codex home preparation through driver abort without later regis
     .then(value => { openingSettled = true; return { value }; }, error => { openingSettled = true; return { error }; });
   try {
     await preparationStarted;
-    // A rejected duplicate must not replace the first admitted startup owner.
     await expect(transport.request("thread/start", { cwd: root, dynamicTools: [] }))
       .rejects.toThrow("PRP provider thread is already started");
     controller.abort(cancelled);
@@ -2863,8 +2860,6 @@ it.each(["stuck", "late-release", "late-release-error", "stuck-release", "cooper
       runtimeDirectory, provider: "codex", model: "gpt-test", timeoutMs: 1_000,
       environment: { PATH: "", OPENAI_API_KEY: "inert-test-key" },
       transportOptions: {
-        // Registration and launch are external owners; hash real inert bytes
-        // without executing a daemon, Codex, or an ambient developer binary.
         runnerBinary: resolve(import.meta.dirname, "../../package.json"),
         codexCommand: resolve(import.meta.dirname, "../../package.json"),
         sourceCodexHome: "", runnerProcessLauncher: launch,
@@ -2895,8 +2890,6 @@ it.each(["stuck", "late-release", "late-release-error", "stuck-release", "cooper
         expect(cleanup).not.toHaveBeenCalled();
         expect((await stat(runtimeDirectory)).isDirectory()).toBe(true);
         if (mode === "late-release-error") expect((failure as AggregateError).errors).toContain(releaseError);
-        // A registration that finishes after the bounded return still releases
-        // its authority, without retroactively certifying or deleting state.
         returnRegistration(registered);
         finishRelease();
         await vi.advanceTimersByTimeAsync(0);

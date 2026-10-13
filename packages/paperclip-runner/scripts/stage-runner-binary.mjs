@@ -32,8 +32,6 @@ export async function stageBuiltRunnerBinary(packageRoot) {
   const executable = process.platform === "win32" ? "paperclip-runnerd.exe" : "paperclip-runnerd";
   const source = path.join(packageRoot, "runner", "target", "release", executable);
   const binaryRoot = path.join(packageRoot, "dist", "bin");
-  // Source builds are separate from the source-bound release targets and their
-  // manifest. The dev supervisor selects this fresh output for its server.
   await stageRunnerBinary(source, path.join(binaryRoot, executable));
 }
 

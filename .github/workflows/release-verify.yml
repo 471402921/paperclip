@@ -527,11 +527,11 @@ jobs:
       matrix: ${{ steps.targets.outputs.matrix }}
       native_consumers: ${{ steps.targets.outputs.native_consumers }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24
       - name: Preserve the immutable source's platform contract
@@ -564,8 +564,6 @@ jobs:
               && Object.keys(contract).sort().join() === 'schema,targets', 'Unknown exact-source daemon platform contract');
             declared = contract.targets;
           } else {
-            // Frozen pre-contract sources used a literal export. Read that one
-            // declaration as JSON data; never import or evaluate preview code.
             const legacy = readBlob('packages/paperclip-runner/scripts/stage-release-runner-binaries.mjs');
             const declarations = [...(legacy ?? '').matchAll(/^[ \t]*export const RELEASE_RUNNER_TARGETS = (?:Object\.freeze\()?(\[[^\r\n]*\])\)?;[ \t]*$/gm)];
             assert.equal(declarations.length, 1, 'Unknown exact-source daemon platform contract');
@@ -596,14 +594,14 @@ jobs:
     outputs:
       artifact_prefix: ${{ steps.identity.outputs.artifact_prefix }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
         with:
           version: 9.15.4
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 24
       - name: Bind immutable producer source and target
@@ -640,18 +638,13 @@ jobs:
           fi
           rustup toolchain list
       - name: Cache native Rust dependencies
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         with:
           workspaces: ${{ steps.native_rust_workspace.outputs.path }} -> target
-          # Compiler/environment and Cargo lock hashes are added by the action.
-          # Also bind generated contracts outside the Rust workspace, while
-          # always recompiling workspace code and recording actual new bytes.
           shared-key: release-native-v2-${{ matrix.host }}-${{ matrix.target }}-${{ hashFiles('packages/paperclip-runner/protocol/**', 'packages/paperclip-runner/src/**', 'packages/paperclip-runner/*.json') }}
           cache-workspace-crates: false
           cache-bin: false
           cache-on-failure: false
-          # A master workflow can verify an unmerged preview ref. Those jobs
-          # restore only; they never write master's trusted dependency cache.
           save-if: ${{ github.repository == 'paperclipai/paperclip' && github.repository_id == '1170821064' && github.event_name == 'push' && github.ref == 'refs/heads/master' && inputs.ref == github.sha }}
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
@@ -694,7 +687,7 @@ jobs:
         run: |
           node packages/paperclip-runner/scripts/stage-release-runner-binaries.mjs record "$SOURCE_SHA" "$TARGET" \
             packages/paperclip-runner/dist/bin/paperclip-runnerd "$RUNNER_TEMP/runner-release/$TARGET"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ steps.identity.outputs.artifact_prefix }}-${{ matrix.target }}
           path: ${{ runner.temp }}/runner-release/

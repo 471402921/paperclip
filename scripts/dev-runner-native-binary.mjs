@@ -50,9 +50,6 @@ export function resolveNativeRunnerDevBinary({
   const flat = path.join(packageRoot, "dist", "bin", executable);
   const targetStat = statSync(target, { throwIfNoEntry: false });
   const flatStat = statSync(flat, { throwIfNoEntry: false });
-  // Release targets remain authoritative unless a newer source build matches
-  // this host. In particular, a build-host flat artifact cannot mask a remotely
-  // staged Mac target or force a local Cargo build.
   if (flatStat?.isFile() && (!targetStat?.isFile() || flatStat.mtimeMs > targetStat.mtimeMs)
     && runnerBinaryTarget(readFileSync(flat)) === `${platform}-${architecture}`) {
     return { binary: flat, sourceBuild: true };

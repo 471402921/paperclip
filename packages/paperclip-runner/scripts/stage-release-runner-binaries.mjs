@@ -1,4 +1,3 @@
-// Assemble the four independently built release daemons before npm packing.
 // Usage: node packages/paperclip-runner/scripts/stage-release-runner-binaries.mjs MANIFEST.json
 // Manifest: {sourceRevision, platforms: {"darwin-arm64": {path, sha256}, ...}, remoteProviderPack: {path, sha256}}.
 import { createHash } from "node:crypto";
@@ -31,8 +30,6 @@ function regularFile(path, maximumSize) {
   return readFileSync(path);
 }
 
-// Production TypeScript contracts are built by the existing producer step.
-// Foreign artifacts are data: the assembler never executes another target.
 async function metadataContract() {
   const { PAPERCLIP_RUNNER_BUILD_METADATA } = await import("../dist/evals/build-metadata.js");
   const { parsePaperclipRunnerdBuildMetadata } = await import("../dist/evals/runnerd-artifact.js");
@@ -112,16 +109,12 @@ async function main() {
     if (packBytes.length > 512 * 1024 || "sha256:" + createHash("sha256").update(packBytes).digest("hex") !== entry.sha256) throw Error("Remote provider-pack release manifest digest mismatch");
     packIdentity = verifyReleaseProviderPack(JSON.parse(packBytes), manifest.sourceRevision);
   } else if (daemonOnly) {
-    // Preserve a qualified same-source Linux pack already materialized by the
-    // normal producer. It never becomes a Mac provider-pack qualification.
     packIdentity = existingReleaseProviderPack(root, manifest.sourceRevision);
   }
   const platforms = {};
   for (const artifact of verified) {
     const relative = `${artifact.target}/paperclip-runnerd`, destination = join(root, "dist", "bin", relative);
     mkdirSync(dirname(destination), { recursive: true }); copyFileSync(artifact.source, destination); chmodSync(destination, 0o755);
-    // Copied Mach-O inodes need a fresh ad-hoc signature on macOS. Record the
-    // resulting packaged bytes, as well as the verified build artifact identity.
     if (process.platform === "darwin" && artifact.target.startsWith("darwin-")) {
       execFileSync("codesign", ["--force", "--sign", "-", destination], { stdio: "pipe", timeout: 30_000 });
     }
@@ -131,7 +124,6 @@ async function main() {
   if (packBytes) {
     const destination = join(root, "dist", "remote-provider-packs", "linux-x64", "provider-pack.json");
     mkdirSync(dirname(destination), { recursive: true });
-    // Replace the inode so repeat assembly can preserve a read-only manifest.
     const staged = `${destination}.staging-${process.pid}`;
     try {
       writeFileSync(staged, packBytes, { mode: 0o444, flag: "wx" });

@@ -92,8 +92,6 @@ export function trustCodexStartupRoot(codexHome: string, cwd: string): void {
   const path = join(codexHome, "config.toml");
   const source = existsSync(path) ? readFileSync(path, "utf8") : "";
   const config = parse(source);
-  // Retain the parser's table prototypes so strict candidate comparison also
-  // works with parsers that return null-prototype TOML tables.
   const projects = config.projects ?? parse("");
   if (
     typeof projects !== "object" ||

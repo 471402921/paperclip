@@ -208,7 +208,6 @@ export function resolvePaperclipRunnerBinary(
   );
 }
 
-/** Select controller-owned bytes for the actual remote host, never its controller. */
 export async function resolveRemotePaperclipRunnerBinary(input: {
   runner: CommandManagedRuntimeRunner;
   remoteCwd: string;
@@ -224,8 +223,6 @@ export async function resolveRemotePaperclipRunnerBinary(input: {
   }
   const configured = input.configuredPath?.trim();
   if (configured && !isAbsolute(configured)) throw new Error("PAPERCLIP_RUNNER_REMOTE_BINARY_PATH must be an absolute path");
-  // A same-host sandbox can use the supervisor's fresh development artifact.
-  // Cross-platform targets must never inherit the controller's override.
   const controllerOverride = platform === process.platform && architecture === process.arch
     ? process.env.PAPERCLIP_RUNNER_BINARY : undefined;
   const binary = configured || (controllerOverride

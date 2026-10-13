@@ -11,8 +11,6 @@ export const GROK_PUBLIC_INSTALL_LIFECYCLE = [
   'npm', 'rebuild', '--offline', '--ignore-scripts=false', '--dangerously-allow-all-scripts',
 ];
 
-// setup-node provides its matching SDK alongside the executing Node binary.
-// Deferred lifecycle scripts may read that SDK, but may never download headers.
 export function macNodeHeadersDirectory(nodeExecutable, nodeVersion) {
   assert.match(nodeVersion, /^\d+\.\d+\.\d+$/, 'Executing Node must have an exact release version');
   const executable = realpathSync(nodeExecutable);
@@ -200,7 +198,6 @@ export function installedCodexProbeSource(indexPath, consumerRoot, expectedVersi
   `;
 }
 
-/** Installed bytes and consumer resolution must survive host protocol startup. */
 export function assertInstalledNativeConsumerContinuity(before, after) {
   for (const field of ['lockSha256', 'runnerSha256', 'codexCommandSha256', 'codexNativeExecutableSha256']) {
     if (!/^[a-f0-9]{64}$/.test(before[field]) || before[field] !== after[field]) {
@@ -209,7 +206,6 @@ export function assertInstalledNativeConsumerContinuity(before, after) {
   }
 }
 
-/** The installed consumer must select its packaged host daemon, never PATH. */
 export function installedDaemonProbeSource(outputRoot, consumerRoot, sourceRevision) {
   return `
     import assert from 'node:assert/strict';
@@ -254,8 +250,6 @@ export function installedDaemonProbeSource(outputRoot, consumerRoot, sourceRevis
   `;
 }
 
-// Hosted, credential-free Mac consumers defer only npm lifecycle execution.
-// Offline npm flags are not an OS network boundary; sandbox-exec supplies it.
 export function macPublicInstallLifecycleProfile(ownedRoot) {
   if (!ownedRoot.startsWith('/') || ownedRoot.includes('\0')) throw new Error('Mac lifecycle requires an absolute owned root');
   return `(version 1)\n(allow default)\n(deny network*)\n(deny file-write* (require-all (require-not (subpath ${JSON.stringify(ownedRoot)})) (require-not (literal "/dev/null"))))\n`;

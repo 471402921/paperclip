@@ -1335,7 +1335,6 @@ export interface CapabilityRunnerdCodexTransportOptions {
   controlPlaneRegistration?: (
     authority: DurablePrpControlPlane,
     identity?: DurableRecoveryIdentity,
-    /** Setup owners abort preparation before draining or releasing its result. */
     signal?: AbortSignal,
   ) => Promise<{
     connectUrl?: string;
@@ -4462,8 +4461,6 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
   }
 
   #trackStartup<T>(start: () => Promise<T>): Promise<T> {
-    // Admit one owner before invoking startup. A duplicate request's rejection
-    // must never replace the preparation that close is responsible for joining.
     if (this.#startupOperation !== null) {
       return Promise.reject(new Error("PRP provider thread is already started"));
     }
@@ -7101,8 +7098,6 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
     }
     await Promise.race([
       ready(), this.#failureSignal,
-      // Readiness is a notification wait, not launch-material preparation.
-      // Its route owner is released by close; joining it first would cycle.
       this.#closedSignal.then(() => { this.#assertStartupOpen(); }),
     ]);
     this.#assertStartupOpen();
@@ -7153,7 +7148,6 @@ export function createCapabilityRunnerdCodexTransport(
 export const createRunnerdCodexTransport =
   createCapabilityRunnerdCodexTransport;
 
-/** A setup turn uses the same daemon/provider boundary as ordinary native runs. */
 export async function probeNativeRunnerEnvironment(options: {
   runtimeDirectory: string;
   provider: "codex";
@@ -7161,7 +7155,6 @@ export async function probeNativeRunnerEnvironment(options: {
   reasoningEffort?: string;
   environment: NodeJS.ProcessEnv;
   timeoutMs?: number;
-  /** The selected remote filesystem supplies this cwd; never inspect it on the controller. */
   workingDirectory?: string;
   transportOptions?: CapabilityRunnerdCodexTransportOptions;
   onCodexCredentialRefresh?: (filename: string) => Promise<void>;
@@ -7182,9 +7175,6 @@ export async function probeNativeRunnerEnvironment(options: {
   let registrationOperation: Promise<unknown> | undefined;
   let registrationCleanupConfirmed = true;
   const sourceCodexHome = options.transportOptions?.sourceCodexHome ?? resolveSourceCodexHome(environment);
-  // Never let an unbound home or an external-sandbox flag admit host state or
-  // weaken this read-only probe. The normal materializer copies bound auth and
-  // the managed provider projection into a new daemon-owned Codex home.
   delete environment.PAPERCLIP_RUNNER_EXTERNAL_SANDBOX;
   environment.HOME = resolve(remoteFilesystemRoot ?? options.runtimeDirectory, "probe-home");
   environment.CODEX_HOME = resolve(remoteFilesystemRoot ?? options.runtimeDirectory, "codex-home");
@@ -7303,8 +7293,6 @@ export async function probeNativeRunnerEnvironment(options: {
   } finally {
     clearTimeout(timer);
     controller.abort(failure ?? new Error("Native provider hello probe complete."));
-    // Preserve private recovery state if the production close cannot confirm
-    // teardown; callers remove it only after an authoritative receipt.
     const teardownErrors: unknown[] = [];
     const teardownDeadline = Date.now() + 10_000;
     const awaitTeardown = async (pending: Promise<unknown>, detail: string): Promise<void> => {

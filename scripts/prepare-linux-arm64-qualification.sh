@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Prepare the disposable GitHub ARM qualification host using stock distro files.
-# Extraction skips package maintainer scripts and their global policy changes.
 set -euo pipefail
 
 if [[ "${GITHUB_ACTIONS:-}" != true || "${RUNNER_OS:-}" != Linux ]]; then
@@ -87,7 +85,6 @@ test "$(od -An -tx1 -N4 "$stock_binary" | tr -d ' \n')" = 7f454c46
 readelf -h "$stock_binary" | tee "$prerequisite_report_dir/bwrap-elf-header.txt"
 grep -E 'Machine:.*AArch64' "$prerequisite_report_dir/bwrap-elf-header.txt"
 
-# Reject every target symlink, including dangling links, before privileged copy.
 test ! -L /usr/bin/bwrap
 if test -e /usr/bin/bwrap; then
   test -f /usr/bin/bwrap

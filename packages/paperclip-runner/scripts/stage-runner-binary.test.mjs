@@ -140,8 +140,6 @@ test("a source rebuild selects fresh dev bytes while preserving release binaries
     const copyHostFixture = async (input, output) => {
       await copyFile(input, output);
       if (process.platform === "darwin") {
-        // System fixtures can be universal; Cargo release daemons are thin.
-        // Extract only this host slice before exercising the native header gate.
         const slices = execFileSync("/usr/bin/lipo", ["-archs", input], { encoding: "utf8" }).trim().split(/\s+/);
         const architecture = slices.find(value => process.arch === "arm64" ? value.startsWith("arm64") : value === "x86_64");
         assert.ok(architecture);

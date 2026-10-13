@@ -41,14 +41,12 @@ async function sandboxBinding(db: Db, environment: Environment, companyId: strin
   });
   if (parsed.driver !== "sandbox") return null;
   const image = parsed.config.image;
-  // Names, mutable tags, provider defaults and snapshot names are not immutable identities.
   const template = selectedTemplate.value;
   if (!isImmutableImage(image) || ["snapshot", "template", "templateRef"].some(key => record(parsed.config)[key])
     || (template && (template.templateKind !== "image" || template.bindingField !== "image"))) return null;
   return { baseConfigFingerprint: fingerprint(environment.config), runtimeConfigFingerprint: fingerprint(parsed.config as unknown as Record<string, unknown>), image, template };
 }
 
-/** Read measured, company-scoped image evidence without leasing or contacting a provider. */
 export async function readSandboxPlatformQualification(db: Db, environment: Environment, companyId: string): Promise<PlatformFacts | null> {
   const proof = record(record(environment.metadata?.[SANDBOX_PLATFORM_PROBE_METADATA_KEY])[companyId]);
   if (proof.v !== 1 || proof.companyId !== companyId || proof.baseConfigFingerprint !== fingerprint(environment.config)) return null;

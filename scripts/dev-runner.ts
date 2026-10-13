@@ -172,8 +172,6 @@ const env: NodeJS.ProcessEnv = {
   ...process.env,
   PAPERCLIP_UI_DEV_MIDDLEWARE: explicitUiDevMiddleware ?? (serveBuiltUiForManagedRuntime ? "false" : "true"),
 };
-// An automatic source-build override must not hide subsequent Rust edits from
-// the watcher. Keep the operator's original choice separate from server env.
 const configuredRunnerBinary = env.PAPERCLIP_RUNNER_BINARY;
 
 if (mode === "dev") {

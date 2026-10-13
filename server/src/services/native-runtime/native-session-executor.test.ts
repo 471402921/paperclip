@@ -12354,8 +12354,6 @@ describe("runnerd provider runtime wiring", () => {
     { version: "0.156.0", model: "gpt-6.1-sol", floor: null, recover: true },
     { version: "0.158.0", model: "gpt-6.1-sol", floor: null, recover: true },
   ])("lets sandbox Codex $version reach actual model verification ($model, recover=$recover)", async ({ version, model, recover }) => {
-    // Version metadata is diagnostic. A working app-server reaches the model
-    // turn instead of being rejected or replaced by a static CLI version floor.
     const preparedModel = recover ? resolvePaperclipRunnerNativeProviderInput({
       backend: "codex_app_server", adapterConfig: { provider: "codex", model }, codexCliVersion: version,
     }).model : model;
