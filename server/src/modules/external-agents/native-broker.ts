@@ -101,7 +101,13 @@ export function createNativeExternalBroker<S>(db:Db,provider:Provider,identity:I
     } catch(error) {
       const rejected=error&&typeof error==="object"&&("dotOperationRejected" in error||"externalOperationRejected" in error);
       if(rejected)await db.execute(sql`update ${operationTable} set status='rejected',outcome=${JSON.stringify({status:"rejected",message:"Runner rejected this operation; inspect the assignment and arguments before proceeding."})}::jsonb,updated_at=now() where id=${row.id}::uuid and status=${provider==="muse"?"dispatched":"reserved"}`);
-      else if(provider==="muse")await db.transaction(async tx=>{await tx.execute(sql`update ${operationTable} set status='unknown',updated_at=now() where id=${row.id}::uuid and status in ('dispatched','pending')`);await tx.update(externalAgentHolds).set({nativeEffectsUnknown:true,updatedAt:new Date()}).where(and(eq(externalAgentHolds.provider,provider),eq(externalAgentHolds.assignmentId,a.id)));});
+      else if(provider==="muse")await db.transaction(tx=>withExternalAdmissionGuard(tx,a.companyId,a.agentId,async()=>{
+        await tx.execute(sql`select id from ${bindingTable} where id=${a.bindingId}::uuid for update`);
+        // A result can commit before the command acknowledgement is lost.
+        // Only an actual unresolved-send transition adds an effect barrier.
+        const changed=await tx.execute(sql`update ${operationTable} set status='unknown',updated_at=now() where id=${row.id}::uuid and status in ('dispatched','pending') returning id`);
+        if(changed.length)await tx.update(externalAgentHolds).set({nativeEffectsUnknown:true,releasedAt:null,updatedAt:new Date()}).where(and(eq(externalAgentHolds.provider,provider),eq(externalAgentHolds.assignmentId,a.id)));
+      }));
       else throw error;
     }
   }
@@ -252,7 +258,12 @@ export function createNativeExternalBroker<S>(db:Db,provider:Provider,identity:I
           const a=await eventAssignment(tx,b);
           const [op]=a?await tx.execute<Receipt>(sql`select ${receiptColumns} from ${operationTable} where assignment_id=${a.id}::uuid and request_id=${requestId}::uuid for update`):[];
           if(!a||!op)throw conflict("Runner operation has no reserved receipt.");
-          if(op.outcome&&externalOperationDigest("tool",op.outcome)!==externalOperationDigest("tool",outcome))throw conflict("Runner operation result conflicts with its durable receipt.");
+          if(op.outcome) {
+            if(externalOperationDigest("tool",op.outcome)!==externalOperationDigest("tool",outcome))throw conflict("Runner operation result conflicts with its durable receipt.");
+            // Receipt and assignment transitions committed together. Replaying
+            // the same fact must preserve later work and its original evidence.
+            return;
+          }
           await tx.execute(sql`update ${operationTable} set status=${provider==="muse"&&outcome.status==="rejected"?"rejected":store.completed},outcome=${JSON.stringify(outcome)}::jsonb,source_event_id=${event.sourceEventId},updated_at=now() where id=${op.id}::uuid`);
           const action=op.command.action;
           await tx.execute(sql`update ${assignmentTable} set last_activity_at=now() where id=${a.id}::uuid`);
