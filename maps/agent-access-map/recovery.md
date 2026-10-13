@@ -64,20 +64,30 @@ Review: `baseline`.
 
 API: `present` — representative operation IDs:
 
+- `GET /api/issues/{id}/recovery-actions`.
 - `POST /api/issues/{id}/recovery-actions/resolve`.
 
 Agent access: `partial` — Eligible agent REST / CLI; source-bound recovery state.
 
 Policy: Task/run visibility, run ownership and source/action policy; workspace export
-retry and some operator controls require board.
+retry and some operator controls require board. Completion or cancellation of a
+task does not clear its exact unresolved native workspace owner hold. Physical
+owner release still requires the [operator stop-verification procedure](../../doc/native-workspace-finalization-recovery.md).
 
 Evidence: `source-only` — [implementation](../../server/src/routes/issues.ts#L9478) at
-the reviewed commit above.
+the reviewed commit above. Exact owner hold retention in the
+[recovery state helper](../../server/src/services/native-runtime/native-workspace-finalization-recovery-state.ts)
+was reviewed at `89770ba707fb1ebd4cabd184eec2e7fee226e0c3`.
 
 Verification: `not-run` — exercise a listed permitted operation with actual agent
 credentials/run context; inspect its result and applicable persistence/attribution.
 Assert the relevant denied actor, owner, company or mode from Policy. Review the
-remaining operations before qualifying the whole capability.
+remaining operations before qualifying the whole capability. Local
+[recovery route regressions](../../server/src/__tests__/issue-recovery-actions.test.ts)
+verify one unchanged hold across reads and sweeps on done/cancelled tasks, no
+physical copyback, and cleanup after the receipt is cleared. Exercise this
+sequence in a disposable instance; automatic cleanup must use the system actor
+and must not create reader participation. No live recovery proof is claimed.
 
 Gaps: Need operation-level eligibility and a real native binding for permitted recovery
 actions; do not route around lifecycle authority.

@@ -246,7 +246,7 @@
         "ui/src/pages/tools/AuditTab.tsx",
         "ui/storybook/stories/activity/activity-feed.stories.tsx"
       ],
-      "fingerprint": "e38af3b7963caf0cc3b13f7681da370a579f97ad78a6064559fbb18aeb73b4ed",
+      "fingerprint": "42f1ebbd11a7b47dd507f43c287c46a9191b8ce323b9c15d83a6d8ec5521eeee",
       "stableId": "tools-activity-audit-feed",
       "sidebarTitle": "Oversight and operation/Dashboards and audit trails/Tools/Activity (audit feed)"
     },
@@ -808,7 +808,7 @@
         "ui/src/pages/apps/app-detail/types.ts",
         "ui/storybook/stories/activity/app-activity-lifecycle.stories.tsx"
       ],
-      "fingerprint": "1642f6a6692ccd3ac058d1841f388607b3379c683711bbe558aad3cc79ffc077",
+      "fingerprint": "6c813a16621d93fe9f817b1b01d451a35b4b552727976168e938409d100b26e9",
       "stableId": "apps-app-detail-·-activity-lifecycle",
       "sidebarTitle": "Oversight and operation/Dashboards and audit trails/Apps/App detail · Activity (lifecycle)"
     },
@@ -1170,7 +1170,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/tasks/assigned-backlog-safeguards.stories.tsx"
       ],
-      "fingerprint": "3a3610f557ca0b31528e7df0a2faf0885132ba6c947380588bc63b144c14833e",
+      "fingerprint": "f6d94acdd29ba5ca746a6fcba87a44f4384288c02d736aa496a4d30bd94a922a",
       "stableId": "paperclip-assigned-backlog-safeguards",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Paperclip/Assigned Backlog Safeguards"
     },
@@ -1194,7 +1194,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/inbox-search/blocked-inbox.stories.tsx"
       ],
-      "fingerprint": "d7406369152782fe626f9be02cecde54a7abc58753fc9e5a5b0d167f2a5df3f2",
+      "fingerprint": "b6f5f4b7c00e48da7320bef20e5904527f83665e5fdac4fbb44c866e15547502",
       "stableId": "product-inbox-blocked-tab",
       "sidebarTitle": "Tasks and conversations/Inbox, decisions, and search/Product/Inbox/Blocked tab"
     },
@@ -1476,7 +1476,7 @@
         "ui/src/components/CloudAccessGate.tsx",
         "ui/storybook/stories/recovery/cloud-access-recovery.stories.tsx"
       ],
-      "fingerprint": "ce4f356d3f8296a2f6e3c6da8bb6b3a57866a0ad9c9e74850a76ff7fd9484b54",
+      "fingerprint": "bbec224b127ec6898cf95dfae922e6747483c0d0d4ec55ff7d1560c0c4a5c041",
       "stableId": "app-connection-recovery",
       "sidebarTitle": "Projects and execution/Recovery/App/Connection recovery"
     },
@@ -1763,7 +1763,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/tasks/control-plane-surfaces.stories.tsx"
       ],
-      "fingerprint": "121469a91e60dbb4e085512d86e3bd8a24b1590469d0f1321ea5e1a869df7da0",
+      "fingerprint": "55b7a763e93f099aa6085dc7de65474f619aebd1ec9d114ee9c70fd0d2cf42c6",
       "stableId": "product-control-plane-surfaces",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Product/Control Plane Surfaces"
     },
@@ -1807,7 +1807,7 @@
         "ui/src/components/task-chat/TaskChatMarker.tsx",
         "ui/storybook/stories/secrets/credential-access/01-notice.stories.tsx"
       ],
-      "fingerprint": "d4d4b6098d76fa827e6529a6f071948f1f4e6a15a337da4a85ffe9f0234d8565",
+      "fingerprint": "2eba045db9127e5cd8d8bf7c9664e4598a5c84be117ae6159ce7171b24f2005d",
       "stableId": "task-credential-access-01-notice",
       "sidebarTitle": "Apps, channels, and extensions/Secrets and proposals/Task credential access/01 Notice"
     },
@@ -1833,7 +1833,7 @@
         "ui/storybook/stories/secrets/credential-access/02-task-page.stories.tsx",
         "ui/storybook/support/credential-access/CredentialTaskPage.tsx"
       ],
-      "fingerprint": "b7f5b355919f9e11c7d079955113f365d3a41e956fd6cc6746e4c3fdddae644e",
+      "fingerprint": "aadd6c8f82db53b2e910829deb409344199353cb4956313424ce8d1415bead85",
       "stableId": "task-credential-access-02-task-page",
       "sidebarTitle": "Apps, channels, and extensions/Secrets and proposals/Task credential access/02 Task page"
     },
@@ -1886,7 +1886,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/activity/data-viz-misc.stories.tsx"
       ],
-      "fingerprint": "5cc019e34fd9a2adae706143c0af4fd78334a2ffefac62eb82d7ec7f64ee0ea3",
+      "fingerprint": "2861c5c594bbc3c30682958dd3727488f776e411368bcfdcbde39c14cb64cef6",
       "stableId": "product-data-visualization-misc",
       "sidebarTitle": "Oversight and operation/Dashboards and audit trails/Product/Data Visualization & Misc"
     },
@@ -1906,7 +1906,7 @@
         "ui/src/components/DecisionCard.tsx",
         "ui/storybook/stories/inbox-search/decision-card.stories.tsx"
       ],
-      "fingerprint": "151c678aa5f7befc369d2def8df019b626c865f1c5b7bf91543dd4454395cb66",
+      "fingerprint": "220a4f037c1dd4a456ac7df75d6ee7fd0d844ff7db3fd30ca1da2fff9477cbc8",
       "stableId": "decisions-decisioncard",
       "sidebarTitle": "Tasks and conversations/Inbox, decisions, and search/Decisions/DecisionCard"
     },
@@ -1999,7 +1999,7 @@
         "ui/src/pages/WhatNeedsMe.tsx",
         "ui/storybook/stories/inbox-search/decisions-desk.stories.tsx"
       ],
-      "fingerprint": "614be5300540b7c3c8942a8a043e005d0f92e0a021819ade6ad291526b923566",
+      "fingerprint": "1e49e931cddd7ef77de70f25fc4ee991d3de9d933670ae4412c5d17fad6db0aa",
       "stableId": "pages-decisions-desk",
       "sidebarTitle": "Tasks and conversations/Inbox, decisions, and search/Pages/Decisions Desk"
     },
@@ -2184,7 +2184,7 @@
         "ui/src/components/ExecutionBlockerNotice.tsx",
         "ui/storybook/stories/recovery/execution-blocker-notice.stories.tsx"
       ],
-      "fingerprint": "19fa3d95095bbcd67c5306d6ad3c8c00ae526bab9d8cbc49e69ca36c15a873c2",
+      "fingerprint": "bee366ba1266e6692c8f0ee027c449fdda6b51762369ba431871a5af5ee018c6",
       "stableId": "task-chat-recovery-notice",
       "sidebarTitle": "Projects and execution/Recovery/Task chat/Recovery notice"
     },
@@ -2208,7 +2208,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/recovery/execution-recovery.stories.tsx"
       ],
-      "fingerprint": "003b5d7b2f8d0baea06402776157854f6b55d06bfd4d6223300413c284a22fd2",
+      "fingerprint": "6f8b245b169d95046bdb52513dfaf4937a96f807b72470c198863471f59c8149",
       "stableId": "tasks-execution-recovery",
       "sidebarTitle": "Projects and execution/Recovery/Tasks/Execution recovery"
     },
@@ -2820,7 +2820,7 @@
         "ui/src/components/task-chat/TaskChatBlockerLinks.tsx",
         "ui/storybook/stories/recovery/issue-blocked-notice.stories.tsx"
       ],
-      "fingerprint": "4eb78b4e772567d657339435dc650e9b59c2347792cf764c7b376d7f631fe4de",
+      "fingerprint": "6a84d7f60318d33a1835a668873095aaad1c215a83bbbb4735823fdcb3291140",
       "stableId": "product-issue-blocked-notice",
       "sidebarTitle": "Projects and execution/Recovery/Product/Issue/Blocked notice"
     },
@@ -3047,7 +3047,7 @@
         "ui/src/components/IssueScheduledRetryCard.tsx",
         "ui/storybook/stories/recovery/model-capacity-retry.stories.tsx"
       ],
-      "fingerprint": "4f7421c0267fee71b9de5e38916ab86c66a2c69caa950730751c031a86503b4f",
+      "fingerprint": "5e08f681f3f96cb7be32e316d3f4066e5239dcf0f4393cb9ec09d599734f201e",
       "stableId": "tasks-model-capacity-retry",
       "sidebarTitle": "Projects and execution/Recovery/Tasks/Model capacity retry"
     },
@@ -4384,7 +4384,7 @@
         "ui/storybook/prototypes/recovery-notice/RecoveryNoticePreview.tsx",
         "ui/storybook/stories/recovery/recovery-notice-preview.stories.tsx"
       ],
-      "fingerprint": "4e880f02947c96e751ecca7a0f662106874ac5b58f254915592ecdec699298de",
+      "fingerprint": "cfd7345545112ea9ecc13035ebd187451117de5ed010f439cfb8c6962461fb3f",
       "stableId": "design-previews-recovery-notice",
       "sidebarTitle": "Projects and execution/Recovery/Design previews/Recovery notice"
     },
@@ -4638,7 +4638,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/recovery/scheduled-retry.stories.tsx"
       ],
-      "fingerprint": "b07bdc368ce48d184b5cd99156ed23c03251ac9ecd90de47812db351261cc5c0",
+      "fingerprint": "43ef1917079251d558b3f52e5af750dfb69a54d3326d31494dbf037baeefe193",
       "stableId": "product-issue-scheduled-retry-surfaces",
       "sidebarTitle": "Projects and execution/Recovery/Product/Issue Scheduled retry surfaces"
     },
@@ -4665,7 +4665,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/inbox-search/search.stories.tsx"
       ],
-      "fingerprint": "dfd04cb52d810ed016fae1508dea6fa7baeb8a71676e605a4eff269d844957b6",
+      "fingerprint": "4ebfe41c086ce2e0ae674263dfa50239a0770e5e6f98c3c24f54955f6cbdd3d2",
       "stableId": "product-search-command-k",
       "sidebarTitle": "Tasks and conversations/Inbox, decisions, and search/Product/Search & Command K"
     },
@@ -4950,7 +4950,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/recovery/source-issue-recovery.stories.tsx"
       ],
-      "fingerprint": "ad00308c561a44cfb60a7b359ac88b48ad5ee2f13d4b36af99552c29c0a3df67",
+      "fingerprint": "1b6e44d4fb4ab7e2e63fb8816aa31fbe3267e10647f238ed82e6591a82d2e918",
       "stableId": "paperclip-source-issue-recovery",
       "sidebarTitle": "Projects and execution/Recovery/Paperclip/Source Issue Recovery"
     },
@@ -4972,7 +4972,7 @@
         "ui/src/components/SourceResolvedFoldCallout.tsx",
         "ui/storybook/stories/recovery/source-resolved-fold.stories.tsx"
       ],
-      "fingerprint": "f6a8c8477c45cbf1c98a0e0a8618373800183aa49a189b00efac62c42fb0b92e",
+      "fingerprint": "3af3daff618b8c278bcbf10ba3e5d081d87240c680758ccb3078eccdf9283122",
       "stableId": "paperclip-source-resolved-fold",
       "sidebarTitle": "Projects and execution/Recovery/Paperclip/Source-resolved Fold"
     },
@@ -5049,7 +5049,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/tasks/successful-run-handoff.stories.tsx"
       ],
-      "fingerprint": "dee060e56c932b5c076cde939cc8cad36b46452fd3fd85118e1eb6664deb47ad",
+      "fingerprint": "dd47ab0240dd12f6bdeddeaf155be7afc472e728f69e77579adaf7aeec0eb588",
       "stableId": "paperclip-successful-run-handoff",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Paperclip/Successful Run Handoff"
     },
@@ -5463,7 +5463,7 @@
         "ui/src/components/ToastViewport.tsx",
         "ui/storybook/stories/inbox-search/what-needs-me.stories.tsx"
       ],
-      "fingerprint": "b84aef9b566d476455d6b441adfb301d92f68148a409eff29f5850c047d04baf",
+      "fingerprint": "d8b838185489f6b5009e52d9c2ac3a1fea3b2718211a1ddc393c404a0335a466",
       "stableId": "pages-decisions",
       "sidebarTitle": "Tasks and conversations/Inbox, decisions, and search/Pages/Decisions"
     },
@@ -5486,7 +5486,7 @@
         "ui/storybook/fixtures/workTimeline.sample.json",
         "ui/storybook/stories/activity/work-timeline.stories.tsx"
       ],
-      "fingerprint": "ef4f6622a54c742869916b1bded0fd410aaf1faa3bf9e5ff37182eac7ac6aa50",
+      "fingerprint": "4f6e9f556073d4bc6a812f633bcff32cb84c4c02488746b37797501684ef3899",
       "stableId": "pages-work-timeline",
       "sidebarTitle": "Oversight and operation/Dashboards and audit trails/Pages/Work Timeline"
     },
@@ -5507,7 +5507,7 @@
         "ui/storybook/stories/recovery/workspace-branch-recovery/01-component.stories.tsx",
         "ui/storybook/support/workspace-branch-recovery/fixtures.ts"
       ],
-      "fingerprint": "411a3a9332d5348327cb4c04e508895f9f1989d6da27fe8d1d73ebd34be87a82",
+      "fingerprint": "77f708cc660f6829cadaffa6139930a102109976c41f7e24e2f662ed687d2412",
       "stableId": "workspace-branch-recovery-01-repair-card",
       "sidebarTitle": "Projects and execution/Recovery/Workspace branch recovery/01 Repair card"
     },
@@ -5532,7 +5532,7 @@
         "ui/storybook/stories/recovery/workspace-branch-recovery/02-task-journey.stories.tsx",
         "ui/storybook/support/workspace-branch-recovery/fixtures.ts"
       ],
-      "fingerprint": "85db6aeb522937db01d8e307eab632d16f887abe88301c5d2f3c2f797fcb7cec",
+      "fingerprint": "d34d8092f10377b2280f9511205b5eae76b5dbfd9cde002669eefc51aa5d16d6",
       "stableId": "workspace-branch-recovery-02-task-journey",
       "sidebarTitle": "Projects and execution/Recovery/Workspace branch recovery/02 Task journey"
     },

@@ -1500,6 +1500,7 @@ describe("sandbox callback bridge", () => {
       { method: "GET", path: "/api/goals/goal-1" },
       { method: "GET", path: "/api/issues/issue-1" },
       { method: "GET", path: "/api/issues/issue-1/heartbeat-context" },
+      { method: "GET", path: "/api/issues/issue-1/activity" },
       { method: "GET", path: "/api/issues/issue-1/comments" },
       { method: "GET", path: "/api/issues/issue-1/comments/c-1" },
       { method: "POST", path: "/api/issues/issue-1/comments" },
@@ -1546,6 +1547,10 @@ describe("sandbox callback bridge", () => {
     }
 
     const denied: Array<{ method: string; path: string }> = [
+      { method: "POST", path: "/api/issues/issue-1/activity" },
+      { method: "GET", path: "/api/issues/issue-1/activity/extra" },
+      { method: "GET", path: "/api/companies/co-1/activity" },
+      { method: "GET", path: "/api/companies/co-1/audit/agent-actions" },
       { method: "GET", path: "/api/companies/co-1/agent-commentary" },
       { method: "POST", path: "/api/companies/co-1/agent-commentary/other" },
       { method: "POST", path: "/api/companies/co-1/email/inboxes" },

@@ -5729,7 +5729,6 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     lifecycleRuntimeFence,
     isShuttingDown: () => shuttingDown,
     wakeup: (...args) => options.heartbeat.wakeup(...args),
-    staleProcessingMs: DELIVERY_PROCESSING_STALE_MS,
   });
   const { stageTeamsBoardFileIntent, deriveTeamsFileTransferAuthority } = createTeamsFileAuthority({ runtimeGeneration, credentialFingerprint, runtime, runtimeContexts, localRuntimeEpoch, runtimeVersions, lockCurrentPrincipalAuthorization, lifecycleRuntimeFence, assertFailedRetryReceipt, inboundWakeScope, failedChatRetrySource, isExplicitOperatorPublication, retryCommentIds });
   async function authorizeRetainedChatSourcePublication(
@@ -15429,7 +15428,6 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
   async function processPendingChatMaintenance(limit = 25) {
     return Promise.allSettled([
       processPendingTelegramMaintenance(limit),
-      processFailedChatRunRetries(limit),
     ]);
   }
 
@@ -15440,7 +15438,8 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     // so a crashed processing claim is quarantined before the delivery worker
     // could otherwise replay it.
     const actionRecovery = onlyDeliveryId || !maintenance ? null : Promise.allSettled([
-      processPendingChatMaintenance(limit), processPendingGitHubWebhookIngress(limit),
+      processPendingChatMaintenance(limit), processFailedChatRunRetries(limit),
+      processPendingGitHubWebhookIngress(limit),
       processPendingProviderEffects(limit), processPendingSlackBoardMessages(limit),
       processPendingSlackTaskStarts(limit), processPendingReceiptReactions(limit),
       processPendingSlackSessionStops(limit), slackRegistration.processPendingVerificationMessages(limit),

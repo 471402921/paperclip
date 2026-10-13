@@ -90,6 +90,14 @@ the supported recovery until the source task produces a useful result or a
 specific escalation. Reload and verify that resolved notices retire and attempt
 history remains. A fixture pass does not qualify every live harness/provider.
 
+For a native workspace owner hold, repeat issue reads and recovery checks after
+the task becomes done or cancelled. Verify one unchanged action ID, attempt
+count, and timestamps; task completion must not authorize copyback. Clear only
+the exact receipt after operator stop verification, then confirm stale action
+cleanup. The [route regressions](../../server/src/__tests__/issue-recovery-actions.test.ts)
+and [heartbeat regression](../../server/src/__tests__/heartbeat-process-recovery.test.ts)
+cover this sequence without a live operator recovery claim.
+
 ### `run-detail`
 
 Automated: [run workspace recovery](../../ui/src/components/RunWorkspaceRecoverySurface.test.tsx)

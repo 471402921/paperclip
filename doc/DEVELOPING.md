@@ -2034,6 +2034,14 @@ pnpm secrets:migrate-inline-env --apply # apply migration
 
 ## Internal Connection Token Brokers
 
+Paperclip Cloud connector identities support `development`, `test`, `staging`,
+and `production`. To enroll a self-hosted instance against the test broker, set
+`PAPERCLIP_CLOUD_CONNECTOR_BASE_URL=https://test.paperclip.app`; its environment
+is inferred as `test`. Managed instances also receive
+`PAPERCLIP_CLOUD_CONNECTOR_ENVIRONMENT=test`. Standard Cloud broker hosts reject
+identities for another environment, and enrollment keys remain local to the
+selected broker.
+
 Connection token exchanges carry a resolved parent credential, so their URLs
 are public-only by default even in local/private deployments. To intentionally
 use an internal broker, configure an exact hostname allowlist:

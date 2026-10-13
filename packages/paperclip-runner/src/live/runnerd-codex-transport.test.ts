@@ -5893,6 +5893,10 @@ it.each([
     let recoveryFenceActive = true;
     const completionSnapshotIds: string[] = [];
     let rejectHeldCompletion: ((error: Error) => void) | undefined;
+    let markHeldCompletionEntered!: () => void;
+    const heldCompletionEntered = new Promise<void>((resolve) => {
+      markHeldCompletionEntered = resolve;
+    });
     let snapshotObserverSpy: ReturnType<typeof vi.spyOn> | undefined;
     const routeServer = createServer((_request, response) =>
       response.writeHead(404).end(),
@@ -6471,6 +6475,7 @@ it.each([
                 ) {
                   return new Promise<void>((_resolve, reject) => {
                     rejectHeldCompletion = reject;
+                    markHeldCompletionEntered();
                   });
                 }
                 recoveryFenceActive = false;
@@ -6626,9 +6631,13 @@ it.each([
         const firstRead = within(resumed.transport.request("thread/read", {}));
         void firstRead.catch(() => undefined);
         if (ordinaryFollowup === "callback_async_failure") {
-          await vi.waitFor(() =>
-            expect(rejectHeldCompletion).toBeTypeOf("function"),
-          );
+          await within(Promise.race([
+            heldCompletionEntered,
+            firstRead.then(() => {
+              throw new Error("warm restart completion callback was not entered");
+            }),
+          ]));
+          expect(rejectHeldCompletion).toBeTypeOf("function");
           try {
             expect(recoveryFenceActive).toBe(true);
             const queuedBefore = cores[1]!.store.state.commands.map(
