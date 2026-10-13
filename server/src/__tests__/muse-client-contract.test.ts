@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { parsePaperclipQuestionResponse } from "@paperclipai/paperclip-runner";
 import { buildMuseSetupInstruction, museReceiverAssets } from "../services/muse-setup.js";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect, vi } from "vitest";
@@ -17,14 +18,45 @@ describe("personal Muse client durability", () => {
   it("preserves identities, private credentials, and input receipts across transport failures", () => {
     execFileSync("python3", [
       fileURLToPath(new URL("./fixtures/muse-client-contract.py", import.meta.url)),
-      fileURLToPath(new URL("../services/scripts/v7/client.py", import.meta.url)),
+      fileURLToPath(new URL("../services/scripts/v8/client.py", import.meta.url)),
     ], { encoding: "utf8", timeout: 30_000 });
   });
 });
 
 
+describe("Muse canonical multi-select compatibility", () => {
+  const questionSet = { schema: "paperclip.question_set.v1", questions: [
+    { id: "choices", prompt: "Choose supported options", required: true, answerMode: "multi_select",
+      options: Array.from({ length: 128 }, (_, index) => ({ id: `choice-${index}`, label: `Choice ${index}` })) },
+    { id: "format", prompt: "Choose a format", required: true, answerMode: "text" },
+  ] };
+  const response = (selectedOptionIds: string[]) => ({ schema: "paperclip.question_response.v1",
+    answers: { choices: { selectedOptionIds }, format: { text: "Markdown" } } });
+  const clientValid = (value: unknown) => JSON.parse(execFileSync("python3", ["-c",
+    "import importlib.util,json,sys; sys.dont_write_bytecode=True; spec=importlib.util.spec_from_file_location('muse_validator',sys.argv[1]); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); print(json.dumps(module.input_response_valid(json.load(sys.stdin))))",
+    fileURLToPath(new URL("../services/scripts/v8/client.py", import.meta.url)),
+  ], { input: JSON.stringify(value), encoding: "utf8", timeout: 5_000 })) as boolean;
+
+  it.each([64, 65, 128])("accepts all %s canonical selections without losing another question", count => {
+    const value = response(Array.from({ length: count }, (_, index) => `choice-${index}`));
+    expect(parsePaperclipQuestionResponse(questionSet, value)).toEqual(value);
+    expect(clientValid(value)).toBe(true);
+  });
+
+  it("retains duplicate and overflow rejection and canonical option-membership authority", () => {
+    for (const selected of [Array.from({ length: 129 }, (_, index) => `choice-${index}`), ["choice-0", "choice-0"]]) {
+      const value = response(selected);
+      expect(() => parsePaperclipQuestionResponse(questionSet, value)).toThrow();
+      expect(clientValid(value)).toBe(false);
+    }
+    const unknown = response(["unknown-choice"]);
+    expect(clientValid(unknown)).toBe(true); // Local journal validation has no persisted question set.
+    expect(() => parsePaperclipQuestionResponse(questionSet, unknown)).toThrow(/unknown option/);
+  });
+});
+
 describe("Muse approval-aware setup",()=>{
-  it.each([1, 2, 3, 4, 5, 6] as const)("preserves every published version%s byte pin", async version => {
+  it.each([1, 2, 3, 4, 5, 6, 7] as const)("preserves every published version%s byte pin", async version => {
     const pins = {
     "1": {
         "client.py": "8926534cce48e11d5ea157dfd4deb435c9f8d7d8ea58d3d8a5424b45ab31d1f7",
@@ -55,6 +87,11 @@ describe("Muse approval-aware setup",()=>{
         "client.py": "cf207b0823bc59271d5d4ca930e8960eb9362b1244aea1a4e16eabc3889613bb",
         "detector.sh": "1cbd1dd379987c7dadebbc466af312d72065e322d19c1ac2d8931ae2779885d7",
         "instructions.md": "7957130682c5a8d2a1faf0e56e9505f548a2d95c294048e979c8499b698aa8d5"
+    },
+    "7": {
+        "client.py": "bd3a70f650b16b7d28a67ec78e96a465741be1203e062e6680ebb6dc4d0db427",
+        "detector.sh": "1cbd1dd379987c7dadebbc466af312d72065e322d19c1ac2d8931ae2779885d7",
+        "instructions.md": "ad86ec766cd009fb11095407460f0e0362f0dd10749b94d51ebb1f3fd13bd357"
     }
 };
     expect((await museReceiverAssets(version)).manifest.assets).toEqual(
@@ -62,12 +99,14 @@ describe("Muse approval-aware setup",()=>{
     );
   });
   it("keeps the detector unchanged and separates helper receipts from model work state", async () => {
-    const current = await museReceiverAssets(7), historical = await museReceiverAssets(6);
+    const current = await museReceiverAssets(8), historical = await museReceiverAssets(7);
     expect(current.detector).toBe(historical.detector);
+    expect(current.client.replace('VERSION = "8"', 'VERSION = "7"').replace("len(options) > 128", "len(options) > 64")).toBe(historical.client);
+    expect(current.instructions.replace("assets v8", "assets v7").replace("immutable asset8", "immutable asset7")).toBe(historical.instructions);
     expect(current.instructions).toContain("input-receipts/");
     expect(current.instructions).toContain("work-continuations/");
     expect(current.instructions).toContain("paperclip.muse_work_continuation.v1");
-    expect(current.client).toContain('VERSION = "7"');
+    expect(current.client).toContain('VERSION = "8"');
   });
 
   it("preserves the published asset5 pins after completion guidance changes", async () => {
@@ -91,9 +130,9 @@ describe("Muse approval-aware setup",()=>{
       "instructions.md": { sha256: "d57f1c43c0d3c7a76f9ed99e73a5a5cdb46c2b7e470efd451519bc3cc3d7d8f3" },
     });
   });
-  it("orders current-chat consent, pinned asset7, public preflight, authenticated status and hook registration",async()=>{
+  it("orders current-chat consent, pinned asset8, public preflight, authenticated status and hook registration",async()=>{
     const assets=await museReceiverAssets(),instruction=await buildMuseSetupInstruction("https://approval.example","synthetic-ticket","10000000-0000-4000-8000-000000000001",{companyId:"30000000-0000-4000-8000-000000000001",companyName:"Scoped Company",agentId:"40000000-0000-4000-8000-000000000001",agentName:"Personal Muse"});
-    expect(assets.manifest.assetVersion).toBe(7);expect(instruction).toContain("/assets/7/");expect(instruction).toContain(assets.manifest.assets["client.py"].sha256);
+    expect(assets.manifest.assetVersion).toBe(8);expect(instruction).toContain("/assets/8/");expect(instruction).toContain(assets.manifest.assets["client.py"].sha256);
     expect(instruction.indexOf("credentials.request_api_access")).toBeLessThan(instruction.indexOf("After consent, download"));
     expect(instruction.indexOf(" preflight.")).toBeLessThan(instruction.indexOf("Then run the client status"));
     expect(instruction.indexOf("Then run the client status")).toBeLessThan(instruction.indexOf("hooks.add"));
@@ -118,9 +157,9 @@ describe("Muse approval-aware setup",()=>{
 
 describe("finite immutable Muse asset routing", () => {
   function app() { const value = express(); value.use(museTransportRoutes({} as Db, "https://paperclip.invalid")); return value; }
-  it("serves all seven pinned versions and only their four exact GET paths", async () => {
+  it("serves all eight pinned versions and only their four exact GET paths", async () => {
     const value = app();
-    for (const version of [1, 2, 3, 4, 5, 6, 7] as const) {
+    for (const version of [1, 2, 3, 4, 5, 6, 7, 8] as const) {
       const assets = await museReceiverAssets(version);
       const base = `/api/muse/v1/assets/${version}/`;
       const manifest = await request(value).get(base + "manifest.json");
@@ -131,10 +170,10 @@ describe("finite immutable Muse asset routing", () => {
         expect(response.status).toBe(200); expect(response.text).toBe(text);
       }
     }
-    for (const path of ["/api/muse/v1/assets/8/client.py", "/api/muse/v1/assets/7/extra.py", "/api/muse/v1/assets/7/client.py?version=7", "/api/muse/v1/assets/07/client.py"]) {
+    for (const path of ["/api/muse/v1/assets/9/client.py", "/api/muse/v1/assets/8/extra.py", "/api/muse/v1/assets/8/client.py?version=8", "/api/muse/v1/assets/08/client.py"]) {
       expect((await request(value).get(path)).status).toBe(404);
     }
-    expect((await request(value).post("/api/muse/v1/assets/7/client.py")).status).toBe(404);
-    expect((await request(value).head("/api/muse/v1/assets/7/client.py")).status).toBe(404);
+    expect((await request(value).post("/api/muse/v1/assets/8/client.py")).status).toBe(404);
+    expect((await request(value).head("/api/muse/v1/assets/8/client.py")).status).toBe(404);
   });
 });

@@ -1096,20 +1096,21 @@ describe("personal Muse control plane",()=>{
       expect((await request(app).get("/api/muse/v1/signal").set("X-Paperclip-Muse-Binding",f.binding.id)).status).toBe(200);
     }finally{check.mockRestore();}
   });
-  it("retains immutable asset1 through asset6 bytes and advertises finite asset7 routes",async()=>{
-    const app=transport(),manifests=await Promise.all([1,2,3,4,5,6,7].map(version=>request(app).get(`/api/muse/v1/assets/${version}/manifest.json`)));
+  it("retains immutable asset1 through asset7 bytes and advertises finite asset8 routes",async()=>{
+    const app=transport(),manifests=await Promise.all([1,2,3,4,5,6,7,8].map(version=>request(app).get(`/api/muse/v1/assets/${version}/manifest.json`)));
     expect(manifests[0].body.assets).toEqual({"client.py":{sha256:"8926534cce48e11d5ea157dfd4deb435c9f8d7d8ea58d3d8a5424b45ab31d1f7"},"detector.sh":{sha256:"09981df12ebce8c50b68e5da64edfe5ab5350d56bf6392ec52023c4990ca658d"},"instructions.md":{sha256:"d347f4d0e7a03bb0397dd4b2ddf38350c8b73ee3c0a91b50cd6c3cd84458a45f"}});
     expect(manifests[1].body.assets).toEqual({"client.py":{sha256:"a89a90cf6ca6ae76be1662a9efda83f69dba3bccdd4c37cfe1935563b1f7330f"},"detector.sh":{sha256:"8e9f5de4f7dc18cbca7121fff6bcab4039dc66056441396826460d7f396c3b41"},"instructions.md":{sha256:"6770734ec4494a5d0403e5cc56ac69613faab96b66a96cf56108cec8dcda07a0"}});
     expect(manifests[2].body.assets).toEqual({"client.py":{sha256:"ed171e60dac5d1ea92b5cce40323ad10d5c87448a926678e9e32aacdd5feca0f"},"detector.sh":{sha256:"8e9f5de4f7dc18cbca7121fff6bcab4039dc66056441396826460d7f396c3b41"},"instructions.md":{sha256:"2e7a4677b1b55ca391b62c7530736441c51e9f7ec9354ed50c776bc786bfa901"}});
     expect(manifests[3].body.assets).toEqual({"client.py":{sha256:"42d9a1a9d795da54393bc9616e9e3ae6e9d9f6735d7728148e6080608aafdfc7"},"detector.sh":{sha256:"8e9f5de4f7dc18cbca7121fff6bcab4039dc66056441396826460d7f396c3b41"},"instructions.md":{sha256:"d57f1c43c0d3c7a76f9ed99e73a5a5cdb46c2b7e470efd451519bc3cc3d7d8f3"}});
     expect(manifests[4].body.assets).toEqual({"client.py":{sha256:"55001af1ac3f5e2e904af1254180d4852025e41ed5c424c0814831a9537e50ca"},"detector.sh":{sha256:"1cbd1dd379987c7dadebbc466af312d72065e322d19c1ac2d8931ae2779885d7"},"instructions.md":{sha256:"46488fc1f50520e5f0a53e2a1cd4f944fcf4bd5cacad57de1d68d41d10904041"}});
     expect(manifests[5].body.assets).toEqual({"client.py":{sha256:"cf207b0823bc59271d5d4ca930e8960eb9362b1244aea1a4e16eabc3889613bb"},"detector.sh":{sha256:"1cbd1dd379987c7dadebbc466af312d72065e322d19c1ac2d8931ae2779885d7"},"instructions.md":{sha256:"7957130682c5a8d2a1faf0e56e9505f548a2d95c294048e979c8499b698aa8d5"}});
-    for(const version of [1,2,3,4,5,6,7]){
+    expect(manifests[6].body.assets).toEqual({"client.py":{sha256:"bd3a70f650b16b7d28a67ec78e96a465741be1203e062e6680ebb6dc4d0db427"},"detector.sh":{sha256:"1cbd1dd379987c7dadebbc466af312d72065e322d19c1ac2d8931ae2779885d7"},"instructions.md":{sha256:"ad86ec766cd009fb11095407460f0e0362f0dd10749b94d51ebb1f3fd13bd357"}});
+    for(const version of [1,2,3,4,5,6,7,8]){
       const manifest=manifests[version-1];expect(manifest.status).toBe(200);expect(manifest.body.assetVersion).toBe(version);expect(manifest.body.clientVersion).toBe(String(version));expect(manifest.headers["cache-control"]).toContain("immutable");
       for(const name of ["client.py","detector.sh","instructions.md"]){const response=await request(app).get(`/api/muse/v1/assets/${version}/${name}`);expect(response.status).toBe(200);expect(response.headers["cache-control"]).toContain("immutable");expect(createHash("sha256").update(response.text).digest("hex")).toBe(manifest.body.assets[name].sha256);}
     }
-    expect(MUSE_PUBLIC_ROUTES).toHaveLength(40);
-    for(const path of ["/api/muse/v1/assets/8/client.py","/api/muse/v1/assets/6/extra.py","/api/muse/v1/assets/6/client.py?version=6"]){expect((await request(app).get(path)).status).toBe(404);}
+    expect(MUSE_PUBLIC_ROUTES).toHaveLength(44);
+    for(const path of ["/api/muse/v1/assets/9/client.py","/api/muse/v1/assets/6/extra.py","/api/muse/v1/assets/6/client.py?version=6"]){expect((await request(app).get(path)).status).toBe(404);}
     expect((await request(app).post("/api/muse/v1/assets/4/client.py")).status).toBe(404);
     expect((await request(transport(true)).post("/api/muse/v1/pair").send({version:1,ticket:"synthetic-unused-ticket",clientVersion:"1"})).status).toBe(400);
   });

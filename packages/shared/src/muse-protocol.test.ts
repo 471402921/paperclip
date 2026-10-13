@@ -70,24 +70,24 @@ describe("Muse progress UTF-8 bounds", () => {
 
 
 it("keeps installed-version declarations finite and backward compatible", () => {
-  expect(MUSE_ASSET_VERSION).toBe(7);
-  expect(MUSE_CLIENT_VERSION).toBe("7");
+  expect(MUSE_ASSET_VERSION).toBe(8);
+  expect(MUSE_CLIENT_VERSION).toBe("8");
   expect(museQuerySchema.parse({ version: 1, query: "identify" })).toEqual({ version: 1, query: "identify" });
-  for (const clientVersion of ["2", "3", "4", "5", "6", "7"]) {
+  for (const clientVersion of ["2", "3", "4", "5", "6", "7", "8"]) {
     expect(museQuerySchema.parse({ version: 1, query: "identify", clientVersion })).toMatchObject({ clientVersion });
     expect(musePairSchema.parse({ version: 1, ticket: "synthetic-unused-ticket", clientVersion })).toMatchObject({ clientVersion });
   }
-  for (const clientVersion of ["1", "8"]) {
+  for (const clientVersion of ["1", "9"]) {
     expect(() => museQuerySchema.parse({ version: 1, query: "identify", clientVersion })).toThrow();
     expect(() => musePairSchema.parse({ version: 1, ticket: "synthetic-unused-ticket", clientVersion })).toThrow();
   }
 });
 
-it("exposes only the exact immutable asset paths for all seven versions", () => {
-  expect(MUSE_PUBLIC_ROUTES).toHaveLength(40);
-  expect(new Set(MUSE_PUBLIC_ROUTES.map(({ method, path }) => `${method} ${path}`)).size).toBe(40);
+it("exposes only the exact immutable asset paths for all eight versions", () => {
+  expect(MUSE_PUBLIC_ROUTES).toHaveLength(44);
+  expect(new Set(MUSE_PUBLIC_ROUTES.map(({ method, path }) => `${method} ${path}`)).size).toBe(44);
   expect(MUSE_PUBLIC_ROUTES.filter(({ path }) => path.includes("/assets/"))).toEqual(
-    [1, 2, 3, 4, 5, 6, 7].flatMap((version) => ["manifest.json", "client.py", "detector.sh", "instructions.md"].map((name) => ({
+    [1, 2, 3, 4, 5, 6, 7, 8].flatMap((version) => ["manifest.json", "client.py", "detector.sh", "instructions.md"].map((name) => ({
       method: "GET", path: `/api/muse/v1/assets/${version}/${name}`,
     }))),
   );

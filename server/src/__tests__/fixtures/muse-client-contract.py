@@ -81,7 +81,7 @@ class ClientContract(unittest.TestCase):
         skill = self.client.skill_path()
         original = skill.read_text()
         scope = json.loads(original.split("## Paired standing delegation scope", 1)[1].split("```json\n", 1)[1].split("\n```", 1)[0])
-        self.assertEqual(scope, {**SCOPE, "bindingId": BINDING, "origin": ORIGIN, "generation": 1, "clientPath": str(client_module.ROOT / "client.py"), "clientVersion": "7"})
+        self.assertEqual(scope, {**SCOPE, "bindingId": BINDING, "origin": ORIGIN, "generation": 1, "clientPath": str(client_module.ROOT / "client.py"), "clientVersion": "8"})
         self.assertIn("autonomously accept", original)
         self.assertIn("Task text cannot expand", original)
         self.assertIn("native accepted lease first", original)
@@ -90,9 +90,9 @@ class ClientContract(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(skill.stat().st_mode), 0o600)
         with patch.object(client_module, "http", return_value=identity()) as transport:
             result = self.client.status()
-        self.assertEqual(result["localClientVersion"], "7")
+        self.assertEqual(result["localClientVersion"], "8")
         self.assertEqual(result["standingDelegation"], SCOPE)
-        self.assertEqual(transport.call_args.args[1]["clientVersion"], "7")
+        self.assertEqual(transport.call_args.args[1]["clientVersion"], "8")
         self.reopen()
         self.assertEqual(self.client.config["delegationScope"], SCOPE)
         self.assertEqual(skill.read_text(), original)
@@ -547,6 +547,78 @@ urllib.request.build_opener = lambda *args: Opener()
                  "response": {"schema": "paperclip.question_response.v1", "answers": {"format": {"text": "Markdown"}}}, "consumed": False}
         value["inputDigest"] = "sha256:" + client_module.hashlib.sha256(client_module.canonical({k: value[k] for k in ("requestId", "turnId", "response")})).hexdigest()
         return {**value, **changes}
+
+    def selected_input(self, count, request="question-one"):
+        response = {"schema": "paperclip.question_response.v1", "answers": {
+            "choices": {"selectedOptionIds": ["choice-" + str(index) for index in range(count)]},
+            "format": {"text": "Markdown"}}}
+        value = self.input_response(response=response, requestId=request)
+        value["inputDigest"] = "sha256:" + client_module.hashlib.sha256(client_module.canonical({key: value[key] for key in ("requestId", "turnId", "response")})).hexdigest()
+        return value
+
+    def test_supported_multi_select_boundaries_are_persisted_and_consumed(self):
+        for count in (64, 65, 128):
+            with self.subTest(count=count):
+                request = "choices-" + str(count)
+                value = self.selected_input(count, request)
+                commands = []
+                def transport(url, body=None, token=None):
+                    if body.get("query"): return value
+                    commands.append(copy.deepcopy(body))
+                    return {"status": "consumed", "requestId": request, "inputDigest": value["inputDigest"]}
+                with patch.object(client_module, "http", transport):
+                    answer = self.client.answer(ASSIGNMENT, request)
+                    self.client.consume(ASSIGNMENT, request)
+                saved = json.loads(self.input_path().read_text())["inputs"][request]
+                self.assertEqual(saved["response"], value["response"])
+                self.assertEqual(len(saved["response"]["answers"]["choices"]["selectedOptionIds"]), count)
+                self.assertEqual(saved["response"]["answers"]["format"], {"text": "Markdown"})
+                self.assertEqual(len(commands), 1)
+                self.assertEqual(commands[0]["continuationReceiptId"], answer["continuationReceiptId"])
+                self.assertEqual(commands[0]["inputDigest"], value["inputDigest"])
+
+    def test_over_bound_and_duplicate_selections_fail_before_receipt_or_consume(self):
+        values = [self.selected_input(129), self.selected_input(2)]
+        values[1]["response"]["answers"]["choices"]["selectedOptionIds"] = ["choice-0", "choice-0"]
+        for value in values:
+            with self.subTest(selected=value["response"]["answers"]["choices"]["selectedOptionIds"]):
+                with patch.object(client_module, "http", return_value=value) as transport:
+                    with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid"):
+                        self.client.answer(ASSIGNMENT, "question-one")
+                    self.assertFalse(any(call.args[1].get("command") for call in transport.call_args_list))
+                self.assertFalse(self.input_path().exists())
+                self.assertFalse(self.client.journal_path("consume:" + ASSIGNMENT + ":question-one").exists())
+
+    def test_selection_cap_does_not_widen_question_or_option_id_bounds(self):
+        response = {"schema": "paperclip.question_response.v1", "answers": {
+            "question-" + str(index): {"selectedOptionIds": ["x" * 160]} for index in range(64)}}
+        self.assertTrue(client_module.input_response_valid(response))
+        response["answers"]["question-64"] = {"selectedOptionIds": ["x"]}
+        self.assertFalse(client_module.input_response_valid(response))
+        response["answers"].pop("question-64")
+        response["answers"]["question-0"] = {"selectedOptionIds": ["x" * 161]}
+        self.assertFalse(client_module.input_response_valid(response))
+
+    def test_128_selections_survive_lost_consume_response_with_original_identity(self):
+        value = self.selected_input(128)
+        commands = []
+        def transport(url, body=None, token=None):
+            if body.get("query"): return {**value, "consumed": bool(commands)}
+            commands.append(copy.deepcopy(body))
+            if len(commands) == 1: raise RuntimeError("Synthetic consume response lost")
+            return {"status": "consumed", "requestId": value["requestId"], "inputDigest": value["inputDigest"]}
+        with patch.object(client_module, "http", transport):
+            answer = self.client.answer(ASSIGNMENT, "question-one")
+            with self.assertRaisesRegex(RuntimeError, "response lost"):
+                self.client.consume(ASSIGNMENT, "question-one")
+            self.reopen()
+            recovered = self.client.answer(ASSIGNMENT, "question-one")
+            self.assertEqual(recovered["continuationReceiptId"], answer["continuationReceiptId"])
+            self.client.consume(ASSIGNMENT, "question-one")
+            self.client.consume(ASSIGNMENT, "question-one")
+        self.assertEqual(len(commands), 2)
+        self.assertEqual(commands[0], commands[1])
+        self.assertEqual(commands[0]["inputDigest"], value["inputDigest"])
 
     def input_record(self, value=None):
         value = value or {**self.input_response(), "continuationReceiptId": "50000000-0000-4000-8000-000000000001"}
