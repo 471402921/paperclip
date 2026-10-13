@@ -716,7 +716,7 @@ not revoke grants used by other bots. See [Slack setup](connections/slack-setup.
 
 ## Transaction-aware delivery work signals
 
-Five existing delivery queues use process-local work signals to avoid empty
+Durable delivery queues, including plugin resource lifecycle events, use process-local work signals to avoid empty
 polling. Register work **before** writing a queue row, on that row's transaction:
 
 ```ts

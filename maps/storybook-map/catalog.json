@@ -8,9 +8,10 @@
       "maps/feature-map/README.md",
       "scripts/storybook-feature-index.mjs",
       "ui/storybook/generated/feature-index.json",
-      "ui/storybook/support/feature-map/FeatureOverview.tsx"
+      "ui/storybook/support/feature-map/FeatureOverview.tsx",
+      "ui/storybook/support/capability-gaps/api.ts"
     ],
-    "fingerprint": "6bdb0d9cc1f9abb1d9b1c1d7b4652ee4f4cf5c9c5d939069dfabef70ed731df3"
+    "fingerprint": "1f6d48d7e205c2ff2f7c33aa784a82ca0ef961093bba7de319d50e22dfb4f17a"
   },
   "entries": [
     {
@@ -22,14 +23,14 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
         "ui/src/pages/apps/AppLogo.tsx",
         "ui/storybook/stories/connection-setup/AppLogoRegistry.stories.tsx"
       ],
-      "fingerprint": "c2cabf44446b0ae5ffba2959df65fb9aba16e635b9b5e63fa1a0e36cfb959f8b",
+      "fingerprint": "6cccd3d57ac6d02f9fbeed4173a7813a4249d734b8f2d28f98c29706cbcc8548",
       "stableId": "apps-canonical-icon-registry",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Apps/Canonical icon registry"
     },
@@ -47,7 +48,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. SavedDraftResume, Reconnect, SelectedAgents and ManageToolPermissions demonstrate production setup/permissions/test surfaces with an in-memory wrapper. Reload loses the draft; these examples do not verify persisted recovery. NewToolsAllowed does not demonstrate quarantined-action review.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. SavedDraftResume, Reconnect, SelectedAgents and ManageToolPermissions demonstrate production setup/permissions/test surfaces with an in-memory wrapper. Reload loses the draft; these examples do not verify persisted recovery. NewToolsAllowed does not demonstrate quarantined-action review. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
@@ -60,7 +61,7 @@
         "ui/storybook/stories/connection-setup/ArcadeConnection.stories.tsx",
         "maps/feature-map/app-permissions.md"
       ],
-      "fingerprint": "e613c96bf5fdfca19508ffe5d74ed027d757a38110029a59ca66d471f4e829f9",
+      "fingerprint": "935bbdd07ef2e35b65fc6e3b4201f846f9735177e3b4415c5bbe8d0e159e0f9c",
       "stableId": "apps-connections-arcade",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Apps/Connections/Arcade"
     },
@@ -78,7 +79,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. SavedDraftResume, Reconnect, SelectedAgents and ManageToolPermissions demonstrate production setup/permissions/test surfaces with an in-memory wrapper. Reload loses the draft; these examples do not verify persisted recovery. NewToolsAllowed does not demonstrate quarantined-action review.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. SavedDraftResume, Reconnect, SelectedAgents and ManageToolPermissions demonstrate production setup/permissions/test surfaces with an in-memory wrapper. Reload loses the draft; these examples do not verify persisted recovery. NewToolsAllowed does not demonstrate quarantined-action review. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
@@ -91,7 +92,7 @@
         "ui/storybook/stories/connection-setup/ComposioConnection.stories.tsx",
         "maps/feature-map/app-permissions.md"
       ],
-      "fingerprint": "b5f0945453ee1e8b040bb77577723ea0a0caf13a91d2b367835d331c0d9af9cb",
+      "fingerprint": "452224b19d14b6e3a7396cc1b55cb7663adaf6bf1c3202935da0f61d20be34c9",
       "stableId": "apps-connections-composio",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Apps/Connections/Composio"
     },
@@ -104,8 +105,8 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
         "ui/src/components/JsonSchemaForm.tsx",
@@ -118,7 +119,7 @@
         "ui/storybook/prototypes/RemoteMcpConnectionReview.tsx",
         "ui/storybook/stories/connection-setup/ConnectionProviderChoice.stories.tsx"
       ],
-      "fingerprint": "046ab725fad4b30c0b6c51d0064725e9688012a67c9106290fde7cb9413c3715",
+      "fingerprint": "8661b29e8740f133ec6b457931fd7344e9225bc6f8acdd84573ac843ee9e7e97",
       "stableId": "apps-connections-provider-choice",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Apps/Connections/Provider choice"
     },
@@ -136,7 +137,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. SavedDraftResume, Reconnect, SelectedAgents and ManageToolPermissions demonstrate production setup/permissions/test surfaces with an in-memory wrapper. Reload loses the draft; these examples do not verify persisted recovery. NewToolsAllowed does not demonstrate quarantined-action review.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. SavedDraftResume, Reconnect, SelectedAgents and ManageToolPermissions demonstrate production setup/permissions/test surfaces with an in-memory wrapper. Reload loses the draft; these examples do not verify persisted recovery. NewToolsAllowed does not demonstrate quarantined-action review. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
@@ -149,7 +150,7 @@
         "ui/storybook/stories/connection-setup/ExecutorConnection.stories.tsx",
         "maps/feature-map/app-permissions.md"
       ],
-      "fingerprint": "402206b2ff037110ee05a2d00e80f7ee2f9346b211829030eddf4b95541a2e30",
+      "fingerprint": "e405d30ca0c64ceae9302500b07876c0dc57c8d0cbbedf23c432dfb9fe4a339d",
       "stableId": "apps-connections-executor",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Apps/Connections/Executor"
     },
@@ -167,7 +168,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. SavedDraftResume, Reconnect, SelectedAgents and ManageToolPermissions demonstrate production setup/permissions/test surfaces with an in-memory wrapper. Reload loses the draft; these examples do not verify persisted recovery. NewToolsAllowed does not demonstrate quarantined-action review.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. SavedDraftResume, Reconnect, SelectedAgents and ManageToolPermissions demonstrate production setup/permissions/test surfaces with an in-memory wrapper. Reload loses the draft; these examples do not verify persisted recovery. NewToolsAllowed does not demonstrate quarantined-action review. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
@@ -180,7 +181,7 @@
         "ui/storybook/stories/connection-setup/ZapierConnection.stories.tsx",
         "maps/feature-map/app-permissions.md"
       ],
-      "fingerprint": "c0593ea1b08ecf7ac978943e1cba6b04289234676caf498aeccd5a45be7fda16",
+      "fingerprint": "a92fb11928da7e60fa8ef1db8b9090828c02dd60095dc581e620263522c721be",
       "stableId": "apps-connections-zapier",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Apps/Connections/Zapier"
     },
@@ -283,7 +284,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Wrapper mounts production Layout and AgentChat; conversation selection and sends use in-memory routes. Directory name is not prototype evidence. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior.",
+      "notes": "Wrapper mounts production Layout and AgentChat; conversation selection and sends use in-memory routes. Directory name is not prototype evidence. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. Source review covers the retained-file recovery form, source-bound evidence and unchanged task status; fixture APIs do not prove live provider recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/agent-chat.md",
@@ -304,7 +305,7 @@
         "ui/storybook/prototypes/chat-entry/ChatEntryReview.tsx",
         "ui/storybook/stories/agent-chat/agent-chat-sidebar.stories.tsx"
       ],
-      "fingerprint": "6994574cfda7901b4cec355add8dadb58146bd4cf0d3488796fe27e19e34cdc3",
+      "fingerprint": "ab2f77b8b4ed82dbed8c6a3e3cfb1060ba9beed81daada29fec72e9c8c660402",
       "stableId": "design-explorations-agent-chat-sidebar-pages",
       "sidebarTitle": "Tasks and conversations/Agent conversations and project handoff/Design explorations/Agent chat sidebar/Pages"
     },
@@ -343,7 +344,7 @@
       "status": "mixed",
       "implementation": "mixed",
       "boundary": "fixtures",
-      "notes": "Production conversation/task routes with a local ChatEntryLanding. Default-agent behavior and fallback API responses remain outside current-product parity. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. ProjectCreated, ExistingProject, MultipleRepositories, ProjectWithoutRepository and ProjectCreationFailed show linked handoff results/navigation through shipped chat/task hosts. Tool execution and persistence are simulated.",
+      "notes": "Production conversation/task routes with a local ChatEntryLanding. Default-agent behavior and fallback API responses remain outside current-product parity. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. ProjectCreated, ExistingProject, MultipleRepositories, ProjectWithoutRepository and ProjectCreationFailed show linked handoff results/navigation through shipped chat/task hosts. Tool execution and persistence are simulated. Source review covers the retained-file recovery form, source-bound evidence and unchanged task status; fixture APIs do not prove live provider recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/agent-chat.md",
@@ -364,7 +365,7 @@
         "ui/storybook/prototypes/chat-entry/ChatEntryReview.tsx",
         "ui/storybook/stories/agent-chat/agent-chat.stories.tsx"
       ],
-      "fingerprint": "c3faad0b551a84f6c7ddf5cf9566b96e0d435d28a4ac3035d147b069723b7152",
+      "fingerprint": "7c0310b7b706473dad7a6bc22540d7a0c44f0aacd50816ac6a7673958e655f5f",
       "stableId": "design-explorations-agent-chat",
       "sidebarTitle": "Tasks and conversations/Agent conversations and project handoff/Design explorations/Agent chat"
     },
@@ -498,7 +499,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. Source review covers the retained-file recovery form, source-bound evidence and unchanged task status; fixture APIs do not prove live provider recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/agents.md",
@@ -513,7 +514,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/agents/agent-persona-pages.stories.tsx"
       ],
-      "fingerprint": "35454c02bbae403677d0d79644dc92da6c96172265d0f7581508e7d111463e0f",
+      "fingerprint": "8033cb412e8ceea24791e49fa2c22f651a7d27c504415152bfe99b0e7e45bd73",
       "stableId": "agents-personas-full-pages",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Agents/Personas/Full pages"
     },
@@ -588,8 +589,8 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
         "maps/feature-map/gateways-profiles.md",
@@ -604,7 +605,7 @@
         "ui/storybook/fixtures/routineTriggerWizard.tsx",
         "ui/storybook/stories/connection-setup/agent-setup-prompt.stories.tsx"
       ],
-      "fingerprint": "5628f9ddbb4484f964e4b95d3c342e982f9b10e1c39e8cfbaa49a0ab2cb2a484",
+      "fingerprint": "379018ba98ba89a2a05b26f5db3e28d85d81af08b77a011c55d9bc6118fa1a15",
       "stableId": "components-agent-setup-prompt",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Components/Agent setup prompt"
     },
@@ -659,7 +660,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the added connection/destination-default recipe; these unchanged setup, identity or conversation examples do not establish default selection or new-task inheritance.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the added connection/destination-default recipe; these unchanged setup, identity or conversation examples do not establish default selection or new-task inheritance. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/chat-channels.md",
@@ -669,7 +670,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/chat-channels/agentmail-onboarding.stories.tsx"
       ],
-      "fingerprint": "22c79d5f6a714efbaeaaa0023284707b696aa73cddbb66067d8c5a3dde116859",
+      "fingerprint": "69bd5253a034d76a1f13712cf59b8fba7c1678d95a8dd355988727cdccf77404",
       "stableId": "connections-agentmail-setup",
       "sidebarTitle": "Apps, channels, and extensions/External chat and email/Connections/AgentMail setup"
     },
@@ -847,8 +848,8 @@
       "status": "proposed",
       "implementation": "prototype",
       "boundary": "fixtures",
-      "notes": "Local catalog composition uses shipped cards and filters; retains design exploration purpose, not acceptance of the Apps route.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Local catalog composition uses shipped cards and filters; retains design exploration purpose, not acceptance of the Apps route. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
         "ui/src/pages/apps/Browse.tsx",
@@ -856,7 +857,7 @@
         "ui/storybook/prototypes/ConnectorCatalogNavigation.tsx",
         "ui/storybook/stories/connection-setup/apps-catalog-source-selection.stories.tsx"
       ],
-      "fingerprint": "5157a890fe6825a1f89d138a582e5b11791aceef4a0d7cfb6c5cc968c06ee7f6",
+      "fingerprint": "e93a8979af016cd9823399c8a3888b5e03de8718defa31fa00a1ccd521241bd6",
       "stableId": "apps-catalog-source-selection",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Apps/Catalog source selection"
     },
@@ -869,15 +870,15 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
         "ui/src/pages/apps/AppsConnect.tsx",
         "ui/src/pages/tools/PasteConfigTab.tsx",
         "ui/storybook/stories/connection-setup/apps-connect-discoverability.stories.tsx"
       ],
-      "fingerprint": "bd84a617cba9cc83a08f36d133e954a54a8f60c94ae805382736f560e41c3bdd",
+      "fingerprint": "c9c741dd4b9fdac34e49e6940c5be47c3c728dcb0ad4c057eb18d90d4e25f4aa",
       "stableId": "apps-connect-discoverability-pap-11091",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Apps/Connect discoverability (PAP-11091)"
     },
@@ -890,14 +891,14 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
         "ui/src/pages/apps/AppsConnect.tsx",
         "ui/storybook/stories/connection-setup/apps-connect-name.stories.tsx"
       ],
-      "fingerprint": "cf644220c06d38aa70e94b35519698b7bb4f00cc0565dc7d9cd4840293d15630",
+      "fingerprint": "9de4f6ee6436b4edee2cbfa8f21ddd34b587da624a3f77b9b167a810fd0f60df",
       "stableId": "apps-connect-name-at-create-time-pap-11283",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Apps/Connect name at create time (PAP-11283)"
     },
@@ -1185,7 +1186,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Creation-visibility verification recipes were updated; this story scenario is unchanged and does not prove that journey. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Creation-visibility verification recipes were updated; this story scenario is unchanged and does not prove that journey. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work. The added verification recipe documents source-only retained-file repair; existing fixtures do not establish live provider recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/recovery.md",
@@ -1196,7 +1197,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/tasks/assigned-backlog-safeguards.stories.tsx"
       ],
-      "fingerprint": "cdb63642517b31c68df9ca8d62e60039f9f4d69d95d1a96dc96235fb7db1487d",
+      "fingerprint": "634be5456a6554553c9c19852941533fd657b48ea9aaf97ea2774a5b52fed8d0",
       "stableId": "paperclip-assigned-backlog-safeguards",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Paperclip/Assigned Backlog Safeguards"
     },
@@ -1210,7 +1211,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Creation visibility now defaults to hiding automated independent tasks, with a show agent-created tasks control and inbox participation exceptions. Source alignment reviewed; these fixture stories do not establish live server pagination or authorization. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Creation visibility now defaults to hiding automated independent tasks, with a show agent-created tasks control and inbox participation exceptions. Source alignment reviewed; these fixture stories do not establish live server pagination or authorization. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work. The added verification recipe documents source-only retained-file repair; existing fixtures do not establish live provider recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/inbox-search.md",
@@ -1220,7 +1221,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/inbox-search/blocked-inbox.stories.tsx"
       ],
-      "fingerprint": "bcb6c0a3cb34fcd06e7b056521ad84fb968f73ba46a7ba00eda2a86bb060b11b",
+      "fingerprint": "1ef985b27fe351ee34b584ca878c66819fd46986eb09dbce59c408c66b35a495",
       "stableId": "product-inbox-blocked-tab",
       "sidebarTitle": "Tasks and conversations/Inbox, decisions, and search/Product/Inbox/Blocked tab"
     },
@@ -1234,7 +1235,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Creation-visibility verification recipes were updated; this story scenario is unchanged and does not prove that journey. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Creation-visibility verification recipes were updated; this story scenario is unchanged and does not prove that journey. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work. The added verification recipe documents remote-source isolation and lifecycle guards; existing fixtures do not establish live provider recovery. The source recipe now excludes literal and task-independent branch templates; these fixtures do not execute that backend admission guard. The remote fallback requires current default provenance; these examples do not prove admission for explicit or inherited checkout bindings.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/tasks.md",
@@ -1245,7 +1246,7 @@
         "ui/storybook/fixtures/browser-use.tsx",
         "ui/storybook/stories/workspaces/browser-use-activity.stories.tsx"
       ],
-      "fingerprint": "f0e77b99e99a69532f45d58546a2324893543911771e850a47ca3452818bcf3d",
+      "fingerprint": "00c08cb6566e12b7fd9dce179296397813ea3e2ab4ee47d27cd1ca948496ca15",
       "stableId": "tasks-browser-use-task-activity",
       "sidebarTitle": "Projects and execution/Workspaces, services, and files/Tasks/Browser Use/Task activity"
     },
@@ -1259,7 +1260,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Creation-visibility verification recipes were updated; this story scenario is unchanged and does not prove that journey. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Creation-visibility verification recipes were updated; this story scenario is unchanged and does not prove that journey. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work. The added verification recipe documents remote-source isolation and lifecycle guards; existing fixtures do not establish live provider recovery. The source recipe now excludes literal and task-independent branch templates; these fixtures do not execute that backend admission guard. The remote fallback requires current default provenance; these examples do not prove admission for explicit or inherited checkout bindings.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/tasks.md",
@@ -1269,7 +1270,7 @@
         "ui/storybook/fixtures/browser-use.tsx",
         "ui/storybook/stories/workspaces/browser-use-footer.stories.tsx"
       ],
-      "fingerprint": "b60b13c6ff934b038616eee7da6aeeaac0f595aeb7c8d80d2a2f787c7bb0dbac",
+      "fingerprint": "fda7ec26101f5b6fe68da1f7b6a96c364878c5f14884d639e406412e8341959f",
       "stableId": "tasks-browser-use-footer",
       "sidebarTitle": "Projects and execution/Workspaces, services, and files/Tasks/Browser Use/Footer"
     },
@@ -1282,8 +1283,8 @@
       "status": "current",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
         "ui/src/components/task-side-panel/TaskBrowserPanel.tsx",
@@ -1291,7 +1292,7 @@
         "ui/storybook/fixtures/browser-use.tsx",
         "ui/storybook/stories/connection-setup/browser-use-settings.stories.tsx"
       ],
-      "fingerprint": "03d6a432d16ecfb9bea1c75108ee7c70d23d283b47bd28f287547f4b6c23f7f3",
+      "fingerprint": "c4b0593a7d8fd826c8949fa2374c469fdc6a4ad8cbf6efd01fbd97f6db833228",
       "stableId": "connections-browser-use-cloud-settings",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Connections/Browser Use Cloud/Settings"
     },
@@ -1305,7 +1306,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Creation-visibility verification recipes were updated; this story scenario is unchanged and does not prove that journey. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Creation-visibility verification recipes were updated; this story scenario is unchanged and does not prove that journey. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work. The added verification recipe documents remote-source isolation and lifecycle guards; existing fixtures do not establish live provider recovery. The source recipe now excludes literal and task-independent branch templates; these fixtures do not execute that backend admission guard. The remote fallback requires current default provenance; these examples do not prove admission for explicit or inherited checkout bindings.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/tasks.md",
@@ -1316,7 +1317,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/workspaces/browser-use.stories.tsx"
       ],
-      "fingerprint": "7dea88462587a256933271c48cfef7ff339f55acd1f77a38bf89ad537c63f3ae",
+      "fingerprint": "dafe2721334717ad745e72100e23577dbe3816a3b9ee9224a114ff84fbbb4729",
       "stableId": "tasks-browser-use-panel",
       "sidebarTitle": "Projects and execution/Workspaces, services, and files/Tasks/Browser Use/Panel"
     },
@@ -1331,7 +1332,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. FullMatrix renders BudgetIncidentCard in warning, resolved, pending-approval and escalated hard-stop states. Resolution handlers are no-ops; budget relief and resumption remain unverified.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. FullMatrix renders BudgetIncidentCard in warning, resolved, pending-approval and escalated hard-stop states. Resolution handlers are no-ops; budget relief and resumption remain unverified. The upstream budget UI distinguishes soft warnings from hard stops; hard incidents retain raise-and-resume and keep-paused controls.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/budgets-costs.md",
@@ -1347,7 +1348,7 @@
         "ui/src/components/ProviderQuotaCard.tsx",
         "ui/storybook/stories/budgets-costs/budget-finance.stories.tsx"
       ],
-      "fingerprint": "b71fa2f405c1d671b092bd2d86b220429819950b100c5aed3b7afb2b4efae1d3",
+      "fingerprint": "1af4d0af7d3dc0008dce21ac303af6aa90fb46593389fc7e47602a490e3ca8c7",
       "stableId": "product-budget-finance",
       "sidebarTitle": "Oversight and operation/Costs and budgets/Product/Budget & Finance"
     },
@@ -1435,7 +1436,7 @@
       "status": "historical",
       "implementation": "mixed",
       "boundary": "fixtures",
-      "notes": "Retained first-created-agent sidebar/landing design predates personal primary-agent selection. Shared production conversation components remain useful. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior.",
+      "notes": "Retained first-created-agent sidebar/landing design predates personal primary-agent selection. Shared production conversation components remain useful. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. Source review covers the retained-file recovery form, source-bound evidence and unchanged task status; fixture APIs do not prove live provider recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/agent-chat.md",
@@ -1456,7 +1457,7 @@
         "ui/storybook/prototypes/chat-entry/ChatEntryReview.tsx",
         "ui/storybook/stories/agent-chat/chat-entry.stories.tsx"
       ],
-      "fingerprint": "444465b306686cc36d85d4d2af43f9cd31f3c7c34a5fd05f8413aa639becf535",
+      "fingerprint": "726b0bc2e1b5aaf7c5afef3a4e184d2aa6240988706bf266c12878141a41e631",
       "replacement": "ui/storybook/stories/agents/primary-agent/05-chat.stories.tsx",
       "stableId": "design-explorations-chat-entry",
       "sidebarTitle": "Tasks and conversations/Agent conversations and project handoff/Design explorations/Chat entry"
@@ -1498,14 +1499,14 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The added verification recipe documents source-only retained-file repair; existing fixtures do not establish live provider recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/recovery.md",
         "ui/src/components/CloudAccessGate.tsx",
         "ui/storybook/stories/recovery/cloud-access-recovery.stories.tsx"
       ],
-      "fingerprint": "bbec224b127ec6898cf95dfae922e6747483c0d0d4ec55ff7d1560c0c4a5c041",
+      "fingerprint": "65051e49291a3917a3b62604fa76747d2df1825f2601f9abbf2e4ab45b5add9d",
       "stableId": "app-connection-recovery",
       "sidebarTitle": "Projects and execution/Recovery/App/Connection recovery"
     },
@@ -1667,8 +1668,8 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/agents.md",
         "maps/feature-map/connection-setup.md",
@@ -1681,7 +1682,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/connection-setup/connection-instructions.stories.tsx"
       ],
-      "fingerprint": "8f34f47beca85eea7d4cd012422422a37cd2d47ce7068bce9103dfc9d934e9dd",
+      "fingerprint": "fbe38d3bcc75a349708824554ebc89e2b537765679f1bc20c83382187d3f7b8d",
       "stableId": "design-explorations-connections-agent-instructions",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Design explorations/Connections/Agent instructions"
     },
@@ -1695,8 +1696,8 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
         "maps/feature-map/runs-adapters.md",
@@ -1708,7 +1709,7 @@
         "ui/storybook/prototypes/ConnectionPoolConnectorHost.tsx",
         "ui/storybook/stories/runs-adapters/connection-pool-connector.stories.tsx"
       ],
-      "fingerprint": "f6208d2a6b919cbd511baefdb5e45f79eb2c2d851e6035ea9778a13fc827544c",
+      "fingerprint": "8435510a61a26df876ed1f5ab088873738bcc4e57c3b17d8bb59a1fc548f111e",
       "stableId": "connectors-pool-host",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/Connectors/Pool host"
     },
@@ -1748,7 +1749,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
@@ -1759,7 +1760,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/questions-and-approvals/connection-reviews.stories.tsx"
       ],
-      "fingerprint": "1fd693af15b9cc5669e91fb5eaa67e21ad60866aac16f7f8c40ad6f8d8ec6bb9",
+      "fingerprint": "20866331e244be5a10686f155ff0e0e1d9e644abdea71ca9b63ed46fd925732c",
       "stableId": "chat-comments-connection-reviews",
       "sidebarTitle": "Tasks and conversations/Questions and approvals/Chat & Comments/Connection Reviews"
     },
@@ -1806,15 +1807,15 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The upstream budget UI distinguishes soft warnings from hard stops; hard incidents retain raise-and-resume and keep-paused controls.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/budgets-costs.md",
         "ui/src/components/ToastViewport.tsx",
         "ui/src/pages/Costs.tsx",
         "ui/storybook/stories/budgets-costs/costs/subscriptions.stories.tsx"
       ],
-      "fingerprint": "5663cc1d142ce63bf2c5e2edc23c19ef6b6f45fdee12cc79ad9e20446a5be5a8",
+      "fingerprint": "7eeef3d9becbe18d7f7e644f4fc8628c386071f151a038842fac12e97602c81d",
       "stableId": "costs-subscriptions",
       "sidebarTitle": "Oversight and operation/Costs and budgets/Costs/Subscriptions"
     },
@@ -1828,15 +1829,15 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Agent-owned instance secrets remain in trusted server runtime and are excluded from ordinary agent delivery; these UI examples do not verify that lifecycle contract. The added verification recipe documents source-only retained-file repair; existing fixtures do not establish live provider recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/recovery.md",
         "maps/feature-map/secrets.md",
         "ui/src/components/task-chat/TaskChatMarker.tsx",
         "ui/storybook/stories/secrets/credential-access/01-notice.stories.tsx"
       ],
-      "fingerprint": "2eba045db9127e5cd8d8bf7c9664e4598a5c84be117ae6159ce7171b24f2005d",
+      "fingerprint": "e47db04211055da618b8759ca77f1c725fd6370a660619fa621e7df53c6e140a",
       "stableId": "task-credential-access-01-notice",
       "sidebarTitle": "Apps, channels, and extensions/Secrets and proposals/Task credential access/01 Notice"
     },
@@ -1850,7 +1851,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Agent-owned instance secrets remain in trusted server runtime and are excluded from ordinary agent delivery; these UI examples do not verify that lifecycle contract. Source review covers the retained-file recovery form, source-bound evidence and unchanged task status; fixture APIs do not prove live provider recovery. The added verification recipe documents source-only retained-file repair; existing fixtures do not establish live provider recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/recovery.md",
@@ -1862,7 +1863,7 @@
         "ui/storybook/stories/secrets/credential-access/02-task-page.stories.tsx",
         "ui/storybook/support/credential-access/CredentialTaskPage.tsx"
       ],
-      "fingerprint": "70a07a45f3633984db4bbadd599c3745e098f17100f8421b0c3cd1fec46e2186",
+      "fingerprint": "33c0737e68af1841115aad7f962e7e81af6ea5659bc335bc0f842a47ca7b6868",
       "stableId": "task-credential-access-02-task-page",
       "sidebarTitle": "Apps, channels, and extensions/Secrets and proposals/Task credential access/02 Task page"
     },
@@ -1998,7 +1999,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Related decision-service examples show connection/model configuration, bounded test receipts or invocation history using shipped subjects and simulated data. No paid provider or authorization proof.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Related decision-service examples show connection/model configuration, bounded test receipts or invocation history using shipped subjects and simulated data. No paid provider or authorization proof. The upstream budget UI distinguishes soft warnings from hard stops; hard incidents retain raise-and-resume and keep-paused controls.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/budgets-costs.md",
@@ -2009,7 +2010,7 @@
         "ui/storybook/stories/companies/decision-models/03-journey.stories.tsx",
         "ui/storybook/support/decision-models/fixtures.ts"
       ],
-      "fingerprint": "fe773821e67983b5a6255d417fd9952e3bc227c4ccdb8410b06e1a9200c94d63",
+      "fingerprint": "18b3ec30595cccd821d30fbf6eef0ca7b072666c9fd98b48f866b4420144a244",
       "stableId": "decision-models-03-journey",
       "sidebarTitle": "Getting started and access/Companies and portability/Decision models/03 Journey"
     },
@@ -2044,14 +2045,14 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The recipe distinguishes process liveness from authenticated database readiness; these examples do not exercise that operator API boundary.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/instance-operations.md",
         "ui/src/components/DevRestartBanner.tsx",
         "ui/storybook/stories/instance-operations/dev-ops-surfaces.stories.tsx"
       ],
-      "fingerprint": "e936abb4c886157de2f3772383b4062734e0b3a8c7dc64bb42331eef64cd6456",
+      "fingerprint": "65b11bebc5c0a3f7644149c7ba18c7cd7fa810c300e60459ea045904f771c0ef",
       "stableId": "product-dev-ops-surfaces",
       "sidebarTitle": "Oversight and operation/Instance operations/Product/Dev Ops Surfaces"
     },
@@ -2167,8 +2168,8 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
         "ui/src/pages/apps/AppsConnect.tsx",
@@ -2176,7 +2177,7 @@
         "ui/src/pages/apps/app-detail/AdvancedPanel.tsx",
         "ui/storybook/stories/connection-setup/enterpret-connect-flow.stories.tsx"
       ],
-      "fingerprint": "4b82e0db0a71ad569c10f32553084e884a89cb58eac33782ca07ae272e7411c1",
+      "fingerprint": "81be6c7c5dd054799a393b8c61c29c4190cf8a112fd9e573e0010c2cbab393c9",
       "stableId": "apps-enterpret-connector",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Apps/Enterpret connector"
     },
@@ -2189,14 +2190,14 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Agent-owned instance secrets remain in trusted server runtime and are excluded from ordinary agent delivery; these UI examples do not verify that lifecycle contract.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/secrets.md",
         "ui/src/components/environment-variables-editor/index.tsx",
         "ui/storybook/stories/secrets/environment-variables-editor.stories.tsx"
       ],
-      "fingerprint": "f41ed501dc34f19a8ef6071f1e7e563e8ac60769e6a2930dcfd8cde15d6551d0",
+      "fingerprint": "e358e40a80d2d2dc92050836098375e0f9d88a3b59491d24c1a4c4b784e70c00",
       "stableId": "product-environment-variables-editor",
       "sidebarTitle": "Apps, channels, and extensions/Secrets and proposals/Product/Environment Variables Editor"
     },
@@ -2209,14 +2210,16 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Source review covers the retained-file recovery form, source-bound evidence and unchanged task status; fixture APIs do not prove live provider recovery. The added verification recipe documents source-only retained-file repair; existing fixtures do not establish live provider recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/recovery.md",
         "ui/src/components/ExecutionBlockerNotice.tsx",
-        "ui/storybook/stories/recovery/execution-blocker-notice.stories.tsx"
+        "ui/src/components/WorkspaceFileRecovery.tsx",
+        "ui/storybook/stories/recovery/execution-blocker-notice.stories.tsx",
+        "ui/storybook/support/workspace-file-recovery/fixture.tsx"
       ],
-      "fingerprint": "bee366ba1266e6692c8f0ee027c449fdda6b51762369ba431871a5af5ee018c6",
+      "fingerprint": "cb2da1b3f76b1b644f7b11fb6f55c27950ae51ce3e590ead878d3703606588d7",
       "stableId": "task-chat-recovery-notice",
       "sidebarTitle": "Projects and execution/Recovery/Task chat/Recovery notice"
     },
@@ -2229,8 +2232,8 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The added verification recipe documents source-only retained-file repair; existing fixtures do not establish live provider recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/recovery.md",
         "ui/src/components/ActiveAgentsPanel.tsx",
@@ -2240,7 +2243,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/recovery/execution-recovery.stories.tsx"
       ],
-      "fingerprint": "6f8b245b169d95046bdb52513dfaf4937a96f807b72470c198863471f59c8149",
+      "fingerprint": "4cfa6fd775c9cf04e0586ed5a7218df3e8bb51dcaadf80b9a26a979aabf61e98",
       "stableId": "tasks-execution-recovery",
       "sidebarTitle": "Projects and execution/Recovery/Tasks/Execution recovery"
     },
@@ -2400,8 +2403,8 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
         "maps/feature-map/routines.md",
@@ -2420,7 +2423,7 @@
         "ui/storybook/fixtures/routineWebhooks.tsx",
         "ui/storybook/stories/connection-setup/fireflies-pr.stories.tsx"
       ],
-      "fingerprint": "d7898061478285bbc6fa9ee5152bdb840ca3d329590a3b35573e0632282278e5",
+      "fingerprint": "0a85fc855275fb6dfbd89dbc9d25bed994b940af1a01d95b04d4375d843fd1dc",
       "stableId": "pr-reviews-fireflies-and-app-webhooks",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/PR reviews/Fireflies and app webhooks"
     },
@@ -2631,7 +2634,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the added connection/destination-default recipe; these unchanged setup, identity or conversation examples do not establish default selection or new-task inheritance.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the added connection/destination-default recipe; these unchanged setup, identity or conversation examples do not establish default selection or new-task inheritance. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/chat-channels.md",
@@ -2643,7 +2646,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/chat-channels/github-connections.stories.tsx"
       ],
-      "fingerprint": "53ef79816b0825618e15a4bbb501df31efea9a1fb62ccdf066a81e26c71a838c",
+      "fingerprint": "e59cc39bf1cf6db5359c94a30c7b64e3b8cb175b576295f16d541850929abce9",
       "stableId": "connections-github-and-code-review-bot",
       "sidebarTitle": "Apps, channels, and extensions/External chat and email/Connections/GitHub and Code Review Bot"
     },
@@ -2707,7 +2710,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence. The added verification recipe documents remote-source isolation and lifecycle guards; existing fixtures do not establish live provider recovery. The source recipe now excludes literal and task-independent branch templates; these fixtures do not execute that backend admission guard. The remote fallback requires current default provenance; these examples do not prove admission for explicit or inherited checkout bindings.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/documents-artifacts.md",
@@ -2716,7 +2719,7 @@
         "ui/storybook/stories/documents-artifacts/html-artifacts/01-preview.stories.tsx",
         "ui/storybook/support/html-artifacts/fixtures.ts"
       ],
-      "fingerprint": "9f96f1e4abf214d663906e05b0a8ce231f06217fc5f022415a84df33c1d0ac96",
+      "fingerprint": "404690079b8b85bf7aaab867266a14096f7d57bea2665032efba2f82617008df",
       "stableId": "html-artifacts-01-preview",
       "sidebarTitle": "Tasks and conversations/Documents, attachments, and work products/HTML artifacts/01 Preview"
     },
@@ -2730,7 +2733,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence. The added verification recipe documents remote-source isolation and lifecycle guards; existing fixtures do not establish live provider recovery. The source recipe now excludes literal and task-independent branch templates; these fixtures do not execute that backend admission guard. The remote fallback requires current default provenance; these examples do not prove admission for explicit or inherited checkout bindings.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/documents-artifacts.md",
@@ -2740,7 +2743,7 @@
         "ui/storybook/stories/documents-artifacts/html-artifacts/02-workspace.stories.tsx",
         "ui/storybook/support/html-artifacts/fixtures.ts"
       ],
-      "fingerprint": "47c33fce5f296031d43f31d7f099abcef40393cfe51e565db542b7e8230a00a3",
+      "fingerprint": "4ced4be164f64cb1dd0158cf3afc9939e63e4447a3911b33e664544277693f0b",
       "stableId": "html-artifacts-02-workspace",
       "sidebarTitle": "Tasks and conversations/Documents, attachments, and work products/HTML artifacts/02 Workspace"
     },
@@ -2754,7 +2757,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence. The added verification recipe documents remote-source isolation and lifecycle guards; existing fixtures do not establish live provider recovery. The source recipe now excludes literal and task-independent branch templates; these fixtures do not execute that backend admission guard. The remote fallback requires current default provenance; these examples do not prove admission for explicit or inherited checkout bindings.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/documents-artifacts.md",
@@ -2767,7 +2770,7 @@
         "ui/storybook/stories/documents-artifacts/html-artifacts/03-task-journey.stories.tsx",
         "ui/storybook/support/html-artifacts/fixtures.ts"
       ],
-      "fingerprint": "470396b938981d10ddc74d03cec0808aaa1fb305dcdeb8056b308c2752f7cea7",
+      "fingerprint": "c5cb892dd95ec005e52e6c61de414aedb5fe2a443a729038767028edd3c52b6d",
       "stableId": "html-artifacts-03-task-journey",
       "sidebarTitle": "Tasks and conversations/Documents, attachments, and work products/HTML artifacts/03 Task journey"
     },
@@ -2785,7 +2788,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the endpoint editor addition; this suite selects setup/access and locally simulated conversation states. Endpoint PATCH retains fields, but settings workspace-choice requests and default selection are not covered by these scenarios. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Inspected channel task-default controls, optional API fields, avatar rendering and matching fixture updates; live defaults inheritance and permission checks remain outside these stories. Catalog, ChooseAgent, Credentials, Access, Reconnect and ProviderOutageRecovery render shipped setup/detail states with simulated provider data. No live iMessage connection, delivery or recovery claim.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the endpoint editor addition; this suite selects setup/access and locally simulated conversation states. Endpoint PATCH retains fields, but settings workspace-choice requests and default selection are not covered by these scenarios. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Inspected channel task-default controls, optional API fields, avatar rendering and matching fixture updates; live defaults inheritance and permission checks remain outside these stories. Catalog, ChooseAgent, Credentials, Access, Reconnect and ProviderOutageRecovery render shipped setup/detail states with simulated provider data. No live iMessage connection, delivery or recovery claim. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/chat-channels.md",
@@ -2802,7 +2805,7 @@
         "ui/storybook/stories/chat-channels/imessage-photon.stories.tsx",
         "maps/feature-map/connection-setup.md"
       ],
-      "fingerprint": "b851159519b6a550975b618df95beb65dc1b3eba1c5cae4ebaf19665b81b99a0",
+      "fingerprint": "0bde3836db1263b123716adacf6873f4acda21680527cc5d172a262d5706db33",
       "stableId": "connections-imessage-photon",
       "sidebarTitle": "Apps, channels, and extensions/External chat and email/Connections/iMessage Photon"
     },
@@ -2815,7 +2818,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
@@ -2826,7 +2829,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/connection-setup/in-feed-connections.stories.tsx"
       ],
-      "fingerprint": "ee52243b469f3e9581f41c2d1fb88c769d85b80fd6e667591445c261d9b8fcf9",
+      "fingerprint": "0f7d921de69bc5e5164123985848a1a58bc2c860ebe085e70c300d36cc02a018",
       "stableId": "connections-in-task-connections",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Connections/In-task connections"
     },
@@ -2860,8 +2863,8 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The added verification recipe documents source-only retained-file repair; existing fixtures do not establish live provider recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/recovery.md",
         "maps/feature-map/task-coordination.md",
@@ -2869,7 +2872,7 @@
         "ui/src/components/task-chat/TaskChatBlockerLinks.tsx",
         "ui/storybook/stories/recovery/issue-blocked-notice.stories.tsx"
       ],
-      "fingerprint": "6a84d7f60318d33a1835a668873095aaad1c215a83bbbb4735823fdcb3291140",
+      "fingerprint": "90f1eae150c50bd1a428ce322a8d65ceec8b24b6addc8b3b4ea5e90231bc1a2c",
       "stableId": "product-issue-blocked-notice",
       "sidebarTitle": "Projects and execution/Recovery/Product/Issue/Blocked notice"
     },
@@ -3007,14 +3010,14 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
         "ui/src/pages/apps/PaperclipCloudOAuthHandoff.tsx",
         "ui/storybook/stories/connection-setup/managed-cloud-oauth-handoff.stories.tsx"
       ],
-      "fingerprint": "990d6bc169b5150f28c7e07eb8e9acb13056e4d71459217c36a637c5ef256d15",
+      "fingerprint": "3dfb21c9edeec6693db673e59fd0963597858d010c4eb1de35dc47535780d0c1",
       "stableId": "apps-managed-cloud-oauth-handoff",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Apps/Managed Cloud OAuth handoff"
     },
@@ -3028,8 +3031,8 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/agents.md",
         "maps/feature-map/connection-setup.md",
@@ -3038,7 +3041,7 @@
         "ui/src/pages/apps/Browse.tsx",
         "ui/storybook/stories/connection-setup/memory-connectors.stories.tsx"
       ],
-      "fingerprint": "f7e104c4e8b912b93fab037be9811583b3437e3c2d8a906eba343e70107dfc80",
+      "fingerprint": "cc6f6d6a84e516e87c3c7d4d2c4303e693b92ea5117958bf4f9db96ac0f5a993",
       "stableId": "apps-connections-memory",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Apps/Connections/Memory"
     },
@@ -3092,14 +3095,14 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The added verification recipe documents source-only retained-file repair; existing fixtures do not establish live provider recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/recovery.md",
         "ui/src/components/IssueScheduledRetryCard.tsx",
         "ui/storybook/stories/recovery/model-capacity-retry.stories.tsx"
       ],
-      "fingerprint": "5e08f681f3f96cb7be32e316d3f4066e5239dcf0f4393cb9ec09d599734f201e",
+      "fingerprint": "cc935eea1a2ffc27882364655db860c441c4dc059be3d4886a4bd7d3839752bf",
       "stableId": "tasks-model-capacity-retry",
       "sidebarTitle": "Projects and execution/Recovery/Tasks/Model capacity retry"
     },
@@ -3227,7 +3230,7 @@
       "status": "current",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. WorktreePicker, ReuseWorktree, CreateWithReusedWorktree and NewWorktreeAfterReuse exercise workspace selection and submitted fixture request values. Actual admission/binding and execution remain outside this story. Creation-visibility verification recipes were updated; this story scenario is unchanged and does not prove that journey. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. WorktreePicker, ReuseWorktree, CreateWithReusedWorktree and NewWorktreeAfterReuse exercise workspace selection and submitted fixture request values. Actual admission/binding and execution remain outside this story. Creation-visibility verification recipes were updated; this story scenario is unchanged and does not prove that journey. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work. The added verification recipe documents remote-source isolation and lifecycle guards; existing fixtures do not establish live provider recovery. The source recipe now excludes literal and task-independent branch templates; these fixtures do not execute that backend admission guard. The remote fallback requires current default provenance; these examples do not prove admission for explicit or inherited checkout bindings.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/tasks.md",
@@ -3237,7 +3240,7 @@
         "ui/storybook/stories/tasks/new-task-composer.stories.tsx",
         "maps/feature-map/workspaces.md"
       ],
-      "fingerprint": "db3b18dcf012cfd2174900456dd8f8189b2f0b4287d84fbb62562bb0325a0001",
+      "fingerprint": "efb21d7fdb67867b886668295e55ac1e05f67c71029fb85b7f341c9662217705",
       "stableId": "composer-new-task",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Composer/New task"
     },
@@ -3251,8 +3254,8 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
         "ui/src/pages/apps/AppLogo.tsx",
@@ -3263,7 +3266,7 @@
         "ui/src/pages/apps/app-detail/SetupPanel.tsx",
         "ui/storybook/stories/connection-setup/notion-connect-flow.stories.tsx"
       ],
-      "fingerprint": "d1cedce55a218e81ba61a5f60d073b61cf6ce7235707a22de2305e10c3621544",
+      "fingerprint": "7dc85c9cf9f5a37268aa1bca783d1c68d5cef474838ee79b4f1d2b293a7765d2",
       "stableId": "apps-notion-mcp-connect-flow-pap-16650",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Apps/Notion MCP connect flow (PAP-16650)"
     },
@@ -3345,7 +3348,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. Creation visibility now defaults to hiding automated independent tasks, with a Show agent-created tasks control and inbox participation exceptions. Source alignment reviewed; these fixture stories do not establish live server pagination or authorization.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. Creation visibility now defaults to hiding automated independent tasks, with a Show agent-created tasks control and inbox participation exceptions. Source alignment reviewed; these fixture stories do not establish live server pagination or authorization. Source review covers the retained-file recovery form, source-bound evidence and unchanged task status; fixture APIs do not prove live provider recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/projects.md",
@@ -3358,7 +3361,7 @@
         "ui/storybook/prototypes/originating-tasks/OriginatingTasks.tsx",
         "ui/storybook/stories/task-coordination/originating-tasks.stories.tsx"
       ],
-      "fingerprint": "59123e73a0286fd11a48376ee152a974d730c59bd5421fd273cfca3a185f6e08",
+      "fingerprint": "16042f0e39379552a00b618f7dda6eea0e5227e4a90e21fbea8fe35c1ecb820f",
       "stableId": "ux-labs-tasks-created-from-a-task",
       "sidebarTitle": "Tasks and conversations/Delegation, dependencies, and signoff/UX Labs/Tasks Created From a Task"
     },
@@ -3369,8 +3372,8 @@
       "status": "unreviewed",
       "implementation": "guide",
       "boundary": "static",
-      "notes": "Matches the upstream feature index and order, including features with no cataloged examples. Related suite links and classifications do not imply execution coverage.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Matches the upstream feature index and order, including features with no cataloged examples. Related suite links and classifications do not imply execution coverage. The generated upstream feature index was reconciled; example scope and classifications are retained. Reviewed the regenerated liveness capability description against the feature recipe; the guide remains a static index and does not prove live readiness.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "ui/src/components/ui/badge.tsx",
         "ui/src/components/ui/input.tsx",
@@ -3379,7 +3382,7 @@
         "ui/storybook/generated/feature-index.json"
       ],
       "exception": "Shared foundations or contributor guide; no single business capability owns this suite.",
-      "fingerprint": "408bb736ebe6591fb5a397db6d8b3d3d0b37741a66ed2a7edc84781c67d5c6c7",
+      "fingerprint": "71c2ea943674edd2e8692f33040e301fbd0a25391db4ea01b42ee165ad34eaba",
       "stableId": "overview-storybook-guide",
       "sidebarTitle": "Overview/Storybook Guide"
     },
@@ -3439,14 +3442,14 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/connection-setup.md",
         "ui/src/pages/apps/app-detail/IdentitiesSection.tsx",
         "ui/storybook/stories/connection-setup/personal-connection-identity.stories.tsx"
       ],
-      "fingerprint": "2ac1d0214d0f286f3c35bd2ef7d50c59bc038ba314976e22f2900918e18e876a",
+      "fingerprint": "7f0d4c64425d3657c8d2662cea6541f52cb6f13fa276c02fec5398cb7df5111a",
       "stableId": "reviews-pap-17835-personal-connection-identity",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Reviews/PAP-17835 Personal connection identity"
     },
@@ -3775,7 +3778,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Creation visibility now defaults to hiding automated independent tasks, with a show agent-created tasks control and inbox participation exceptions. Source alignment reviewed; these fixture stories do not establish live server pagination or authorization. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Creation visibility now defaults to hiding automated independent tasks, with a show agent-created tasks control and inbox participation exceptions. Source alignment reviewed; these fixture stories do not establish live server pagination or authorization. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work. Source review covers the retained-file recovery form, source-bound evidence and unchanged task status; fixture APIs do not prove live provider recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/access.md",
@@ -3793,7 +3796,7 @@
         "ui/storybook/stories/access/private-tasks/06-full-product-pages.stories.tsx",
         "ui/storybook/support/private-tasks/PrivacyStory.tsx"
       ],
-      "fingerprint": "d4b5ba6bce33a9657d859d3278b1f84bbc9b77cffd24e370214a0fce24c0a02b",
+      "fingerprint": "ea2ddeb4a186e49cdfb7241751e0b25b6565ddee24202c0e48169966ae3e2d96",
       "stableId": "private-tasks-01-creation",
       "sidebarTitle": "Getting started and access/Login, invitations, and access/Private tasks/01 Creation"
     },
@@ -3921,7 +3924,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Creation visibility now defaults to hiding automated independent tasks, with a show agent-created tasks control and inbox participation exceptions. Source alignment reviewed; these fixture stories do not establish live server pagination or authorization. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Creation visibility now defaults to hiding automated independent tasks, with a show agent-created tasks control and inbox participation exceptions. Source alignment reviewed; these fixture stories do not establish live server pagination or authorization. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work. Source review covers the retained-file recovery form, source-bound evidence and unchanged task status; fixture APIs do not prove live provider recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/access.md",
@@ -3939,7 +3942,7 @@
         "ui/storybook/stories/access/private-tasks/06-full-product-pages.stories.tsx",
         "ui/storybook/support/private-tasks/PrivacyStory.tsx"
       ],
-      "fingerprint": "5fb218d88c3b6815839732e4226a27f4b40a2df46c8cbad6709cb665546b4248",
+      "fingerprint": "a394e48a19ffce759f893bee7c28a1eceea2325ee9050cf41d42059afd5460d1",
       "stableId": "private-tasks-06-full-product-pages",
       "sidebarTitle": "Getting started and access/Login, invitations, and access/Private tasks/06 Full product pages"
     },
@@ -3953,7 +3956,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Creation visibility now defaults to hiding automated independent tasks, with a show agent-created tasks control and inbox participation exceptions. Source alignment reviewed; these fixture stories do not establish live server pagination or authorization. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Creation visibility now defaults to hiding automated independent tasks, with a show agent-created tasks control and inbox participation exceptions. Source alignment reviewed; these fixture stories do not establish live server pagination or authorization. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work. Source review covers the retained-file recovery form, source-bound evidence and unchanged task status; fixture APIs do not prove live provider recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/access.md",
@@ -3986,7 +3989,7 @@
         "ui/storybook/stories/access/private-tasks/07-user-stories.stories.tsx",
         "ui/storybook/support/private-tasks/PrivacyStory.tsx"
       ],
-      "fingerprint": "5fbe5c61f8754bc0c1db1c6a990b9c44bc5d941b7b61de77fac76300e6c42a22",
+      "fingerprint": "ce4def84f6ceeb96cd91a285053edf1913baceb6628f70ac98612969bd46cf46",
       "stableId": "private-tasks-07-user-stories",
       "sidebarTitle": "Getting started and access/Login, invitations, and access/Private tasks/07 User stories"
     },
@@ -4000,7 +4003,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence. The added verification recipe documents remote-source isolation and lifecycle guards; existing fixtures do not establish live provider recovery. The source recipe now excludes literal and task-independent branch templates; these fixtures do not execute that backend admission guard. The remote fallback requires current default provenance; these examples do not prove admission for explicit or inherited checkout bindings.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/projects.md",
@@ -4009,7 +4012,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/projects/project-execution-workspace-strategy.stories.tsx"
       ],
-      "fingerprint": "618a389f8aa005657fc633c9a0ebdc34e0fc77df6d1cc8d0474330590d4c081c",
+      "fingerprint": "89c541df010f3ea0dafa6ed29e02882ffbbecca1aaa90a2606176ffe6b8f9f4d",
       "stableId": "workspaces-project-runtime-provision-command",
       "sidebarTitle": "Projects and execution/Projects and repositories/Workspaces/Project runtime provision command"
     },
@@ -4053,7 +4056,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed nullable project references and guarded runtime invalidations. Existing summaries remain project-bound and retain their routes; null-project execution workspace rendering and controls remain a coverage gap. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed nullable project references and guarded runtime invalidations. Existing summaries remain project-bound and retain their routes; null-project execution workspace rendering and controls remain a coverage gap. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence. The added verification recipe documents remote-source isolation and lifecycle guards; existing fixtures do not establish live provider recovery. The source recipe now excludes literal and task-independent branch templates; these fixtures do not execute that backend admission guard. The remote fallback requires current default provenance; these examples do not prove admission for explicit or inherited checkout bindings.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/goals.md",
@@ -4069,7 +4072,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/projects/projects-goals-workspaces.stories.tsx"
       ],
-      "fingerprint": "83a6815f2ceea9c18eb9145f2abf7f90588dafe833c20abcd93050ee1c66114a",
+      "fingerprint": "e7330baf164a462aaef557989a6334fd61e9b1f378dd6674f34f4e7bbe8f03bb",
       "stableId": "product-projects-goals-workspaces",
       "sidebarTitle": "Projects and execution/Projects and repositories/Product/Projects Goals Workspaces"
     },
@@ -4413,7 +4416,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. ToggleOnAndOff, ManagedByCloud and SaveFailedRollsBack mount production experimental settings with simulated saves. Only the assistant-connection flag is represented, not every instance setting.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. ToggleOnAndOff, ManagedByCloud and SaveFailedRollsBack mount production experimental settings with simulated saves. Only the assistant-connection flag is represented, not every instance setting. The recipe distinguishes process liveness from authenticated database readiness; these examples do not exercise that operator API boundary.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/gateways-profiles.md",
@@ -4422,7 +4425,7 @@
         "ui/storybook/stories/gateways-profiles/public-mcp-setting.stories.tsx",
         "maps/feature-map/instance-operations.md"
       ],
-      "fingerprint": "96735a71b1d81cbe604ed55594ee9a8a04de8f365665c33ca260fbfc84263d55",
+      "fingerprint": "06f786e22151a5e1ec113966cbe72f28841a10f4e580c73bab18733091429711",
       "stableId": "assistant-connections-experimental-setting",
       "sidebarTitle": "Apps, channels, and extensions/Tool gateways and access profiles/Assistant connections/Experimental setting"
     },
@@ -4436,8 +4439,8 @@
       "status": "current",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The added verification recipe documents source-only retained-file repair; existing fixtures do not establish live provider recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/recovery.md",
         "ui/src/components/DispositionRecoveryNotice.tsx",
@@ -4446,7 +4449,7 @@
         "ui/storybook/prototypes/recovery-notice/RecoveryNoticePreview.tsx",
         "ui/storybook/stories/recovery/recovery-notice-preview.stories.tsx"
       ],
-      "fingerprint": "cfd7345545112ea9ecc13035ebd187451117de5ed010f439cfb8c6962461fb3f",
+      "fingerprint": "44d25bc1cf087902bc991cc7fd1dc2bc19880c18189960dae47c68a9284bc0f6",
       "stableId": "design-previews-recovery-notice",
       "sidebarTitle": "Projects and execution/Recovery/Design previews/Recovery notice"
     },
@@ -4566,8 +4569,8 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Agent-owned instance secrets remain in trusted server runtime and are excluded from ordinary agent delivery; these UI examples do not verify that lifecycle contract.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/routines.md",
         "maps/feature-map/secrets.md",
@@ -4576,7 +4579,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/routines/routine-secrets.stories.tsx"
       ],
-      "fingerprint": "03c05c0cca01d220885ea96f13495bcc185121eecbbeb00918511b4d7de26016",
+      "fingerprint": "ac3e04699ed84d7a11567f17b185c2bbe5c30d049586e03def563f774457e276",
       "stableId": "product-routines-·-secrets-tab",
       "sidebarTitle": "Automation and structured work/Routines, schedules, and triggers/Product/Routines · Secrets tab"
     },
@@ -4696,8 +4699,8 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The added verification recipe documents source-only retained-file repair; existing fixtures do not establish live provider recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/recovery.md",
         "ui/src/components/IssueProperties.tsx",
@@ -4705,7 +4708,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/recovery/scheduled-retry.stories.tsx"
       ],
-      "fingerprint": "43ef1917079251d558b3f52e5af750dfb69a54d3326d31494dbf037baeefe193",
+      "fingerprint": "94225de83234003fe6c5bdc47767e50da8562f661dbf2c5678d9fb41490a86a5",
       "stableId": "product-issue-scheduled-retry-surfaces",
       "sidebarTitle": "Projects and execution/Recovery/Product/Issue Scheduled retry surfaces"
     },
@@ -4745,14 +4748,14 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence. The added verification recipe documents remote-source isolation and lifecycle guards; existing fixtures do not establish live provider recovery. The source recipe now excludes literal and task-independent branch templates; these fixtures do not execute that backend admission guard. The remote fallback requires current default provenance; these examples do not prove admission for explicit or inherited checkout bindings.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/workspaces.md",
         "ui/src/components/SearchableSelect.tsx",
         "ui/storybook/stories/workspaces/searchable-select.stories.tsx"
       ],
-      "fingerprint": "524803af7c926b60e8c636031f703d4bb4abe45cd4832c7985f81c8f4d0cb035",
+      "fingerprint": "e34c07642d243f0011ef4c589cfd061f1b20477f10ee3e299f5c197982acee3c",
       "stableId": "components-searchableselect-workspace-picker",
       "sidebarTitle": "Projects and execution/Workspaces, services, and files/Components/SearchableSelect/Workspace picker"
     },
@@ -4766,8 +4769,8 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Agent-owned instance secrets remain in trusted server runtime and are excluded from ordinary agent delivery; these UI examples do not verify that lifecycle contract.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/secrets.md",
         "ui/src/components/SecretBindingPicker.tsx",
@@ -4776,7 +4779,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/secrets/secrets.stories.tsx"
       ],
-      "fingerprint": "246539c619974c29848ae6ba3685aa741dbc572eeb6f8cffb2e9328501fbf31b",
+      "fingerprint": "b52b6355351b1d49d2fb5921f357fa957288ad646015c5bd99d02b5aec04fee2",
       "stableId": "product-secrets",
       "sidebarTitle": "Apps, channels, and extensions/Secrets and proposals/Product/Secrets"
     },
@@ -4895,7 +4898,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the added connection/destination-default recipe; these unchanged setup, identity or conversation examples do not establish default selection or new-task inheritance.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the added connection/destination-default recipe; these unchanged setup, identity or conversation examples do not establish default selection or new-task inheritance. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/chat-channels.md",
@@ -4906,7 +4909,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/chat-channels/slack-automatic-setup.stories.tsx"
       ],
-      "fingerprint": "6d8c13f5ebed08a43b9f146f49a2506c9c5e1ac9305121b94e9cd5bb9c060476",
+      "fingerprint": "31f3622faa8699ee34e8a70c340c13a302b1d1184f98da084da68ddf9213d2b8",
       "stableId": "connections-slack-automatic-setup",
       "sidebarTitle": "Apps, channels, and extensions/External chat and email/Connections/Slack/Automatic setup"
     },
@@ -4964,7 +4967,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the added connection/destination-default recipe; these unchanged setup, identity or conversation examples do not establish default selection or new-task inheritance.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the added connection/destination-default recipe; these unchanged setup, identity or conversation examples do not establish default selection or new-task inheritance. The recipe adds bounded Telegram subscription maintenance regressions; this story does not establish real provider startup recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/chat-channels.md",
@@ -4975,7 +4978,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/chat-channels/slack-managed-setup.stories.tsx"
       ],
-      "fingerprint": "59d4e5ebb276a491e22d6461fe9c9bab36778097d15ab2203d6cd95a4151e371",
+      "fingerprint": "2615f5c6c170741458801ec39bdf19f84334db7cac3e38d1115d5cc4bbdd18f2",
       "stableId": "connections-slack-managed-setup",
       "sidebarTitle": "Apps, channels, and extensions/External chat and email/Connections/Slack/Managed setup"
     },
@@ -5009,8 +5012,8 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Source review confirms ordinary recovery fixtures remain applicable after the native-owner resolution gate; native-owner stop verification has its own suite. The added verification recipe documents source-only retained-file repair; existing fixtures do not establish live provider recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/recovery.md",
         "ui/src/components/IssueBlockedNotice.tsx",
@@ -5019,7 +5022,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/recovery/source-issue-recovery.stories.tsx"
       ],
-      "fingerprint": "1b6e44d4fb4ab7e2e63fb8816aa31fbe3267e10647f238ed82e6591a82d2e918",
+      "fingerprint": "e83979b6d2737fef8666a36860817af9272d4d4df649a0784c04e4bc32b63028",
       "stableId": "paperclip-source-issue-recovery",
       "sidebarTitle": "Projects and execution/Recovery/Paperclip/Source Issue Recovery"
     },
@@ -5033,15 +5036,15 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The added verification recipe documents source-only retained-file repair; existing fixtures do not establish live provider recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/recovery.md",
         "ui/src/components/SourceResolvedFoldBadge.tsx",
         "ui/src/components/SourceResolvedFoldCallout.tsx",
         "ui/storybook/stories/recovery/source-resolved-fold.stories.tsx"
       ],
-      "fingerprint": "3af3daff618b8c278bcbf10ba3e5d081d87240c680758ccb3078eccdf9283122",
+      "fingerprint": "6b42874521d91e0aa6323fb4d6744a6abd7931fda54e6591bdac9131fa2abaa4",
       "stableId": "paperclip-source-resolved-fold",
       "sidebarTitle": "Projects and execution/Recovery/Paperclip/Source-resolved Fold"
     },
@@ -5110,7 +5113,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Creation-visibility verification recipes were updated; this story scenario is unchanged and does not prove that journey. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Creation-visibility verification recipes were updated; this story scenario is unchanged and does not prove that journey. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work. The added verification recipe documents source-only retained-file repair; existing fixtures do not establish live provider recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/recovery.md",
@@ -5122,7 +5125,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/tasks/successful-run-handoff.stories.tsx"
       ],
-      "fingerprint": "2a7db108d46f35f37dd9346d2fc039e61dff8c688e09d9ed7b0e777e7f79af0d",
+      "fingerprint": "58d58a28f56037e392ab0f52d971f4c21f8745f84337552bc45bbeeffd0c6655",
       "stableId": "paperclip-successful-run-handoff",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Paperclip/Successful Run Handoff"
     },
@@ -5304,7 +5307,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Creation-visibility verification recipes were updated; this story scenario is unchanged and does not prove that journey. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. Creation-visibility verification recipes were updated; this story scenario is unchanged and does not prove that journey. The filter uses one lowercase label without helper text. All chat-channel tasks count as bot-created; the focused visibility stories cover human-initiated channel work. Source review covers the retained-file recovery form, source-bound evidence and unchanged task status; fixture APIs do not prove live provider recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/tasks.md",
@@ -5313,7 +5316,7 @@
         "ui/src/components/chat/ExternallyConnectedTaskBanner.tsx",
         "ui/storybook/stories/tasks/task-context-notices.stories.tsx"
       ],
-      "fingerprint": "10f395d8ecba84925abf8d843deb52af64356008bb96a03668f29870ac430bc8",
+      "fingerprint": "794484576911fdab4a9b16db119890b75403316a8a4bbcce4041aee241c95193",
       "stableId": "tasks-context-notices",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Tasks/Context notices"
     },
@@ -5483,8 +5486,8 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Agent-owned instance secrets remain in trusted server runtime and are excluded from ordinary agent delivery; these UI examples do not verify that lifecycle contract.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/secrets.md",
         "ui/src/components/environment-variables-editor/index.tsx",
@@ -5493,7 +5496,7 @@
         "ui/src/pages/secrets/UserSecretDefinitionsTab.tsx",
         "ui/storybook/stories/secrets/user-secrets.stories.tsx"
       ],
-      "fingerprint": "5c875865c81923b2c568559d0c2f7bde22d1a8162501736ba3eeeb027acae772",
+      "fingerprint": "7946ebdc6c576de9cdd30205131073f5029aec8e094397bab66c300c1f3a79ea",
       "stableId": "product-user-secrets",
       "sidebarTitle": "Apps, channels, and extensions/Secrets and proposals/Product/User secrets"
     },
@@ -5574,15 +5577,15 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
-      "reviewedAt": "2026-10-12",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. The added verification recipe documents source-only retained-file repair; existing fixtures do not establish live provider recovery.",
+      "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/recovery.md",
         "ui/src/components/WorkspaceBaseRefRecoveryNotice.tsx",
         "ui/storybook/stories/recovery/workspace-branch-recovery/01-component.stories.tsx",
         "ui/storybook/support/workspace-branch-recovery/fixtures.ts"
       ],
-      "fingerprint": "77f708cc660f6829cadaffa6139930a102109976c41f7e24e2f662ed687d2412",
+      "fingerprint": "449d4ae2d427627089327567690e88219a14dfaeac3265bb3014cf1555e0da5d",
       "stableId": "workspace-branch-recovery-01-repair-card",
       "sidebarTitle": "Projects and execution/Recovery/Workspace branch recovery/01 Repair card"
     },
@@ -5595,7 +5598,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Master reconciliation inspected assignment-history recipient suggestions and manual-selection retention; existing stories do not establish the new assignment-history behavior. Expanded upstream verification recipes were inspected; the existing fixture scenarios do not prove the added backend handoff, workspace, recovery or authorization contracts. The added verification recipe documents source-only retained-file repair; existing fixtures do not establish live provider recovery.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/recovery.md",
@@ -5607,7 +5610,7 @@
         "ui/storybook/stories/recovery/workspace-branch-recovery/02-task-journey.stories.tsx",
         "ui/storybook/support/workspace-branch-recovery/fixtures.ts"
       ],
-      "fingerprint": "5eedfcb5738c125d3fa8ed7dc4b3d20a300b216de51f1ae5e58ede98d38fd75c",
+      "fingerprint": "c30653d1cd266832f7bdd401bc302a579d4170b7ea9b2523feccbdc66a58e997",
       "stableId": "workspace-branch-recovery-02-task-journey",
       "sidebarTitle": "Projects and execution/Recovery/Workspace branch recovery/02 Task journey"
     },
@@ -5620,7 +5623,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence. The added verification recipe documents remote-source isolation and lifecycle guards; existing fixtures do not establish live provider recovery. The source recipe now excludes literal and task-independent branch templates; these fixtures do not execute that backend admission guard. The remote fallback requires current default provenance; these examples do not prove admission for explicit or inherited checkout bindings.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/workspaces.md",
@@ -5628,7 +5631,7 @@
         "ui/src/components/IssueWorkspaceCard.tsx",
         "ui/storybook/stories/workspaces/workspace-file-browser.stories.tsx"
       ],
-      "fingerprint": "980fcd9a6905ac1eae10efeb7979dd8b3769c2cc7d625d4e0ba4b091f4b4d614",
+      "fingerprint": "a37dfdde49f89e907842859bfebde7d3c88a4ebabce4d003a9e4f722b73bb098",
       "stableId": "issue-workspace-file-browser",
       "sidebarTitle": "Projects and execution/Workspaces, services, and files/Issue/Workspace File Browser"
     },
@@ -5641,14 +5644,14 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed ExecutionWorkspaceDetail null-project handling. This suite mounts only the unchanged RuntimeProvisionStatusValue inside a local context row; it does not exercise the full detail page or projectless queries. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed ExecutionWorkspaceDetail null-project handling. This suite mounts only the unchanged RuntimeProvisionStatusValue inside a local context row; it does not exercise the full detail page or projectless queries. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence. The added verification recipe documents remote-source isolation and lifecycle guards; existing fixtures do not establish live provider recovery. The source recipe now excludes literal and task-independent branch templates; these fixtures do not execute that backend admission guard. The remote fallback requires current default provenance; these examples do not prove admission for explicit or inherited checkout bindings.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/workspaces.md",
         "ui/src/pages/ExecutionWorkspaceDetail.tsx",
         "ui/storybook/stories/workspaces/workspace-runtime-provisioning.stories.tsx"
       ],
-      "fingerprint": "f8a7316fb6637151d8da32b637136408cd6fd9d505fe2a2a47f3c0d670b0eeec",
+      "fingerprint": "4a4e9dc99829632e221a1c558f54502bbba8b1547768d0fdce97cad3c0c5fc02",
       "stableId": "workspaces-runtime-provisioning-status",
       "sidebarTitle": "Projects and execution/Workspaces, services, and files/Workspaces/Runtime provisioning status"
     },
@@ -5661,16 +5664,964 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Task-workspace reconciliation reviewed the expanded workspace recipe; these examples do not establish durable task-folder continuity, repository authorization or sandbox admission. The workspace recipe now requires child boundary, safe reopen and checkpoint ancestry controls; these backend checks are not established by this fixture. The provisioning recipe requires controller script denial for remote selections and copy-only local source choices, including retained denial through metadata changes and reopening; these fixtures do not verify execution placement. Canonical default provisioning follows configured policy, primary, creation time and ID; these fixtures do not run source hooks or establish this backend precedence. The added verification recipe documents remote-source isolation and lifecycle guards; existing fixtures do not establish live provider recovery. The source recipe now excludes literal and task-independent branch templates; these fixtures do not execute that backend admission guard. The remote fallback requires current default provenance; these examples do not prove admission for explicit or inherited checkout bindings.",
       "reviewedAt": "2026-10-13",
       "sources": [
         "maps/feature-map/workspaces.md",
         "ui/src/components/WorkspaceServiceControlBar.tsx",
         "ui/storybook/stories/workspaces/workspace-service-control-bar.stories.tsx"
       ],
-      "fingerprint": "b9cd51c58b31ab445e2997b9f2a23c7a7b3f4ecd7b6dd39fc0f35ae0779311df",
+      "fingerprint": "01ffe1c604d850af606be5ebd4a4ba652716ef6b1ca833d6aa6f8d564ced64c1",
       "stableId": "workspaces-service-control-bar",
       "sidebarTitle": "Projects and execution/Workspaces, services, and files/Workspaces/Service control bar"
+    },
+    {
+      "file": "ui/storybook/stories/recovery/workspace-finalization-recovery/01-notice.stories.tsx",
+      "capabilities": [
+        "recovery/workspace",
+        "recovery/source-action"
+      ],
+      "purpose": "Workspace finalization recovery/01 Notice",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Production quiet status; automatic restoration, legacy operator fallback, queued and resolved states. No task repair form, process details or API simulation. Provider proof is verified by separate server and harness tests. The added verification recipe documents source-only retained-file repair; existing fixtures do not establish live provider recovery.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/recovery.md",
+        "ui/src/components/WorkspaceExportRecovery.tsx",
+        "ui/storybook/stories/recovery/workspace-finalization-recovery/01-notice.stories.tsx",
+        "ui/storybook/support/workspace-finalization-recovery/fixtures.tsx"
+      ],
+      "fingerprint": "5026bd7133f40a9c61371e22ed6976efc67013fd3047bf85056026de86bf6cec",
+      "stableId": "workspace-finalization-recovery-01-notice",
+      "sidebarTitle": "Projects and execution/Recovery/Workspace finalization recovery/01 Notice"
+    },
+    {
+      "file": "ui/storybook/stories/recovery/workspace-finalization-recovery/02-task-journey.stories.tsx",
+      "capabilities": [
+        "recovery/workspace",
+        "recovery/source-action"
+      ],
+      "purpose": "Workspace finalization recovery/02 Task journey",
+      "status": "unreviewed",
+      "implementation": "mixed",
+      "boundary": "fixtures",
+      "notes": "Production shell, status, bubbles and composer in a local conversation composition; shows restoration and saved work waiting for confirmation. Fixture messages; not the shipped task page or live provider acceptance. The added verification recipe documents source-only retained-file repair; existing fixtures do not establish live provider recovery.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/recovery.md",
+        "ui/src/components/Layout.tsx",
+        "ui/src/components/WorkspaceExportRecovery.tsx",
+        "ui/src/components/task-chat/TaskChatBubble.tsx",
+        "ui/src/components/task-chat/TaskChatComposer.tsx",
+        "ui/storybook/stories/recovery/workspace-finalization-recovery/02-task-journey.stories.tsx",
+        "ui/storybook/support/workspace-finalization-recovery/fixtures.tsx"
+      ],
+      "fingerprint": "934a8f1882d8b5f5381aba9d0f27026849870a1fa417178fb6bc4170c54b15ba",
+      "stableId": "workspace-finalization-recovery-02-task-journey",
+      "sidebarTitle": "Projects and execution/Recovery/Workspace finalization recovery/02 Task journey"
+    },
+    {
+      "file": "ui/storybook/stories/instance-operations/backup-retention.stories.tsx",
+      "capabilities": [
+        "instance-operations/backup",
+        "instance-operations/configuration"
+      ],
+      "purpose": "Oversight and operation/Instance operations/Backup retention",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Retention presets, initial read, loading, error, denial and pending/saved selection in InstanceGeneralSettings. Backup creation/restore and real settings authority remain production obligations. The recipe distinguishes process liveness from authenticated database readiness; these examples do not exercise that operator API boundary.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/instance-operations.md",
+        "ui/src/pages/InstanceGeneralSettings.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/instance-operations/backup-retention.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-backup-retention",
+      "sidebarTitle": "Oversight and operation/Instance operations/Backup retention",
+      "fingerprint": "7dff68beb89f54e70e7afeb7abac2970c4e9101fae2320dc403a66ff7ae68f7a"
+    },
+    {
+      "file": "ui/storybook/stories/recovery/recovery-gap-states.stories.tsx",
+      "capabilities": [
+        "recovery/exhaustion",
+        "recovery/unknown-outcome"
+      ],
+      "purpose": "Projects and execution/Recovery/Exhaustion and user decisions",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Exhaustion notice, blocked authority, retry pending/failure/accepted and inactive notice; unknown-outcome action card is rendered separately. Retry callbacks and disposition context are simulated; no real continuation proof. The expanded native copyback recovery recipe requires harness stop proof; these generic exhaustion/queued-response fixtures do not establish that path. Retained legacy files use a separate recovery form with verified stop evidence; these exhaustion and response-queue examples do not establish file repair.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/recovery.md",
+        "ui/src/components/DispositionRecoveryNotice.tsx",
+        "ui/src/components/IssueRecoveryActionCard.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/fixtures/paperclipData.ts",
+        "ui/storybook/stories/recovery/recovery-gap-states.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-recovery-gap-states",
+      "sidebarTitle": "Projects and execution/Recovery/Exhaustion and user decisions",
+      "fingerprint": "8eb7fd4ef6387f3b39c3c83ac6fe945761999a0c2c6a9eb124e2c4550f8718a1"
+    },
+    {
+      "file": "ui/storybook/stories/steering/durable-response-queue.stories.tsx",
+      "capabilities": [
+        "steering/approval-queue",
+        "recovery/user-continuation"
+      ],
+      "purpose": "Tasks and conversations/Steering and queued messages/Accepted response delivery",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Accepted immutable response, cleanup wait, unavailable admission, empty queue and interrupt delivery states. Local callbacks remove delivered entries; durable queue/coalescing and fresh-session authority need production tests. The expanded native copyback recovery recipe requires harness stop proof; these generic exhaustion/queued-response fixtures do not establish that path. The shipped pending-delivery path removes rows optimistically and shows no separate progress indicator; the Delivering story asserts that actual presentation. Retained legacy files use a separate recovery form with verified stop evidence; these exhaustion and response-queue examples do not establish file repair.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/recovery.md",
+        "maps/feature-map/steering.md",
+        "ui/src/components/task-chat/TaskChatQueuedMessages.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/steering/durable-response-queue.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-durable-response-queue",
+      "sidebarTitle": "Tasks and conversations/Steering and queued messages/Accepted response delivery",
+      "fingerprint": "9dce4d11180c4e178e8e2c23d85175f97256d8137727076c6fbc979ea3fd1734"
+    },
+    {
+      "file": "ui/storybook/stories/workspaces/workspace-close.stories.tsx",
+      "capabilities": [
+        "workspaces/closure"
+      ],
+      "purpose": "Projects and execution/Workspaces, services, and files/Close readiness",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Readiness dialog with loading, inspection failure/403, running-task block and pending/accepted archive response. No real workspace cleanup, Git removal or service shutdown is performed. The separate remote-source recipe requires Git isolation and preservation of unpublished task work; these close-readiness fixtures do not exercise repository cloning or reconstruction. The remote fallback requires current default provenance; these examples do not prove admission for explicit or inherited checkout bindings.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/workspaces.md",
+        "ui/src/components/ExecutionWorkspaceCloseDialog.tsx",
+        "ui/src/components/ToastViewport.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/workspaces/workspace-close.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-workspace-close",
+      "sidebarTitle": "Projects and execution/Workspaces, services, and files/Close readiness",
+      "fingerprint": "08b1e604b188130184296c8aee286f8dde12c8026654f0760388bd492e1ffe5b"
+    },
+    {
+      "file": "ui/storybook/stories/budgets-costs/budget-resolution.stories.tsx",
+      "capabilities": [
+        "budgets-costs/resolution"
+      ],
+      "purpose": "Oversight and operation/Costs and budgets/Resolve a budget incident",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Shipped Costs budget tab with empty/read failures, invalid amount, raise-and-resume, keep-paused and write failure/pending. Fixture incident transitions only; real overlapping holds and hard stops remain separate. The upstream budget UI distinguishes soft warnings from hard stops; hard incidents retain raise-and-resume and keep-paused controls.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/budgets-costs.md",
+        "ui/src/pages/Costs.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/budgets-costs/budget-resolution.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-budget-resolution",
+      "sidebarTitle": "Oversight and operation/Costs and budgets/Resolve a budget incident",
+      "fingerprint": "8cf347aa01c0b4cb1364735794581b9123a23aba2151278a1a83354d582053ef"
+    },
+    {
+      "file": "ui/storybook/stories/activity/run-audit.stories.tsx",
+      "capabilities": [
+        "activity/runs"
+      ],
+      "purpose": "Oversight and operation/Dashboards and audit trails/Execution history",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "AuditRuns list, completed receipt, empty/loading/failed/denied and no-match filter. Run records are fixture snapshots; no real execution or scoped audit proof.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/activity.md",
+        "ui/src/pages/audit/AuditRuns.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/fixtures/paperclipData.ts",
+        "ui/storybook/stories/activity/run-audit.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-run-audit",
+      "sidebarTitle": "Oversight and operation/Dashboards and audit trails/Execution history",
+      "fingerprint": "0a43211053a4c36b6ae4061a624b7e223660931b565a234a829b38d53eab4861"
+    },
+    {
+      "file": "ui/storybook/stories/secrets/proposal-review.stories.tsx",
+      "capabilities": [
+        "secrets/proposals"
+      ],
+      "purpose": "Apps, channels, and extensions/Secrets and proposals/Proposal review",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Pending proposal, authority preflight block, list states and rejected proposal/rejection error. ProposalsTab and its dialogs are shipped; secret creation, values and grant authority are not exercised. Agent-owned instance secrets remain in trusted server runtime and are excluded from ordinary agent delivery; these UI examples do not verify that lifecycle contract.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/secrets.md",
+        "ui/src/components/ToastViewport.tsx",
+        "ui/src/pages/secrets/ProposalsTab.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/secrets/proposal-review.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-secret-proposal-review",
+      "sidebarTitle": "Apps, channels, and extensions/Secrets and proposals/Proposal review",
+      "fingerprint": "eb3a67d3543f732a6be88f3a2ee9b070f171ff18a037f1869f64b3edd66dfb14"
+    },
+    {
+      "file": "ui/storybook/stories/gateways-profiles/gateway-tokens.stories.tsx",
+      "capabilities": [
+        "gateways-profiles/tokens"
+      ],
+      "purpose": "Apps, channels, and extensions/Tool gateways and access profiles/Named gateway tokens",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Named, empty and expired token history; issuance pending/error/403/success and name-confirmed revocation. Tokens are fictional; real bearer expiry, scope and revocation need API verification.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/gateways-profiles.md",
+        "ui/src/api/tools.ts",
+        "ui/src/components/ToastViewport.tsx",
+        "ui/src/pages/apps/gateways/NewGatewayDialog.tsx",
+        "ui/src/pages/apps/gateways/panels/TokensPanel.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/gateways-profiles/gateway-tokens.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-gateway-tokens",
+      "sidebarTitle": "Apps, channels, and extensions/Tool gateways and access profiles/Named gateway tokens",
+      "fingerprint": "0c565737015544b791cf7b4fda2f80fd9456368aeb8f0df0f9a4f60ad221b028"
+    },
+    {
+      "file": "ui/storybook/stories/access/cli-authorization.stories.tsx",
+      "capabilities": [
+        "access/cli-auth"
+      ],
+      "purpose": "Getting started and access/Login, invitations, and access/CLI authorization",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Real CliAuth route with pending/expired/unavailable/preflight denial, approval/cancel and write pending/error. Fictional challenge; no CLI identity or real token is authorized.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/access.md",
+        "ui/src/lib/router.tsx",
+        "ui/src/pages/CliAuth.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/access/cli-authorization.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-cli-authorization",
+      "sidebarTitle": "Getting started and access/Login, invitations, and access/CLI authorization",
+      "fingerprint": "c87b678d05b7818fd201f97c7e41cd92ce25520123ef4d20b56dd0c9785455ee"
+    },
+    {
+      "file": "ui/storybook/stories/access/sign-in.stories.tsx",
+      "capabilities": [
+        "access/login"
+      ],
+      "purpose": "Getting started and access/Login, invitations, and access/Sign in",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "AuthPage email form, session read loading/error, submission pending/failure and navigation to Companies after a fixture session. Real authentication, bootstrap claim and sign-out remain separate.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/access.md",
+        "ui/src/lib/router.tsx",
+        "ui/src/pages/Auth.tsx",
+        "ui/src/pages/Companies.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/fixtures/paperclipData.ts",
+        "ui/storybook/stories/access/sign-in.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-sign-in",
+      "sidebarTitle": "Getting started and access/Login, invitations, and access/Sign in",
+      "fingerprint": "b9524d5f5a97e14c7e3bc5989b94ebe0fea56ab8767df5c5efb24430b003d491"
+    },
+    {
+      "file": "ui/storybook/stories/access/membership.stories.tsx",
+      "capabilities": [
+        "access/membership"
+      ],
+      "purpose": "Getting started and access/Login, invitations, and access/Organization membership",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "CompanyAccess member list and role change with loading/empty/failure/403 and failed mutation toast. Backend actor authority, invite lifecycle and durable membership are not verified.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/access.md",
+        "ui/src/components/ToastViewport.tsx",
+        "ui/src/pages/CompanyAccess.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/access/membership.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-membership",
+      "sidebarTitle": "Getting started and access/Login, invitations, and access/Organization membership",
+      "fingerprint": "8bd65a1aa65dc4e4767390eefb1b731a410ff852ac6eced05f5e3e5249d1a356"
+    },
+    {
+      "file": "ui/storybook/stories/companies/company-selection.stories.tsx",
+      "capabilities": [
+        "companies/selection",
+        "companies/archive"
+      ],
+      "purpose": "Getting started and access/Companies and portability/Selection and archived organizations",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Companies list, selection storage and archived-company restoration with loading/empty/error/403. This covers the archive list/restoration side; CompanySettings archive confirmation remains an additional UI scenario.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/companies.md",
+        "ui/src/pages/Companies.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/fixtures/paperclipData.ts",
+        "ui/storybook/stories/companies/company-selection.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-company-selection",
+      "sidebarTitle": "Getting started and access/Companies and portability/Selection and archived organizations",
+      "fingerprint": "0275b0bd6538672ef381ffb6fbdf68b7611e93df97334246cb4b3b1c6856bc17"
+    },
+    {
+      "file": "ui/storybook/stories/plugins/plugin-management.stories.tsx",
+      "capabilities": [
+        "plugins/installation",
+        "plugins/lifecycle"
+      ],
+      "purpose": "Apps, channels, and extensions/Plugins/Installation and lifecycle",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "PluginManager list states, install pending/error/success, disable and uninstall receipts. Local record transitions only; package loading and worker lifecycle require production verification.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/plugins.md",
+        "ui/src/components/ToastViewport.tsx",
+        "ui/src/pages/PluginManager.tsx",
+        "ui/src/pages/PluginSettings.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/plugins/plugin-management.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts",
+        "ui/storybook/support/capability-gaps/plugins.ts"
+      ],
+      "stableId": "feature-plugin-management",
+      "sidebarTitle": "Apps, channels, and extensions/Plugins/Installation and lifecycle",
+      "fingerprint": "fd52b6f6966ae05ad7ffb755eebcfa0aeb6d9cb7c246a9def116de663eb5feeb"
+    },
+    {
+      "file": "ui/storybook/stories/plugins/plugin-configuration.stories.tsx",
+      "capabilities": [
+        "plugins/configuration"
+      ],
+      "purpose": "Apps, channels, and extensions/Plugins/Configuration",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "PluginSettings configuration route with hydrated values, read pending/unavailable and saved/error/403 responses. Real config storage and plugin worker validation are not proved.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/plugins.md",
+        "ui/src/lib/router.tsx",
+        "ui/src/pages/PluginManager.tsx",
+        "ui/src/pages/PluginSettings.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/plugins/plugin-configuration.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts",
+        "ui/storybook/support/capability-gaps/plugins.ts"
+      ],
+      "stableId": "feature-plugin-configuration",
+      "sidebarTitle": "Apps, channels, and extensions/Plugins/Configuration",
+      "fingerprint": "b80dc4cfa9311c9df6fb795a4b481405144342a9003062b2e0d8397d6f8b68e1"
+    },
+    {
+      "file": "ui/storybook/stories/plugins/plugin-contributions.stories.tsx",
+      "capabilities": [
+        "plugins/contributions"
+      ],
+      "purpose": "Apps, channels, and extensions/Plugins/Contributed routes",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Production PluginPage host with a registered fixture plugin component; pending/missing contribution and discovery failure. Discovery failure currently remains Loading; contribution contents are a fixture, not shipped plugin code.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/plugins.md",
+        "ui/src/lib/router.tsx",
+        "ui/src/pages/PluginManager.tsx",
+        "ui/src/pages/PluginPage.tsx",
+        "ui/src/pages/PluginSettings.tsx",
+        "ui/src/plugins/slots.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/plugins/plugin-contributions.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts",
+        "ui/storybook/support/capability-gaps/plugins.ts"
+      ],
+      "stableId": "feature-plugin-contributions",
+      "sidebarTitle": "Apps, channels, and extensions/Plugins/Contributed routes",
+      "fingerprint": "09b20d50e157c332613c3c03ccded5ae21804011005891cacd4342ce653b8d67"
+    },
+    {
+      "file": "ui/storybook/stories/cases/case-browse.stories.tsx",
+      "capabilities": [
+        "cases/browse"
+      ],
+      "purpose": "Automation and structured work/Cases/Browse and hierarchy",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Cases page with fixture parent/child records and loading/empty/error/403. Failed list queries currently use the shipped empty-case presentation. Responsive duplicate labels are accounted for; server filters and case mutations remain separate.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/cases.md",
+        "ui/src/pages/Cases.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/cases/case-browse.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts",
+        "ui/storybook/support/capability-gaps/cases.ts"
+      ],
+      "stableId": "feature-case-browse",
+      "sidebarTitle": "Automation and structured work/Cases/Browse and hierarchy",
+      "fingerprint": "41f3255e05cc2ca30fc22ff25748cff9b7017189f6ebb71d6f42827602237691"
+    },
+    {
+      "file": "ui/storybook/stories/cases/case-detail.stories.tsx",
+      "capabilities": [
+        "cases/structure",
+        "cases/history",
+        "cases/task-links"
+      ],
+      "purpose": "Automation and structured work/Cases/Structure, history and task links",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "CaseDetail hierarchy and activity, CaseFieldsPanel arbitrary/empty data and IssueCasesPanel reverse links. Fixture relations/events; document revision history and persisted links remain production obligations.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/cases.md",
+        "ui/src/components/CaseFieldsPanel.tsx",
+        "ui/src/components/IssueCasesPanel.tsx",
+        "ui/src/lib/router.tsx",
+        "ui/src/pages/CaseDetail.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/cases/case-detail.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts",
+        "ui/storybook/support/capability-gaps/cases.ts"
+      ],
+      "stableId": "feature-case-detail",
+      "sidebarTitle": "Automation and structured work/Cases/Structure, history and task links",
+      "fingerprint": "13a24fcf6de97812864194104d14343ec50130ba6aa5405078a1b127778ab0cf"
+    },
+    {
+      "file": "ui/storybook/stories/status-cards/status-card-states.stories.tsx",
+      "capabilities": [
+        "status-cards/authoring",
+        "status-cards/generation",
+        "status-cards/inspection",
+        "status-cards/archive"
+      ],
+      "purpose": "Automation and structured work/Status cards/Authoring, updates and archive",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "StatusCards board/drawer with current/stale/error/live setup, list states, create, refresh, inspection and archive/restoration. Mutable receipts and setup task ID are fixtures; no summarizer execution or revision-history parity is claimed.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/status-cards.md",
+        "ui/src/lib/router.tsx",
+        "ui/src/pages/StatusCards/ArchivedStatusCardRow.tsx",
+        "ui/src/pages/StatusCards/CreateStatusCardDialog.tsx",
+        "ui/src/pages/StatusCards/StatusCardDetailDrawer.tsx",
+        "ui/src/pages/StatusCards/StatusCardTile.tsx",
+        "ui/src/pages/StatusCards/index.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/status-cards/status-card-states.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts",
+        "ui/storybook/support/capability-gaps/status-cards.ts"
+      ],
+      "stableId": "feature-status-card-states",
+      "sidebarTitle": "Automation and structured work/Status cards/Authoring, updates and archive",
+      "fingerprint": "c6f52ca5e82fa4a14bc10b30177a0a9e689cd37d83fc5afbee77370f707bb13f"
+    },
+    {
+      "file": "ui/storybook/stories/goals/goal-alignment.stories.tsx",
+      "capabilities": [
+        "goals/alignment",
+        "goals/navigation"
+      ],
+      "purpose": "Projects and execution/Goals and work alignment/Aligned work and navigation",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "GoalDetail child navigation and aligned-project tab with empty/loading/failure/403. Current UI displays relationships but has no project goal-assignment control; no invented assignment UI.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/goals.md",
+        "ui/src/lib/router.tsx",
+        "ui/src/pages/GoalDetail.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/fixtures/paperclipData.ts",
+        "ui/storybook/stories/goals/goal-alignment.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-goal-alignment",
+      "sidebarTitle": "Projects and execution/Goals and work alignment/Aligned work and navigation",
+      "fingerprint": "a9a4bc0845dbed28f5cc458713f4ceecb3641a9ba1b60fe1867f3b573a471622"
+    },
+    {
+      "file": "ui/storybook/stories/companies/company-import.stories.tsx",
+      "capabilities": [
+        "companies/portability"
+      ],
+      "purpose": "Getting started and access/Companies and portability/Import preview",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Shipped CompanyImport GitHub-source preview, warnings, pending, error and 403. Plan/package replies are fictional; export, final import and real package fidelity remain separate scenarios/contracts.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/companies.md",
+        "ui/src/pages/CompanyImport.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/companies/company-import.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-company-import",
+      "sidebarTitle": "Getting started and access/Companies and portability/Import preview",
+      "fingerprint": "578c7550b2a601c0c71aa7a847f9c9505a642629a92da73af0ef7e750fb3f370"
+    },
+    {
+      "file": "ui/storybook/stories/inbox-search/inbox-views.stories.tsx",
+      "capabilities": [
+        "inbox-search/views"
+      ],
+      "purpose": "Tasks and conversations/Inbox, decisions, and search/Personal task views",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Shipped Inbox host with Mine/Recent/Unread/Blocked under combined-inbox flags and list states. Approvals/join requests/run lists are isolated alongside tasks. Failed/denied list queries currently fall back to Inbox zero; personal participation/read metadata and server counts remain production verification. Mine/recent fixture tasks are human-created; the upstream agent-created-task filter changes are separate visibility scenarios.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/inbox-search.md",
+        "ui/src/pages/Inbox.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/fixtures/paperclipData.ts",
+        "ui/storybook/stories/inbox-search/inbox-views.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-inbox-views",
+      "sidebarTitle": "Tasks and conversations/Inbox, decisions, and search/Personal task views",
+      "fingerprint": "6b0a316d05b6e02af3c50075086063ae9c748ea4edc0e67156235bcc1eb8e21b"
+    },
+    {
+      "file": "ui/storybook/stories/skills/skill-test-runs.stories.tsx",
+      "capabilities": [
+        "skills/testing"
+      ],
+      "purpose": "Agents and reusable capabilities/Skills and Skill Studio/Test runs",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "SkillStudio test history statuses and result detail with immutable fixture output/version. No agent/provider runs; authoring, harness execution, persisted costs and snapshots require production tests.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/skills.md",
+        "ui/src/lib/router.tsx",
+        "ui/src/pages/SkillStudio.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/skills/skill-test-runs.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts",
+        "ui/storybook/support/capability-gaps/skills.ts"
+      ],
+      "stableId": "feature-skill-test-runs",
+      "sidebarTitle": "Agents and reusable capabilities/Skills and Skill Studio/Test runs",
+      "fingerprint": "4685add5676a5e6dd96885d326be891b8b48520787177d8540d5f3e2758cb8c5"
+    },
+    {
+      "file": "ui/storybook/stories/onboarding/resume-draft.stories.tsx",
+      "capabilities": [
+        "onboarding/resume"
+      ],
+      "purpose": "Getting started and access/Onboarding and first work/Resume a saved draft",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "OnboardingWizard restores a seeded draft, malformed/unavailable-company handling and draft retention across a fixture remount. The reopen button belongs to the fixture host; real reload, account switch and storage failure remain separate checks.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/onboarding.md",
+        "ui/src/api/companies-query.ts",
+        "ui/src/components/OnboardingWizard.tsx",
+        "ui/src/components/ui/button.tsx",
+        "ui/src/context/DialogContext.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/fixtures/onboardingDraft.ts",
+        "ui/storybook/stories/onboarding/resume-draft.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-onboarding-resume",
+      "sidebarTitle": "Getting started and access/Onboarding and first work/Resume a saved draft",
+      "fingerprint": "90abcea935be1524a081ff34041f608fa2c0dd354dbc3bacbf16679cf580957f"
+    },
+    {
+      "file": "ui/storybook/stories/routines/run-now.stories.tsx",
+      "capabilities": [
+        "routines/run-now"
+      ],
+      "purpose": "Automation and structured work/Routines, schedules, and triggers/Run now",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "RoutineDetail manual-run dialog with required input, captured variables, pending/error/success and read states. Fictional dispatch receipt; real scheduling, coalescing, workspace authority and execution remain separate.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/routines.md",
+        "ui/src/components/ToastViewport.tsx",
+        "ui/src/lib/router.tsx",
+        "ui/src/pages/RoutineDetail.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/fixtures/paperclipData.ts",
+        "ui/storybook/fixtures/routineWebhooks.tsx",
+        "ui/storybook/stories/routines/run-now.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-routine-run-now",
+      "sidebarTitle": "Automation and structured work/Routines, schedules, and triggers/Run now",
+      "fingerprint": "6d6f650f4990ad61045c6e3c47ae446cf5ac7a5240ca123a91c2c3216bf0d3c9"
+    },
+    {
+      "file": "ui/storybook/stories/app-permissions/catalog-review.stories.tsx",
+      "capabilities": [
+        "app-permissions/catalog-change"
+      ],
+      "purpose": "Apps, channels, and extensions/App access and action permissions/Review newly discovered actions",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Shipped ActionsSection quarantine reviewer with allowed/blocked decisions, empty/refreshing/saving/read-only props. Callbacks simulate catalog persistence; discovery failures belong to AppDetail and backend authority remains separate.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/app-permissions.md",
+        "ui/src/pages/apps/app-detail/PermissionsPanel.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/app-permissions/catalog-review.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-catalog-review",
+      "sidebarTitle": "Apps, channels, and extensions/App access and action permissions/Review newly discovered actions",
+      "fingerprint": "0b4c214f3c5e138fa57da3ed59a64c368d8ac7615476164743b810c117e7cab6"
+    },
+    {
+      "file": "ui/storybook/stories/chat-channels/channel-attachments.stories.tsx",
+      "capabilities": [
+        "chat-channels/attachments"
+      ],
+      "purpose": "Apps, channels, and extensions/External chat and email/Task-linked files",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "TaskChatBubble with received/outbound saved attachment receipts, no/multiple files and missing filename. File links are fictional; no download, provider transfer or authorization is proved.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/chat-channels.md",
+        "ui/src/components/task-chat/TaskChatBubble.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/chat-channels/channel-attachments.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-channel-attachments",
+      "sidebarTitle": "Apps, channels, and extensions/External chat and email/Task-linked files",
+      "fingerprint": "aa6718bf5754d2f5603682ed76d5075e277ce19f35b38356f92f8e3f14bc4f43"
+    },
+    {
+      "file": "ui/storybook/stories/steering/composer-draft-recovery.stories.tsx",
+      "capabilities": [
+        "steering/drafts"
+      ],
+      "purpose": "Tasks and conversations/Steering and queued messages/Draft recovery",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "TaskChatComposer uses owned task-keyed browser drafts, uncertain submission fence, switch/restore and failed/accepted send callbacks. API receipt authority and real submission durability remain separate. Storybook-owned draft keys are reset using the matching retained submission ID on setup and cleanup; same-browser uncertain-to-empty/send switching is covered separately.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/steering.md",
+        "ui/src/components/task-chat/TaskChatComposer.tsx",
+        "ui/src/components/ui/button.tsx",
+        "ui/src/lib/composer-draft.ts",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/steering/composer-draft-recovery.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-composer-draft-recovery",
+      "sidebarTitle": "Tasks and conversations/Steering and queued messages/Draft recovery",
+      "fingerprint": "1c242e44746a80add5d9d54ea46611fe58ec43aac42e9d8c61027495c7fa4279"
+    },
+    {
+      "file": "ui/storybook/stories/inbox-search/personal-task-toasts.stories.tsx",
+      "capabilities": [
+        "inbox-search/toasts"
+      ],
+      "purpose": "Tasks and conversations/Inbox, decisions, and search/Personal task notifications",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "LiveUpdatesProvider and ToastViewport consume fixture socket eligibility, suppress unrelated/visible-task events and deduplicate replay. Server eligibility metadata is simulated; no persisted multiplayer participation proof. The upstream Inbox recipe adds agent-created-task discovery checks; this LiveUpdatesProvider suite still tests toast eligibility only.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/inbox-search.md",
+        "ui/src/components/ToastViewport.tsx",
+        "ui/src/components/ui/button.tsx",
+        "ui/src/context/LiveUpdatesProvider.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/inbox-search/personal-task-toasts.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts",
+        "ui/storybook/support/capability-gaps/live-events.ts"
+      ],
+      "stableId": "feature-personal-task-toasts",
+      "sidebarTitle": "Tasks and conversations/Inbox, decisions, and search/Personal task notifications",
+      "fingerprint": "956b02e1631234b0eaba5622e416edec931a8151a2f6c4f069cdefee3c51a428"
+    },
+    {
+      "file": "ui/storybook/stories/agent-chat/conference-room.stories.tsx",
+      "capabilities": [
+        "agent-chat/conference-room"
+      ],
+      "purpose": "Tasks and conversations/Agent conversations and project handoff/Conference Room",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "BoardChat empty, reply, send pending/error/403 through fixture SSE and persisted comment reads. 403 uses the shipped generic unavailable message; route gates and real Claude execution remain separate.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/agent-chat.md",
+        "ui/src/pages/BoardChat.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/fixtures/paperclipData.ts",
+        "ui/storybook/stories/agent-chat/conference-room.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-conference-room",
+      "sidebarTitle": "Tasks and conversations/Agent conversations and project handoff/Conference Room",
+      "fingerprint": "2c2431d14a8e6106a6ede10021ea387b7b5e8a9770710f423cbe95ba316dc4da"
+    },
+    {
+      "file": "ui/storybook/stories/documents-artifacts/document-revisions.stories.tsx",
+      "capabilities": [
+        "documents-artifacts/documents"
+      ],
+      "purpose": "Tasks and conversations/Documents, attachments, and work products/Document revisions",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "IssueDocumentsSection renders current/edit/historical preview and append-only restore with mutation error. Read/loading failures retain shipped fallback rendering; no persisted concurrency or authorization proof.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/documents-artifacts.md",
+        "ui/src/components/DocumentFrameHeader.tsx",
+        "ui/src/components/IssueDocumentsSection.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/fixtures/paperclipData.ts",
+        "ui/storybook/stories/documents-artifacts/document-revisions.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-document-revisions",
+      "sidebarTitle": "Tasks and conversations/Documents, attachments, and work products/Document revisions",
+      "fingerprint": "a1d9e6b7f17a5d75ac2ff91a0ad96b9de9dadab4b2e0340ac7ae94d32809409b"
+    },
+    {
+      "file": "ui/storybook/stories/navigation-preferences/sidebar-preferences.stories.tsx",
+      "capabilities": [
+        "navigation-preferences/preferences"
+      ],
+      "purpose": "Oversight and operation/Navigation, profile, and announcements/Sidebar preferences",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Production Sidebar inside PluginLauncherProvider with saved-order reads, pending/error/403 fallback and session-only section collapse. Favorites, recents and actual order persistence still need the recipe checks.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/navigation-preferences.md",
+        "ui/src/components/Sidebar.tsx",
+        "ui/src/components/SidebarSection.tsx",
+        "ui/src/plugins/launchers.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/navigation-preferences/sidebar-preferences.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts"
+      ],
+      "stableId": "feature-sidebar-preferences",
+      "sidebarTitle": "Oversight and operation/Navigation, profile, and announcements/Sidebar preferences",
+      "fingerprint": "5426596737a1f27105954d0e7fde6729f0b3a2e83ba7dec9e288286a359ab216"
+    },
+    {
+      "file": "ui/storybook/stories/pipelines/pipeline-board.stories.tsx",
+      "capabilities": [
+        "pipelines/items"
+      ],
+      "purpose": "Automation and structured work/Pipelines, review queues, and learnings/Items",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Production Pipelines board with stages/items and loading/empty/error/403. Snapshot rows only; transitions, liveness, guards and automation execution remain separate.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/pipelines.md",
+        "ui/src/lib/router.tsx",
+        "ui/src/pages/Pipelines.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/pipelines/pipeline-board.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts",
+        "ui/storybook/support/capability-gaps/pipelines.ts"
+      ],
+      "stableId": "feature-pipeline-board",
+      "sidebarTitle": "Automation and structured work/Pipelines, review queues, and learnings/Items",
+      "fingerprint": "6259bfc636e56d936fa77164bd5acbc5967066721a37f75bc803f5a4db6b3be3"
+    },
+    {
+      "file": "ui/storybook/stories/pipelines/stage-settings.stories.tsx",
+      "capabilities": [
+        "pipelines/stages"
+      ],
+      "purpose": "Automation and structured work/Pipelines, review queues, and learnings/Stage settings",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Production PipelineSettings stage editor with filled configuration, no stages, pending/error/403. This pass renders the shipped controls; saved stage/automation changes remain production obligations.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/pipelines.md",
+        "ui/src/lib/router.tsx",
+        "ui/src/pages/PipelineSettings.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/pipelines/stage-settings.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts",
+        "ui/storybook/support/capability-gaps/pipelines.ts"
+      ],
+      "stableId": "feature-pipeline-stages",
+      "sidebarTitle": "Automation and structured work/Pipelines, review queues, and learnings/Stage settings",
+      "fingerprint": "747e8cf58dd88118466de6b4ba8967f2f76ed31f7a8ee300f05265630367f0aa"
+    },
+    {
+      "file": "ui/storybook/stories/pipelines/review-queue.stories.tsx",
+      "capabilities": [
+        "pipelines/review"
+      ],
+      "purpose": "Automation and structured work/Pipelines, review queues, and learnings/Review queue",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Production ReviewQueue with empty/loading/error/403, approval removal and failure recovery marked Needs attention. Fixture decisions do not prove real review leases, version checks or transitions.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/pipelines.md",
+        "ui/src/lib/router.tsx",
+        "ui/src/pages/Pipelines.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/pipelines/review-queue.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts",
+        "ui/storybook/support/capability-gaps/pipelines.ts"
+      ],
+      "stableId": "feature-pipeline-review",
+      "sidebarTitle": "Automation and structured work/Pipelines, review queues, and learnings/Review queue",
+      "fingerprint": "360dedf71d3540f1b67880ba49687a3b6a8962a11fdc8c3a2acd375c695a883c"
+    },
+    {
+      "file": "ui/storybook/stories/pipelines/learnings.stories.tsx",
+      "capabilities": [
+        "pipelines/learnings"
+      ],
+      "purpose": "Automation and structured work/Pipelines, review queues, and learnings/Learnings",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Production Learnings feed renders a review_decided event plus loading/empty/error/403. Event provenance and durable audit records remain separate; this is not a new learning-record subsystem.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/pipelines.md",
+        "ui/src/lib/router.tsx",
+        "ui/src/pages/Pipelines.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/pipelines/learnings.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts",
+        "ui/storybook/support/capability-gaps/pipelines.ts"
+      ],
+      "stableId": "feature-pipeline-learnings",
+      "sidebarTitle": "Automation and structured work/Pipelines, review queues, and learnings/Learnings",
+      "fingerprint": "acc796cc3ca32601e40809ffb0b5e1406c1360785c988d74baca3172cad71b49"
+    },
+    {
+      "file": "ui/storybook/stories/execution-environments/environment-states.stories.tsx",
+      "capabilities": [
+        "execution-environments/configuration",
+        "execution-environments/capabilities",
+        "execution-environments/probe"
+      ],
+      "purpose": "Projects and execution/Execution environments/Configuration, capabilities, and probes",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "CompanyEnvironments configuration/edit, unsupported capabilities and probe pending/failure/success. No provider contacted. List read/loading failures expose shipped fallback behavior, not dedicated error UI.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/execution-environments.md",
+        "ui/src/components/ToastViewport.tsx",
+        "ui/src/lib/router.tsx",
+        "ui/src/pages/CompanyEnvironments.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/execution-environments/environment-states.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts",
+        "ui/storybook/support/capability-gaps/environments.ts"
+      ],
+      "stableId": "feature-execution-environments",
+      "sidebarTitle": "Projects and execution/Execution environments/Configuration, capabilities, and probes",
+      "fingerprint": "9a14e48be15b72210745d53541505a92e331437b67369d42d6364e78938b5120"
+    },
+    {
+      "file": "ui/storybook/stories/execution-environments/custom-images.stories.tsx",
+      "capabilities": [
+        "execution-environments/images"
+      ],
+      "purpose": "Projects and execution/Execution environments/Custom images",
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "CompanyEnvironments image metadata: unconfigured, captured, unsupported, failed, loading and 403. No live setup terminal, provider capture, rollback or relink is executed.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/execution-environments.md",
+        "ui/src/components/ToastViewport.tsx",
+        "ui/src/lib/router.tsx",
+        "ui/src/pages/CompanyEnvironments.tsx",
+        "ui/storybook/.storybook/preview.tsx",
+        "ui/storybook/stories/execution-environments/custom-images.stories.tsx",
+        "ui/storybook/support/capability-gaps/api.ts",
+        "ui/storybook/support/capability-gaps/environments.ts"
+      ],
+      "stableId": "feature-environment-images",
+      "sidebarTitle": "Projects and execution/Execution environments/Custom images",
+      "fingerprint": "0877c994c37d7272b9a1330897cf56d366162dc17e7503c753415dd1077c9446"
     }
   ]
 }

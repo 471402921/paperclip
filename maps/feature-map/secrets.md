@@ -12,7 +12,7 @@ Agent access: [companion](../agent-access-map/secrets.md).
 - `user-secrets`: define required user credentials and set a value for the current user.
 - `proposals`: review proposed changes with the appropriate authority.
 - `vault-import`: import eligible external-vault references through the offered flow.
-- `runtime-delivery`: deliver only the secret references authorized for the run/actor.
+- `runtime-delivery`: deliver only the secret references authorized for the run/actor. Agent-owned instance secrets stay in the trusted server runtime and are never delivered to an agent.
 
 ## How to get to it (user POV)
 
@@ -30,7 +30,7 @@ Preconditions: follow the [baseline](./README.md#before-driving-a-journey). Use 
 
 ### `secret-management`
 
-Automated: [secrets service](../../server/src/__tests__/secrets-service.test.ts) and [user ownership](../../server/src/__tests__/secrets-service-user-secret-owner-scoped.test.ts) cover storage/access contracts.
+Automated: [secrets service](../../server/src/__tests__/secrets-service.test.ts) and [user ownership](../../server/src/__tests__/secrets-service-user-secret-owner-scoped.test.ts) cover storage/access contracts. [Instance-secret tests](../../server/src/__tests__/agent-instance-secrets.test.ts) cover local encrypted storage, owner isolation, and exclusion from ordinary bindings.
 
 Manual: Create a dummy secret reference, bind it through a supported field, and verify its use in a harmless run without logging the value. Update it and reload. Switch users and confirm personal values remain owner-scoped and missing credentials produce an actionable state.
 

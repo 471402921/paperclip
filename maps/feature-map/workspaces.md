@@ -34,6 +34,25 @@ Automated: [workspace card](../../ui/src/components/IssueWorkspaceCard.test.tsx)
 
 Manual: Run a task that writes a small file, follow the bound workspace, and inspect the file and revision. Reload and verify links still refer to the same workspace, not another checkout or a stale run.
 
+For fresh standard-trust tasks using an implicit repository default, create a
+disposable project checkout whose shared Git storage overlaps a private task
+workspace. Verify that source admission creates a separate checkout from the
+configured remote, with no private local branches, commits or shared Git storage.
+Reusing, closing and reopening that task must retain the company/task-bound source;
+a failed workspace save must clean up only its owned checkout. Explicit workspace,
+parent/channel selections, literal or task-independent branch templates, low-trust
+tasks, and local or credential-bearing remote
+URLs must not use this fallback. A selected checkout requires recorded default
+provenance. Create tasks
+through the task service with an explicit checkout ID or an inherited parent
+source but no typed selection; verify denial, no clone or environment acquisition,
+and preservation of unpublished branch commits. Older ambiguous bindings and
+source choices changed during preparation must retain the denial. The
+[remote-source tests](../../server/src/services/isolated-remote-workspace-source.test.ts)
+and [preparation tests](../../server/src/services/heartbeat/workspace-preparation.test.ts)
+exercise the real Git isolation and lifecycle guards. They do not qualify live
+remote credentials or a provider deployment.
+
 For task workspace selection, use the authorized task workspace API to choose a
 task directory, project source, or existing workspace. Verify that a change
 made during a run stays pending until the next normal admission. Submit another

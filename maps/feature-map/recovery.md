@@ -119,7 +119,34 @@ Automated: [disposition notices](../../ui/src/components/DispositionRecoveryNoti
 tests pending/error/gated states and waiting for the real retry acknowledgement.
 The recovery-card suite covers workspace divergence, reissue, reconcile, and
 confirmation. [Workspace export](../../ui/src/components/WorkspaceExportRecovery.test.tsx)
-covers its separate repair surface.
+covers quiet restoration, legacy/operator assistance and resolved states.
+
+For a retained legacy file hold, open the source task after its recovery action
+has resolved but its files still need recovery. An authorized board operator can
+record the verified recovered files and backup link without changing the current
+task status or starting another run. The server must independently validate the
+original stopped-execution receipt. Agent Chat must show the file hold rather than
+suggesting another message. The [file recovery form](../../ui/src/components/WorkspaceFileRecovery.test.tsx),
+[notice](../../ui/src/components/ExecutionBlockerNotice.test.tsx), and
+[repair route](../../server/src/__tests__/workspace-restore-repair-route.test.ts)
+cover evidence/confirmation, read-only access, stale or missing stop proof,
+source-only repair, and preserved task status. These tests use fixtures; separately
+verify original files and their attached artifact before recording a real repair.
+
+For an abandoned native copyback owner, the harness verifies the exact stopped
+deployment and the reconciler restores saved work automatically. Task users see
+no process details or shutdown form. The documented operator API handles older
+receipts after independent platform verification, through a separate administrator
+gate. The [authorization regressions](../../server/src/__tests__/authorization-service.test.ts)
+and [route regressions](../../server/src/__tests__/issue-agent-mutation-ownership-routes.test.ts)
+cover administrator admission, ordinary-member and agent denial, suspended and
+foreign membership, missing role data, and stale cloud admin rows.
+The [native workspace finalizer suite](../../server/src/services/native-runtime/native-workspace-finalizer.test.ts)
+runs the real reconciler with a valid saved yield from `result_accepted`,
+`workspace_finalizing`, and `retryable_failure`. It verifies physical fencing
+before verified stop, automatic and operator recovery, successful export and commitment, hold resolution,
+unchanged saved results, retained approval/monitor waits, and no new provider wake.
+These local regressions do not prove a deployment platform stopped a foreign writer.
 
 Manual: reproduce an exhausted disposable action. Click once, verify pending
 state prevents repeated clicks, and inspect a successful continuation or an
@@ -127,6 +154,17 @@ explicit rejection. Reload to confirm the durable outcome. For a workspace
 repair, record the compared branches/revisions and preserve uncommitted work;
 confirm the repair's actual result before resuming. Check the denied and stale
 action paths. A changed card label is insufficient proof of workspace integrity.
+
+For an abandoned native controller, follow the [stop-verification procedure](../../doc/native-workspace-finalization-recovery.md)
+with a disposable deployment. A new platform-bound owner recovers automatically
+only after the harness signs proof that the exact deployment fully stopped.
+Legacy owners require independently verified stop evidence through the operator
+API; the task has no shutdown form. Confirm
+the original accepted result commits, the recovery hold resolves, saved files
+remain intact, and existing approval waits or monitor checks remain. No new agent
+turn should start. Repeat with a retry-phase owner and an ordinary runtime manager;
+the first can resume through automatic proof or authorized operator confirmation,
+while the second cannot use the operator API.
 
 ### `post-stop-message`
 

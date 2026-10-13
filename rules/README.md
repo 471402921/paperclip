@@ -27,5 +27,10 @@ When adding or changing a rule:
    the scope covers representative files and excludes unrelated directories.
 4. Keep detailed policy in the rule file instead of copying it into tool settings.
 
+Product behavior is covered by
+[`product-harness-responsibility.mdc`](product-harness-responsibility.mdc): routine
+work belongs to the harness, and user-facing detail must support an outcome or a
+real decision. This applies to orchestration as well as UI.
+
 See the [Greptile file-reference documentation](https://www.greptile.com/docs/code-review/greptile-config-reference)
 for the manifest format.

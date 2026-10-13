@@ -274,6 +274,35 @@ Reviewed the same twelve workspace-recipe-dependent entries after extending the 
 
 Reviewed the twelve unchanged workspace recipe subjects and fixtures after correcting implicit default selection. Task creation and controller classification now share configured-policy, primary, creation-time and ID precedence. Explicit choices and retained denial markers still suppress controller hooks. Project strategy fixtures show configuration, while runtime status and file/browser/artifact/service fixtures do not execute source scripts or prove this backend ordering. Refreshed only their reviewed recipe fingerprints and retained all classifications and stable IDs. No browser render, play, screenshot, Storybook build or live runtime acceptance was performed.
 
+## Workspace finalization UI refinement — 2026-10-13
+
+Source base: `f07efa2802`, followed by scoped edits to the production recovery notice and its two story suites. Reviewed `recovery/workspace` and `recovery/source-action`; stable story IDs and administrator admission remain unchanged. The notice leads with saved work, discloses controller metadata, explains evidence/confirmation requirements, and distinguishes queue acknowledgement from completion. A stale controller error preserves the note and clears confirmation so the operator must verify again. The task composition uses viewer identity for human bubbles and omits a routine status badge.
+
+MacOS in-app browser inspection passed for the task journey at desktop and 390px mobile widths: controller disclosure with Enter, evidence without confirmation remaining disabled, explicit confirmation enabling submission, and a simulated queued result in place. The `owner-changed` story's play assertions passed; the friendly error was visible, the note remained, confirmation cleared and the action was disabled. The `long-controller-name` story rendered at 390px without horizontal overflow. The mobile task shell showed its bottom navigation; evidence text computed to 16px and Tab reached the enabled action. No physical mobile keyboard, Linux screenshot baseline, live deployment stop, real API admission or provider copyback acceptance is claimed. Other story states received source review, not a full browser execution pass.
+
+Refreshed the two reviewed catalog entries only. Global catalog validation already reported unrelated source-fingerprint drift before this work; those entries require their own review.
+
+## Automatic workspace recovery revision — 2026-10-13
+
+Supersedes the task shutdown form reviewed above. The production task now renders
+only a quiet restoration status or an honest operator-assistance fallback. It
+contains no process metadata, evidence field, confirmation checkbox or resume
+button. The task thread omits the duplicate technical recovery card. Obsolete
+form stories and their simulated API fixture were removed; suite IDs remain
+stable. The composed task journey includes a saved state without the notice.
+
+Observed in the macOS in-app browser: automatic status in the production shell,
+completed example without the status, retained approval-wait message, and mobile
+bottom navigation with equal content and viewport widths (no horizontal overflow).
+These are fixture UI observations, not live provider shutdown or task commitment.
+The production component test verifies removal on a resolved action update. The
+real reconciler's database tests separately preserve accepted-result identity,
+monitor and approval waits, and create no new run or wake request.
+
+Only the two reviewed suites have refreshed fingerprints. Global validation has
+71 other source-fingerprint errors, including recovery-recipe dependents after
+the operator instructions changed. It is not globally green. No unrelated review
+fingerprints or visual baselines were accepted.
 
 ## Inherited activity, inbox and recovery recipes — 2026-10-12
 
@@ -435,3 +464,185 @@ and three also reference the Slack-only settings copy. Other source bytes and
 all classifications, fixture boundaries, story IDs and sidebar titles remain
 unchanged from that baseline. Catalog checks validate these references and
 fingerprints, not live Slack behavior.
+
+### Current-master reconciliation
+
+Merged master `5e8e992df2`. The newer catalog supplies the baseline associations
+and reviews. Compared every declared input against that master: only seven
+inputs changed for this feature (recovery recipe, recovery card, task page, quiet
+status, two stories and their fixture). Reviewed those changes and the unchanged
+subjects/fixtures they affect; refreshed the 26 dependent fingerprints while
+retaining their classifications and simulation boundaries. The task-page change
+adds the quiet status and suppresses only the owner-unverified duplicate card;
+other task variants retain their behavior. The recovery-card change blocks
+unsafe generic dismissal. Existing card regressions cover that denial.
+
+Five remaining errors have unchanged source bytes and metadata inherited from
+master: shared setup, decision-card, decisions-desk, search and what-needs-me.
+These require a separate review; no hashes or visual baselines were accepted for
+them. The earlier 71-error count above describes the pre-merge baseline.
+
+### Inherited index metadata follow-up
+
+The current master's personal-toast recipe also left shared setup and four inbox
+suites with stale metadata. Reviewed the recipe's added toast capability and
+verification limits: decision-card, decisions-desk and search still demonstrate
+their existing isolated subjects; what-needs-me's toast fixture does not prove
+viewer eligibility. Their subject and fixture bytes are unchanged from master;
+retained all unreviewed classifications and fixture boundaries. The generator
+adds the missing toast capability and description to the existing inbox feature,
+without changing feature order or IDs. Reviewed that generated diff and refreshed
+these four entries, the shared setup and Overview fingerprints. No toast behavior,
+new browser acceptance or visual baseline is claimed. Global catalog validation
+now passes. This supersedes the five inherited-error count above.
+
+### Confirmed recovery status
+
+Reviewed the shipped notice, server evidence contract and both recovery fixtures.
+Platform identity alone no longer means work is restoring: the server marks the
+exact recovery receipt resuming only after verified stop proof and a successful
+owner claim. Missing proof remains operator-required. The new unavailable-proof
+story covers a platform-bound receipt without progress; confirmed and queued
+stories retain the quiet status. Updated only the two affected fingerprints.
+This is component/fixture evidence, not deployed harness acceptance.
+
+### Latest master reconciliation
+
+Retained master’s task-creation visibility scenarios, source-review notes and
+unreviewed classifications. Seven overlapping entries differ from master only
+in the already reviewed recovery recipe or task-detail recovery notice wiring.
+Refreshed those combined-source fingerprints and regenerated the index. No new
+creation-visibility acceptance or visual baseline is claimed.
+
+## Verification routes for unassociated capabilities — 2026-10-13
+
+Source classification against merged master `5e8e992df2`: [VERIFICATION.md](VERIFICATION.md)
+accounts for all 60 capabilities without non-guide example associations. It
+records 49 UI example gaps with separate production contracts, eight CLI/operator
+operations and three browser verification boundaries. Existing tests are starting
+points; no new live journey, rendering, interaction or visual evidence is claimed.
+The targeted association revisit found no further justified links. This does not
+complete parity review of the 184 example suites still classified `unreviewed`.
+
+Master includes #16153's personal task-toast capability. Its upstream README and
+recipe were inspected; reconstructing the five inbox-suite and shared fingerprints
+with the pre-toast recipe bytes matches the stored baseline. No other declared
+source changed for those suites. Regeneration adds the capability/description to
+the feature index, which also changes the guide fingerprint. Refreshing those
+review fingerprints preserves statuses, associations and all 2,212 authored IDs.
+
+Catalog/map checks, 27 catalog/generator/map tests and maintenance-skill validation
+passed. The 60-row inventory and all local links were checked against current
+source. Repository-wide typecheck/tests/build and Storybook build are not run for
+this documentation and generated-data pass; runtime behavior is unchanged.
+
+Review correction: backup retention already has shipped controls in
+`InstanceGeneralSettings`, embedded in `CompanySettings`. The backup row therefore
+keeps missing retention UI examples alongside separate CLI backup/restore proof;
+it is not a wholesale Storybook exemption. No existing story mounts those controls.
+
+## Verification-parent merge reconciliation — 2026-10-13
+
+Reconciled master `da9af67415` while preserving its catalog records and both
+review histories. Inspected the intervening recipe changes for Telegram
+maintenance, liveness/readiness and trusted instance-secret lifecycle, and the
+soft-warning versus hard-stop budget UI. Refreshed only dependent review
+fingerprints with notes naming those boundaries; classifications remain unchanged.
+The generated feature index reflects the current recipes. No new rendering,
+provider journey or whole-suite parity review is claimed. Catalog/map validation
+and all 27 catalog/generator/map tests pass with the pinned Storybook parser.
+
+## Production-subject UI gap examples — 2026-10-13
+
+Step 3 adds 37 suites and 257 scenarios associated with the 49 UI capabilities
+from [VERIFICATION.md](VERIFICATION.md). Subjects are shipped pages/components;
+API replies, sockets, callbacks and storage seeds remain simulated. Source
+review uses production snapshot `a9ef9e8ebc1f41bb7047142704655d08b3e47be7`;
+the story revision is `36689fc8149c31858d0b4c6f7839ecc663404073` plus the review
+corrections in this commit. Catalog fingerprints identify the tested source bytes.
+Existing suite classifications and all 2,248 prior built entry IDs are preserved;
+the new built index has 2,505 entries. Existing unreviewed suites remain unreviewed.
+
+Executed the focused browser suite against this checkout's static build on macOS
+Chromium at 1280 × 900 with reduced motion: **260 checks passed**. Every new story
+was exercised: 129 declared play functions passed; the remaining 128 scenarios
+have explicit subject-content, skeleton, editable-control or documented fallback
+assertions. The only intentionally empty root is the zero-entry durable-response
+queue, whose shipped component returns null. Additional checks verified token
+fixture reset through sidebar navigation and backup retention at 390 × 844 in
+light and dark themes. No browser page errors were observed. The test names
+identify each story ID; rerun with the command in VERIFICATION.md. Selected
+screenshots are inspection captures, not pinned Linux visual-baseline comparisons.
+
+Review corrections give empty stage settings zero stages and assert its message,
+make failed reads return HTTP 500 rather than the service-warmup HTTP 503,
+provide Inbox dependencies and actual plugin redirect destinations, use distinct
+attachment paths and a valid uncertain-submission UUID, and select Interactions
+before play starts so the browser harness does not steal input/menu focus.
+
+Repository typecheck/build, the UI Vitest suite (730 files, 8,208 tests),
+four fixture-boundary tests, 27 catalog/generator/map tests, token gates and
+Storybook build passed. The full local repository test command could not complete:
+embedded PostgreSQL exhausted host shared-memory allocation, and native-runner
+tests reported timeouts. No host settings or other jobs were changed.
+
+Production acceptance and pinned Linux visual comparisons were not run. The
+scenario inventory retains outstanding recipe variants and real authorization,
+persistence and provider contracts. Examples expose existing read-error/loading
+fallbacks rather than inventing feedback; those limits are named in VERIFICATION.md.
+
+## Step-3 merge reconciliation — 2026-10-13
+
+Merged current master `da9af67415` through the verification parent. Preserved
+upstream story additions, review notes and classifications and all 37 new suites.
+Compared changed catalog inputs with the reviewed step-2 snapshot: five feature
+recipes, the generated feature index, BudgetIncidentCard/Costs, Inbox and the
+recovery notice wiring changed. The two preview-hook lines remain as reviewed.
+The new budget fixtures explicitly use hard thresholds; their action labels and
+callbacks are retained. Inbox fixtures use human-created tasks; unrelated
+automation discovery remains outside their asserted scope. Recovery fixtures use
+generic exhaustion/unknown-outcome causes, not the newly gated native-owner path.
+Recipe additions concern Telegram maintenance, liveness versus readiness, trusted
+instance-secret lifecycle and native copyback verification, which these isolated
+UI stories do not establish. Reviewed those differences, refreshed affected
+fingerprints with scoped notes, and retained all statuses. No new live acceptance
+or rendering evidence is claimed for the merge; the earlier 260-check pass names
+its tested revision. Catalog/map validation and 27 targeted tests pass.
+
+## Draft-fixture isolation correction before merge — 2026-10-13
+
+After #16167 merged as `252d9b5077`, retained the step-3 catalog and scenarios
+while reconciling its squash-merged verification file. Review found that
+`clearDraft` correctly refuses to clear a retained submission without its
+matching attempt ID. Story setup/cleanup now passes that ID for the two
+Storybook-owned draft keys before reseeding them. Production draft guards are
+unchanged. The new same-browser check switches from UncertainSubmission to
+Empty, SentClearsDraft and SendFailedKeepsDraft; it asserts the warning disappears
+and the expected empty or retained draft is shown, with declared play passing.
+All six draft stories plus that switching regression passed (seven browser
+checks) on the owned macOS Chromium development preview after cold dependency
+optimization. UI typecheck, 16 existing draft-persistence tests and the 27
+catalog/generator/map tests passed. No whole-suite browser rerun, production
+submission journey or visual-baseline comparison is claimed for this narrow fix.
+
+Static merge verification: Storybook build passed after restoring the checkout's
+renderer dependencies. All 2,248 original built IDs remain in the 2,517-entry
+index. The 25 budget/inbox/recovery examples affected by upstream source changes,
+six draft examples and same-browser reset check passed on the static preview
+(32 checks). The reset check uses the sidebar for Empty and reloads send stories
+within the same browser/storage context, so it cannot read the prior story's
+completed play status while the new play starts. No isolated-context substitute
+is used for the retained-submission regression. The unchanged GitHub bot-management
+suite also passed locally (34 tests) after its CI assertion failed; a separate
+server job reported cancellation. Those CI jobs require a fresh passing run.
+
+## Named play-result assertions — 2026-10-13
+
+Strengthened four review cases: UnavailableCompanyDraft waits for the visible
+wizard and an empty agent-name input before rejecting the foreign draft; Probing
+asserts a disabled Testing button; FilterNoMatches asserts the filtered empty
+message and absence of the seeded run; Delivering asserts the queue's optimistic
+removal after clicking a loaded row. The shipped queue returns null while that
+delivery remains pending, so this story records the missing visible progress
+presentation rather than inventing it. All four browser cases passed on the
+owned preview, as did UI typecheck and 27 catalog/generator/map tests.

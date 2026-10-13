@@ -10188,6 +10188,14 @@ export function issueService(db: Db) {
           projectWorkspaceId = await resolveProjectDefaultWorkspaceId(tx, {
             companyId, projectId: issueData.projectId, policy: projectPolicy,
           });
+          if (projectWorkspaceId && isolatedWorkspacesEnabled) {
+            const sourceStrategy = await executionWorkspaceService(db).resolveSourceWorkspaceStrategy({ companyId,
+              assigneeAgentId: issueData.assigneeAgentId, assigneeAdapterOverrides: issueData.assigneeAdapterOverrides,
+              executionWorkspaceSettings, executionWorkspacePolicy: projectPolicy,
+              typedSelection: false, projectId: issueData.projectId, executionPolicy: issueData.executionPolicy }, tx);
+            if (sourceStrategy === "git_worktree") workspaceIntent = { version: 1, source: "project",
+              selection: { kind: "configured_source", projectWorkspaceId, mode: "managed_isolated" } };
+          }
         }
         if (projectWorkspaceId && workspaceSelectionActor) {
           const [readableSource] = await tx.select({ id: projectWorkspaces.id, projectId: projectWorkspaces.projectId, executionWorkspacePolicy: projects.executionWorkspacePolicy }).from(projectWorkspaces)
