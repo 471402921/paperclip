@@ -1,6 +1,6 @@
 {
-  "id": "d054c235-a5db-49f9-97bf-c4d82990b1cb",
-  "prevId": "ccab5966-22b1-4810-8f73-52405d455ac9",
+  "id": "42e04543-6c13-4339-8988-f4e833441df4",
+  "prevId": "ce4b87e3-af8c-4084-9d0d-086b09f89364",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4095,6 +4095,12 @@
         "metadata": {
           "name": "metadata",
           "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -61511,12 +61517,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
-        },
-        "continuation_receipt_id": {
-          "name": "continuation_receipt_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         },
         "digest": {
           "name": "digest",
