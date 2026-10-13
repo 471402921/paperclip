@@ -419,6 +419,11 @@ describe("IssueChatThread", () => {
       });
     });
 
+    const spacer = container.querySelector(
+      '[data-testid="issue-chat-bottom-spacer"]',
+    );
+    expect(spacer).toBeNull();
+
     expect(container.textContent).toContain("Jump to latest");
     expect(container.textContent).not.toContain("Chat (");
 
@@ -3108,42 +3113,6 @@ describe("IssueChatThread", () => {
     });
   });
 
-  it("keeps the composer floating with a capped editor height", () => {
-    const root = createRoot(container);
-
-    act(() => {
-      renderIssueThread(root);
-    });
-
-    const dock = container.querySelector(
-      '[data-testid="issue-chat-composer-dock"]',
-    ) as HTMLDivElement | null;
-    expect(dock).not.toBeNull();
-    expect(dock?.className).toContain("sticky");
-    expect(dock?.className).toContain("bottom-(--sz-calc-8)");
-    expect(dock?.className).toContain("z-20");
-
-    const composer = container.querySelector(
-      '[data-testid="issue-chat-composer"]',
-    ) as HTMLDivElement | null;
-    expect(composer).not.toBeNull();
-    expect(composer?.className).toContain("rounded-md");
-    expect(composer?.className).not.toContain("rounded-lg");
-    expect(composer?.className).toContain("p-(--sz-15px)");
-
-    const editor = container.querySelector(
-      'textarea[aria-label="Issue chat editor"]',
-    ) as HTMLTextAreaElement | null;
-    expect(editor?.dataset.contentClassName).toContain("max-h-(--sz-28dvh)");
-    expect(editor?.dataset.contentClassName).toContain("overflow-y-auto");
-    expect(editor?.dataset.contentClassName).not.toContain("min-h-(--sz-72px)");
-    expect(editor?.dataset.fileDropTarget).toBe("parent");
-
-    act(() => {
-      root.unmount();
-    });
-  });
-
   it("shows full-composer drop instructions while dragging files over the issue composer", () => {
     const root = createRoot(container);
 
@@ -3645,25 +3614,6 @@ describe("IssueChatThread", () => {
     });
   });
 
-  it("omits the bottom spacer when the composer is hidden", () => {
-    const root = createRoot(container);
-
-    act(() => {
-      renderIssueThread(root, {
-        showComposer: false,
-      });
-    });
-
-    const spacer = container.querySelector(
-      '[data-testid="issue-chat-bottom-spacer"]',
-    );
-    expect(spacer).toBeNull();
-
-    act(() => {
-      root.unmount();
-    });
-  });
-
   it("hides the reopen control and infers reopen for closed agent-assigned issue replies", async () => {
     const root = createRoot(container);
     const onAdd = vi.fn().mockResolvedValue(undefined);
@@ -3981,6 +3931,30 @@ describe("IssueChatThread", () => {
     act(() => {
       renderIssueThread(root);
     });
+
+    const dock = container.querySelector(
+      '[data-testid="issue-chat-composer-dock"]',
+    ) as HTMLDivElement | null;
+    expect(dock).not.toBeNull();
+    expect(dock?.className).toContain("sticky");
+    expect(dock?.className).toContain("bottom-(--sz-calc-8)");
+    expect(dock?.className).toContain("z-20");
+
+    const composer = container.querySelector(
+      '[data-testid="issue-chat-composer"]',
+    ) as HTMLDivElement | null;
+    expect(composer).not.toBeNull();
+    expect(composer?.className).toContain("rounded-md");
+    expect(composer?.className).not.toContain("rounded-lg");
+    expect(composer?.className).toContain("p-(--sz-15px)");
+
+    const editor = container.querySelector(
+      'textarea[aria-label="Issue chat editor"]',
+    ) as HTMLTextAreaElement | null;
+    expect(editor?.dataset.contentClassName).toContain("max-h-(--sz-28dvh)");
+    expect(editor?.dataset.contentClassName).toContain("overflow-y-auto");
+    expect(editor?.dataset.contentClassName).not.toContain("min-h-(--sz-72px)");
+    expect(editor?.dataset.fileDropTarget).toBe("parent");
 
     act(() => {
       renderIssueThread(root, {
