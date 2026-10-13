@@ -853,7 +853,7 @@ additive merges, retaining the Claude settings and immutable profile changes:
 
 The existing published PR heads remain unchanged. The root-owned Codex branch
 still needs the same current-master dependency before the protocol can meet its
-review file limit. Canonical 16a's fresh CI has one failing runner test, which its
+review file limit. Canonical 16a's fresh CI has two failing runner cases, which its
 owner is investigating; earlier 64c074fb success is not carried forward as a
 16a pass. The source owner's provider-free cloud qualification is separate from
 the final Claude package campaign.
@@ -887,3 +887,21 @@ frozen Codex dependency, fresh checks/review on all three published slices,
 four-target cloud packages and clean consumers, and current installed-runtime
 acceptance within the existing $50 ceiling. Unknown-charge holds remain intact.
 Merging and production deployment remain separate actions.
+
+The retained preview stopped listening during the integration hold. Restarting
+the same installed launcher restored health without changing its source/runtime
+or isolated data. Read-only checks confirmed native Claude / Opus 5.5, the completed
+x64 acceptance task, `enableNativeRunner=false`, and zero live runs in all six
+checked QA companies. No task prompt was submitted. Receipt:
+`/private/tmp/claude-retained-preview-restart-receipt.json`; launcher log:
+`/private/tmp/claude-retained-preview-restart.log`. These checks confirm persistence
+and preview availability, not qualification of the current source composition.
+
+The source owner identified the same durable-resume outer-deadline failure in
+canonical 16a and requested reuse of correction
+`c60bf4b6b9ee7a6052ae9c95bd10fef90f3418f7`. Its single semantic test change is
+the 15000 ms outer budget; the old explanatory comments have since been removed
+under the contribution rules. The controlled before/after receipts and full
+72-pass/one-skip suite remain the evidence stated above. The separate callback
+fixture failure is being diagnosed by the source owner and is not covered by
+that correction.
