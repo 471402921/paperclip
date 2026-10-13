@@ -33,7 +33,8 @@ Normal automatic merge is disabled and the prerequisite is draft while this
 correction receives fresh full CI, package qualification and 5/5 review.
 Earlier green checks at `5a9ce11` remain historical. Actual code-owner approval
 is still required; no protection is bypassed. The updated runs/adapters map pair
-records source-only scope, bringing the prerequisite review to 61 files.
+records source-only scope, bringing the prerequisite review to 63 files after the required Storybook
+catalog review below.
 
 Codex remains `1a0ca66242121e39d88455aa2b52a07acc4a07d9` in
 [#15683](https://github.com/paperclipai/paperclip/pull/15683), based on the previous
@@ -54,6 +55,26 @@ warm/cold signup, production baseline and previous-image compatibility. Producti
 Fleet Admin sign-in is pending. Current paid holds remain $248.179254104 of $250;
 unknown/cleanup holds stay reserved, and the unstarted managed envelope is $2.50.
 No new image, paid resource, rollout or default promotion was dispatched.
+
+Master reconciliation uses `4b958ecbd8f33a7782fe6f29ec825f80f636b833`.
+The new contribution rules are satisfied: 157 added comment annotations were
+removed from 35 files, with identical executable JavaScript/TypeScript emission,
+parsed workflow values, 77 action pins and shell commands. No code file crosses
+from below 1,000 lines to above that limit. Final focused checks pass 248 tests
+(107 workflow/package, 54 runner, 42 server, 45 E2E support). Both runner no-emit
+checks and the canonical server/E2E no-emit checks pass with isolated matching
+workspace dependencies. Only JavaScript/TypeScript preparation ran locally;
+root preview links and data stayed unchanged. The earlier linked-source failures
+remain recorded and are superseded only by the new canonical check receipt.
+
+The existing Storybook catalog has 21 source-review fingerprint updates because
+its declared runs/adapters map input changed. All affected stories, subjects,
+wrappers and fixtures remain byte-identical to master. Review classifications
+stay unchanged. The catalog check passes 223 files/2,210 stories; this is
+structural/source evidence, not visual or live proof. Source receipts are
+`/private/tmp/pr2-9f59-comments-cleanup-receipt.json`,
+`/private/tmp/pr2-storybook-owned-final-receipt.json` and
+`/private/tmp/pr2-frozen-canonical-noemit-receipt.json`.
 
 Next action: publish this reviewed prerequisite correction, require fresh hosted
 gates, reconcile Codex and Claude with its actual source, then resume the existing

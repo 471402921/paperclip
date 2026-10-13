@@ -363,7 +363,7 @@
         "ui/storybook/fixtures/onboardingEnvironment.ts",
         "ui/storybook/stories/runs-adapters/agent-connection-reuse.stories.tsx"
       ],
-      "fingerprint": "4dfc350a48d8f378eabf1b7785d1b867541121fa7715da5fd9812b28a0288d9b",
+      "fingerprint": "7b2571f03ffa3a559a9c228f78c87302d346183599b667c1102d131b4f33593a",
       "stableId": "onboarding-saved-connections",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/Onboarding/Saved connections"
     },
@@ -728,7 +728,7 @@
         "ui/storybook/prototypes/AiConnectionUsageReview.tsx",
         "ui/storybook/stories/runs-adapters/ai-connection-usage.stories.tsx"
       ],
-      "fingerprint": "0b03669a6abba327c01222793a41d898958d50a483ed1a2e842c195484cb33ec",
+      "fingerprint": "293a8407e94d525533e5beb8920d78e4b47b2326568460bfe02bb3bdd9f81eaf",
       "stableId": "ai-connections-usage-limits",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Usage limits"
     },
@@ -765,7 +765,7 @@
         "ui/storybook/prototypes/AiTaskConnectionReview.tsx",
         "ui/storybook/stories/runs-adapters/ai-connections.stories.tsx"
       ],
-      "fingerprint": "2f32110235d513dbfb6086126180d03107bc2167bc472da6280dfeb64629343a",
+      "fingerprint": "9a5d741ffbff64ab6e14e03130a1b7a53403d6e69ee48108ba1358d0093facf2",
       "stableId": "ai-connections-review",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Review"
     },
@@ -1374,7 +1374,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/tasks/chat-comments.stories.tsx"
       ],
-      "fingerprint": "aae493759f1217f0805fc6a577c8c1444d95ddbc3abc08cafe7288a543020657",
+      "fingerprint": "78ef704288c2c9ab63641e16b0e5fbe9d70bd81ec6dadacb1a31658388249c6d",
       "stableId": "product-chat-comments",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Product/Chat & Comments"
     },
@@ -1496,7 +1496,7 @@
         "ui/storybook/prototypes/completed-activity/CompletedActivityPreview.tsx",
         "ui/storybook/stories/tasks/completed-activity.stories.tsx"
       ],
-      "fingerprint": "76af14f51a89a98ed64685cee95edb29133f31bf6f3e8356c31a3b7c7b1d00b2",
+      "fingerprint": "7c91ff66b892ee3b50680e65cab8c83ec56851a75504ff5e3e6db4270f7b730e",
       "stableId": "tasks-completed-activity-preview",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Tasks/Completed activity preview"
     },
@@ -1546,7 +1546,7 @@
         "ui/storybook/prototypes/composer-model-picker/fixtures.ts",
         "ui/storybook/stories/tasks/composer-mobile-assignee.stories.tsx"
       ],
-      "fingerprint": "1288567427591ad546f49303ae7922bfd2b02c01635528cc4ae5470b926b723d",
+      "fingerprint": "b4d5689a5fd6a891e06d98d698f2556832969ac67c56f2e2a8d9da26b0510616",
       "stableId": "composer-mobile-assignee-picker",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Composer/Mobile assignee picker"
     },
@@ -1574,7 +1574,7 @@
         "ui/storybook/prototypes/composer-model-picker/fixtures.ts",
         "ui/storybook/stories/tasks/composer-model-picker.stories.tsx"
       ],
-      "fingerprint": "ecd36c7bcc1b331cc83aa50fc15bc18842e6fdb813f21889b30966c803204fcd",
+      "fingerprint": "f1ddb769d225b27ea4275da372027f7bc6f11ed079a8e7b4a3b7409744707b1f",
       "stableId": "composer-model-and-effort-picker",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Composer/Model and effort picker"
     },
@@ -1675,7 +1675,7 @@
         "ui/storybook/prototypes/ConnectionPoolConnectorHost.tsx",
         "ui/storybook/stories/runs-adapters/connection-pool-connector.stories.tsx"
       ],
-      "fingerprint": "045ed080d3c5ebecf92131e090085065ca2753ac7eadd66e3386b88542ff543c",
+      "fingerprint": "f6208d2a6b919cbd511baefdb5e45f79eb2c2d851e6035ea9778a13fc827544c",
       "stableId": "connectors-pool-host",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/Connectors/Pool host"
     },
@@ -1701,7 +1701,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/runs-adapters/connection-pools.stories.tsx"
       ],
-      "fingerprint": "dd72a70a6dc0173d82c92dc9aedaba6b5e0414d2befb8a8d4ee38c5e3cce8494",
+      "fingerprint": "b614f0bcfb914ae817cbfba36d8dd80091068ad6e6a630ec239a7d9f7b3e05c1",
       "stableId": "ai-connections-connection-pools",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Connection pools"
     },
@@ -2117,7 +2117,7 @@
         "ui/src/components/DotRunnerConnection.tsx",
         "ui/storybook/stories/runs-adapters/dot-runner-connection.stories.tsx"
       ],
-      "fingerprint": "a5fbe31bc2b35136830bfd8fb1cf10e1b35cd7cc6995f108ceca5a6773a4db73",
+      "fingerprint": "65219fd330a54350d2c91a485039d2a8dc6886cce3dbde64bce2b514d2bdcc95",
       "stableId": "assistant-connections-dot-runner",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/Assistant connections/Dot Runner"
     },
@@ -2930,7 +2930,7 @@
         "ui/src/components/AdapterLoginChrome.tsx",
         "ui/storybook/stories/runs-adapters/local-ai-subscription.stories.tsx"
       ],
-      "fingerprint": "79d32a9424c87080ebaa86216c23e3c36fcb1d3c8f4051a109a201e4e3adf1c6",
+      "fingerprint": "7ec5fe9129699ed14dd55c4e3849c602100a1a934bad44b6fd6d31af4e8a0458",
       "stableId": "ai-connections-provider-routing-07-subscription-sign-in",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Provider routing/07 Subscription sign-in"
     },
@@ -4019,7 +4019,7 @@
         "ui/storybook/prototypes/provider-routing/story-support.ts",
         "ui/storybook/stories/runs-adapters/provider-routing-00-overview.stories.tsx"
       ],
-      "fingerprint": "9f1c436cf8ac4a409ca597d95abf4a975ab5a58be08c37edbcd44547bea04d55",
+      "fingerprint": "58ea208bbfd6bbc068ff89a49aa2c71d55f244710d84f8d8574511bcc3593257",
       "stableId": "ai-connections-provider-routing-00-overview",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Provider routing/00 Overview"
     },
@@ -4069,7 +4069,7 @@
         "ui/storybook/prototypes/provider-routing/story-support.ts",
         "ui/storybook/stories/runs-adapters/provider-routing-01-onboarding.stories.tsx"
       ],
-      "fingerprint": "17ed706f27cb9282f6918dd855160aeb6a63c003d7891c6fa6a336cd7cec1f8b",
+      "fingerprint": "f39e0ecde64690f67d56519efc0b7b45f790f21b7836057f6735fffaff3d3ef5",
       "stableId": "ai-connections-provider-routing-01-onboarding",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Provider routing/01 Onboarding"
     },
@@ -4100,7 +4100,7 @@
         "ui/storybook/prototypes/provider-routing/story-support.ts",
         "ui/storybook/stories/runs-adapters/provider-routing-02-connect.stories.tsx"
       ],
-      "fingerprint": "25d750d1d9ab3e1adf71bc1273d577e7b59939f6db1b96a55f59e6da3bea8b8e",
+      "fingerprint": "728d7d6f61446c644f7d1402b683ade30dbef0c893e409a5fa9526e247e1c179",
       "stableId": "ai-connections-provider-routing-02-connect",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Provider routing/02 Connect"
     },
@@ -4150,7 +4150,7 @@
         "ui/storybook/prototypes/provider-routing/story-support.ts",
         "ui/storybook/stories/runs-adapters/provider-routing-03-agent.stories.tsx"
       ],
-      "fingerprint": "dd04df0958753c6b4e3fbf97b118e1d69543c8e213970f2cfeffebdc5a7ecc91",
+      "fingerprint": "5d0c5dcd46b3814727322016a2bb4b58695f1435a9bd015c67898b549aac40fb",
       "stableId": "ai-connections-provider-routing-03-agent",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Provider routing/03 Agent"
     },
@@ -4183,7 +4183,7 @@
         "ui/storybook/prototypes/provider-routing/story-support.ts",
         "ui/storybook/stories/runs-adapters/provider-routing-04-manage.stories.tsx"
       ],
-      "fingerprint": "f549ac215f9307cb77deefce243283d673b497901c996f5be67eeff177420024",
+      "fingerprint": "34331e78cd92bccd47f5e2c7b83609e137846117e137615b4bd29bda065524e4",
       "stableId": "ai-connections-provider-routing-04-manage",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Provider routing/04 Manage"
     },
@@ -4208,7 +4208,7 @@
         "ui/storybook/prototypes/provider-routing/story-support.ts",
         "ui/storybook/stories/runs-adapters/provider-routing-05-recovery.stories.tsx"
       ],
-      "fingerprint": "5cfce358ed547b3eba402b1cdd5c58bac7ea71359c4edc7674c0c7e4de72e51e",
+      "fingerprint": "fe9596ebe4de1f2e315d6e024c636f56e0b253b3af5d3a9c4cd6a3015309e7e7",
       "stableId": "ai-connections-provider-routing-05-recovery",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Provider routing/05 Recovery"
     },
@@ -4239,7 +4239,7 @@
         "ui/storybook/prototypes/provider-routing/shared.tsx",
         "ui/storybook/stories/runs-adapters/provider-routing-06-production.stories.tsx"
       ],
-      "fingerprint": "405597333685a02824aa162927f2e0c544647ec7079adbc74c61031e8258c8e6",
+      "fingerprint": "ab0fe3f233b6f8dafdb6a946447535366ba687b9ccf8fafd2b877aa4e7cac230",
       "stableId": "ai-connections-provider-routing-06-production-components",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Provider routing/06 Production components"
     },
@@ -4604,7 +4604,7 @@
         "ui/storybook/prototypes/runner-activity/RunnerActivityPreview.tsx",
         "ui/storybook/stories/tasks/runner-activity.stories.tsx"
       ],
-      "fingerprint": "fc9539ac75fd89906fcd403ca1e5792b21440b898d0662317fbe28d7192e725d",
+      "fingerprint": "f39f36b1276c741530f6da95724d0e29fbc43c3bdd87b75640047bbc9f753810",
       "stableId": "tasks-runner-activity-preview",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Tasks/Runner activity preview"
     },
@@ -4717,7 +4717,7 @@
         "ui/src/components/task-chat/RunnerGoalWidget.tsx",
         "ui/storybook/stories/runs-adapters/session-goals.stories.tsx"
       ],
-      "fingerprint": "1d6e7f30007a296443b0670142cb13694e0e955e6f97687f306f69155e766593",
+      "fingerprint": "91775a33b452fed0055f7e607384f3f95801a8bafbdf369cf149f8ebcc3943a8",
       "stableId": "composer-session-goals",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/Composer/Session goals"
     },
@@ -5108,7 +5108,7 @@
         "ui/src/components/task-chat/task-chat-model.ts",
         "ui/storybook/stories/tasks/task-chat-chain-of-thought.stories.tsx"
       ],
-      "fingerprint": "c9641a4c8ac8ab68a6d1ad7b9a730f5c3b4f894d5a60262ba2ef196d1c1da7d2",
+      "fingerprint": "2c926951a7911a3ca79ceae50578e581f389e7cffe68bce15e862ae95a429644",
       "stableId": "tasks-task-chat-review-fixes",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Tasks/Task chat review fixes"
     },

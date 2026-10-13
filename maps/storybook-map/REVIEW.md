@@ -158,3 +158,30 @@ reasons below. The owned static preview was left running for the requested test-
 Use `maintain-storybook` to correct drift and `review-storybook` to record separate
 source, render, interaction, visual-comparison, and production evidence. Both skills
 consume the feature map; neither changes its upstream contract.
+
+## Native runtime prerequisite: scoped source follow-up — 2026-10-12
+
+Source comparison: `9f59ff36cf2da963709ca19c06ab005510c835a6` against actual
+master `4b958ecbd8f33a7782fe6f29ec825f80f636b833`. The reviewed
+`maps/feature-map/runs-adapters.md` bytes have SHA-256
+`ca5aff86608b7d7987dc0ee814475a7b93e3faff1f99ce090429d2e932b7e16b`.
+
+Twenty-one entries in Runs, harnesses, and model accounts and Task creation and
+lifecycle had review-fingerprint drift. Their 117 unique declared sources have
+one changed input: the runs-adapters feature recipe. All 21 story files and the
+other 116 declared production subjects, wrappers and fixture sources are
+unchanged from master. The recipe adds bounded native startup and registration
+retirement controls. It separates those provider-free controls from real daemon
+and installed-provider proof; it changes no represented UI or fixture contract.
+
+Refreshed only those 21 reviewed fingerprints. No story, fixture, export, stable
+ID, title, capability reference or product/implementation/data classification
+changed. Existing mixed and unreviewed parity limitations remain. No fixture
+correction is needed for this scoped prerequisite; this does not establish full
+state parity for the affected suites.
+
+This follow-up is source inspection only. Rendering, play assertions, visual
+comparisons and production provider acceptance were not run. Native lifecycle
+behavior remains with the linked transport controls and their existing hosted
+CI fixtures. Catalog validation proves structure and reviewed dependency hashes,
+not that these live journeys passed.
