@@ -649,3 +649,20 @@ integration hold. The independent serialized issue-route timeout remains under
 phase diagnosis; a subsequent full mocked suite passes 36 controls but does not
 waive the cloud failure or prove its latency cause. Final source composition,
 required CI and the provider-free cloud packaging campaign remain pending.
+
+## Serialized route fixture initialization — 2026-10-12
+
+The failing inherited-pause cloud case timed out at its 15000 ms outer test bound.
+Temporary local phase instrumentation measured cold route imports at 9741 ms
+(and 11920 ms in a separate diagnostic attempt), followed by a POST 409 response
+in 11 ms and PATCH 409 in 4 ms. The subsequent full mocked suite passed 36 cases;
+these measurements do not establish the exact unrecorded cloud latency. Route
+module loading now runs in beforeEach after the same per-case module reset,
+unmocking and mock initialization. It uses the existing 30000 ms setup-hook bound;
+the 15000 ms request/test bound, application construction, policy assertions and
+mutation/wakeup checks are unchanged. All 36 treatment controls pass. Temporary
+phase instrumentation was removed. Evidence:
+`/private/tmp/claude-pause-route-phases.txt`,
+`/private/tmp/claude-pause-route-targeted-phases.log`, and
+`/private/tmp/claude-pause-route-hook-controls.log`. Exact-head cloud verification
+is still required; no timeout is waived and no provider or native build was run.
