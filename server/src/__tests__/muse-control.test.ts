@@ -1,5 +1,5 @@
 import express from "express";
-import { activityLog } from "@paperclipai/db";
+import { activityLog, documents, issueDocuments } from "@paperclipai/db";
 import request from "supertest";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
@@ -129,6 +129,88 @@ describe("personal Muse control plane",()=>{
     expect((await f.broker.inspect(f.subject,{version:1,query:"task.list"}) as {tasks:unknown[]}).tasks).toHaveLength(1);
     await db.update(companyMemberships).set({status:"inactive"}).where(and(eq(companyMemberships.companyId,f.company.id),eq(companyMemberships.principalId,f.operatorId)));
     await expect(f.broker.inspect(f.subject,{version:1,query:"task.read",issueId:issue.id})).rejects.toThrow();vi.unstubAllEnvs();
+  });
+  async function idleReadFixture() {
+    const f=await oauthFixture(true);
+    const [allowedProject,outsideProject]=await db.insert(projects).values([
+      {companyId:f.company.id,name:"Allowed project"},{companyId:f.company.id,name:"Outside project"},
+    ]).returning();
+    await db.update(agents).set({permissions:{trustPreset:"low_trust_review",authorizationPolicy:{trustBoundary:{mode:"low_trust_review",companyId:f.company.id,projectIds:[allowedProject.id]}}}}).where(eq(agents.id,f.agent.id));
+    const [allowed,outside]=await db.insert(issues).values([
+      {companyId:f.company.id,projectId:allowedProject.id,title:"idle-scope allowed",description:"allowed task content"},
+      {companyId:f.company.id,projectId:outsideProject.id,title:"idle-scope forbidden",description:"outside task content"},
+    ]).returning();
+    for(const issue of [allowed,outside]) {
+      await db.insert(issueComments).values({companyId:f.company.id,issueId:issue.id,authorType:"user",authorUserId:f.operatorId,body:issue.title+" history"});
+      const [document]=await db.insert(documents).values({companyId:f.company.id,title:issue.title,latestBody:issue.title+" document"}).returning();
+      await db.insert(issueDocuments).values({companyId:f.company.id,issueId:issue.id,documentId:document.id,key:"plan"});
+    }
+    return {...f,allowedProject,outsideProject,allowed,outside};
+  }
+  it.each(["task.read","task.history","task.document.read"] as const)("enforces ordinary low-trust authorization for idle %s",async(query)=>{
+    const f=await idleReadFixture();
+    const request=(issueId:string)=>query==="task.document.read"?{version:1 as const,query,issueId,key:"plan"}:{version:1 as const,query,issueId};
+    await expect(f.broker.inspect(f.subject,request(f.outside.id))).rejects.toThrow("unavailable");
+    expect(JSON.stringify(await f.broker.inspect(f.subject,request(f.allowed.id)))).toContain("idle-scope allowed");
+    await db.update(agents).set({permissions:{trustPreset:"low_trust_review",authorizationPolicy:{trustBoundary:{mode:"low_trust_review",companyId:f.company.id,projectIds:[f.outsideProject.id]}}}}).where(eq(agents.id,f.agent.id));
+    await expect(f.broker.inspect(f.subject,request(f.allowed.id))).rejects.toThrow("unavailable");
+    expect(JSON.stringify(await f.broker.inspect(f.subject,request(f.outside.id)))).toContain("idle-scope forbidden");
+  });
+  it.each(["task.list","task.search"] as const)("filters idle %s with ordinary authorization without exposing restricted cursors",async(query)=>{
+    const f=await idleReadFixture();
+    const request=query==="task.search"?{version:1 as const,query,text:"idle-scope"}:{version:1 as const,query};
+    const page=await f.broker.inspect(f.subject,request) as {tasks:Array<{id:string;title:string}>,nextCursor:string|null};
+    expect(page.tasks.map(task=>task.id)).toEqual([f.allowed.id]);expect(page.nextCursor).toBe(f.allowed.id);
+    expect(JSON.stringify(page)).not.toContain(f.outside.id);expect(JSON.stringify(page)).not.toContain(f.outside.title);
+  });
+  it.each(["task.list","task.search"] as const)("fills bounded authorized pages after rejected idle %s candidates",async(query)=>{
+    const f=await idleReadFixture();await db.delete(issues).where(eq(issues.companyId,f.company.id));
+    const ids=(high:boolean)=>Array.from({length:51},()=>`${high?"f0000000":"00000000"}-${randomBytes(2).toString("hex")}-4${randomBytes(2).toString("hex").slice(1)}-8${randomBytes(2).toString("hex").slice(1)}-${randomBytes(6).toString("hex")}`).sort();
+    const denied=ids(false),allowed=ids(true);
+    await db.insert(issues).values([...denied.map(id=>({id,companyId:f.company.id,projectId:f.outsideProject.id,title:"pagination-forbidden"})),...allowed.map(id=>({id,companyId:f.company.id,projectId:f.allowedProject.id,title:"pagination-allowed"}))]);
+    const request=query==="task.search"?{version:1 as const,query,text:"pagination"}:{version:1 as const,query};
+    const first=await f.broker.inspect(f.subject,request) as {tasks:Array<{id:string}>,nextCursor:string};
+    expect(first.tasks.map(task=>task.id)).toEqual(allowed.slice(0,50));expect(first.nextCursor).toBe(allowed[49]);
+    const last=await f.broker.inspect(f.subject,{...request,after:first.nextCursor}) as {tasks:Array<{id:string}>,nextCursor:string};
+    expect(last.tasks.map(task=>task.id)).toEqual(allowed.slice(50));expect(last.nextCursor).toBe(allowed[50]);
+    expect((await f.broker.inspect(f.subject,{...request,after:last.nextCursor}) as {tasks:unknown[]}).tasks).toEqual([]);
+    for(const id of denied)expect(JSON.stringify([first,last])).not.toContain(id);
+  });
+  it.each(["task.list","task.search"] as const)("fails closed at the authorized scan limit for idle %s and accepts narrower search",async(query)=>{
+    const f=await idleReadFixture();await db.delete(issues).where(eq(issues.companyId,f.company.id));
+    const denied=Array.from({length:201},()=>`00000000-${randomBytes(2).toString("hex")}-4${randomBytes(2).toString("hex").slice(1)}-8${randomBytes(2).toString("hex").slice(1)}-${randomBytes(6).toString("hex")}`);
+    const allowedId=`f0000000-${randomBytes(2).toString("hex")}-4${randomBytes(2).toString("hex").slice(1)}-8${randomBytes(2).toString("hex").slice(1)}-${randomBytes(6).toString("hex")}`;
+    await db.insert(issues).values([...denied.map(id=>({id,companyId:f.company.id,projectId:f.outsideProject.id,title:"bounded-collection forbidden"})),{id:allowedId,companyId:f.company.id,projectId:f.allowedProject.id,title:"bounded-collection narrow-match"}]);
+    const request=query==="task.search"?{version:1 as const,query,text:"bounded-collection"}:{version:1 as const,query};
+    await expect(f.broker.inspect(f.subject,request)).rejects.toMatchObject({status:422,message:"Task collection exceeds its read limit. Use task.search with a narrower query."});
+    const narrow=await f.broker.inspect(f.subject,{version:1,query:"task.search",text:"narrow-match"}) as {tasks:Array<{id:string}>,nextCursor:string};
+    expect(narrow.tasks.map(task=>task.id)).toEqual([allowedId]);expect(narrow.nextCursor).toBe(allowedId);
+  },30000);
+  it("uses only the current server-derived human-directed run context for native assignment reads",async()=>{
+    const f=await active(await oauthFixture(true));try {
+      const [project]=await db.insert(projects).values({companyId:f.company.id,name:"Unrelated allowed project"}).returning();
+      await db.update(agents).set({permissions:{trustPreset:"low_trust_review",authorizationPolicy:{trustBoundary:{mode:"low_trust_review",companyId:f.company.id,projectIds:[project.id]}}}}).where(eq(agents.id,f.agent.id));
+      await db.update(issues).set({visibility:"private"}).where(eq(issues.id,f.issue.id));
+      await db.update(heartbeatRuns).set({contextSnapshot:{issueId:f.issue.id}}).where(eq(heartbeatRuns.id,f.runId));
+      const [wake]=await db.insert(agentWakeupRequests).values({companyId:f.company.id,agentId:f.agent.id,runId:f.runId,source:"assignment",status:"claimed",requestedByActorType:"user",requestedByActorId:f.operatorId,payload:{issueId:f.issue.id,_paperclipWakeContext:{source:"issue.update"}}}).returning();
+      const idleRequest={version:1 as const,query:"task.read" as const,issueId:f.issue.id,runId:f.runId};
+      await expect(f.broker.inspect(f.subject,idleRequest)).rejects.toThrow("unavailable");
+      expect(await f.broker.inspect(f.subject,{version:1,query:"assignment.read",assignmentId:f.assignment.id})).toMatchObject({assignmentId:f.assignment.id,status:"offered"});
+      await db.update(agentWakeupRequests).set({status:"cancelled"}).where(eq(agentWakeupRequests.id,wake.id));
+      await expect(f.broker.inspect(f.subject,{version:1,query:"assignment.read",assignmentId:f.assignment.id})).rejects.toThrow("unavailable");
+    }finally{await f.detach();}
+  });
+  it("rechecks current authorizer grants for every idle task read surface",async()=>{
+    const f=await idleReadFixture(),other=randomUUID();
+    await db.insert(authUsers).values({id:other,name:"Other author",email:other+"@example.test",createdAt:new Date(),updatedAt:new Date()});
+    await db.update(issues).set({visibility:"private",responsibleUserId:other,assigneeAgentId:f.agent.id}).where(eq(issues.id,f.allowed.id));
+    const reads=[{version:1 as const,query:"task.read" as const,issueId:f.allowed.id},{version:1 as const,query:"task.history" as const,issueId:f.allowed.id},{version:1 as const,query:"task.document.read" as const,issueId:f.allowed.id,key:"plan"}];
+    for(const request of reads)await expect(f.broker.inspect(f.subject,request)).rejects.toThrow();
+    const [grant]=await db.insert(issueAccessGrants).values({issueId:f.allowed.id,subjectType:"user",subjectId:f.operatorId,source:"explicit"}).returning();
+    for(const request of reads)expect(JSON.stringify(await f.broker.inspect(f.subject,request))).toContain("idle-scope allowed");
+    await db.delete(issueAccessGrants).where(eq(issueAccessGrants.id,grant.id));
+    for(const request of reads)await expect(f.broker.inspect(f.subject,request)).rejects.toThrow();
+    expect((await f.broker.inspect(f.subject,{version:1,query:"task.list"}) as {tasks:unknown[]}).tasks).toEqual([]);
   });
   it("creates visible idle tasks with supported creation authority and a stable mutation receipt",async()=>{
     const f=await fixture(),command={version:1 as const,command:"task.create" as const,requestId:randomUUID(),title:"Idle intake",description:"Ordinary task intake"};
@@ -335,6 +417,211 @@ describe("personal Muse control plane",()=>{
       expect(f.sent.at(-1)?.input).toEqual({requestId,inputDigest});expect((await db.select().from(museInputDeliveries).where(eq(museInputDeliveries.assignmentId,f.assignment.id)))[0].continuationReceiptId).toBe(proof);
     }finally{await f.detach();}
   });
+  it("accepts exact connected OAuth cleanup and rejects revoked OAuth replay",async()=>{
+    const oauth=await oauthFixture(true),f=await active(oauth);try {
+      expect(await db.select().from(museCredentials).where(eq(museCredentials.bindingId,f.binding.id))).toEqual([]);
+      await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+      await db.insert(operations).values({companyId:f.company.id,assignmentId:f.assignment.id,requestId:randomUUID(),digest:"oauth-cleanup-pending",command:{action:"tool"},status:"pending"});
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      const [before]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      const inspect=await request(transport()).post("/api/muse/v1/cleanup").set("Authorization","Bearer "+oauth.tokens!.access_token).send({version:1,command:"control.inspect"});
+      expect(inspect.status).toBe(200);expect(inspect.body).toMatchObject({boundaries:[{boundary:before.stopBoundary,nativeEffectsUnknown:true}],externalStopConfirmed:false});
+      const report={version:1,command:"worker.quiescent",boundary:before.stopBoundary,requestId:randomUUID()};
+      const response=await request(transport()).post("/api/muse/v1/cleanup").set("Authorization","Bearer "+oauth.tokens!.access_token).send(report);
+      expect(response.status).toBe(200);expect(response.body).toMatchObject({status:"worker_reported",externalStopConfirmed:false,nativeEffectsUnknown:true});
+      const [after]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.id,before.id));
+      expect(after.workerReportedAt).toBeInstanceOf(Date);expect(after).toMatchObject({workerUnknown:true,nativeEffectsUnknown:true,releasedAt:null});
+      await oauth.oauth.revokeToken(oauth.tokens!.refresh_token,oauth.client.client_id);
+      expect((await request(transport()).post("/api/muse/v1/cleanup").set("Authorization","Bearer "+oauth.tokens!.access_token).send(report)).status).toBe(401);
+      await expect(f.broker.cleanup(f.subject,{command:"worker.quiescent",boundary:before.stopBoundary!,requestId:report.requestId})).rejects.toThrow();
+    }finally{await f.detach();}
+  });
+  it.each(["expired older hold","released older hold","Dot older hold","live older assignment"])("scopes connected OAuth cleanup to its current boundary despite %s",async(kind)=>{
+    const oauth=await oauthFixture(true),f=await active(oauth);try {
+      await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      const [current]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      const [olderAssignment]=await db.insert(assignments).values({...f.assignment,id:randomUUID(),turnId:"older_"+randomUUID(),status:kind==="live older assignment"?"accepted":"fenced"}).returning();
+      const boundary={...current.stopBoundary!,assignmentId:olderAssignment.id,turnId:olderAssignment.turnId,stopNonce:randomUUID()};
+      const [older]=await db.insert(externalAgentHolds).values({companyId:f.company.id,agentId:f.agent.id,provider:kind==="Dot older hold"?"openai_dot":"muse",bindingId:f.binding.id,bindingGeneration:1,assignmentId:olderAssignment.id,runId:f.runId,stopBoundary:boundary,releasedAt:kind==="released older hold"?new Date():null}).returning();
+      await db.insert(mailbox).values({companyId:f.company.id,bindingId:f.binding.id,bindingGeneration:1,assignmentId:olderAssignment.id,kind:"authority_revoked",sourceEventId:randomUUID(),references:{boundary},createdAt:kind==="expired older hold"?new Date(Date.now()-25*60*60_000):new Date()});
+      const inspect=await request(transport()).post("/api/muse/v1/cleanup").set("Authorization","Bearer "+oauth.tokens!.access_token).send({version:1,command:"control.inspect"});
+      expect(inspect.status).toBe(200);expect(inspect.body).toMatchObject({boundaries:[{boundary:current.stopBoundary}],externalStopConfirmed:false});
+      const report=await request(transport()).post("/api/muse/v1/cleanup").set("Authorization","Bearer "+oauth.tokens!.access_token).send({version:1,command:"worker.quiescent",boundary,requestId:randomUUID()});
+      expect(report.status).toBe(409);
+      expect((await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.id,older.id)))[0]).toEqual(older);
+    }finally{await f.detach();}
+  });
+  it("bounds connected OAuth cleanup by the earliest exact fence receipt without sliding its deadline",async()=>{
+    const oauth=await oauthFixture(true),f=await active(oauth);try {
+      await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      const [receipt]=await db.select().from(mailbox).where(and(eq(mailbox.assignmentId,f.assignment.id),eq(mailbox.kind,"authority_revoked")));
+      await db.update(mailbox).set({createdAt:new Date(Date.now()-25*60*60_000)}).where(eq(mailbox.id,receipt.id));
+      await db.update(externalAgentHolds).set({updatedAt:new Date()}).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      await db.update(assignments).set({lastActivityAt:new Date()}).where(eq(assignments.id,f.assignment.id));
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      expect(await db.select().from(mailbox).where(and(eq(mailbox.assignmentId,f.assignment.id),eq(mailbox.kind,"authority_revoked")))).toHaveLength(2);
+      const response=await request(transport()).post("/api/muse/v1/cleanup").set("Authorization","Bearer "+oauth.tokens!.access_token).send({version:1,command:"control.inspect"});
+      expect(response.status).toBe(403);
+      expect((await f.broker.bindingForAgent(f.company.id,f.agent.id))!.credentialState).toBe("active");
+    }finally{await f.detach();}
+  });
+  it.each(["expired access","used access","revoked grant","expired refresh family","wrong resource","binding generation","operator changed"])("revalidates connected OAuth cleanup before stale-subject effects: %s",async(reason)=>{
+    const oauth=await oauthFixture(true),f=await active(oauth);try {
+      await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      const [hold]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      if(reason==="expired access")await db.update(mcpOauthTokens).set({expiresAt:new Date(Date.now()-1)}).where(eq(mcpOauthTokens.id,f.subject.credentialId));
+      if(reason==="used access")await db.update(mcpOauthTokens).set({usedAt:new Date()}).where(eq(mcpOauthTokens.id,f.subject.credentialId));
+      if(reason==="revoked grant")await db.update(mcpOauthGrants).set({revokedAt:new Date()}).where(eq(mcpOauthGrants.id,f.subject.grantId!));
+      if(reason==="expired refresh family")await db.update(mcpOauthTokens).set({expiresAt:new Date(Date.now()-1)}).where(and(eq(mcpOauthTokens.grantId,f.subject.grantId!),eq(mcpOauthTokens.kind,"refresh")));
+      if(reason==="wrong resource")await db.update(mcpOauthGrants).set({resource:oauthOrigin+"/api/mcp"}).where(eq(mcpOauthGrants.id,f.subject.grantId!));
+      if(reason==="binding generation")await db.update(bindings).set({generation:2}).where(eq(bindings.id,f.binding.id));
+      if(reason==="operator changed")await db.update(bindings).set({operatorId:randomUUID()}).where(eq(bindings.id,f.binding.id));
+      await expect(f.broker.cleanup(f.subject,{command:"control.inspect"})).rejects.toThrow();
+      await expect(f.broker.cleanup(f.subject,{command:"worker.quiescent",boundary:hold.stopBoundary!,requestId:randomUUID()})).rejects.toThrow();
+      expect((await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.id,hold.id)))[0]).toEqual(hold);
+    }finally{await f.detach();}
+  });
+
+  it("allows connected legacy fenced cleanup without granting normal or detector authority",async()=>{
+    const f=await active();try {
+      await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+      // Acceptance precedes the fence: the hold's creation time is not its cleanup deadline.
+      await db.update(externalAgentHolds).set({createdAt:new Date(Date.now()-48*60*60_000)}).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      await db.insert(operations).values({companyId:f.company.id,assignmentId:f.assignment.id,requestId:randomUUID(),digest:"cleanup-pending",command:{action:"tool"},status:"pending"});
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      const [binding]=await db.select().from(bindings).where(eq(bindings.id,f.binding.id));
+      expect(binding.revokedAt).toBeNull();
+      const [before]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      const subject=await f.identity.authenticate(f.credentials.cleanupToken,"cleanup");
+      await expect(f.identity.authenticate(f.credentials.cleanupToken)).rejects.toThrow();
+      await expect(f.broker.inspect(subject,{version:1,query:"task.list"})).rejects.toMatchObject({status:401,message:"Muse test credential is unavailable."});
+      await expect(f.identity.authenticate(f.credentials.detectorCleanupToken,"detector_cleanup")).rejects.toThrow();
+      const inspection=await f.broker.cleanup(subject,{command:"control.inspect"});
+      expect(inspection.externalStopConfirmed).toBe(false);
+      expect(inspection).toMatchObject({boundaries:[{boundary:before.stopBoundary,nativeEffectsUnknown:true}]});
+      await expect(f.broker.cleanup(subject,{command:"worker.quiescent",boundary:{...before.stopBoundary!,stopNonce:randomUUID()},requestId:randomUUID()})).rejects.toThrow("boundary");
+      const report=await f.broker.cleanup(subject,{command:"worker.quiescent",boundary:before.stopBoundary!,requestId:randomUUID()});
+      expect(report).toMatchObject({status:"worker_reported",externalStopConfirmed:false,nativeEffectsUnknown:true});
+      const [after]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      expect(after.workerReportedAt).toBeInstanceOf(Date);expect(after.workerUnknown).toBe(true);
+      expect(after.nativeEffectsUnknown).toBe(true);expect(after.releasedAt).toBeNull();
+      await expect(f.broker.act(subject,{version:1,command:"tool",assignmentId:f.assignment.id,requestId:randomUUID(),name:"paperclip_task_read",arguments:{}})).rejects.toThrow();
+    }finally{await f.detach();}
+  });
+
+  it.each(["expired older hold","released older hold","Dot older hold","live older assignment"])("scopes connected legacy cleanup to its current boundary despite %s",async(kind)=>{
+    const f=await active();try {
+      await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      const [current]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      const [olderAssignment]=await db.insert(assignments).values({...f.assignment,id:randomUUID(),turnId:"older_"+randomUUID(),status:kind==="live older assignment"?"accepted":"fenced"}).returning();
+      const boundary={...current.stopBoundary!,assignmentId:olderAssignment.id,turnId:olderAssignment.turnId,stopNonce:randomUUID()};
+      const [older]=await db.insert(externalAgentHolds).values({companyId:f.company.id,agentId:f.agent.id,provider:kind==="Dot older hold"?"openai_dot":"muse",bindingId:f.binding.id,bindingGeneration:1,assignmentId:olderAssignment.id,runId:f.runId,stopBoundary:boundary,releasedAt:kind==="released older hold"?new Date():null}).returning();
+      await db.insert(mailbox).values({companyId:f.company.id,bindingId:f.binding.id,bindingGeneration:1,assignmentId:olderAssignment.id,kind:"authority_revoked",sourceEventId:randomUUID(),references:{boundary},createdAt:kind==="expired older hold"?new Date(Date.now()-25*60*60_000):new Date()});
+      const cleanup=await f.identity.authenticate(f.credentials.cleanupToken,"cleanup");
+      expect(await f.broker.cleanup(cleanup,{command:"control.inspect"})).toMatchObject({boundaries:[{boundary:current.stopBoundary}],externalStopConfirmed:false});
+      await expect(f.broker.cleanup(cleanup,{command:"worker.quiescent",boundary,requestId:randomUUID()})).rejects.toThrow("boundary");
+      expect((await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.id,older.id)))[0]).toEqual(older);
+      expect(await f.broker.cleanup(cleanup,{command:"worker.quiescent",boundary:current.stopBoundary!,requestId:randomUUID()})).toMatchObject({status:"worker_reported",externalStopConfirmed:false});
+      expect((await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.id,current.id)))[0]).toMatchObject({workerUnknown:true,releasedAt:null});
+    }finally{await f.detach();}
+  });
+  it("replays an identical legacy revoked historical cleanup report without mutating or accepting a new report",async()=>{
+    const f=await active();try {
+      await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!,boundary=state.stop.boundary!,requestId=randomUUID();
+      const command={command:"worker.quiescent" as const,boundary,requestId};
+      const connected=await f.identity.authenticate(f.credentials.cleanupToken,"cleanup");
+      const report=await f.broker.cleanup(connected,command);
+      await f.broker.attestStop(f.company.id,f.agent.id,f.operatorId,{boundary,expectedRevision:state.stop.bindingRevision!,workerStopped:true});
+      const attested=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;
+      await f.broker.revoke(f.company.id,f.agent.id,f.operatorId,{bindingId:f.binding.id,generation:1,expectedRevision:attested.revision});
+      const revoked=await f.identity.authenticate(f.credentials.cleanupToken,"cleanup");
+      const [before]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));expect(before.releasedAt).toBeInstanceOf(Date);
+      const logsBefore=await db.select().from(activityLog).where(and(eq(activityLog.companyId,f.company.id),eq(activityLog.action,"muse.worker_quiescence_reported")));
+      expect(await f.broker.cleanup(revoked,command)).toEqual(report);
+      await expect(f.broker.cleanup(revoked,{...command,requestId:randomUUID()})).rejects.toThrow("boundary");
+      expect(await f.broker.cleanup(revoked,{command:"control.inspect"})).toEqual({boundaries:[],externalStopConfirmed:false});
+      expect((await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id)))[0]).toEqual(before);
+      expect(await db.select().from(activityLog).where(and(eq(activityLog.companyId,f.company.id),eq(activityLog.action,"muse.worker_quiescence_reported")))).toEqual(logsBefore);
+    }finally{await f.detach();}
+  });
+
+  it("does not renew connected cleanup from mutable holds or later revocation receipts",async()=>{
+    const f=await active();try {
+      await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      const [original]=await db.select().from(mailbox).where(and(eq(mailbox.assignmentId,f.assignment.id),eq(mailbox.kind,"authority_revoked")));
+      await db.update(mailbox).set({createdAt:new Date(Date.now()-24*60*60_000-60_000)}).where(eq(mailbox.id,original.id));
+      await db.update(externalAgentHolds).set({updatedAt:new Date()}).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      await db.update(assignments).set({lastActivityAt:new Date()}).where(eq(assignments.id,f.assignment.id));
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      const receipts=await db.select().from(mailbox).where(and(eq(mailbox.assignmentId,f.assignment.id),eq(mailbox.kind,"authority_revoked")));
+      expect(receipts).toHaveLength(2);expect(receipts.some(row=>row.createdAt.getTime()>Date.now()-60_000)).toBe(true);
+      await expect(f.identity.authenticate(f.credentials.cleanupToken,"cleanup")).rejects.toThrow("Cleanup authority");
+    }finally{await f.detach();}
+  });
+
+  it.each(["no hold","released hold","other provider","hold company","hold agent","hold binding","hold generation","binding generation","assignment company","assignment agent","assignment binding","assignment generation","live assignment","missing boundary","boundary binding","boundary generation","boundary run","boundary turn","boundary revision","missing fence receipt","expired credential","revoked credential","consumed credential"])(
+    "denies connected cleanup with %s",async(reason)=>{
+      const f=await active();try {
+        await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+        await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+        const [hold]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+        const other=reason.endsWith("company")||reason.endsWith("agent")||reason.endsWith("binding")?await fixture():null;
+        const holdChanges:Partial<typeof externalAgentHolds.$inferInsert>={
+          ...(reason==="released hold"?{releasedAt:new Date()}:{}),
+          ...(reason==="other provider"?{provider:"openai_dot"}:{}),
+          ...(reason==="hold company"?{companyId:other!.company.id}:{}),
+          ...(reason==="hold agent"?{agentId:other!.agent.id}:{}),
+          ...(reason==="hold binding"?{bindingId:other!.binding.id}:{}),
+          ...(reason==="hold generation"?{bindingGeneration:2}:{}),
+          ...(reason==="missing boundary"?{stopBoundary:null}:{}),
+        };
+        if(reason.startsWith("boundary "))holdChanges.stopBoundary={...hold.stopBoundary!,
+          ...(reason==="boundary binding"?{bindingId:other!.binding.id}:{}),
+          ...(reason==="boundary generation"?{generation:2}:{}),
+          ...(reason==="boundary run"?{runId:randomUUID()}:{}),
+          ...(reason==="boundary turn"?{turnId:"different-turn"}:{}),
+          ...(reason==="boundary revision"?{assignmentRevision:99}:{}),
+        };
+        if(reason==="no hold")await db.delete(externalAgentHolds).where(eq(externalAgentHolds.id,hold.id));
+        else if(Object.keys(holdChanges).length)await db.update(externalAgentHolds).set(holdChanges).where(eq(externalAgentHolds.id,hold.id));
+        const assignmentChanges:Partial<typeof assignments.$inferInsert>={
+          ...(reason==="assignment company"?{companyId:other!.company.id}:{}),
+          ...(reason==="assignment agent"?{agentId:other!.agent.id}:{}),
+          ...(reason==="assignment binding"?{bindingId:other!.binding.id}:{}),
+          ...(reason==="assignment generation"?{bindingGeneration:2}:{}),
+          ...(reason==="live assignment"?{status:"accepted"}:{}),
+        };
+        if(Object.keys(assignmentChanges).length)await db.update(assignments).set(assignmentChanges).where(eq(assignments.id,f.assignment.id));
+        if(reason==="binding generation")await db.update(bindings).set({generation:2}).where(eq(bindings.id,f.binding.id));
+        if(reason==="missing fence receipt")await db.delete(mailbox).where(and(eq(mailbox.assignmentId,f.assignment.id),eq(mailbox.kind,"authority_revoked")));
+        if(reason.endsWith("credential"))await db.update(museCredentials).set({
+          ...(reason==="expired credential"?{expiresAt:new Date(Date.now()-1)}:{}),
+          ...(reason==="revoked credential"?{revokedAt:new Date()}:{}),
+          ...(reason==="consumed credential"?{consumedAt:new Date()}:{}),
+        }).where(eq(museCredentials.tokenHash,museCredentialHash(f.credentials.cleanupToken)));
+        await expect(f.identity.authenticate(f.credentials.cleanupToken,"cleanup")).rejects.toThrow();
+      }finally{await f.detach();}
+    },
+  );
+
+  it("keeps revoked cleanup bounded to its existing deadline and current generation",async()=>{
+    const f=await fixture();const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;
+    await f.broker.revoke(f.company.id,f.agent.id,f.operatorId,{bindingId:f.binding.id,generation:1,expectedRevision:state.revision});
+    await expect(f.identity.authenticate(f.credentials.cleanupToken,"cleanup")).resolves.toMatchObject({bindingId:f.binding.id,generation:1});
+    await db.update(bindings).set({generation:2}).where(eq(bindings.id,f.binding.id));
+    await expect(f.identity.authenticate(f.credentials.cleanupToken,"cleanup")).rejects.toThrow();
+    await db.update(bindings).set({generation:1,cleanupExpiresAt:new Date(Date.now()-1)}).where(eq(bindings.id,f.binding.id));
+    await expect(f.identity.authenticate(f.credentials.cleanupToken,"cleanup")).rejects.toThrow();
+    await expect(f.identity.authenticate(f.credentials.detectorCleanupToken,"detector_cleanup")).rejects.toThrow();
+  });
+
   it("fences without fabricating private stop and retains unknown native effects across operator attestation",async()=>{
     const f=await active();try {
       await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
