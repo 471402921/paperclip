@@ -1,18 +1,85 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { isWorkspacePackage, parseWorkspaceEntries } from '../build-standalone-public-packages.mjs';
-import { GROK_PUBLIC_INSTALL_IMAGE, GROK_PUBLIC_INSTALL_LIFECYCLE, assertInstalledCodexPlatformProvenance, assertInstalledNativeConsumerContinuity, assertNoBundledCodexPayloads, grokConsumerDockerArgs, installedCodexProbeSource, installedDaemonProbeSource, macNodeHeadersDirectory, macPublicInstallLifecycleProfile, macInstalledStartupProbeSource } from '../grok-public-install-sandbox.mjs';
+import { GROK_PUBLIC_INSTALL_IMAGE, GROK_PUBLIC_INSTALL_LIFECYCLE, assertInstalledCodexPlatformProvenance, assertInstalledNativeConsumerContinuity, assertNoBundledCodexPayloads, grokConsumerDockerArgs, installedCodexProbeSource, installedDaemonProbeSource, macNodeHeadersDirectory, macPublicInstallLifecycleProfile, macInstalledStartupProbeSource, runMacInitialInstallWithDiagnostics } from '../grok-public-install-sandbox.mjs';
 import { verifyPiPackagedDaemon } from '../pi-public-install-probe.mjs';
 import { runnerBinaryTarget } from '../../packages/paperclip-runner/src/live/runner-binary.ts';
 
 const paths = { assets: '/private/staging/assets', consumer: '/private/staging/consumer', cache: '/private/staging/cache', uid: 1001, gid: 1001 };
 const values = (args, flag) => args.flatMap((value, index) => value === flag ? [args[index + 1]] : []);
+
+test('Mac initial install failures retain bounded npm progress without secret or environment values', () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'mac-install-diagnostics-test-')));
+  try {
+    const cacheDirectory = join(root, 'cache'), logs = join(cacheDirectory, '_logs'), receiptPath = join(root, 'failure.json');
+    mkdirSync(logs, { recursive: true });
+    writeFileSync(join(logs, '0000-debug-0.log'), '0 timing idealTree:init Completed in 987654321ms\n');
+    const debug = Array.from({ length: 1000 }, (_, index) => `${index} timing idealTree:node_modules/private-secret Completed in ${index}ms`).join('\n');
+    writeFileSync(join(logs, '0010-debug-0.log'), debug + '\n1001 verbose reify PASSWORD=991122ms\n'
+      + '1002 http fetch GET 200 https://user:password@registry.npmjs.org/pkg?token=query-secret 312ms (cache miss)\n'
+      + '1003 verbose cli /private/secret/path --token=argv-secret\n1004 silly fetch manifest Authorization=Bearer-header-secret\n');
+    writeFileSync(join(logs, '0020-timing.json'), JSON.stringify({ timers: { 'idealTree:userRequests': 92967, 'reify:unpack': 76,
+      'ENV_SECRET': 112233, 'reify:private-secret': 17 }, environment: { PASSWORD: 'environment-secret' } }));
+    const original = Object.assign(new Error('password=exception-secret'), { code: 'ETIMEDOUT', errno: -60, status: 1, signal: 'SIGTERM',
+      stdout: 'stdout-secret', stderr: 'stderr-secret', spawnargs: ['--token=argument-secret'] });
+    const options = { sourceRevision: 'a'.repeat(40), platform: 'darwin', architecture: 'x64', cacheDirectory, receiptPath };
+    assert.throws(() => runMacInitialInstallWithDiagnostics(() => { throw original; }, options), error => error === original);
+    const text = readFileSync(receiptPath, 'utf8'), receipt = JSON.parse(text);
+    assert.equal(receipt.sourceRevision, options.sourceRevision); assert.equal(receipt.platform, 'darwin'); assert.equal(receipt.architecture, 'x64');
+    assert.equal(receipt.outcome, 'FAILED'); assert.equal(receipt.qualified, false); assert.equal(receipt.runtimeNotAttempted, true);
+    assert.equal(receipt.phase, 'initial-npm-install'); assert.equal(receipt.providerCalls, 0); assert.equal(receipt.timeoutMilliseconds, 600000);
+    assert.ok(receipt.elapsedMilliseconds >= 0);
+    assert.deepEqual(receipt.error, { code: 'ETIMEDOUT', status: 1, signal: 'SIGTERM', errno: -60 });
+    assert.equal(receipt.npmDiagnosticTail.length, 2);
+    assert.ok(receipt.npmDiagnosticTail.every(tail => tail.entries.length <= 32));
+    assert.equal(receipt.npmDiagnosticTail[0].truncated, true);
+    assert.ok(receipt.npmDiagnosticTail[1].entries.some(entry => entry.phase === 'idealTree:userRequests' && entry.durationMilliseconds === 92967));
+    assert.ok(receipt.npmDiagnosticTail[0].entries.some(entry => entry.method === 'GET' && entry.status === 200 && entry.durationMilliseconds === 312));
+    assert.ok(Buffer.byteLength(text) < 10000);
+    assert.doesNotMatch(text, /secret|PASSWORD|Authorization|https:|private|991122|987654321|112233/i);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('Mac install diagnostics never follow outside log symlinks or replace the primary failure', () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'mac-install-diagnostics-boundary-')));
+  try {
+    const cacheDirectory = join(root, 'cache'), logs = join(cacheDirectory, '_logs'), receiptPath = join(root, 'failure.json');
+    mkdirSync(logs, { recursive: true });
+    writeFileSync(join(root, 'outside.log'), '1 timing idealTree:userRequests Completed in 987654321ms\n');
+    symlinkSync(join(root, 'outside.log'), join(logs, '0001-debug-0.log'));
+    const original = Object.assign(new Error('primary'), { code: 'unsafe-secret', status: null, signal: 'unsafe-secret' });
+    const options = { sourceRevision: 'b'.repeat(40), platform: 'darwin', architecture: 'arm64', cacheDirectory, receiptPath };
+    assert.throws(() => runMacInitialInstallWithDiagnostics(() => { throw original; }, options), error => error === original);
+    const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
+    assert.deepEqual(receipt.npmDiagnosticTail, []); assert.equal(receipt.error.code, null); assert.equal(receipt.error.signal, null);
+    rmSync(receiptPath); mkdirSync(receiptPath);
+    assert.throws(() => runMacInitialInstallWithDiagnostics(() => { throw original; }, options), error => error === original);
+    rmSync(receiptPath, { recursive: true }); rmSync(logs, { recursive: true }); symlinkSync(root, logs);
+    assert.throws(() => runMacInitialInstallWithDiagnostics(() => { throw original; }, options), error => error === original);
+    assert.deepEqual(JSON.parse(readFileSync(receiptPath, 'utf8')).npmDiagnosticTail, []);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('successful Mac installs do not create failed receipts or change the bounded install contract', () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'mac-install-diagnostics-success-')));
+  try {
+    const receiptPath = join(root, 'receipt.json');
+    assert.equal(runMacInitialInstallWithDiagnostics(() => 'installed', { sourceRevision: 'c'.repeat(40), platform: 'darwin',
+      architecture: 'x64', cacheDirectory: join(root, 'cache'), receiptPath }), 'installed');
+    assert.equal(existsSync(receiptPath), false);
+    const source = readFileSync(new URL('../verify-grok-npm-install.mjs', import.meta.url), 'utf8');
+    assert.match(source, /timeout: 10 \* 60_000/);
+    assert.match(source, /runMacInitialInstallWithDiagnostics\(\(\) => run\(process.execPath, \[npmCli, 'install', '--ignore-scripts', '--omit=dev', '--timing'/);
+    assert.ok(source.indexOf('runMacInitialInstallWithDiagnostics(()') < source.indexOf("assert.equal(existsSync(sentinel), false)"));
+    assert.match(source, /finally \{ rmSync\(root, \{ recursive: true, force: true \}\); \}/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 test('native host startup preserves the consumer lock and both executable byte identities', () => {
   const before = { lockSha256: 'a'.repeat(64), runnerSha256: 'b'.repeat(64), codexCommandSha256: 'c'.repeat(64), codexNativeExecutableSha256: 'e'.repeat(64) };
