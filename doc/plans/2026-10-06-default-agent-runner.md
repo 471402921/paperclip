@@ -2,6 +2,65 @@
 
 Updated 2026-10-12.
 
+## Production readiness: owned startup correction
+
+The human requests production readiness; preparation and normal sequential
+merges remain authorized. Production deployment and provisioning-default
+promotion remain separate actions. Nothing in this checkpoint is merged or
+deployed, and the stack is not production-ready.
+
+Runtime prerequisite behavior is `ce23716503a2c9158b5a7ab74ab61571ff4ee7a3`
+on `codex/runner-native-platform-prerequisites`, in
+[#16028](https://github.com/paperclipai/paperclip/pull/16028). Final qualification
+reproduced close returning before credential preparation drained, followed by
+registration and launch. Both direct close and real driver cancellation failed
+on literal `5a9ce11`. The initial shared repair from Claude commit `463ebb` is
+reused, with independently identified duplicate-admission, shutdown-readiness and
+resume ordering corrections. All five source findings are closed in matching
+source review. Absolute cleanup deadlines, primary cancellation errors,
+unauthenticated-process protection and existing agents' runner choices remain.
+
+The existing suites pass 32 credential-free controls across three files; both
+canonical runner TypeScript no-emit checks pass. No new suite, local Rust/Docker
+build, provider call or credential-content read was used. Actual daemon
+readiness/recovery controls remain **hosted-CI required**: local worktrees lack
+the existing fake-Codex/fake-harness executables. The failed local native attempt
+never reached the readiness assertion and is not qualification. Receipts are
+`/private/tmp/pr2-463ebb-owned-startup-review-closure-receipt.json` and
+`/private/tmp/ci-final-owned-startup-five-gap-closure-review.json`.
+
+Normal automatic merge is disabled and the prerequisite is draft while this
+correction receives fresh full CI, package qualification and 5/5 review.
+Earlier green checks at `5a9ce11` remain historical. Actual code-owner approval
+is still required; no protection is bypassed. The updated runs/adapters map pair
+records source-only scope, bringing the prerequisite review to 61 files.
+
+Codex remains `1a0ca66242121e39d88455aa2b52a07acc4a07d9` in
+[#15683](https://github.com/paperclipai/paperclip/pull/15683), based on the previous
+prerequisite. The Claude owner retains its branches, cached guided-setup fix,
+verification and separate $50 allowance. Coordinate reconciliation of the common
+repair before rewriting those branches; don't duplicate it in a leaf slice.
+
+The idle [local preview](http://127.0.0.1:3125/COD/agents/all) still serves literal
+behavior `fe1ecf1c34`, recovery ready and zero active runs. Its four saved
+legacy/native configurations and two historical native records remain preserved;
+it has not been refreshed to this new runtime. Final local/managed acceptance
+must use the tested source, independent file checks and follow-up continuity.
+
+The prepared private execution checklist reuses existing evals, installation,
+Cloud composition and campaign paths. Required holds are final source/image/
+migrator, the actual verified-master private distribution, pinned QA onboarding,
+warm/cold signup, production baseline and previous-image compatibility. Production
+Fleet Admin sign-in is pending. Current paid holds remain $248.179254104 of $250;
+unknown/cleanup holds stay reserved, and the unstarted managed envelope is $2.50.
+No new image, paid resource, rollout or default promotion was dispatched.
+
+Next action: publish this reviewed prerequisite correction, require fresh hosted
+gates, reconcile Codex and Claude with its actual source, then resume the existing
+remote package/immutable preview and dedicated staging qualification. Merge ready
+slices normally in the agreed order; actual production readiness requires the
+private distribution and rollback/forward-recovery evidence afterward.
+
 ## Final review checkpoint: shared fixes and sandbox qualification
 
 The user authorizes normal sequential merges after the applicable gates pass.
