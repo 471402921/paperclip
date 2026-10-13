@@ -13,7 +13,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { packConcurrency, packStagedPackages, packTimings } from './pack-staged-packages.mjs';
 import { materializePublishManifest } from './prepare-bundled-package.mjs';
-import { GROK_PUBLIC_INSTALL_IMAGE, GROK_PUBLIC_INSTALL_LIFECYCLE, assertInstalledNativeConsumerContinuity, assertNoBundledCodexPayloads, grokConsumerDockerArgs, installedCodexProbeSource, installedDaemonProbeSource, macNodeHeadersDirectory, macPublicInstallLifecycleProfile, macInstalledStartupProbeSource } from './grok-public-install-sandbox.mjs';
+import { GROK_PUBLIC_INSTALL_IMAGE, GROK_PUBLIC_INSTALL_LIFECYCLE, assertInstalledNativeConsumerContinuity, assertNoBundledCodexPayloads, grokConsumerDockerArgs, installedCodexProbeSource, installedDaemonProbeSource, macNodeHeadersDirectory, macPublicInstallLifecycleProfile, macInstalledStartupProbeSource, runMacInitialInstallWithDiagnostics } from './grok-public-install-sandbox.mjs';
 import { startPrefetch, stopPrefetches } from './prefetch-child.mjs';
 import { retainRunnerQualificationPackages } from './retain-runner-qualification-packages.mjs';
 import { bundledInstallTimings, startBundledInstalls } from './stage-bundled-packages.mjs';
@@ -54,7 +54,8 @@ async function verifyMacConsumer(packageDirectory, sourceRevision, receiptPath) 
       scripts: { postinstall: 'node -e "require(\'node:fs\').writeFileSync(\'lifecycle-ran\', \'ok\')"' } }));
     run(process.execPath, [npmCli, 'pack', '--ignore-scripts', '--pack-destination', root], sentinelSource);
     const sentinelTar = join(root, readdirSync(root).find(name => name.endsWith('.tgz')));
-    run(process.execPath, [npmCli, 'install', '--ignore-scripts', '--omit=dev', ...tarballs, sentinelTar]);
+    runMacInitialInstallWithDiagnostics(() => run(process.execPath, [npmCli, 'install', '--ignore-scripts', '--omit=dev', '--timing', ...tarballs, sentinelTar]),
+      { sourceRevision, platform: process.platform, architecture: process.arch, cacheDirectory: join(root, 'cache'), receiptPath });
     const sentinel = join(consumer, 'node_modules/paperclip-verification-lifecycle-sentinel/lifecycle-ran');
     assert.equal(existsSync(sentinel), false);
     const lock = readFileSync(join(consumer, 'package-lock.json'), 'utf8');
