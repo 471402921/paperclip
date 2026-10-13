@@ -1,6 +1,6 @@
 {
-  "id": "7be2d67f-767c-4975-9688-22b4fad5d94c",
-  "prevId": "d56c94d7-acb9-4009-adb5-010d1e4822a4",
+  "id": "549b4a96-0d43-4ff7-8d03-5836e3ac2e35",
+  "prevId": "b187fa5b-b867-48a2-89b0-e16f71123411",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4095,6 +4095,12 @@
         "metadata": {
           "name": "metadata",
           "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -60339,26 +60345,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "qualification_started_at": {
-          "name": "qualification_started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "qualification_expires_at": {
           "name": "qualification_expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deadline_enforced_at": {
-          "name": "deadline_enforced_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cadence_evidence_incomplete_at": {
-          "name": "cadence_evidence_incomplete_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -61098,20 +61086,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
-        },
-        "timestamps": {
-          "name": "timestamps",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "incomplete": {
-          "name": "incomplete",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "contacts": {
           "name": "contacts",

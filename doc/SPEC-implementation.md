@@ -170,6 +170,7 @@ Invariant: every business record belongs to exactly one company.
 - `permissions` jsonb not null default `{}`
 - `last_heartbeat_at` timestamptz null
 - `metadata` jsonb null
+- `created_by_user_id` text null; the human user who created or requested the agent. Null for agent-requested and system-created agents. The agent overview shows it only when the company has more than one human member; the local Board principal is never counted or shown.
 
 Invariants:
 
