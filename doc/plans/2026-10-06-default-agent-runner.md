@@ -2,6 +2,75 @@
 
 Updated 2026-10-12.
 
+## Master reconciliation and installed-package checkpoint
+
+The published prerequisite `64c074fb8da1b31f8d6042c4fef48dc4164e759b`
+passes 54 current-head checks with four conditional skips and fresh Greptile 5/5.
+All four review threads are resolved. The actual hosted transport suite passes
+246 tests and startup trust passes 22; this closes the earlier local fake-binary
+limitation at that literal source. Full workspace checks, Linux DB controls,
+Rust suites, isolated native compilation and all eight browser shards pass.
+Receipt: `/private/tmp/pr2-64c074-full-ci-review-0144-receipt.json`.
+
+The [existing final package campaign](https://github.com/paperclipai/paperclip/actions/runs/38332921463)
+completed on literal `64c074`. All four native producers, public Linux package
+assembly, Apple Silicon and Linux ARM64 installed consumers pass. Intel Mac
+fails during initial `npm install --ignore-scripts --omit=dev`, with `ETIMEDOUT`
+after the existing 10-minute bound. It never reaches lifecycle or native runtime
+assertions. The log establishes an installation timeout, not its network/host
+cause and not a runner failure. Intel installed execution remains unqualified.
+Keep the failed receipt; do not relax assertions or relabel the successful
+platforms as a complete campaign. No automatic retry was dispatched.
+
+Master then advanced to `f329b24ee12496e710ad17377ec7716e0eee22ef`, adding
+separately merged durable task workspaces. It conflicts only in the test-home
+helper/test and the Storybook review record. Both independent additive resolution
+proposals are preserved. The cleanup keeps guarded read-only permission recovery
+and its unrelated-ENOTEMPTY negative, adopts master's POSIX error assertion,
+and retains master's new isolated-home identity/symlink protections byte-for-byte.
+Both source-only Storybook review appendices remain; the catalog merges without
+new story/fixture edits or changed review classifications. The task-workspace
+migration and runtime changes come from master, not this PR's feature scope;
+final image/migrator and backward-image proof must include them.
+
+The composed worktree passes six existing home controls, with zero failures or
+skips, plus runner/surfaces/server/E2E TypeScript checks, token gates, both map
+checks (35 areas/171 IDs) and Storybook structure (223 files/2,210 stories).
+Only scratch-local TypeScript preparation ran; root's idle test-drive and data
+stay unchanged. The contribution check has no below-1,000-to-above-1,000 code
+crossing. The two whitespace lines already in master's unrelated privacy test
+are not modified; the PR diff against master is clean. The review remains 63
+files. These composed checks have their working-tree source identity and are not
+claimed as execution of the old published commit. Receipts are
+`/private/tmp/pr2-f329-uncommitted-home-controls-receipt.json` and
+`/private/tmp/pr2-f329-composed-source-checks-receipt.json`.
+
+The existing Mac installer now retains bounded npm timing/progress diagnostics
+in its already-uploaded receipt path before cleanup. Only allowlisted metadata
+is retained; argv, URLs, environment, raw stderr and exception text are omitted.
+At most two 16 KiB file tails and 32 entries per tail are read. Symlink exclusions
+and the original exception identity remain. Failure is explicitly FAILED,
+unqualified and runtime-not-attempted. The existing 10-minute deadline and all
+package, lock, payload, lifecycle and startup oracles are unchanged. Three narrow
+cases extend the existing suite; all 24 pass on canonical Node 24, and independent
+matching-source review is clear. This adds diagnostics, not an installation
+success or explanation of the old timeout. Receipts:
+`/private/tmp/pr2-mac-initial-install-diagnostics-repair-receipt.json`,
+`/private/tmp/ci-final-mac-install-diagnostics-independent-review.json` and
+`/private/tmp/pr2-f329-install-diagnostics-node24.log`.
+
+Next action: publish the ordinary master-reconciliation commit, require fresh
+full CI/review and exact-source package qualification, then normal code-owner
+review and merge. Prior `64c074` CI/install receipts remain literal after this
+source change. The Claude owner is waiting for the exact canonical parent before
+its next composed campaign; keep all its Claude fixes and separate $50 allowance.
+Codex remains `1a0ca662` until actual prerequisite merge and reconciliation.
+Final immutable OCI QA onboarding/task/follow-up, private Cloud composition,
+warm/cold signup and backward-image or forward-recovery proof remain required.
+Production Fleet Admin sign-in and code-owner approval are still pending.
+No slice is merged or production-ready. Paid holds remain $248.179254104/$250;
+no new paid/provider action, local native/Docker build or rollout took place.
+
 ## Production readiness: owned startup correction
 
 The human requests production readiness; preparation and normal sequential

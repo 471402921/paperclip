@@ -81,6 +81,13 @@ remaining operations before qualifying the whole capability.
 Gaps: Normal agent replies work through server delivery. Explicit endpoint publication
 APIs are board management paths.
 
+New conversations resolve typed project/workspace defaults from their endpoint
+and destination under the task-creation transaction. Defaults do not authorize
+private sources: admission checks the linked user's authority and assigned agent.
+An existing conversation keeps its task binding. See
+[creation service](../../server/src/services/chat-channels.ts) and
+[defaults contract](../../packages/shared/src/types/chat-channels.ts).
+
 ## `attachments`
 
 Review: `baseline`.
@@ -115,6 +122,7 @@ API: `present` — representative operation IDs:
 
 - `GET /api/chat-endpoints/{endpointId}/activity`.
 - `PATCH /api/chat-endpoints/{endpointId}`.
+- `PUT /api/chat-endpoints/{endpointId}/resources` configures destination defaults.
 
 Agent access: `restricted` — Board lifecycle APIs; agent requests repair when blocked.
 
@@ -130,3 +138,7 @@ own policy and access review.
 
 Gaps: Activity/repair/replay/disable use board endpoint access, not the agent's ability
 to reply.
+
+Endpoint/destination execution defaults use the same board-only management
+boundary. Agents select an authorized workspace for their current task through
+the [workspace APIs](workspaces.md), rather than editing channel configuration.

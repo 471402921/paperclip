@@ -197,6 +197,7 @@ function RepositoryExample() {
   return (
     <GitHubRepositoryAccess
       endpointId={endpoint.id}
+      companyId={endpoint.companyId}
       managementUrl="https://github.com/settings/installations"
       pending={pending}
       onRefresh={() => {}}

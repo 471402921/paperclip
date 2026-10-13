@@ -102,6 +102,7 @@ import { instanceSettingsService } from "./instance-settings.js";
 import { registerSlackTaskAuthority, slackRunOrigin } from "./connectors/slack-authority.js";
 
 import { buildChatCommunicationGuidance } from "./chat-communication-guidance.js";
+import { assertChatExecutionDefaultsAccess, assertChatTaskCreationAccess, resolveChatExecutionDefaults } from "./chat-execution-defaults.js";
 function githubPolicyRecord(value: unknown): Record<string, unknown> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}; }
 
 import { githubReviewCheckService } from "./chat-github-checks.js";
@@ -2166,6 +2167,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
       botLabel: endpoint.botDisplayName ?? row.assignedAgentName,
       botAvatarUrl: endpoint.botAvatarUrl,
       communicationInstructions: endpoint.communicationInstructions,
+      executionDefaults: endpoint.executionDefaults,
       ...(endpoint.provider === "imessage-photon" && endpoint.botExternalId ? { photonAllocation: endpoint.botExternalId.startsWith("photon-project:") ? "shared" as const : "dedicated" as const } : {}),
       allowDirectMessages: endpoint.allowDirectMessages,
       requireAtMention: endpoint.requireAtMention,
@@ -2393,7 +2395,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
   ) {
     const initial = await endpointRecord(endpointId);
     if (!initial) throw notFound("Chat endpoint not found");
-    if (initial.endpoint.provider === "agentmail") throw badRequest("Use the email inbox API for AgentMail");
+    if (initial.endpoint.provider === "agentmail" && Object.keys(input).some((key) => key !== "executionDefaults")) throw badRequest("Use the email inbox API for AgentMail");
     await withCredentialMutationLease(
       initial.endpoint,
       async (credentialLease) => {
@@ -2454,6 +2456,15 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
           values.allowUnlinkedPeople = input.allowUnlinkedPeople;
         await db.transaction(async (tx) => {
           await credentialLease.assertOwned(tx);
+          if (input.executionDefaults !== undefined) {
+            await assertChatExecutionDefaultsAccess(db, {
+              companyId: existing.endpoint.companyId,
+              assigneeAgentId: values.assignedAgentId ?? existing.endpoint.assignedAgentId,
+              actor: { type: "board", userId: actorUserId, source: actorUserId ? "session" : "local_implicit" },
+              defaults: input.executionDefaults,
+            }, tx);
+            values.executionDefaults = input.executionDefaults;
+          }
           await tx
             .update(chatEndpoints)
             .set(values)
@@ -8215,27 +8226,45 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
       ) => {
         let conversation = existingConversation;
         if (!conversation) {
+          const [taskResource] = await taskTx.select({ executionDefaults: chatEndpointResources.executionDefaults })
+            .from(chatEndpointResources).where(and(eq(chatEndpointResources.id, resource.id), eq(chatEndpointResources.endpointId, taskEndpoint.id)));
+          const executionDefaults = resolveChatExecutionDefaults(taskEndpoint.executionDefaults, taskResource?.executionDefaults);
+          const responsibleUserId = taskUserId ?? taskEndpoint.sponsorUserId;
+          await assertChatTaskCreationAccess(db, {
+            companyId: taskEndpoint.companyId,
+            assigneeAgentId: taskEndpoint.assignedAgentId,
+            actor: responsibleUserId ? { type: "board", userId: responsibleUserId, source: "session", ignoreInstanceAdmin: true } : { type: "none" },
+            defaults: executionDefaults,
+          }, taskTx);
+          await assertChatTaskCreationAccess(db, {
+            companyId: taskEndpoint.companyId,
+            assigneeAgentId: taskEndpoint.assignedAgentId,
+            actor: { type: "agent", agentId: taskEndpoint.assignedAgentId, companyId: taskEndpoint.companyId, onBehalfOfUserId: responsibleUserId, source: "agent_key" },
+            defaults: executionDefaults,
+          }, taskTx);
           const sessionGeneration = isLinear
             ? (latestConversation?.sessionGeneration ?? 0) + 1
             : 1;
           const issue = await issuesSvc.create(
-            endpoint.companyId,
+            taskEndpoint.companyId,
             {
               title: safeTitle(
                 githubAutomatic
                   ? `PR #${githubAutomatic.context.pullNumber}: ${githubAutomatic.context.title}`
                   : githubIssue ? `GitHub issue #${githubIssue.context.issueNumber}: ${githubIssue.context.title}` : message.text,
-                `${PROVIDER_LABELS[endpoint.provider]} conversation`,
+                `${PROVIDER_LABELS[taskEndpoint.provider]} conversation`,
               ),
-              description: `Started from ${PROVIDER_LABELS[endpoint.provider]}: ${resource.label}`,
+              description: `Started from ${PROVIDER_LABELS[taskEndpoint.provider]}: ${resource.label}`,
               status: "todo",
               priority: "medium",
-              assigneeAgentId: endpoint.assignedAgentId,
-              createdByUserId: taskUserId ?? endpoint.sponsorUserId,
-              responsibleUserId: taskUserId ?? endpoint.sponsorUserId,
+              assigneeAgentId: taskEndpoint.assignedAgentId,
+              createdByUserId: taskUserId ?? taskEndpoint.sponsorUserId,
+              responsibleUserId: taskUserId ?? taskEndpoint.sponsorUserId,
               originKind: "chat_channel",
-              originId: `${endpoint.id}:${thread.id}:${sessionGeneration}`,
-              idempotencyKey: `chat:${endpoint.id}:${thread.id}:${sessionGeneration}`,
+              originId: `${taskEndpoint.id}:${thread.id}:${sessionGeneration}`,
+              idempotencyKey: `chat:${taskEndpoint.id}:${thread.id}:${sessionGeneration}`,
+              ...(executionDefaults.projectId !== undefined ? { projectId: executionDefaults.projectId } : {}),
+              ...(executionDefaults.workspace ? { workspaceSelection: executionDefaults.workspace, workspaceSelectionSource: "channel" as const } : {}),
             },
             taskTx,
           );

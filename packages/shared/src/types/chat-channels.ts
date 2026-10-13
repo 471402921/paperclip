@@ -1,3 +1,10 @@
+import type { TaskWorkspaceSelection } from "./task-workspace.js";
+
+export interface ChatExecutionDefaults {
+  projectId?: string | null;
+  workspace?: TaskWorkspaceSelection | null;
+}
+
 /** Provider-neutral contracts for Paperclip's native external chat subsystem. */
 export const CHAT_PROVIDERS = [
   "slack",
@@ -244,6 +251,7 @@ export type ChannelPublicationMode = "automatic" | "explicit";
 export type ExternalMessageExecutionPolicy = "restricted" | "agent";
 
 export interface ChatEndpoint {
+  executionDefaults?: ChatExecutionDefaults | null;
   /** Additional presentation instructions captured only for newly created tasks. */
   communicationInstructions?: string;
   id: string;
@@ -283,6 +291,7 @@ export interface ChatEndpoint {
 }
 
 export interface ChatEndpointResource {
+  executionDefaults?: ChatExecutionDefaults | null;
   id: string;
   companyId: string;
   endpointId: string;
@@ -513,6 +522,7 @@ export interface CreateChatEndpointInput {
 }
 
 export interface UpdateChatEndpointInput {
+  executionDefaults?: ChatExecutionDefaults | null;
   slackSetupMethod?: "managed" | "automatic" | "manual" | "existing";
   slackApp?: SlackAppConfiguration;
   communicationInstructions?: string;

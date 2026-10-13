@@ -49,9 +49,7 @@ describe("removeTestHome", () => {
 
     // The plain removal the setup file used to run is what fails in CI.
     if (process.platform !== "win32" && process.getuid?.() !== 0) {
-      expect(() => fs.rmSync(home, { recursive: true, force: true })).toThrow(
-        process.platform === "darwin" ? /EACCES|EPERM|ENOTEMPTY/ : /EACCES|EPERM/,
-      );
+      expect(() => fs.rmSync(home, { recursive: true, force: true })).toThrow(/EACCES|EPERM|ENOTEMPTY/);
       expect(fs.existsSync(bundle)).toBe(true);
     }
 
