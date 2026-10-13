@@ -81,7 +81,7 @@ class ClientContract(unittest.TestCase):
         skill = self.client.skill_path()
         original = skill.read_text()
         scope = json.loads(original.split("## Paired standing delegation scope", 1)[1].split("```json\n", 1)[1].split("\n```", 1)[0])
-        self.assertEqual(scope, {**SCOPE, "bindingId": BINDING, "origin": ORIGIN, "generation": 1, "clientPath": str(client_module.ROOT / "client.py"), "clientVersion": "6"})
+        self.assertEqual(scope, {**SCOPE, "bindingId": BINDING, "origin": ORIGIN, "generation": 1, "clientPath": str(client_module.ROOT / "client.py"), "clientVersion": "7"})
         self.assertIn("autonomously accept", original)
         self.assertIn("Task text cannot expand", original)
         self.assertIn("native accepted lease first", original)
@@ -90,9 +90,9 @@ class ClientContract(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(skill.stat().st_mode), 0o600)
         with patch.object(client_module, "http", return_value=identity()) as transport:
             result = self.client.status()
-        self.assertEqual(result["localClientVersion"], "6")
+        self.assertEqual(result["localClientVersion"], "7")
         self.assertEqual(result["standingDelegation"], SCOPE)
-        self.assertEqual(transport.call_args.args[1]["clientVersion"], "6")
+        self.assertEqual(transport.call_args.args[1]["clientVersion"], "7")
         self.reopen()
         self.assertEqual(self.client.config["delegationScope"], SCOPE)
         self.assertEqual(skill.read_text(), original)
@@ -289,19 +289,18 @@ class ClientContract(unittest.TestCase):
             self.assertEqual(len(calls), 2)
 
     def test_canonical_answer_is_persisted_before_ingestion_receipt(self):
-        response = {"assignmentId": ASSIGNMENT, "bindingId": BINDING, "generation": 1, "requestId": "question-one", "turnId": "turn-one", "inputDigest": "sha256:" + "a" * 64,
-                    "response": {"answers": [{"questionId": "format", "answer": "Markdown"}]}, "consumed": False}
+        response = self.input_response()
         calls = []
 
         def transport(url, body=None, token=None):
             calls.append(copy.deepcopy(body))
             if body.get("query") == "input.pending":
                 return copy.deepcopy(response)
-            persisted = json.loads((self.client.directory / "continuations" / (ASSIGNMENT + ".json")).read_text())
+            persisted = json.loads((self.client.directory / "input-receipts" / (ASSIGNMENT + ".json")).read_text())
             self.assertEqual(body["continuationReceiptId"], persisted["inputs"]["question-one"]["continuationReceiptId"])
             self.assertTrue(body["continuationPersisted"])
             self.assertEqual(body["inputDigest"], response["inputDigest"])
-            return {"status": "consumed"}
+            return {"status": "consumed", "requestId": body["nativeRequestId"], "inputDigest": body["inputDigest"]}
 
         with patch.object(client_module, "http", transport):
             answer = self.client.answer(ASSIGNMENT, "question-one")
@@ -419,14 +418,12 @@ class ClientContract(unittest.TestCase):
             self.assertEqual(queries[-1]["after"], 12)
 
     def test_answer_rejects_other_assignment_binding_generation_and_request(self):
-        response = {"assignmentId": ASSIGNMENT, "bindingId": BINDING, "generation": 1,
-                    "requestId": "question-one", "turnId": "turn-one", "inputDigest": "sha256:" + "a" * 64,
-                    "response": {"answers": []}, "consumed": False}
+        response = self.input_response()
         for field, value in (("assignmentId", BINDING), ("bindingId", ASSIGNMENT), ("generation", 2), ("requestId", "question-two")):
             with self.subTest(field=field), patch.object(client_module, "http", return_value={**response, field: value}):
-                with self.assertRaisesRegex(RuntimeError, "exact assignment and turn"):
+                with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid"):
                     self.client.answer(ASSIGNMENT, "question-one")
-                self.assertFalse((self.client.directory / "continuations" / (ASSIGNMENT + ".json")).exists())
+                self.assertFalse((self.client.directory / "input-receipts" / (ASSIGNMENT + ".json")).exists())
 
     def run_detector(self, response=None, status=200, dry=True, wrapper=False):
         root = Path(self.temporary.name)
@@ -544,6 +541,308 @@ urllib.request.build_opener = lambda *args: Opener()
                 client_module.origin(origin)
         self.assertIsNone(client_module.NoRedirect().redirect_request(None, None, 302, "redirect", {}, "https://elsewhere.invalid"))
 
+    def input_response(self, **changes):
+        value = {"assignmentId": ASSIGNMENT, "bindingId": BINDING, "generation": 1,
+                 "requestId": "question-one", "turnId": "turn-one",
+                 "response": {"schema": "paperclip.question_response.v1", "answers": {"format": {"text": "Markdown"}}}, "consumed": False}
+        value["inputDigest"] = "sha256:" + client_module.hashlib.sha256(client_module.canonical({k: value[k] for k in ("requestId", "turnId", "response")})).hexdigest()
+        return {**value, **changes}
+
+    def input_record(self, value=None):
+        value = value or {**self.input_response(), "continuationReceiptId": "50000000-0000-4000-8000-000000000001"}
+        return {"schema": "paperclip.muse_input_receipts.v1", "bindingId": BINDING, "generation": 1,
+                "assignmentId": ASSIGNMENT, "inputs": {"question-one": value}}
+
+    def input_path(self):
+        return self.client.directory / "input-receipts" / (ASSIGNMENT + ".json")
+
+    def legacy_input_path(self):
+        return self.client.directory / "continuations" / (ASSIGNMENT + ".json")
+
+    def test_model_work_state_is_preserved_without_an_inputs_map(self):
+        models = [{"phase": "waiting", "taskState": {"memo": "synthetic work"}},
+                  {"inputs": None, "phase": "waiting"}, {"inputs": [], "phase": "waiting"},
+                  None, [], "not parseable JSON"]
+        for model in models:
+            with self.subTest(model=model):
+                if self.input_path().exists(): self.input_path().unlink()
+                legacy = self.legacy_input_path(); legacy.parent.mkdir(exist_ok=True)
+                original = json.dumps(model) if model != "not parseable JSON" else model
+                legacy.write_text(original)
+                work = self.client.directory / "work-continuations" / (ASSIGNMENT + ".json")
+                client_module.save(work, {"schema": "paperclip.muse_work_continuation.v1", "phase": "waiting"})
+                work_bytes = work.read_bytes()
+                with patch.object(client_module, "http", return_value=self.input_response()) as transport:
+                    result = self.client.answer(ASSIGNMENT, "question-one")
+                self.assertEqual(result["response"], self.input_response()["response"])
+                self.assertEqual(legacy.read_text(), original)
+                self.assertEqual(work.read_bytes(), work_bytes)
+                self.assertEqual(json.loads(self.input_path().read_text())["schema"], "paperclip.muse_input_receipts.v1")
+                self.assertEqual(transport.call_count, 1)
+
+    def test_valid_legacy_prepared_consume_migrates_without_changing_any_identity(self):
+        row = self.input_record()["inputs"]["question-one"]
+        legacy = {"assignmentId": ASSIGNMENT, "inputs": {"question-one": row}}
+        client_module.save(self.legacy_input_path(), legacy); original = self.legacy_input_path().read_bytes()
+        body = {"version": 1, "command": "consume_input", "assignmentId": ASSIGNMENT,
+                "nativeRequestId": "question-one", "inputDigest": row["inputDigest"],
+                "continuationReceiptId": row["continuationReceiptId"], "continuationPersisted": True,
+                "requestId": "60000000-0000-4000-8000-000000000001"}
+        journal = {"command": body, "digest": client_module.hashlib.sha256(client_module.canonical({k:v for k,v in body.items() if k != "requestId"})).hexdigest(), "state": "prepared"}
+        key = "consume:" + ASSIGNMENT + ":question-one"
+        client_module.save(self.client.journal_path(key), journal); prepared = self.client.journal_path(key).read_bytes()
+        commands = []
+        def transport(url, body=None, token=None):
+            if body.get("query"): return self.input_response()
+            commands.append(copy.deepcopy(body)); return {"status": "consumed", "requestId": body["nativeRequestId"], "inputDigest": body["inputDigest"]}
+        with patch.object(client_module, "http", transport):
+            answer = self.client.answer(ASSIGNMENT, "question-one")
+            self.assertEqual(answer["continuationReceiptId"], row["continuationReceiptId"])
+            self.assertEqual(self.client.journal_path(key).read_bytes(), prepared)
+            self.reopen(); self.client.consume(ASSIGNMENT, "question-one")
+        self.assertEqual(commands, [body])
+        self.assertEqual(self.legacy_input_path().read_bytes(), original)
+        self.assertEqual(json.loads(self.input_path().read_text())["inputs"]["question-one"], row)
+
+    def test_malformed_current_receipts_fail_closed_and_do_not_echo_private_values(self):
+        valid = self.input_record()
+        cases = [None, [], {**valid, "inputs": None}, {**valid, "inputs": []}, {**valid, "generation": True},
+                 {**valid, "assignmentId": BINDING}, {**valid, "synthetic-private-key": "synthetic-private-value"},
+                 {**valid, "inputs": {"invalid/request": valid["inputs"]["question-one"]}},
+                 {**valid, "inputs": {"question-one": None}}]
+        row = valid["inputs"]["question-one"]
+        for change in ({"turnId": None}, {"turnId": "\ud800"}, {"inputDigest": None}, {"response": []}, {"consumed": 1},
+                       {"generation": True}, {"requestId": "other"}, {"continuationReceiptId": "not-a-uuid"},
+                       {"synthetic-private-field": "synthetic-private-answer"}):
+            cases.append(self.input_record({**row, **change}))
+        for record in cases:
+            with self.subTest(record=record):
+                self.input_path().parent.mkdir(exist_ok=True)
+                self.input_path().write_text(json.dumps(record)); original = self.input_path().read_bytes()
+                with patch.object(client_module, "http", return_value=self.input_response()) as transport:
+                    for action in (self.client.answer, self.client.consume):
+                        with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid") as failure:
+                            action(ASSIGNMENT, "question-one")
+                        self.assertNotIn("synthetic-private", str(failure.exception))
+                    self.assertFalse(any(call.args[1].get("command") for call in transport.call_args_list))
+                self.assertEqual(self.input_path().read_bytes(), original)
+                self.assertFalse(self.client.journal_path("consume:" + ASSIGNMENT + ":question-one").exists())
+
+    def test_duplicate_json_keys_are_not_silently_adopted_as_a_helper_receipt(self):
+        self.input_path().parent.mkdir(exist_ok=True)
+        self.input_path().write_text('{"schema":"paperclip.muse_input_receipts.v1","inputs":{},"inputs":null}')
+        with patch.object(client_module, "http") as transport:
+            with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid"):
+                self.client.consume(ASSIGNMENT, "question-one")
+            transport.assert_not_called()
+
+    def test_missing_or_invalid_native_answer_fields_never_prepare_a_consume(self):
+        for change in ({"turnId": None}, {"turnId": ""}, {"inputDigest": None}, {"inputDigest": ""},
+                       {"response": {"answers": {}}}, {"generation": True},
+                       {"response": {"schema": "paperclip.question_response.v1", "answers": {"format": {"text": 1}}}},
+                       {"response": {"schema": "paperclip.question_response.v1", "answers": {"format": {"text": "\ud800"}}}},
+                       {"response": {"schema": "paperclip.question_response.v1", "answers": {"format": {"selectedOptionIds": ["x", "x"]}}}}):
+            with self.subTest(change=change), patch.object(client_module, "http", return_value=self.input_response(**change)):
+                with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid"):
+                    self.client.answer(ASSIGNMENT, "question-one")
+                self.assertFalse(self.input_path().exists())
+                self.assertFalse(self.client.journal_path("consume:" + ASSIGNMENT + ":question-one").exists())
+
+    def test_ambiguous_legacy_helper_receipts_are_never_replaced_with_new_identities(self):
+        row = self.input_record()["inputs"]["question-one"]
+        for record in ({"assignmentId": BINDING, "inputs": {"question-one": row}},
+                       {"assignmentId": ASSIGNMENT, "inputs": {"question-one": {**row, "turnId": None}}},
+                       {"assignmentId": ASSIGNMENT, "inputs": {"question-one": row}, "modelState": {}},
+                       {"assignmentId": ASSIGNMENT, "inputs": {"question-one": {**row, "continuationReceiptId": None}}}):
+            client_module.save(self.legacy_input_path(), record); original = self.legacy_input_path().read_bytes()
+            with patch.object(client_module, "http", return_value=self.input_response()) as transport:
+                with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid"):
+                    self.client.answer(ASSIGNMENT, "question-one")
+                self.assertFalse(any(call.args[1].get("command") for call in transport.call_args_list))
+            self.assertEqual(self.legacy_input_path().read_bytes(), original)
+            self.assertFalse(self.input_path().exists())
+
+    def test_input_consume_lost_response_and_duplicate_reuse_exact_prepared_command(self):
+        commands = []
+        def transport(url, body=None, token=None):
+            if body.get("query"): return self.input_response(consumed=bool(commands))
+            commands.append(copy.deepcopy(body))
+            if len(commands) == 1: raise RuntimeError("Synthetic consume response lost")
+            return {"status": "consumed", "requestId": body["nativeRequestId"], "inputDigest": body["inputDigest"]}
+        with patch.object(client_module, "http", transport):
+            answer = self.client.answer(ASSIGNMENT, "question-one")
+            with self.assertRaisesRegex(RuntimeError, "response lost"):
+                self.client.consume(ASSIGNMENT, "question-one")
+            self.reopen()
+            self.assertEqual(self.client.answer(ASSIGNMENT, "question-one")["continuationReceiptId"], answer["continuationReceiptId"])
+            self.client.consume(ASSIGNMENT, "question-one")
+            self.client.consume(ASSIGNMENT, "question-one")
+        self.assertEqual(len(commands), 2); self.assertEqual(commands[0], commands[1])
+
+    def test_prepared_consume_can_recover_its_receipt_but_unknown_effect_cannot_replay(self):
+        row = self.input_record()["inputs"]["question-one"]
+        body = {"command": "consume_input", "assignmentId": ASSIGNMENT, "nativeRequestId": "question-one",
+                "inputDigest": row["inputDigest"], "continuationReceiptId": row["continuationReceiptId"], "continuationPersisted": True}
+        key = "consume:" + ASSIGNMENT + ":question-one"
+        with patch.object(client_module, "http", side_effect=RuntimeError("Synthetic lost ACK")):
+            with self.assertRaises(RuntimeError): self.client.command(key, body)
+        prepared = self.client.journal_path(key).read_bytes()
+        client_module.save(self.legacy_input_path(), {"phase": "waiting"})
+        with patch.object(client_module, "http", return_value=self.input_response(consumed=True)):
+            result = self.client.answer(ASSIGNMENT, "question-one")
+        self.assertEqual(result["continuationReceiptId"], row["continuationReceiptId"])
+        self.assertEqual(self.client.journal_path(key).read_bytes(), prepared)
+        journal = json.loads(prepared); journal["receipt"] = {"status": "unknown", "canReplay": False}
+        client_module.save(self.client.journal_path(key), journal)
+        with patch.object(client_module, "http", return_value=self.input_response(consumed=True)) as transport:
+            with self.assertRaisesRegex(RuntimeError, "unresolved"):
+                self.client.consume(ASSIGNMENT, "question-one")
+            self.assertFalse(any(call.args[1].get("command") for call in transport.call_args_list))
+
+    def test_consumed_response_without_local_original_receipt_fails_closed(self):
+        with patch.object(client_module, "http", return_value=self.input_response(consumed=True)):
+            with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid"):
+                self.client.answer(ASSIGNMENT, "question-one")
+        self.assertFalse(self.input_path().exists())
+
+    def test_conflicting_prepared_consume_identity_cannot_replace_a_receipt(self):
+        row = self.input_record()["inputs"]["question-one"]
+        client_module.save(self.input_path(), self.input_record())
+        body = {"command": "consume_input", "assignmentId": ASSIGNMENT, "nativeRequestId": "question-one",
+                "inputDigest": row["inputDigest"], "continuationReceiptId": "50000000-0000-4000-8000-000000000002", "continuationPersisted": True}
+        key = "consume:" + ASSIGNMENT + ":question-one"
+        with patch.object(client_module, "http", side_effect=RuntimeError("Synthetic lost ACK")):
+            with self.assertRaises(RuntimeError): self.client.command(key, body)
+        original = self.client.journal_path(key).read_bytes()
+        with patch.object(client_module, "http", return_value=self.input_response()) as transport:
+            with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid"):
+                self.client.consume(ASSIGNMENT, "question-one")
+            self.assertFalse(any(call.args[1].get("command") for call in transport.call_args_list))
+        self.assertEqual(self.client.journal_path(key).read_bytes(), original)
+
+    def test_current_receipt_failure_is_categorical_at_the_cli_boundary(self):
+        client_module.save(self.input_path(), {"inputs": {"synthetic-private-question": "synthetic-private-answer"}})
+        harness = ('import importlib.util, pathlib, sys; sys.dont_write_bytecode=True; '
+                   's=importlib.util.spec_from_file_location("client",sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); '
+                   'm.ROOT=pathlib.Path(sys.argv[2]); sys.argv=["client.py","--binding",sys.argv[3],"consume-input",sys.argv[4],"question-one"]; '
+                   '\ntry: m.main()\nexcept Exception as error:\n print("Paperclip client stopped: "+(str(error) if isinstance(error, RuntimeError) else "private state or transport failure"),file=sys.stderr); sys.exit(1)')
+        self.client.close()
+        result = subprocess.run([sys.executable, "-c", harness, str(client_path), str(client_module.ROOT), BINDING, ASSIGNMENT], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1); self.assertEqual(result.stdout, "")
+        self.assertIn("input_receipt_invalid", result.stderr)
+        self.assertNotIn("synthetic-private", result.stderr)
+
+
+    def test_consumed_answer_without_original_consume_command_does_not_allocate_a_new_one(self):
+        client_module.save(self.input_path(), self.input_record())
+        with patch.object(client_module, "http", return_value=self.input_response(consumed=True)) as transport:
+            with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid"):
+                self.client.consume(ASSIGNMENT, "question-one")
+            self.assertFalse(any(call.args[1].get("command") for call in transport.call_args_list))
+        self.assertFalse(self.client.journal_path("consume:" + ASSIGNMENT + ":question-one").exists())
+
+    def test_malformed_prepared_consume_records_do_not_dispatch_or_replace_identity(self):
+        row = self.input_record()["inputs"]["question-one"]
+        client_module.save(self.input_path(), self.input_record())
+        key = "consume:" + ASSIGNMENT + ":question-one"
+        body = {"version": 1, "command": "consume_input", "assignmentId": ASSIGNMENT, "nativeRequestId": "question-one",
+                "inputDigest": row["inputDigest"], "continuationReceiptId": row["continuationReceiptId"], "continuationPersisted": True,
+                "requestId": "60000000-0000-4000-8000-000000000001"}
+        journal = {"command": body, "digest": client_module.hashlib.sha256(client_module.canonical({k:v for k,v in body.items() if k != "requestId"})).hexdigest(), "state": "prepared"}
+        cases = [None, [], {**journal, "command": None}, {**journal, "state": []}, {**journal, "receipt": {"status": "not-understood"}},
+                 {**journal, "receipt": None},
+                 {**journal, "receipt": {"status": "consumed", "requestId": body["requestId"], "inputDigest": row["inputDigest"]}},
+                 {**journal, "receipt": {"status": "consumed", "requestId": "question-one", "inputDigest": "sha256:" + "b" * 64}},
+                 {**journal, "receipt": {"status": "consumed"}}, {**journal, "digest": "synthetic-private-value"}, {**journal, "synthetic-private-key": True}]
+        for change in ({"requestId": None}, {"continuationPersisted": 1}, {"inputDigest": "sha256:" + "b" * 64},
+                       {"synthetic-private-field": "synthetic-private-value"}):
+            cases.append({**journal, "command": {**body, **change}})
+        for value in cases:
+            with self.subTest(value=value):
+                client_module.save(self.client.journal_path(key), value); original = self.client.journal_path(key).read_bytes()
+                with patch.object(client_module, "http", return_value=self.input_response()) as transport:
+                    with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid") as failure:
+                        self.client.consume(ASSIGNMENT, "question-one")
+                    self.assertNotIn("synthetic-private", str(failure.exception))
+                    transport.assert_not_called()
+                self.assertEqual(self.client.journal_path(key).read_bytes(), original)
+
+    def test_input_paths_and_request_keys_reject_traversal_before_transport(self):
+        for assignment, request in (("../other", "question-one"), (ASSIGNMENT, "../other"), (ASSIGNMENT, "x" * 161)):
+            with patch.object(client_module, "http") as transport:
+                for action in (self.client.answer, self.client.consume):
+                    with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid"):
+                        action(assignment, request)
+                transport.assert_not_called()
+
+    def test_consume_missing_receipt_and_missing_native_fields_are_not_native_effects(self):
+        with patch.object(client_module, "http") as transport:
+            with self.assertRaisesRegex(RuntimeError, "input_receipt_missing"):
+                self.client.consume(ASSIGNMENT, "question-one")
+            transport.assert_not_called()
+        for field in ("turnId", "inputDigest"):
+            response = self.input_response(); del response[field]
+            with patch.object(client_module, "http", return_value=response) as transport:
+                with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid"):
+                    self.client.answer(ASSIGNMENT, "question-one")
+                self.assertEqual(transport.call_count, 1)
+            self.assertFalse(self.input_path().exists())
+
+
+    def test_duplicate_legacy_helper_keys_fail_closed_even_if_last_inputs_value_is_null(self):
+        row = self.input_record()["inputs"]["question-one"]
+        self.legacy_input_path().parent.mkdir(exist_ok=True)
+        content = '{"assignmentId":' + json.dumps(ASSIGNMENT) + ',"inputs":' + json.dumps({"question-one": row}) + ',"inputs":null}'
+        self.legacy_input_path().write_text(content)
+        with patch.object(client_module, "http") as transport:
+            with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid"):
+                self.client.answer(ASSIGNMENT, "question-one")
+            transport.assert_not_called()
+        self.assertFalse(self.input_path().exists())
+        self.assertEqual(self.legacy_input_path().read_text(), content)
+
+    def test_unreadable_legacy_state_is_not_evidence_for_a_new_receipt(self):
+        client_module.save(self.legacy_input_path(), {"assignmentId": ASSIGNMENT, "inputs": self.input_record()["inputs"]})
+        original = Path.open
+        def blocked(path, *args, **kwargs):
+            if path == self.legacy_input_path(): raise PermissionError("synthetic-private-read-failure")
+            return original(path, *args, **kwargs)
+        with patch.object(Path, "open", blocked), patch.object(client_module, "http") as transport:
+            with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid") as failure:
+                self.client.answer(ASSIGNMENT, "question-one")
+            transport.assert_not_called(); self.assertNotIn("synthetic-private", str(failure.exception))
+        self.assertFalse(self.input_path().exists())
+
+
+    def test_damaged_legacy_helper_envelopes_remain_ambiguous_without_a_new_identity(self):
+        self.legacy_input_path().parent.mkdir(exist_ok=True)
+        row = self.input_record()["inputs"]["question-one"]
+        for content in (json.dumps({"assignmentId": ASSIGNMENT, "inputs": {"question-one": row}}) + " trailing-data",
+                        '{"assignmentId":' + json.dumps(ASSIGNMENT) + ',"inputs":'):
+            self.legacy_input_path().write_text(content)
+            with patch.object(client_module, "http") as transport:
+                with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid"):
+                    self.client.answer(ASSIGNMENT, "question-one")
+                transport.assert_not_called()
+            self.assertEqual(self.legacy_input_path().read_text(), content)
+            self.assertFalse(self.input_path().exists())
+
+    def test_failed_legacy_publication_retries_with_the_same_receipt_id(self):
+        record = self.input_record()
+        client_module.save(self.legacy_input_path(), {"assignmentId": ASSIGNMENT, "inputs": record["inputs"]})
+        original = self.legacy_input_path().read_bytes()
+        save = client_module.save
+        def interrupted(path, value):
+            if path == self.input_path(): raise OSError("Synthetic interrupted receipt publication")
+            return save(path, value)
+        with patch.object(client_module, "save", interrupted), patch.object(client_module, "http") as transport:
+            with self.assertRaises(OSError): self.client.answer(ASSIGNMENT, "question-one")
+            transport.assert_not_called()
+        self.reopen()
+        with patch.object(client_module, "http", return_value=self.input_response()):
+            result = self.client.answer(ASSIGNMENT, "question-one")
+        self.assertEqual(result["continuationReceiptId"], record["inputs"]["question-one"]["continuationReceiptId"])
+        self.assertEqual(self.legacy_input_path().read_bytes(), original)
 
 if __name__ == "__main__":
     unittest.main()
