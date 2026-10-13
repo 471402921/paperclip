@@ -84,10 +84,14 @@ function createReceiver(db:Db) {
         throw error;
       }
       contacted = current;
-      if ((agent.status === "paused" && !canConfigureAgentConnection(agent)) || !await museIdentity(db).enabled()) return idle;
+      if (!await museIdentity(db).enabled()) return idle;
+      // Pausing suppresses ordinary work, while the worker still needs its
+      // exact stop boundary to quiesce and report through authenticated control.
+      const stopOnly = agent.status === "paused" && !canConfigureAgentConnection(agent);
       const [item] = await tx.select({ item: mailbox }).from(mailbox).leftJoin(assignments, eq(assignments.id, mailbox.assignmentId))
         .where(and(eq(mailbox.bindingId, current.id), eq(mailbox.bindingGeneration, current.generation),
-          sql`((${mailbox.kind} = 'assignment' and ${assignments.claimedAt} is null and ${assignments.status} = 'offered') or (${mailbox.kind} = 'readiness_challenge' and ${!!current.challengeHash}) or (${mailbox.kind} not in ('assignment','readiness_challenge') and ${mailbox.id} > ${current.workerCursor}))`))
+          stopOnly ? sql`(${mailbox.kind} = 'authority_revoked' and ${mailbox.id} > ${current.workerCursor})`
+            : sql`((${mailbox.kind} = 'assignment' and ${assignments.claimedAt} is null and ${assignments.status} = 'offered') or (${mailbox.kind} = 'readiness_challenge' and ${!!current.challengeHash}) or (${mailbox.kind} not in ('assignment','readiness_challenge') and ${mailbox.id} > ${current.workerCursor}))`))
         .orderBy(asc(mailbox.id)).limit(1);
       if (!item) return idle;
       const now = Date.now(), rearm = !item.item.signalNotifiedAt || item.item.signalNotifiedAt.getTime() <= now - 30_000;

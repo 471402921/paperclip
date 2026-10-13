@@ -1016,6 +1016,34 @@ describe("personal Muse control plane",()=>{
       expect((await request(app).post("/api/muse/v1/cleanup").set("X-Paperclip-Muse-Binding",f.binding.id).send({version:1,command:"control.inspect"})).status).toBe(401);
     }finally{await f.detach();}
   });
+  it.each(["input", "challenge"] as const)("signals pending stop control while paused and keeps ordinary %s quiet",async(kind)=>{
+    const oauth=await oauthFixture(true),f=await active(oauth);try {
+      await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+      if(kind==="input") {
+        const requestId="paused_question",response={schema:"paperclip.question_response.v1",answers:[]},inputDigest=digestPaperclipSemanticContent({requestId,turnId:f.ref.turnId,response});
+        await f.port.inputAvailable({sourceEventId:randomUUID(),payload:{binding:f.ref,requestId,turnId:f.ref.turnId,inputDigest,response}});
+      } else {
+        const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;
+        await f.broker.verify(f.company.id,f.agent.id,{bindingId:f.binding.id,generation:1,expectedRevision:state.revision});
+      }
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      await db.update(agents).set({status:"paused"}).where(eq(agents.id,f.agent.id));
+      const app=transport(),poll=()=>request(app).get("/api/muse/v1/signal").set("X-Paperclip-Muse-Binding",f.binding.id);
+      const first=await poll();expect(first.status).toBe(200);expect(first.body.signal?.reference).toMatch(/^sha256:/);
+      const [stop]=await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"authority_revoked")));
+      expect(stop.signalAttempt).toBe(1);expect(stop.signalNotifiedAt).toBeInstanceOf(Date);
+      const ordinary=await db.select().from(mailbox).where(eq(mailbox.bindingId,f.binding.id));
+      expect(ordinary.filter(item=>item.kind!=="authority_revoked").every(item=>item.signalNotifiedAt===null)).toBe(true);
+      const inbox=await request(app).post("/api/muse/v1/queries").set("Authorization","Bearer "+oauth.tokens!.access_token).send({version:1,query:"mailbox",after:0});
+      expect(inbox.status).toBe(200);expect(inbox.body).toMatchObject({items:expect.arrayContaining([expect.objectContaining({kind:"authority_revoked",references:stop.references})])});
+      const ack=await request(app).post("/api/muse/v1/queries").set("Authorization","Bearer "+oauth.tokens!.access_token).send({version:1,query:"mailbox",after:stop.id});
+      expect(ack.status).toBe(200);expect((await poll()).body).toEqual({version:1,signal:null});
+      const accept=await request(app).post("/api/muse/v1/commands").set("Authorization","Bearer "+oauth.tokens!.access_token).send({version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+      expect(accept.status).toBe(403);expect(f.sent).toHaveLength(1);
+      expect((await f.broker.bindingForAgent(f.company.id,f.agent.id))!.stop.status).toBe("cannot_confirm");
+    }finally{await f.detach();}
+  });
+
   it("keeps paused and feature-disabled public receivers idle, resumes them, and fences lost current authority",async()=>{
     const f=await active();try {
       const app=transport(),poll=()=>request(app).get("/api/muse/v1/signal").set("X-Paperclip-Muse-Binding",f.binding.id);
