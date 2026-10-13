@@ -476,6 +476,9 @@ contain only the name, role, and agent reference; pairing tickets stay transient
 
 `MuseRunnerConnection.tsx` is the agent settings surface for connection health,
 verification, repair, disconnection, and attestation of a specific stop boundary.
-Its examples appear in the Design Guide. The guided Muse stories under
-`ui/storybook/stories/external-agent-invite/` use the real components with offline
-fixtures; they do not establish provider connectivity or remote stopping.
+Its examples appear in the Design Guide. The [guided Muse stories](../../ui/storybook/stories/agents/external-agent-invite/muse.stories.tsx)
+use the real invitation and connection details components with offline fixtures,
+including setup milestones, recovery, disabled cleanup, and the exact stop boundary.
+The [Storybook catalog](../../maps/storybook-map/INDEX.md) registers these under
+agent hiring and lifecycle. The examples remain unreviewed for Vault/provider parity
+and do not establish provider connectivity or remote stopping.

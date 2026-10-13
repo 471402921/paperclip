@@ -435,3 +435,46 @@ and three also reference the Slack-only settings copy. Other source bytes and
 all classifications, fixture boundaries, story IDs and sidebar titles remain
 unchanged from that baseline. Catalog checks validate these references and
 fingerprints, not live Slack behavior.
+
+## Personal Muse registration — 2026-10-13
+
+Source baseline: `854f3a3fb1c7d79a12d59452effbf25ad7bb2945`, based on the
+integrated Muse snapshot `d80cca8d7ec2d5e19f8396b6b563acf515f1a48b`.
+This pass covers catalog registration, source provenance, and CSF parsing only.
+The existing suite renders `ExternalAgentInviteContent`, the roster/app shell,
+and `MuseConnectionDetails` through the existing offline preview. Its 20 examples
+include invitation milestones, recovery, connection settings, disabled cleanup,
+and the exact stop boundary. They are registered under `agents/hire`, with
+`agents/lifecycle` and `access/invitations` references.
+
+The suite moved into `stories/agents/external-agent-invite/` with the current
+feature sidebar prefix and an explicit meta ID. The installed Storybook CSF
+parser preserved all 20 previous story IDs and the one existing play function.
+The relative imports were repaired; exports, callbacks, fixture data, and
+component behavior are unchanged. No built-index comparison, rendered journey,
+play execution, visual comparison, or provider acceptance was performed here.
+The suite remains `unreviewed / production / fixtures`: its setup prompt and
+cleanup fixture retain legacy examples and require Vault/provider parity review.
+
+Before this fix, catalog validation reported the missing Muse entry and 64 review
+fingerprint errors. Comparing the same registry to master
+`833769ab557255b11dd8f650f43ed7333653f5e4` found 28 existing fingerprint errors.
+The integrated `d80cca8` snapshot added 33; the waiting-status change added three
+more through `TaskChatRunnerTurn` dependencies: `recovery/execution-recovery`,
+`tasks/runner-activity`, and `tasks/task-chat-chain-of-thought`. Those reviews are
+outside this registration pass. Every existing entry and shared-review fingerprint
+is unchanged. The missing-entry error is resolved; the same 64 fingerprint errors
+still block the full catalog check and its normal INDEX write. The inventory
+INDEX was regenerated through the catalog's `renderIndex` function only after
+verifying that no structural/identity error remained; this updates navigation
+without accepting any of the outstanding source reviews.
+
+Executed: `node --test scripts/storybook-catalog.test.mjs
+scripts/storybook-feature-index.test.mjs scripts/storybook-muse-catalog.test.mjs`
+passed all 20 tests, including actual-suite stable IDs, relocated imports, scoped
+registration validity, and generated capability lookup. Token gates and
+`git diff --check` passed. `node scripts/storybook-catalog.mjs` still exits 1 with
+exactly the 64 recorded fingerprint errors and no Muse registration error.
+Existing catalog records were compared with the source baseline and are unchanged;
+the story diff is limited to metadata and relative imports. No repository-wide
+build/test/typecheck or Storybook build was repeated for this metadata-only pass.

@@ -2295,6 +2295,41 @@
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Onboarding/External agent invitation/Journeys"
     },
     {
+      "file": "ui/storybook/stories/agents/external-agent-invite/muse.stories.tsx",
+      "capabilities": [
+        "agents/hire",
+        "agents/lifecycle",
+        "access/invitations"
+      ],
+      "purpose": "Personal Muse invitation milestones, recovery, and connection settings",
+      "status": "unreviewed",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Real invitation, roster/shell, and MuseConnectionDetails subjects with simulated pairing, receiver contact, background reply, lifecycle readiness, recovery, disabled cleanup, and exact stop-boundary states. The setup and cleanup fixtures retain legacy examples; Vault/provider parity and stop behavior remain unreviewed. No live connectivity or remote stopping is established.",
+      "reviewedAt": "2026-10-13",
+      "sources": [
+        "maps/feature-map/access.md",
+        "maps/feature-map/agents.md",
+        "ui/src/components/AnimatedDialogContent.tsx",
+        "ui/src/components/Layout.tsx",
+        "ui/src/components/MuseRunnerConnection.tsx",
+        "ui/src/components/new-agent/AgentBasicsDialog.tsx",
+        "ui/src/components/new-agent/ExternalAgentInviteContent.tsx",
+        "ui/src/components/ui/button.tsx",
+        "ui/src/components/ui/dialog.tsx",
+        "ui/src/hooks/useMuseConnection.ts",
+        "ui/src/pages/Agents.tsx",
+        "ui/src/plugins/launchers.tsx",
+        "ui/storybook/stories/agents/external-agent-invite/muse.stories.tsx",
+        "ui/storybook/stories/external-agent-invite/muse-fixtures.ts",
+        "ui/storybook/support/external-agent-invite/ExternalAgentInvitePreview.tsx",
+        "ui/storybook/support/external-agent-invite/fixtures.ts"
+      ],
+      "fingerprint": "396b558a949d23fabbdc435202513cc420b4a90e541299bf81a4775071262c1e",
+      "stableId": "onboarding-external-agent-invitation-muse-personal-agent",
+      "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Onboarding/External agent invitation/Muse personal agent"
+    },
+    {
       "file": "ui/storybook/stories/tasks/external-objects.stories.tsx",
       "capabilities": [
         "tasks/properties"
