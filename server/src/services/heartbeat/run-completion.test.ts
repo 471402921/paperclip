@@ -6,6 +6,7 @@ import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } fro
 import * as usageReceipts from "../usage-receipts.js";
 import { createAgentIdentityRedactor } from "../agent-identity-redaction.js";
 import { UnresolvedWorkspaceBaseRefError } from "../workspace-runtime.js";
+import { LegacyControllerLeaseLostError } from "../legacy-controller-lease.js";
 import { createHeartbeatLifecycle, type HeartbeatLifecycleDependencies } from "./run-lifecycle.js";
 import { createHeartbeatRunPreparation, ConfigurationIncompleteFailure } from "./run-preparation.js";
 import { createHeartbeatRunState, getAdapterSessionCodec } from "./run-state.js";
@@ -153,6 +154,15 @@ describe.skipIf(!support.supported)("heartbeat run completion boundary", () => {
       expect((await read(f.run.id)).sessionIdAfter).toBe("provider-session");
       expect(f.deps.finalizeAgentStatus).toHaveBeenCalledWith(f.agent.id, "cancelled", expect.any(String), expect.any(Object));
     } else expect(f.deps.finalizeAgentStatus).not.toHaveBeenCalled();
+  });
+
+  it("attributes an adapter stop caused by a lost controller lease", async () => {
+    const f = await fixture();
+    Object.assign(f.input.adapterResult, { exitCode: null, errorCode: "cancelled", errorMessage: "Grok execution was cancelled" });
+    f.controller.abort(new LegacyControllerLeaseLostError("renewal_deadline"));
+    await f.completion.completeRun(f.input);
+    expect(await read(f.run.id)).toMatchObject({ status: "cancelled", resultJson: { cancellation: {
+      source: "controller_lease", expected: false, initiator: { type: "system" }, reason: "Legacy controller lease lost (renewal_deadline)" } } });
   });
 
   it("does not publish or overwrite a conflicting terminal transition that wins the compare-and-set", async () => {

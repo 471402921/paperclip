@@ -6,7 +6,8 @@ import { readGitConnectionFailure } from "../git-connection-failure.js";
 import { CONFIGURATION_INCOMPLETE_FAILURE_CODE, ConfigurationIncompleteFailure } from "./run-preparation.js";
 import { isWorkspaceValidationFailedRun, isWorkspaceValidationFailure, attachPaperclipSessionMetadataToSessionParams } from "./workspaces.js";
 import { preserveWorkspaceRestoreRecoveryMetadataSql } from "../legacy-workspace-restore-recovery.js";
-import { cancellationResultJson, readRunCancellation } from "../run-cancellation.js";
+import { cancellationResultJson, controllerLeaseLossCancellation, readRunCancellation } from "../run-cancellation.js";
+import { LegacyControllerLeaseLostError } from "../legacy-controller-lease.js";
 import { accountRunCost } from "../run-cost-accounting.js";
 import { isConversation, settleConversationTurn } from "../agent-conversations.js";
 import { legacyExecutionNeedsReconciliationWithEvidence } from "../legacy-execution-recovery.js";
@@ -543,6 +544,10 @@ export function createHeartbeatRunCompletion(db: Db, dependencies: HeartbeatRunC
             ...parseObject(adapterResult.resultJson),
             ...(adapterResult.executionRecovery
               ? { executionRecovery: adapterResult.executionRecovery }
+              : {}),
+            // A requested stop recorded earlier still wins in cancellationResultJson.
+            ...(outcome === "cancelled" && signal.reason instanceof LegacyControllerLeaseLostError
+              ? { cancellation: controllerLeaseLossCancellation(signal.reason.leaseLossCause) }
               : {}),
             configFreshness: configFreshnessResultMetadata,
           },
