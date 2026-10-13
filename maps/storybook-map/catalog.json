@@ -7,7 +7,7 @@
       "ui/storybook/fixtures/paperclipData.ts",
       "maps/feature-map/README.md"
     ],
-    "fingerprint": "eb37e5c7110df7804ffabbd4784bd78cf1f5d31a858bdcb8db7080cfa02b7f0b"
+    "fingerprint": "52643891a15456fa1afef6d94b884bec8d24faff67594c97b5af9bda2ce4311b"
   },
   "entries": [
     {
@@ -260,7 +260,7 @@
       "status": "current",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Wrapper mounts production Layout and AgentChat; conversation selection and sends use in-memory routes. Directory name is not prototype evidence.",
+      "notes": "Wrapper mounts production Layout and AgentChat; conversation selection and sends use in-memory routes. Directory name is not prototype evidence. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agent-chat.md",
@@ -281,7 +281,7 @@
         "ui/storybook/prototypes/chat-entry/ChatEntryReview.tsx",
         "ui/storybook/stories/agent-chat/agent-chat-sidebar.stories.tsx"
       ],
-      "fingerprint": "aeea37e51418ab1d78eca93cfd4b51636941ac22c8dbadf7fe1a70de74b7ae8b",
+      "fingerprint": "b0b6a9512f212b17ad9b42f284ee886c99916c724795c40131f7e91c1d5901c8",
       "stableId": "design-explorations-agent-chat-sidebar-pages",
       "sidebarTitle": "Tasks and conversations/Agent conversations and project handoff/Design explorations/Agent chat sidebar/Pages"
     },
@@ -319,7 +319,7 @@
       "status": "mixed",
       "implementation": "mixed",
       "boundary": "fixtures",
-      "notes": "Production conversation/task routes with a local ChatEntryLanding. Default-agent behavior and fallback API responses remain outside current-product parity.",
+      "notes": "Production conversation/task routes with a local ChatEntryLanding. Default-agent behavior and fallback API responses remain outside current-product parity. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agent-chat.md",
@@ -340,7 +340,7 @@
         "ui/storybook/prototypes/chat-entry/ChatEntryReview.tsx",
         "ui/storybook/stories/agent-chat/agent-chat.stories.tsx"
       ],
-      "fingerprint": "b04974700adf2b2fc95565066e4385c68979e509da1f97443ae31a653947255e",
+      "fingerprint": "938a858135e7586e5289afee3c4377b040d413b8693dac6140e3ff2406e2a81f",
       "stableId": "design-explorations-agent-chat",
       "sidebarTitle": "Tasks and conversations/Agent conversations and project handoff/Design explorations/Agent chat"
     },
@@ -354,7 +354,7 @@
       "status": "current",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agents.md",
@@ -363,7 +363,7 @@
         "ui/storybook/fixtures/onboardingEnvironment.ts",
         "ui/storybook/stories/runs-adapters/agent-connection-reuse.stories.tsx"
       ],
-      "fingerprint": "7b2571f03ffa3a559a9c228f78c87302d346183599b667c1102d131b4f33593a",
+      "fingerprint": "bee32d44f10f3d974c9b1d7112040ef88188f4ea94dba66b02440e5ed35e67f5",
       "stableId": "onboarding-saved-connections",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/Onboarding/Saved connections"
     },
@@ -401,7 +401,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agents.md",
@@ -409,7 +409,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/agents/agent-detail.stories.tsx"
       ],
-      "fingerprint": "11057146b400c257fbdc3ec5c20da9b55eacc6735121632f2fa55e72af29e777",
+      "fingerprint": "8695183946a769b13510c1b091f09cc67cc6ced4a69a1e326c530a08989e6f93",
       "stableId": "pages-agent-detail",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Pages/Agent Detail"
     },
@@ -422,7 +422,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agents.md",
@@ -430,7 +430,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/agents/agent-files.stories.tsx"
       ],
-      "fingerprint": "d7976922e4431b6432f966c2f120b9a57f66437bfe519694007d76a790318043",
+      "fingerprint": "fae12e8561520bb240f4cda03c979d9ba6c5099369ea9d55e715f02380d806d2",
       "stableId": "agents-persistent-files",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Agents/Persistent files"
     },
@@ -444,7 +444,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agents.md",
@@ -453,12 +453,13 @@
         "ui/src/components/AgentConfigForm.tsx",
         "ui/src/components/AgentIconPicker.tsx",
         "ui/src/components/AgentProperties.tsx",
+        "ui/src/components/AgentRunnerSelect.tsx",
         "ui/src/components/agent-config-defaults.ts",
         "ui/src/components/agent-config-primitives.tsx",
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/agents/agent-management.stories.tsx"
       ],
-      "fingerprint": "f6dbb548bf03324350a3658ce6e724d88d04535b1d7e4a647492f21ff64cc332",
+      "fingerprint": "8943293cd39e2ff48719dd8d31129380c17e44dd55038b46671112845b4483a0",
       "stableId": "product-agent-management",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Product/Agent Management"
     },
@@ -472,7 +473,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agents.md",
@@ -487,7 +488,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/agents/agent-persona-pages.stories.tsx"
       ],
-      "fingerprint": "4c76c6a1c6f5ac036140b649bcf8a0a02978273550a8f784d772a8756358b34a",
+      "fingerprint": "1683039c78c42ac1b59f3520003bcf3b9f3f71d51ef4b064c9c7fdb89f6dc91d",
       "stableId": "agents-personas-full-pages",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Agents/Personas/Full pages"
     },
@@ -501,7 +502,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agents.md",
@@ -512,7 +513,7 @@
         "ui/src/components/ui/button.tsx",
         "ui/storybook/stories/agents/agent-personas.stories.tsx"
       ],
-      "fingerprint": "0b6f1811a05f57c3f87f45072d762f5c7fb613d82ddf1967553f0f0f78e9a4fe",
+      "fingerprint": "5da5911f57668a7b9820d8d7bbec9b52e380d89a8353ab2548b2f9af6c0d66df",
       "stableId": "agents-personas",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Agents/Personas"
     },
@@ -526,13 +527,14 @@
       "status": "mixed",
       "implementation": "mixed",
       "boundary": "fixtures",
-      "notes": "Production configuration panels in a locally composed settings shell; full AgentDetail route parity remains unreviewed.",
+      "notes": "Production configuration panels in a locally composed settings shell; full AgentDetail route parity remains unreviewed. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agents.md",
         "ui/src/components/AgentActionButtons.tsx",
         "ui/src/components/AgentConfigForm.tsx",
         "ui/src/components/AgentContextualSidebar.tsx",
+        "ui/src/components/AgentRunnerSelect.tsx",
         "ui/src/components/NewIssueDialog.tsx",
         "ui/src/components/RuntimeTestCard.tsx",
         "ui/src/components/onboarding/PillGuy.tsx",
@@ -548,7 +550,7 @@
         "ui/storybook/prototypes/new-agent-fixtures.ts",
         "ui/storybook/stories/agents/agent-settings-redesign.stories.tsx"
       ],
-      "fingerprint": "0d438c68efa2c8b29d359c95944bc7aa55bd90808ea4f6229f144ffb4a16ffe4",
+      "fingerprint": "07609258b76d1e41ad9400e10338b3b129e6f14f372977aeacad2aa95a246e8f",
       "stableId": "agents-configuration-refresh",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Agents/Configuration refresh"
     },
@@ -720,7 +722,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/runs-adapters.md",
@@ -728,7 +730,7 @@
         "ui/storybook/prototypes/AiConnectionUsageReview.tsx",
         "ui/storybook/stories/runs-adapters/ai-connection-usage.stories.tsx"
       ],
-      "fingerprint": "293a8407e94d525533e5beb8920d78e4b47b2326568460bfe02bb3bdd9f81eaf",
+      "fingerprint": "adf0fc7739ecded2716d63e54c9808ffa2e475b61e87d34b83969947c293614a",
       "stableId": "ai-connections-usage-limits",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Usage limits"
     },
@@ -741,7 +743,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/runs-adapters.md",
@@ -765,7 +767,7 @@
         "ui/storybook/prototypes/AiTaskConnectionReview.tsx",
         "ui/storybook/stories/runs-adapters/ai-connections.stories.tsx"
       ],
-      "fingerprint": "9a5d741ffbff64ab6e14e03130a1b7a53403d6e69ee48108ba1358d0093facf2",
+      "fingerprint": "c038f495cf2c52350d2111816226f6c6ec3d9aaadd53689adb80593bfd71abbd",
       "stableId": "ai-connections-review",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Review"
     },
@@ -1333,7 +1335,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agents.md",
@@ -1346,7 +1348,7 @@
         "ui/src/components/StatusBadge.tsx",
         "ui/storybook/stories/agents/built-in-agents.stories.tsx"
       ],
-      "fingerprint": "10f7d4cc67fac768afe96fc635480cf9cb91cfe1f18f11ffdfd2273de8eac8a3",
+      "fingerprint": "683fde37a5e966faacaaf872e7ccaa0c344921b919e61ec3863f983bd07dd7e1",
       "stableId": "product-built-in-agents",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Product/Built-in Agents"
     },
@@ -1360,7 +1362,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/runs-adapters.md",
@@ -1374,7 +1376,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/tasks/chat-comments.stories.tsx"
       ],
-      "fingerprint": "78ef704288c2c9ab63641e16b0e5fbe9d70bd81ec6dadacb1a31658388249c6d",
+      "fingerprint": "0b20b3e5915b5a5d0b11a8802a9441d63f8d551facdfdde6cfe58936e4cb18e2",
       "stableId": "product-chat-comments",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Product/Chat & Comments"
     },
@@ -1408,7 +1410,7 @@
       "status": "historical",
       "implementation": "mixed",
       "boundary": "fixtures",
-      "notes": "Retained first-created-agent sidebar/landing design predates personal primary-agent selection. Shared production conversation components remain useful.",
+      "notes": "Retained first-created-agent sidebar/landing design predates personal primary-agent selection. Shared production conversation components remain useful. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agent-chat.md",
@@ -1429,7 +1431,7 @@
         "ui/storybook/prototypes/chat-entry/ChatEntryReview.tsx",
         "ui/storybook/stories/agent-chat/chat-entry.stories.tsx"
       ],
-      "fingerprint": "8e43da9f1bb33d31007ceb6adb20ed6ece6a0cbc99f87ab0cea2172d11d4d2e4",
+      "fingerprint": "f85f60b17e8ac01056cd969e884877e58742cb627c6bf52470bc93a4583cef6c",
       "replacement": "ui/storybook/stories/agents/primary-agent/05-chat.stories.tsx",
       "stableId": "design-explorations-chat-entry",
       "sidebarTitle": "Tasks and conversations/Agent conversations and project handoff/Design explorations/Chat entry"
@@ -1486,7 +1488,7 @@
       "status": "current",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/runs-adapters.md",
@@ -1496,7 +1498,7 @@
         "ui/storybook/prototypes/completed-activity/CompletedActivityPreview.tsx",
         "ui/storybook/stories/tasks/completed-activity.stories.tsx"
       ],
-      "fingerprint": "7c91ff66b892ee3b50680e65cab8c83ec56851a75504ff5e3e6db4270f7b730e",
+      "fingerprint": "fca103da8fa4c7b8b3ec37b60891fca45e8a3848dd826554540a0463b02d5484",
       "stableId": "tasks-completed-activity-preview",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Tasks/Completed activity preview"
     },
@@ -1533,7 +1535,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/runs-adapters.md",
@@ -1546,7 +1548,7 @@
         "ui/storybook/prototypes/composer-model-picker/fixtures.ts",
         "ui/storybook/stories/tasks/composer-mobile-assignee.stories.tsx"
       ],
-      "fingerprint": "b4d5689a5fd6a891e06d98d698f2556832969ac67c56f2e2a8d9da26b0510616",
+      "fingerprint": "4bb7efa59b0a58b1001920f345c16c29643b495b9b7dca2a955c57151d8e9702",
       "stableId": "composer-mobile-assignee-picker",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Composer/Mobile assignee picker"
     },
@@ -1560,7 +1562,7 @@
       "status": "mixed",
       "implementation": "mixed",
       "boundary": "fixtures",
-      "notes": "Most examples use a local picker implementation; live picker examples use ComposerRunSettingsLiveStory. Do not count the whole suite as production parity.",
+      "notes": "Most examples use a local picker implementation; live picker examples use ComposerRunSettingsLiveStory. Do not count the whole suite as production parity. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/runs-adapters.md",
@@ -1574,7 +1576,7 @@
         "ui/storybook/prototypes/composer-model-picker/fixtures.ts",
         "ui/storybook/stories/tasks/composer-model-picker.stories.tsx"
       ],
-      "fingerprint": "f1ddb769d225b27ea4275da372027f7bc6f11ed079a8e7b4a3b7409744707b1f",
+      "fingerprint": "59842301f4280c58f5699a25bdc13f488515e67d4d601ca64c38fd6b87711154",
       "stableId": "composer-model-and-effort-picker",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Composer/Model and effort picker"
     },
@@ -1634,7 +1636,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agents.md",
@@ -1648,7 +1650,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/connection-setup/connection-instructions.stories.tsx"
       ],
-      "fingerprint": "3efdccf3ef32cfd6593a9dd5490337f53be859f7b2f0ecc3d8e3e843be74c7f7",
+      "fingerprint": "2eea32a1604966eb6416b4381691f3b163a25bcd764bf739a9cd91d951d96b3e",
       "stableId": "design-explorations-connections-agent-instructions",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Design explorations/Connections/Agent instructions"
     },
@@ -1662,7 +1664,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/connection-setup.md",
@@ -1675,7 +1677,7 @@
         "ui/storybook/prototypes/ConnectionPoolConnectorHost.tsx",
         "ui/storybook/stories/runs-adapters/connection-pool-connector.stories.tsx"
       ],
-      "fingerprint": "f6208d2a6b919cbd511baefdb5e45f79eb2c2d851e6035ea9778a13fc827544c",
+      "fingerprint": "3cfe5fcb4efa0827661820f44dfb8f25c554655e224f1f04e0be8f6e37485f14",
       "stableId": "connectors-pool-host",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/Connectors/Pool host"
     },
@@ -1688,7 +1690,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/runs-adapters.md",
@@ -1701,7 +1703,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/runs-adapters/connection-pools.stories.tsx"
       ],
-      "fingerprint": "b614f0bcfb914ae817cbfba36d8dd80091068ad6e6a630ec239a7d9f7b3e05c1",
+      "fingerprint": "9f9dc8c60981e8cee31f8434602d0317cdf8ece7a9f56938cb0a7b96c986cc61",
       "stableId": "ai-connections-connection-pools",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Connection pools"
     },
@@ -1817,7 +1819,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/recovery.md",
@@ -1829,7 +1831,7 @@
         "ui/storybook/stories/secrets/credential-access/02-task-page.stories.tsx",
         "ui/storybook/support/credential-access/CredentialTaskPage.tsx"
       ],
-      "fingerprint": "b7f5b355919f9e11c7d079955113f365d3a41e956fd6cc6746e4c3fdddae644e",
+      "fingerprint": "4d1e29eb4684fd157b0792682cce990216c9fffe0fb7ae8347ced51257c9b17f",
       "stableId": "task-credential-access-02-task-page",
       "sidebarTitle": "Apps, channels, and extensions/Secrets and proposals/Task credential access/02 Task page"
     },
@@ -1863,11 +1865,12 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/activity.md",
         "ui/src/components/ActivityCharts.tsx",
+        "ui/src/components/AgentRunnerSelect.tsx",
         "ui/src/components/AsciiArtAnimation.tsx",
         "ui/src/components/CompanyPatternIcon.tsx",
         "ui/src/components/EntityRow.tsx",
@@ -1882,7 +1885,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/activity/data-viz-misc.stories.tsx"
       ],
-      "fingerprint": "5cc019e34fd9a2adae706143c0af4fd78334a2ffefac62eb82d7ec7f64ee0ea3",
+      "fingerprint": "c4144f4e6cb5faadfe9592acd71e586cb60db01bd3ef7533a37182c9c27d7d95",
       "stableId": "product-data-visualization-misc",
       "sidebarTitle": "Oversight and operation/Dashboards and audit trails/Product/Data Visualization & Misc"
     },
@@ -2031,7 +2034,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agents.md",
@@ -2049,7 +2052,7 @@
         "ui/storybook/fixtures/paperclipData.ts",
         "ui/storybook/stories/tasks/dialogs-modals.stories.tsx"
       ],
-      "fingerprint": "d1b6c016e119b19affd5d0af49c55b244d280cb4808d683fd583ac15d2fd1b73",
+      "fingerprint": "d5522df3653b5ee8258374d3406f2680be64621145e7e2ef56944081effbb151",
       "stableId": "product-dialogs-modals",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Product/Dialogs & Modals"
     },
@@ -2109,7 +2112,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/gateways-profiles.md",
@@ -2117,7 +2120,7 @@
         "ui/src/components/DotRunnerConnection.tsx",
         "ui/storybook/stories/runs-adapters/dot-runner-connection.stories.tsx"
       ],
-      "fingerprint": "65219fd330a54350d2c91a485039d2a8dc6886cce3dbde64bce2b514d2bdcc95",
+      "fingerprint": "5a292d4238bf360ae27802109832511728cd60595293fedf8d45fdd0a8232ee7",
       "stableId": "assistant-connections-dot-runner",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/Assistant connections/Dot Runner"
     },
@@ -2218,7 +2221,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/access.md",
@@ -2226,7 +2229,7 @@
         "ui/src/components/new-agent/ExternalAgentInviteContent.tsx",
         "ui/storybook/stories/agents/external-agent-invite/components.stories.tsx"
       ],
-      "fingerprint": "68569d7c53ea9f52a63965a6a7568bf7d34d7fc8b34f404bf2e45cccd5822c3b",
+      "fingerprint": "f18684874d9cdc89a26e987c2420389f0da42daa4edb473b682b96b92db9e816",
       "stableId": "onboarding-external-agent-invitation-components",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Onboarding/External agent invitation/Components"
     },
@@ -2240,7 +2243,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/access.md",
@@ -2250,11 +2253,11 @@
         "ui/src/components/new-agent/AgentBasicsDialog.tsx",
         "ui/src/components/new-agent/ExternalAgentInviteContent.tsx",
         "ui/src/pages/Agents.tsx",
+        "ui/storybook/stories/agents/external-agent-invite/journeys.stories.tsx",
         "ui/storybook/support/external-agent-invite/ExternalAgentInvitePreview.tsx",
-        "ui/storybook/support/external-agent-invite/fixtures.ts",
-        "ui/storybook/stories/agents/external-agent-invite/journeys.stories.tsx"
+        "ui/storybook/support/external-agent-invite/fixtures.ts"
       ],
-      "fingerprint": "1dcbec5f8100e600233a3d2a27124e946f24a3fdb9c6fd4dd2b91e42c7134363",
+      "fingerprint": "480c70c3a0be71a3085cd6e95e98c9eeef29fe5d83ad6b2ed6153d78d6137e88",
       "stableId": "onboarding-external-agent-invitation-journeys",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Onboarding/External agent invitation/Journeys"
     },
@@ -2447,7 +2450,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "ui/src/components/ui/badge.tsx",
@@ -2467,7 +2470,7 @@
         "ui/storybook/stories/foundations/foundations.stories.tsx"
       ],
       "exception": "Shared foundations or contributor guide; no single business capability owns this suite.",
-      "fingerprint": "ed53a4be78a572368f4c22577ccad159699f291eb1d01c242528df3b35cd63fe",
+      "fingerprint": "1a7001bb2903b74643281a25d3b4e29ecb4a14a10bdf69e06d23cc25fce45549",
       "stableId": "foundations-primitive-matrix",
       "sidebarTitle": "Foundations/Primitive Matrix"
     },
@@ -2521,10 +2524,11 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/chat-channels.md",
+        "ui/src/components/AgentRunnerSelect.tsx",
         "ui/src/components/Layout.tsx",
         "ui/src/components/OnboardingWizard.tsx",
         "ui/src/pages/apps/chat/ChatConversationList.tsx",
@@ -2536,11 +2540,11 @@
         "ui/src/pages/apps/chat/GitHubConnectionComplete.tsx",
         "ui/storybook/fixtures/onboardingDraft.ts",
         "ui/storybook/fixtures/paperclipData.ts",
+        "ui/storybook/stories/chat-channels/github-bot-management/management.stories.tsx",
         "ui/storybook/support/github-bot-management/fixture-api.tsx",
-        "ui/storybook/support/github-bot-management/fixtures.ts",
-        "ui/storybook/stories/chat-channels/github-bot-management/management.stories.tsx"
+        "ui/storybook/support/github-bot-management/fixtures.ts"
       ],
-      "fingerprint": "9a432840be84fdfd9e437b851d5a975d13edba7eeca4c6273eb21cf69ed29e32",
+      "fingerprint": "cfcaa3fd3774837c872d32299f205d636f550cedc6d1ef2ed377550a906019c4",
       "stableId": "connectors-github-bot-management",
       "sidebarTitle": "Apps, channels, and extensions/External chat and email/Connectors/GitHub bot management"
     },
@@ -2923,14 +2927,14 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/runs-adapters.md",
         "ui/src/components/AdapterLoginChrome.tsx",
         "ui/storybook/stories/runs-adapters/local-ai-subscription.stories.tsx"
       ],
-      "fingerprint": "7ec5fe9129699ed14dd55c4e3849c602100a1a934bad44b6fd6d31af4e8a0458",
+      "fingerprint": "8f265894f6b0067637f0a0356043a0d76179d81764020f9a78537ecc80e3a72a",
       "stableId": "ai-connections-provider-routing-07-subscription-sign-in",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Provider routing/07 Subscription sign-in"
     },
@@ -2964,7 +2968,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agents.md",
@@ -2974,7 +2978,7 @@
         "ui/src/pages/apps/Browse.tsx",
         "ui/storybook/stories/connection-setup/memory-connectors.stories.tsx"
       ],
-      "fingerprint": "498446eef1e0bae94d8d740335989d615eeddb5961768d900bee994533ed9883",
+      "fingerprint": "3a912f949b397f77b2ab4057414e9b4e9d1e40d5502724bebf5f7e210a32fd4f",
       "stableId": "apps-connections-memory",
       "sidebarTitle": "Apps, channels, and extensions/Connection setup/Apps/Connections/Memory"
     },
@@ -3100,12 +3104,13 @@
       "status": "historical",
       "implementation": "prototype",
       "boundary": "fixtures",
-      "notes": "Retained local wizard predates production ui/src/components/new-agent flow; shared fields do not make the wizard current.",
+      "notes": "Retained local wizard predates production ui/src/components/new-agent flow; shared fields do not make the wizard current. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agents.md",
         "ui/src/components/AdapterLoginChrome.tsx",
         "ui/src/components/AgentConfigForm.tsx",
+        "ui/src/components/AgentRunnerSelect.tsx",
         "ui/src/components/NewIssueDialog.tsx",
         "ui/src/components/RuntimeTestCard.tsx",
         "ui/src/components/agent-config-primitives.tsx",
@@ -3124,7 +3129,7 @@
         "ui/storybook/stories/agents/new-agent-onboarding.stories.tsx"
       ],
       "replacement": "ui/storybook/stories/agents/agent-persona-pages.stories.tsx",
-      "fingerprint": "4f8600fabe74a9c84e6fd6501f8f7cf9c1e1b5926bf2086d3bafaf2b2ed17a94",
+      "fingerprint": "0d78c2518fb75d3c079684572bdd4b2c288f92f58051e3cd66f2aa60e22c5cb1",
       "stableId": "onboarding-new-agent",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Onboarding/New agent"
     },
@@ -3211,10 +3216,11 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/onboarding.md",
+        "ui/src/components/AgentRunnerSelect.tsx",
         "ui/src/components/OnboardingWizard.tsx",
         "ui/src/components/onboarding/PillGuy.tsx",
         "ui/src/components/onboarding/Stepper.tsx",
@@ -3222,7 +3228,7 @@
         "ui/storybook/fixtures/onboardingEnvironment.ts",
         "ui/storybook/stories/onboarding/onboarding-agent-arc.stories.tsx"
       ],
-      "fingerprint": "b963de5ca45df1b937323d98f79221755215038490df854191b8ece8e7c6e174",
+      "fingerprint": "17189193e8ad01810a0606a38862732c14bf43d541449acd4b342434826db096",
       "stableId": "onboarding-agent-arc",
       "sidebarTitle": "Getting started and access/Onboarding and first work/Onboarding/Agent arc"
     },
@@ -3235,7 +3241,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/onboarding.md",
@@ -3243,7 +3249,7 @@
         "ui/src/components/ui/button.tsx",
         "ui/storybook/stories/onboarding/onboarding-character.stories.tsx"
       ],
-      "fingerprint": "a5dcbade2bfe0d1ac11473ae8ee14112a22fd2d51bc9bf3a86c9a979da396b91",
+      "fingerprint": "4d3998161d4d1a02a72014f3ea33a41ff096969fec90f7abf50f2735b4453a8f",
       "stableId": "onboarding-character",
       "sidebarTitle": "Getting started and access/Onboarding and first work/Onboarding/Character"
     },
@@ -3257,7 +3263,7 @@
       "status": "historical",
       "implementation": "prototype",
       "boundary": "fixtures",
-      "notes": "Older tile/mode preview; onboarding-agent-arc mounts the production wizard.",
+      "notes": "Older tile/mode preview; onboarding-agent-arc mounts the production wizard. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/onboarding.md",
@@ -3265,7 +3271,7 @@
         "ui/storybook/stories/onboarding/onboarding-connect-model.stories.tsx"
       ],
       "replacement": "ui/storybook/stories/onboarding/onboarding-agent-arc.stories.tsx",
-      "fingerprint": "d25e90d99be339dd918c5b0ca388683be54feae4750e4f358b675c359b75be77",
+      "fingerprint": "96a36e9be6ba34c1e4c5eff1fb222474217b47559450916b79dba77462df9638",
       "stableId": "onboarding-connect-a-model",
       "sidebarTitle": "Getting started and access/Onboarding and first work/Onboarding/Connect a model"
     },
@@ -3393,7 +3399,7 @@
       "status": "unreviewed",
       "implementation": "guide",
       "boundary": "static",
-      "notes": "Review guide retained; explanatory content does not establish runtime or production coverage.",
+      "notes": "Review guide retained; explanatory content does not establish runtime or production coverage. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agent-chat.md",
@@ -3401,7 +3407,7 @@
         "maps/feature-map/tasks.md",
         "ui/storybook/stories/agents/primary-agent/00-review-guide.stories.tsx"
       ],
-      "fingerprint": "851f4f865947d60c6b17d8eef65b78035caf27dcbd0ec2ac46afaad7ed38fa78",
+      "fingerprint": "12e9fb092fb9b374a621f5408f5b965735d4882da8a25ba50f6984c74dad068e",
       "stableId": "primary-agent-00-review-guide",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Primary Agent/00 Review guide"
     },
@@ -3416,7 +3422,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agent-chat.md",
@@ -3436,7 +3442,7 @@
         "ui/storybook/stories/agents/primary-agent/01-components.stories.tsx",
         "ui/storybook/support/primary-agent/PrimaryAgentStory.tsx"
       ],
-      "fingerprint": "158129bcc28622cc3de88f13b51620bcc3e7b634b1f69938c7f4ff9892b7d356",
+      "fingerprint": "c90b622fe0b8451444052b7da360ac3cf3fc265fc904f722a15cc84abf9a6af8",
       "stableId": "primary-agent-01-components",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Primary Agent/01 Components"
     },
@@ -3451,7 +3457,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agent-chat.md",
@@ -3470,7 +3476,7 @@
         "ui/storybook/stories/agents/primary-agent/02-sidebar.stories.tsx",
         "ui/storybook/support/primary-agent/PrimaryAgentStory.tsx"
       ],
-      "fingerprint": "3ad1e1e519d3a0e02ec2fd09cb64cd1dbf2e592712a6418e03d075c3a462fa75",
+      "fingerprint": "a66bd850ae9342250019d93f64675b40034521046bfefa7463485ba75b204053",
       "stableId": "primary-agent-02-sidebar",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Primary Agent/02 Sidebar"
     },
@@ -3485,7 +3491,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agent-chat.md",
@@ -3504,7 +3510,7 @@
         "ui/storybook/stories/agents/primary-agent/03-agents.stories.tsx",
         "ui/storybook/support/primary-agent/PrimaryAgentStory.tsx"
       ],
-      "fingerprint": "a9a767d5708e58e8d5ab4a893a6723c96a9cb17f90459dab19104701dcd2850b",
+      "fingerprint": "5434893e2bb65a53d8b001a8300115ad37e61e06aab724ad7ba7ebc192246ab5",
       "stableId": "primary-agent-03-agents",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Primary Agent/03 Agents"
     },
@@ -3519,7 +3525,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agent-chat.md",
@@ -3538,7 +3544,7 @@
         "ui/storybook/stories/agents/primary-agent/04-new-task.stories.tsx",
         "ui/storybook/support/primary-agent/PrimaryAgentStory.tsx"
       ],
-      "fingerprint": "b8e2d721f79dcc64210f4c7b35f09536262a6a23f72241174f3a832fbed2bba3",
+      "fingerprint": "b93a2799055f25436e136f591115f02dc41d041dfcd4a551f846ba1c7b1e1acd",
       "stableId": "primary-agent-04-new-task",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Primary Agent/04 New task"
     },
@@ -3553,7 +3559,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agent-chat.md",
@@ -3572,7 +3578,7 @@
         "ui/storybook/stories/agents/primary-agent/05-chat.stories.tsx",
         "ui/storybook/support/primary-agent/PrimaryAgentStory.tsx"
       ],
-      "fingerprint": "e05752da7c5a429dbb4922bb995fb9579ac7163e6c4af65cf22c8e8d82008f33",
+      "fingerprint": "e57db27b064518ba1f9f52937714ccd65d8a14a3cc6e81280a8b76acdd0c03c9",
       "stableId": "primary-agent-05-chat",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Primary Agent/05 Chat"
     },
@@ -3587,7 +3593,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agent-chat.md",
@@ -3606,7 +3612,7 @@
         "ui/storybook/stories/agents/primary-agent/06-journeys.stories.tsx",
         "ui/storybook/support/primary-agent/PrimaryAgentStory.tsx"
       ],
-      "fingerprint": "3e6310ce06cb3d7528ea93c1717696fcd4ccff72f36171c2b608ac2e1b18d86e",
+      "fingerprint": "5470489ab0b52e9ba8576bb3b8f8b6cf239835b1942cfd4d6b147eba00ea17e4",
       "stableId": "primary-agent-06-journeys",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Primary Agent/06 Journeys"
     },
@@ -3621,7 +3627,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agent-chat.md",
@@ -3640,7 +3646,7 @@
         "ui/storybook/stories/agents/primary-agent/07-confirmation.stories.tsx",
         "ui/storybook/support/primary-agent/PrimaryAgentStory.tsx"
       ],
-      "fingerprint": "eebd68443ba087a528b29589b085f89c6f968f94ce289e92e75278878da194db",
+      "fingerprint": "cab2b681a80972e9655d69ce62f79e9d6f75f4555051bc970e41b57d0173fca4",
       "stableId": "primary-agent-07-confirmation",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Primary Agent/07 Confirmation"
     },
@@ -4010,7 +4016,7 @@
       "status": "unreviewed",
       "implementation": "guide",
       "boundary": "static",
-      "notes": "Review guide retained; explanatory content does not establish runtime or production coverage.",
+      "notes": "Review guide retained; explanatory content does not establish runtime or production coverage. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/runs-adapters.md",
@@ -4019,7 +4025,7 @@
         "ui/storybook/prototypes/provider-routing/story-support.ts",
         "ui/storybook/stories/runs-adapters/provider-routing-00-overview.stories.tsx"
       ],
-      "fingerprint": "58ea208bbfd6bbc068ff89a49aa2c71d55f244710d84f8d8574511bcc3593257",
+      "fingerprint": "bc8772a5d090687032ad20a4c7971b529671492ebd92898562d85a01c0a14ff0",
       "stableId": "ai-connections-provider-routing-00-overview",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Provider routing/00 Overview"
     },
@@ -4032,7 +4038,7 @@
       "status": "mixed",
       "implementation": "mixed",
       "boundary": "fixtures",
-      "notes": "Design-review route uses simulated account/provider state; audit the rendered subject before treating it as the live connection flow.",
+      "notes": "Design-review route uses simulated account/provider state; audit the rendered subject before treating it as the live connection flow. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/runs-adapters.md",
@@ -4041,6 +4047,7 @@
         "ui/src/components/AgentActionButtons.tsx",
         "ui/src/components/AgentConfigForm.tsx",
         "ui/src/components/AgentContextualSidebar.tsx",
+        "ui/src/components/AgentRunnerSelect.tsx",
         "ui/src/components/NewIssueDialog.tsx",
         "ui/src/components/RuntimeTestCard.tsx",
         "ui/src/components/agent-config-primitives.tsx",
@@ -4069,7 +4076,7 @@
         "ui/storybook/prototypes/provider-routing/story-support.ts",
         "ui/storybook/stories/runs-adapters/provider-routing-01-onboarding.stories.tsx"
       ],
-      "fingerprint": "f39e0ecde64690f67d56519efc0b7b45f790f21b7836057f6735fffaff3d3ef5",
+      "fingerprint": "5b02a524225cffca73d39ca8045afeceed255e1629f3964fa5568f5540d46328",
       "stableId": "ai-connections-provider-routing-01-onboarding",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Provider routing/01 Onboarding"
     },
@@ -4082,7 +4089,7 @@
       "status": "mixed",
       "implementation": "mixed",
       "boundary": "fixtures",
-      "notes": "Design-review route uses simulated account/provider state; audit the rendered subject before treating it as the live connection flow.",
+      "notes": "Design-review route uses simulated account/provider state; audit the rendered subject before treating it as the live connection flow. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/runs-adapters.md",
@@ -4100,7 +4107,7 @@
         "ui/storybook/prototypes/provider-routing/story-support.ts",
         "ui/storybook/stories/runs-adapters/provider-routing-02-connect.stories.tsx"
       ],
-      "fingerprint": "728d7d6f61446c644f7d1402b683ade30dbef0c893e409a5fa9526e247e1c179",
+      "fingerprint": "683c3cab73497cff4a8acb69d937b333266642fb016272f36f589b63fd43296d",
       "stableId": "ai-connections-provider-routing-02-connect",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Provider routing/02 Connect"
     },
@@ -4113,7 +4120,7 @@
       "status": "mixed",
       "implementation": "mixed",
       "boundary": "fixtures",
-      "notes": "Design-review route uses simulated account/provider state; audit the rendered subject before treating it as the live connection flow.",
+      "notes": "Design-review route uses simulated account/provider state; audit the rendered subject before treating it as the live connection flow. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/runs-adapters.md",
@@ -4122,6 +4129,7 @@
         "ui/src/components/AgentActionButtons.tsx",
         "ui/src/components/AgentConfigForm.tsx",
         "ui/src/components/AgentContextualSidebar.tsx",
+        "ui/src/components/AgentRunnerSelect.tsx",
         "ui/src/components/NewIssueDialog.tsx",
         "ui/src/components/RuntimeTestCard.tsx",
         "ui/src/components/agent-config-primitives.tsx",
@@ -4150,7 +4158,7 @@
         "ui/storybook/prototypes/provider-routing/story-support.ts",
         "ui/storybook/stories/runs-adapters/provider-routing-03-agent.stories.tsx"
       ],
-      "fingerprint": "5d0c5dcd46b3814727322016a2bb4b58695f1435a9bd015c67898b549aac40fb",
+      "fingerprint": "72aa608dbb3c4e359241385a2d7b5ffd25878726029b1d5c6935a4155051b295",
       "stableId": "ai-connections-provider-routing-03-agent",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Provider routing/03 Agent"
     },
@@ -4163,7 +4171,7 @@
       "status": "mixed",
       "implementation": "mixed",
       "boundary": "fixtures",
-      "notes": "Design-review route uses simulated account/provider state; audit the rendered subject before treating it as the live connection flow.",
+      "notes": "Design-review route uses simulated account/provider state; audit the rendered subject before treating it as the live connection flow. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/runs-adapters.md",
@@ -4183,7 +4191,7 @@
         "ui/storybook/prototypes/provider-routing/story-support.ts",
         "ui/storybook/stories/runs-adapters/provider-routing-04-manage.stories.tsx"
       ],
-      "fingerprint": "34331e78cd92bccd47f5e2c7b83609e137846117e137615b4bd29bda065524e4",
+      "fingerprint": "ee361ab94561034dfbc783f5a1898a9f5b84c7bdef1ae9a0d2b17da22e7a2387",
       "stableId": "ai-connections-provider-routing-04-manage",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Provider routing/04 Manage"
     },
@@ -4196,7 +4204,7 @@
       "status": "mixed",
       "implementation": "mixed",
       "boundary": "fixtures",
-      "notes": "Design-review route uses simulated account/provider state; audit the rendered subject before treating it as the live connection flow.",
+      "notes": "Design-review route uses simulated account/provider state; audit the rendered subject before treating it as the live connection flow. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/runs-adapters.md",
@@ -4208,7 +4216,7 @@
         "ui/storybook/prototypes/provider-routing/story-support.ts",
         "ui/storybook/stories/runs-adapters/provider-routing-05-recovery.stories.tsx"
       ],
-      "fingerprint": "fe9596ebe4de1f2e315d6e024c636f56e0b253b3af5d3a9c4cd6a3015309e7e7",
+      "fingerprint": "d03f0974269ac139130baf91b31b439947affe293a2639368bf8bb05868e5352",
       "stableId": "ai-connections-provider-routing-05-recovery",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Provider routing/05 Recovery"
     },
@@ -4221,11 +4229,12 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Design-review route uses simulated account/provider state; audit the rendered subject before treating it as the live connection flow.",
+      "notes": "Design-review route uses simulated account/provider state; audit the rendered subject before treating it as the live connection flow. Runner display/default/effort and matching-discovery source changes reviewed; existing fixture, proposal and historical scope retained. No new rendering, play, backend or provider qualification is claimed.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/runs-adapters.md",
         "ui/src/components/AgentConfigForm.tsx",
+        "ui/src/components/AgentRunnerSelect.tsx",
         "ui/src/components/agent-config-primitives.tsx",
         "ui/src/components/ai-connections/AiConnectionField.tsx",
         "ui/src/components/ai-connections/AiConnectionSelect.tsx",
@@ -4239,7 +4248,7 @@
         "ui/storybook/prototypes/provider-routing/shared.tsx",
         "ui/storybook/stories/runs-adapters/provider-routing-06-production.stories.tsx"
       ],
-      "fingerprint": "ab0fe3f233b6f8dafdb6a946447535366ba687b9ccf8fafd2b877aa4e7cac230",
+      "fingerprint": "fba4e12f554fb8fdcbdf72276e71d0d891716055b507951352216ebd93f5932f",
       "stableId": "ai-connections-provider-routing-06-production-components",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/AI Connections/Provider routing/06 Production components"
     },
@@ -4589,7 +4598,7 @@
       "status": "current",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/runs-adapters.md",
@@ -4604,7 +4613,7 @@
         "ui/storybook/prototypes/runner-activity/RunnerActivityPreview.tsx",
         "ui/storybook/stories/tasks/runner-activity.stories.tsx"
       ],
-      "fingerprint": "f39f36b1276c741530f6da95724d0e29fbc43c3bdd87b75640047bbc9f753810",
+      "fingerprint": "191bee2b49405bbe22c32f773d4f66709cfe3410abbb0c91dd69e06b566d47d0",
       "stableId": "tasks-runner-activity-preview",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Tasks/Runner activity preview"
     },
@@ -4710,14 +4719,14 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/runs-adapters.md",
         "ui/src/components/task-chat/RunnerGoalWidget.tsx",
         "ui/storybook/stories/runs-adapters/session-goals.stories.tsx"
       ],
-      "fingerprint": "91775a33b452fed0055f7e607384f3f95801a8bafbdf369cf149f8ebcc3943a8",
+      "fingerprint": "780707e94f1428ee3e8475363981c35ef38e68fbb7fa34b14cf30ec63a74f2b6",
       "stableId": "composer-session-goals",
       "sidebarTitle": "Agents and reusable capabilities/Runs, harnesses, and model accounts/Composer/Session goals"
     },
@@ -5050,14 +5059,14 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/agents.md",
         "ui/src/components/SummarySlotCard.tsx",
         "ui/storybook/stories/agents/summary-slot-card.stories.tsx"
       ],
-      "fingerprint": "810f833adef832e3eaf3a0e70da1b433d6c1bb59deb7928725e4de48753c0000",
+      "fingerprint": "71610d108188e790a73c24d754dd1025db879c619a863dac97b7d8bac4b0fb62",
       "stableId": "summaries-summaryslotcard",
       "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Summaries/SummarySlotCard"
     },
@@ -5096,7 +5105,7 @@
       "status": "unreviewed",
       "implementation": "production",
       "boundary": "fixtures",
-      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed.",
+      "notes": "Shipped subjects identified through imports and local wrappers; full state, fixture-contract and route parity remain unreviewed. Runner-default recipe text reviewed; rendered subjects and fixture contracts are unchanged by that documentation update.",
       "reviewedAt": "2026-10-12",
       "sources": [
         "maps/feature-map/runs-adapters.md",
@@ -5108,7 +5117,7 @@
         "ui/src/components/task-chat/task-chat-model.ts",
         "ui/storybook/stories/tasks/task-chat-chain-of-thought.stories.tsx"
       ],
-      "fingerprint": "2c926951a7911a3ca79ceae50578e581f389e7cffe68bce15e862ae95a429644",
+      "fingerprint": "54ffccb3adcbf9197aca2903fa1bb1550f42f50740f005a3d2d6ca2330190074",
       "stableId": "tasks-task-chat-review-fixes",
       "sidebarTitle": "Tasks and conversations/Task creation and lifecycle/Tasks/Task chat review fixes"
     },
@@ -5584,6 +5593,38 @@
       "fingerprint": "cbe4b5d61324f8eec1dfff9583dc84eab5c83947ff947f5c381d00217b29b5e2",
       "stableId": "workspaces-service-control-bar",
       "sidebarTitle": "Projects and execution/Workspaces, services, and files/Workspaces/Service control bar"
+    },
+    {
+      "file": "ui/storybook/stories/agents/codex-runner-creation.stories.tsx",
+      "capabilities": [
+        "agents/hire",
+        "runs-adapters/availability",
+        "runs-adapters/validation"
+      ],
+      "purpose": "Codex runner creation, explicit Legacy, experimental harness links and setup failure",
+      "status": "unreviewed",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Production NewAgent and AgentBasicsDialog with an isolated fetch boundary. Native/Legacy replies and save mutations are simulated; source inspection does not establish all play cases or provider/default qualification. Existing eight story IDs retained through explicit metadata and feature placement. Native adapter inventory is not duplicated when the shared preview provides it.",
+      "reviewedAt": "2026-10-12",
+      "sources": [
+        "maps/feature-map/agents.md",
+        "maps/feature-map/runs-adapters.md",
+        "ui/src/components/AgentRunnerSelect.tsx",
+        "ui/src/components/agent-config-defaults.ts",
+        "ui/src/components/new-agent/AgentBasicsDialog.tsx",
+        "ui/src/components/new-agent/AgentProviderConnection.tsx",
+        "ui/src/components/new-agent/NewAgentSetup.tsx",
+        "ui/src/lib/new-agent-adapters.ts",
+        "ui/src/lib/new-agent-runtime-config.ts",
+        "ui/src/pages/NewAgent.tsx",
+        "ui/storybook/fixtures/onboardingEnvironment.ts",
+        "ui/storybook/fixtures/paperclipData.ts",
+        "ui/storybook/stories/agents/codex-runner-creation.stories.tsx"
+      ],
+      "fingerprint": "323f32e42c70dd18285f4b8472d000b9bea4d33c3418770d8be0fcdd3db013d7",
+      "stableId": "agents-codex-runner-creation",
+      "sidebarTitle": "Agents and reusable capabilities/Hiring, configuration, and organization/Codex runner/Creation"
     }
   ]
 }

@@ -185,3 +185,51 @@ comparisons and production provider acceptance were not run. Native lifecycle
 behavior remains with the linked transport controls and their existing hosted
 CI fixtures. Catalog validation proves structure and reviewed dependency hashes,
 not that these live journeys passed.
+
+## Claude/Codex runner composition review — 2026-10-12
+
+Source context: canonical runtime prerequisite
+`64c074fb8da1b31f8d6042c4fef48dc4164e759b` composed with the Codex dependency
+and local Claude behavior at `304e95c320`; the catalog/story changes in this
+checkpoint are recorded below. This pass covers changed source dependencies and
+six selected fixture interactions. It is not a full state-parity or Linux visual
+baseline comparison, and it does not qualify providers or default rollout.
+
+The shared preview now supplies the production general-settings response and
+resolved runner-discovery fields required by the matching-discovery guard. Its
+Claude/Codex defaults explicitly simulate Legacy; the independent Codex creation
+fixture simulates a qualified native default. The native inventory is not added
+twice. Opus 5.5 joins the model metadata without replacing explicit older models.
+All fixtures remain isolated from live providers and production accounts.
+
+Fifty-three affected entries retain their previous current/mixed/historical/
+unreviewed classifications. Source changes include shared runner controls,
+branding, model/effort/default discovery, and the associated recipes. Existing
+Select subjects remain intact while the shared module adds the runner popover;
+no new primitive coverage is inferred. Direct runner-control dependencies are
+listed where the rendered form/wizard uses them. The new Codex creation file is
+placed in the agents feature home with explicit stable ID
+`agents-codex-runner-creation`; all eight existing IDs survive. All 2,223 current
+story IDs match the pre-move inventory, and 224 files are accounted for.
+
+An owned Storybook 10.6.0 dev server on port 6195 and the in-app browser executed
+these existing play functions. Each displayed `Story status: Pass`, with its
+observable result checked and no captured browser errors:
+
+| Story ID | Observed result |
+| --- | --- |
+| `agents-codex-runner-creation--automatic-codex` | Runner shows Paperclip Runner as default with the old experimental gate disabled |
+| `agents-codex-runner-creation--explicit-legacy` | Runner remains Legacy |
+| `agents-codex-runner-creation--setup-failure` | Missing-runner failure is visible and the override stays available |
+| `agents-codex-runner-creation--task-ready` | Native fixture setup reaches the task-ready confirmation |
+| `onboarding-agent-arc--claude-api-key` | Claude API-key entry is visible; no live key is entered |
+| `onboarding-agent-arc--connect-with-saved-claude-subscription` | Simulated saved connection advances to Review |
+
+Revisiting Automatic Codex after Task Ready restores the Connect step, its native
+default and a disabled Confirmation step; no hired-agent state leaks. This is
+fixture reset evidence, not persisted backend/session evidence. Other plays,
+full themes/mobile variants in this Storybook, accessibility grading and Linux
+baseline comparisons are not run. The retained product preview's separate mobile
+inspection remains bound to its earlier compiled source, and final installed
+product/provider checks remain pending. The catalog checker and nine checker
+controls pass; UI noemit, maps and token gates pass on the composed source.

@@ -6,7 +6,6 @@ import { models } from "@paperclipai/adapter-codex-local";
 import { storybookHiredAgent } from "../../fixtures/paperclipData";
 import { resetOnboardingFixtureState, setOnboardingFixtureState } from "../../fixtures/onboardingEnvironment";
 
-/** Real creation screen; existing Storybook API fixtures provide isolated accounts. */
 function installCodexCreationFixture({ setupFailure = false, nativeRunnerEnabled = false, unqualifiedTarget = false }: { setupFailure?: boolean; nativeRunnerEnabled?: boolean; unqualifiedTarget?: boolean } = {}) {
   resetOnboardingFixtureState();
   setOnboardingFixtureState({ environments: "local", authSignal: "present", localLoginStatus: "ready", savedManagedSubscription: "openai" });
@@ -27,7 +26,7 @@ function installCodexCreationFixture({ setupFailure = false, nativeRunnerEnabled
     if (url.pathname === "/api/adapters") {
       const response = await previous(input, init);
       const adapters = (await response.json()).map((adapter: { type: string }) => adapter.type === "codex_local" ? { ...adapter, supportedRunners: unqualifiedTarget ? ["legacy"] : ["paperclip", "legacy"], defaultRunner: unqualifiedTarget ? "legacy" : "paperclip" } : adapter);
-      return Response.json(nativeRunnerEnabled || unqualifiedTarget ? [...adapters, { type: "paperclip_runner", label: "Paperclip Runner", source: "builtin", loaded: true, disabled: false, modelsCount: 0 }] : adapters);
+      return Response.json(adapters.some((adapter: { type: string }) => adapter.type === "paperclip_runner") || !(nativeRunnerEnabled || unqualifiedTarget) ? adapters : [...adapters, { type: "paperclip_runner", label: "Paperclip Runner", source: "builtin", loaded: true, disabled: false, modelsCount: 0 }]);
     }
     if (url.pathname.endsWith("/adapters/codex_local/models")) return Response.json(models);
     if (url.pathname.endsWith("/adapters/codex_local/test-environment")) {
@@ -52,7 +51,8 @@ function installCodexCreationFixture({ setupFailure = false, nativeRunnerEnabled
 }
 
 const meta = {
-  title: "Agents/Codex runner/Creation",
+  id: "agents-codex-runner-creation",
+  title: "Agents and reusable capabilities/Hiring, configuration, and organization/Codex runner/Creation",
   component: NewAgent,
   parameters: { layout: "fullscreen", initialEntries: ["/PAP/agents/new?name=Nova&adapterType=codex_local"], docs: { description: { component: "Production NewAgent page and shared pickers. Accounts and API replies use isolated Storybook fixtures; these stories establish UI behavior, not live execution qualification. The native default works with the old experimental gate off." } } },
   beforeEach: ({ parameters }) => installCodexCreationFixture(parameters.codexCreationFixture),

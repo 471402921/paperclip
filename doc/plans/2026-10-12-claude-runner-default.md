@@ -744,3 +744,36 @@ not rollout qualification. Catalog fingerprints/classification and affected stor
 rendering must be reconciled after the final parent is frozen; source-only review
 is not an executed Storybook or provider pass. Published draft heads remain fixed
 while the source owner finishes the canonical contribution/catalog cleanup.
+
+## Published canonical parent and later master blocker — 2026-10-12
+
+The canonical prerequisite is published as
+`64c074fb8da1b31f8d6042c4fef48dc4164e759b`; all 54 exact-head checks pass
+with four conditional skips, fresh 5/5 and all review threads resolved. Its hosted
+native transport suite passes 246/246, closing the fake-native-fixture limitation
+for that literal source. Its four provider-free producers also pass, while clean
+consumers remain in progress. Those checks are not relabeled as this chat's Claude
+input/profile composition. Root retains sequential normal merge/staging ownership;
+code-owner approval is still required and production is not promoted.
+
+Local composition preserves the source repair with no duplicate lifecycle delta:
+the transport diff against 64 contains only Claude effort additions. The old Codex
+base branch `1a0ca66242121e39d88455aa2b52a07acc4a07d9` still lacks the current-
+master parent, so publishing the current protocol would expose 468 upstream files.
+The root-owned dependency must be reconciled before the review slices can again
+be verified under the 100-file limit. Cross-chat dispatch still needs direct
+human authorization in this chat; a concrete dependency-coordination question is
+pending. No frozen root branch was mutated.
+
+Master then advanced to task-workspace source
+`f329b24ee12496e710ad17377ec7716e0eee22ef`, making the canonical prerequisite
+conflicted. The source owner is reconciling its three conflicts and requested that
+leaf CI/package campaigns wait for the next published parent. All local Claude
+changes and earlier package/task evidence are preserved, and no new paid turn,
+local Rust/Docker build or leaf package campaign is dispatched during that hold.
+
+The current Storybook catalog is reconciled with 224 story files and all 2,223
+pre-move IDs preserved. Fifty-three source-affected entries retain their prior
+review classifications. Six bounded fixture plays and reset pass; exact cases,
+source scope, simulated boundaries and omitted coverage are recorded in
+`maps/storybook-map/REVIEW.md`. This does not qualify the final installed runtime.
