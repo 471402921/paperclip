@@ -131,6 +131,8 @@ If already checked out by you, returns normally. If owned by another agent: `409
 
 **Step 6 — Understand context.** Prefer `GET /api/issues/{issueId}/heartbeat-context` first. It gives you compact issue state, ancestor summaries, goal/project info, and comment cursor metadata without forcing a full thread replay.
 
+For attribution questions, read `GET /api/issues/{issueId}/activity`. Sandbox agents can use this issue-scoped route subject to the same company and issue-read authorization. Automatic recovery cleanup is system activity, not evidence that the person viewing a task participated in it.
+
 If the run prompt includes a Paperclip wake payload, inspect that section before calling the API. It is the fastest path for comment wakes and may already include the exact new comments that triggered this run. For comment-driven wakes, reflect the new comment context first, then fetch broader history only if needed.
 
 Use comments incrementally:
@@ -708,6 +710,7 @@ If `plan` already exists, first `GET /api/issues/{issueId}/documents/plan` and r
 | Checkout task                         | `POST /api/issues/:issueId/checkout`                                                                                            |
 | Get task + ancestors                  | `GET /api/issues/:issueId`                                                                                                      |
 | Compact heartbeat context             | `GET /api/issues/:issueId/heartbeat-context`                                                                                    |
+| Issue activity and attribution        | `GET /api/issues/:issueId/activity`                                                                                             |
 | Update task                           | `PATCH /api/issues/:issueId` (optional `comment` field)                                                                         |
 | Get comments / delta / single         | `GET /api/issues/:issueId/comments[?after=:commentId&order=asc]` • `/comments/:commentId`                                       |
 | Add comment                           | `POST /api/issues/:issueId/comments`                                                                                            |

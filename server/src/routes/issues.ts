@@ -1,6 +1,7 @@
 import { parseObject } from "../adapters/utils.js";
 import { enqueueFastResponse } from "../services/fast-responses.js";
 import { hasRequiredWorkspaceRecovery, LEGACY_WORKSPACE_RECOVERY_SCHEMA } from "../services/workspace-restore-recovery-state.js";
+import { hasUnverifiedNativeWorkspaceFinalizationOwner } from "../services/native-runtime/native-workspace-finalization-recovery-state.js";
 import { monitorPoliciesEqual, applyActorMonitorScheduledBy, assertCanManageIssueMonitor, summarizeIssueMonitor } from "../services/issue-monitors.js";
 import type { IssuePrivacyConstraints } from "@paperclipai/shared";
 import { canActorReadHeartbeatRun } from "../services/heartbeat-run-privacy.js";
@@ -4344,6 +4345,10 @@ export function issueRoutes(
         : input.activeRecoveryAction;
     if (!activeRecoveryAction) return null;
 
+    if (await hasUnverifiedNativeWorkspaceFinalizationOwner(db, activeRecoveryAction)) {
+      return activeRecoveryAction;
+    }
+
     const resolutionNote = await classifySourceRecoveryRevalidation(input);
     if (!resolutionNote) return activeRecoveryAction;
 
@@ -4357,13 +4362,12 @@ export function issueRoutes(
     });
     if (!resolved) return activeRecoveryAction;
 
-    const actor = input.actor;
     await logActivity(db, {
       companyId: input.issue.companyId,
-      actorType: actor?.actorType ?? "system",
-      actorId: actor?.actorId ?? "system",
-      agentId: actor?.agentId ?? null,
-      runId: actor?.runId ?? null,
+      actorType: "system",
+      actorId: "recovery",
+      agentId: null,
+      runId: input.actor?.runId ?? null,
       action: "issue.recovery_action_resolved",
       entityType: "issue",
       entityId: input.issue.id,
