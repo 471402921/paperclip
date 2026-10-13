@@ -47,7 +47,7 @@ test("Muse registration validates actual production subjects with honest fixture
     "ui/src/components/new-agent/ExternalAgentInviteContent.tsx",
     "ui/src/components/MuseRunnerConnection.tsx",
     "ui/storybook/support/external-agent-invite/ExternalAgentInvitePreview.tsx",
-    "ui/storybook/stories/external-agent-invite/muse-fixtures.ts",
+    "ui/storybook/support/external-agent-invite/muse-fixtures.ts",
   ]) assert.ok(entry.sources.includes(subject), `Missing rendered subject or fixture: ${subject}`);
   const errors = validateCatalog(root, catalog, stories);
   // Other suites retain their outstanding reviews; this assertion covers Muse only.

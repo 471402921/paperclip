@@ -37,14 +37,16 @@ it("shows contact lag, exact last verified reply, version, and unavailable costs
   expect(container.textContent).toContain("Last persisted public receiver contact");
   expect(container.textContent).toContain("Authenticated worker activity");
   expect(container.textContent).toContain("Last verified replyNot observed");
-  expect(container.textContent).toContain("Client version2");
-  expect(container.textContent).toContain("may lag by up to 10 seconds");
+  expect(container.textContent).toContain("Client version4");
+  expect(container.textContent).toContain("may lag by up to 30 seconds");
   expect(container.textContent).toContain("Usage and costUnavailable");
   expect(container.textContent).not.toContain("$0");
 });
 it("retains cleanup and precise worker attestation while disabled without resolving unknown effects", async () => {
   await render(stoppedMuseConnection);
-  expect(container.textContent).toContain("Detector removal: acknowledged. Worker quiescence: not confirmed");
+  expect(container.textContent).toContain("Detector removal: not confirmed. Worker quiescence: not confirmed");
+  expect(container.textContent).toContain("Cleanup cannot be confirmed through the revoked connection");
+  expect(container.textContent).not.toContain("Cleanup capability expires");
   expect(container.textContent).toContain("Native effect outcomes remain unknown");
   await act(async () => button("Attest this worker stopped").click());
   expect(container.textContent).toContain(museStopBoundary.runId);

@@ -30,7 +30,11 @@ export interface ExternalAgentInvitePreviewProps {
   error?: string;
 }
 
-/** Storybook owns simulation. No timer, fixture code, or fake status ships in the UI component. */
+/**
+ * Offline asset 4 presentation only: copying this fixture simulates milestones;
+ * it never installs credentials, records operator delegation, or accepts work.
+ * Public contact, authenticated background reply, and lifecycle readiness stay separate.
+ */
 export function ExternalAgentInvitePreview({
   initialScreen = "entry", initialPreset = "dot", initialConnection = { phase: "waiting" },
   initialMuseConnection = { paired: false, receiverDetected: false, backgroundReplyVerified: false, ready: false },
