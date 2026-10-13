@@ -12,8 +12,6 @@ import { CREDENTIAL_NAMES, type MatrixExecution } from "./types.js";
 export const installedCliKeys = ["PAPERCLIP_RUNNER_E2E_INSTALLED_CLI", "PAPERCLIP_RUNNER_E2E_INSTALLED_CLI_SHA256", "PAPERCLIP_RUNNER_E2E_INSTALLED_SERVER_ROOT", "PAPERCLIP_RUNNER_E2E_INSTALLED_SERVER_SHA256"] as const;
 const overrideKeys = ["PAPERCLIP_RUNNER_BINARY", "PAPERCLIP_RUNNER_REMOTE_BINARY_PATH", "PAPERCLIP_RUNNER_REMOTE_PROVIDER_PACK_PATH", "PAPERCLIP_RUNNER_ACPX_QUALIFICATION", "PAPERCLIP_ACPX_BUILTIN_ROOT", "PAPERCLIP_ACPX_PROVIDER_PACKAGE_ROOT", "PAPERCLIP_ACPX_PROVIDER_PACKAGE_MANIFEST"] as const;
 const suites = new Set(["extended-harnesses", "pi-native", "pi-controls", "rich-acp-warm-continuity"]);
-// Reuse the production-onboarding, independent file/revision, and restart
-// journeys. Installed proof does not add cases or relax their existing graders.
 const installedCodexCells = new Set([
   "first-task.runner-codex.local.task-card-accept",
   "everyday-workflows.runner-codex.local.build-revise",
@@ -63,7 +61,6 @@ export async function verifyInstalledCli(env: NodeJS.ProcessEnv, executions: rea
   return { schema: "paperclip.e2e.installed-cli-admission/v1", entry, cliRoot, cliSha256, serverRoot, serverEntry, serverSha256, version: cli.version, defaultRuntimeResolution: true, qualificationOverride: false };
 }
 
-/** Clean-install protocol proof only: no credentials, task, or provider turn. */
 export async function probeInstalledCodexStartup(input: {
   consumerRoot: string;
   serverRoot: string;
@@ -110,8 +107,6 @@ export async function probeInstalledCodexStartup(input: {
     const codexSha256 = digest(await readOwned(codexCommand, 512 * 1024 * 1024));
     const codexVersion = execFileSync(codexCommand, ["--version"], { cwd: workspace, env: environment, encoding: "utf8", timeout: 10000, maxBuffer: 16384 }).trim();
     if (!codexVersion || codexVersion.length > 200) throw new Error("Installed Codex startup returned no bounded version identity");
-    // Keep the production security arguments; pin file-only auth for this
-    // credential-free fixture so macOS keychain accounts cannot be consulted.
     const args = runtime.createIsolatedCodexAppServerArgs(environment);
     args.splice(args.indexOf("app-server"), 0, "-c", 'cli_auth_credentials_store="file"');
     bundle = runtime.createRunnerdCodexTransport({ provider: "codex", stateDirectory: directory, environment,
@@ -156,9 +151,6 @@ export async function probeInstalledCodexStartup(input: {
     } catch (error) { cleanupFailures.push(error); }
     if (startupFailed) {
       const evidence = bundle?.evidence();
-      // This zero-turn fixture has empty homes and no provider credentials.
-      // Report only bounded failure text and lifecycle state, never identities
-      // or raw durable state. A close failure cannot hide the startup cause.
       const bounded = (value: unknown) => String(value).replaceAll(directory, "[private-startup]").slice(0, 2000);
       const primaryMessage = bounded(startupFailure instanceof Error ? startupFailure.message : startupFailure);
       const diagnostic = { schema: "paperclip.e2e.installed-codex-startup-failure/v1", platform: `${process.platform}-${process.arch}`,

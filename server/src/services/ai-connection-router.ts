@@ -55,7 +55,6 @@ export function poolMemberRuntimeConfig(member: AiConnectionPoolMember, adapterT
   const efforts = provider === "openai" ? codexLocalReasoningEffortsForModel(model)
     : provider === "anthropic" ? claudeLocalReasoningEffortsForModel(model)
     : provider === "xai" ? grokLocalReasoningEffortsForModel(model) : [];
-  // Claude and Codex carry effort through native admission; other ACPX profiles keep their existing limit.
   const effortKey = adapterType === "paperclip_runner" ? profile.provider === "codex" || (profile.provider === "acpx" && profile.acpxAgent === "claude") ? "modelReasoningEffort" : null
     : provider === "anthropic" ? "effort" : provider === "xai" ? "reasoningEffort" : provider === "openai" ? "modelReasoningEffort" : "variant";
   const requested = overrides.modelReasoningEffort ?? overrides.reasoningEffort ?? overrides.effort ?? overrides.variant;

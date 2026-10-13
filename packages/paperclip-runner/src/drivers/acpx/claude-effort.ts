@@ -8,8 +8,6 @@ export function resolveClaudeEffort(agent: string, value: unknown): ClaudeEffort
   return value;
 }
 export function createClaudeEffortAdmission(expected: ClaudeEffort) {
-  // Every connection, including session/load, must select and acknowledge the
-  // configured effort. A restored preference alone never admits a prompt.
   return createAcpxConfigAdmission(expected, { label: "Claude effort", configId: "effort",
     supportedValues: ["default", "low", "medium", "high", "xhigh", "max"] });
 }

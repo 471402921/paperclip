@@ -13,7 +13,6 @@ import { readConfigValueAtPath, writeConfigValueAtPath } from "./json-schema-sec
 type TemplateRow = typeof environmentCustomImageTemplates.$inferSelect;
 
 export const ENVIRONMENT_CUSTOM_IMAGE_RUNTIME_CONFIG_BINDING_METADATA_KEY = "runtimeConfigBinding";
-/** Measured platform evidence is reserved to explicit server-side environment probes. */
 export const SANDBOX_PLATFORM_PROBE_METADATA_KEY = "paperclipSandboxPlatformProbes";
 export const ENVIRONMENT_CUSTOM_IMAGE_CONFIG_FINGERPRINT_EXCLUDED_PATHS = [
   "timeoutMs",

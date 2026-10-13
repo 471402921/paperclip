@@ -178,7 +178,6 @@ describe("OnboardingWizard — which step it lands on", () => {
     dialogState.onboardingOpen = false;
     dialogState.onboardingOptions = {};
     dialogState.onboardingRouteDismissed = false;
-    // The scoped discovery contract must resolve before the hire seam runs.
     mockAdaptersApi.list.mockResolvedValue(["claude_local", "codex_local"].map(type => ({
       type, loaded: true, disabled: false, defaultRunner: "legacy", supportedRunners: ["legacy"],
     })));

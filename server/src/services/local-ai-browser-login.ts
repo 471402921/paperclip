@@ -56,8 +56,6 @@ export function startLocalBrowserLogin(provider: "anthropic" | "openai", home: s
     async start(_command: string, onData: (chunk: string) => void): Promise<{ exitCode: number | null }> {
       let executable = "claude";
       if (provider === "openai") {
-        // The installed Codex CLI is independent of the runner daemon's glibc floor.
-        // Supported CLI hosts use owned resolution; other platforms keep PATH lookup.
         const legacyPlatform = !((process.platform === "linux" || process.platform === "darwin")
           && (process.arch === "x64" || process.arch === "arm64"));
         try {

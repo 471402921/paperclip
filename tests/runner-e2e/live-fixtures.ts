@@ -64,7 +64,6 @@ export interface LiveFixtureValues {
   agent: AgentRecord;
   project?: ProjectRecord;
   aiConnection?: ManagedAccountFixture;
-  /** Private setup receipt; its lease is included in existing runtime cost accounting. */
   setupProbe?: { leaseId: string; durationMs: number; defaultRunner?: string };
 
   onboardingRuntime?: {
@@ -82,7 +81,6 @@ function value<T>(resolved: ReadonlyMap<string, unknown>, id: string): T {
   return result as T;
 }
 
-/** Preserve task/run attribution and include only this fixture's explicit setup probe. */
 export function selectFixtureRuntimeLeases<T extends {
   id: string; provider?: string | null; heartbeatRunId?: string | null; issueId?: string | null;
 }>(input: { leases: T[]; runIds: string[]; issueId?: string; setupProbeLeaseId?: string }): T[] {
@@ -320,8 +318,6 @@ export async function setupLiveFixtures(input: {
           throw new Error("Native Codex qualification requires this fixture's immutable image-backed environment.");
         }
         const startedAt = Date.now();
-        // One existing explicit connection probe: a fresh lease, bounded platform read,
-        // verified release, and server-owned image evidence before agent creation.
         const probe = await api.post<{ ok: boolean; details?: { platformQualificationRecorded?: boolean; leaseId?: string } }>(
           `/api/environments/${environment.id}/probe?companyId=${encodeURIComponent(company.id)}`,
           {}, { timeout: 330_000 },

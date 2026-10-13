@@ -162,6 +162,9 @@ function installStorybookApiFixtures() {
     if (url.pathname === "/api/instance/settings/experimental") {
       return Response.json(experimentalSettings());
     }
+    if (url.pathname === "/api/instance/settings/general") {
+      return Response.json(instanceGeneralSettingsSchema.parse({}));
+    }
 
     if (url.pathname === "/api/health") {
       return Response.json({ deploymentMode: "authenticated", localAiLoginSupported: onboardingFixtureState.environments === "local" });
@@ -482,9 +485,11 @@ function installStorybookApiFixtures() {
           type: "claude_local",
           label: "Claude Code",
           source: "builtin",
-          modelsCount: 2,
+          modelsCount: 4,
           loaded: true,
           disabled: false,
+          supportedRunners: ["paperclip", "legacy"],
+          defaultRunner: "legacy",
           capabilities: {
             supportsInstructionsBundle: true,
             supportsSkills: true,
@@ -510,6 +515,8 @@ function installStorybookApiFixtures() {
           modelsCount: 3,
           loaded: true,
           disabled: false,
+          supportedRunners: ["paperclip", "legacy"],
+          defaultRunner: "legacy",
           capabilities: {
             supportsInstructionsBundle: true,
             supportsSkills: true,
@@ -522,6 +529,16 @@ function installStorybookApiFixtures() {
             },
           },
         },
+        {
+          type: "paperclip_runner",
+          label: "Paperclip Runner",
+          source: "builtin",
+          modelsCount: 0,
+          loaded: true,
+          disabled: false,
+          supportedRunners: ["paperclip"],
+          defaultRunner: "paperclip",
+        },
       ]);
     }
 
@@ -532,6 +549,7 @@ function installStorybookApiFixtures() {
       const [, , resource] = adapterModelsMatch;
       if (resource === "models") {
         return Response.json([
+          { id: "claude-opus-5-5", label: "Claude Opus 5.5" },
           { id: "claude-opus-4-7", label: "Claude Opus 4.7" },
           { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
           { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
@@ -850,6 +868,73 @@ const preview: Preview = {
     },
   },
   parameters: {
+    options: {
+      storySort: {
+        order: [
+          "Overview",
+          "Getting started and access",
+          [
+            "Onboarding and first work",
+            "Login, invitations, and access",
+            "Companies and portability"
+          ],
+          "Tasks and conversations",
+          [
+            "Task creation and lifecycle",
+            "Delegation, dependencies, and signoff",
+            "Inbox, decisions, and search",
+            "Agent conversations and project handoff",
+            "Questions and approvals",
+            "Steering and queued messages",
+            "Documents, attachments, and work products"
+          ],
+          "Agents and reusable capabilities",
+          [
+            "Hiring, configuration, and organization",
+            "Runs, harnesses, and model accounts",
+            "Skills and Skill Studio",
+            "Team packages and installation"
+          ],
+          "Projects and execution",
+          [
+            "Projects and repositories",
+            "Goals and work alignment",
+            "Workspaces, services, and files",
+            "Execution environments",
+            "Recovery"
+          ],
+          "Apps, channels, and extensions",
+          [
+            "Connection setup",
+            "App access and action permissions",
+            "External chat and email",
+            "Tool gateways and access profiles",
+            "Secrets and proposals",
+            "Plugins"
+          ],
+          "Automation and structured work",
+          [
+            "Routines, schedules, and triggers",
+            "Pipelines, review queues, and learnings",
+            "Cases",
+            "Status cards"
+          ],
+          "Oversight and operation",
+          [
+            "Costs and budgets",
+            "Dashboards and audit trails",
+            "Navigation, profile, and announcements",
+            "Instance operations",
+            "CLI/API and local worktrees"
+          ],
+          "Contributor surfaces",
+          [
+            "Developer previews and diagnostic labs"
+          ],
+          "Foundations"
+        ],
+      },
+    },
     actions: { argTypesRegex: "^on[A-Z].*" },
     a11y: {
       test: "error",

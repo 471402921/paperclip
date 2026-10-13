@@ -756,3 +756,84 @@ Report attachment: `e6206748-a785-4c02-9bbf-f4db8a3b22f9`, work product
 Local receipts: `/private/tmp/claude-responsive-preview-evidence.json`,
 `/private/tmp/claude-responsive-evidence-upload.json`, and
 `/private/tmp/claude-responsive-evidence-independent-check.json`.
+
+## Canonical composition and current contribution rules — 2026-10-12
+
+The source owner committed the stronger shared startup repair as
+`ce23716503a2c9158b5a7ab74ab61571ff4ee7a3`. Local additive merges preserve
+that parent and this chat's Claude effort/resume changes. Eight controls that do
+not need native executables and runner noemit pass in the combined protocol.
+The ninth selected readiness-cycle case timed out while waiting for readiness;
+read-only resolution confirms both the default runner artifact and fake provider
+fixture are absent, with no private runner override. That native case remains a
+hosted CI gate, not a pass. No local native build was performed. Logs:
+`/private/tmp/claude-canonical-startup-composition-controls.log`,
+`/private/tmp/claude-canonical-startup-no-process-controls.log`, and
+`/private/tmp/claude-canonical-startup-composition-types.log`.
+
+The source owner then reconciled current master in `9f59ff36cf`, adding the
+Storybook catalog and contribution rules against new code comments and code files
+crossing 1000 lines. The guided-creation fixture is extracted to
+`ui/src/pages/NewAgent.test-support.tsx`; all 65 cases remain and pass, with UI
+noemit and token gates passing. Fixture component rendering stays inside its
+mock-owning module, including the saved-confirmation reload case. The active test
+file no longer crosses the threshold. Our added explanatory comments are removed;
+the source owner handles the common transport's comment cleanup. Semantic code
+and internal deadlines stay unchanged.
+
+Removing this chat's added sandbox comments changes its raw source attestation to
+`144d62b3415cfedf272b5b052e14af1e41fe50a644af84247fc9c20c7ef7edde`.
+Immutable Pi profiles 23 and 24 remain retained. New Pi profile 25 binds only that
+source revision plus its profile version, digest
+`sha256:dd67387487dadb08da76534c057dc0aa059f7698d1779cbd5fc452813828167a`.
+SDK/executable closures, platforms, model/effort contract and other providers'
+qualification boundaries do not change. Copilot remains pending profile 18.
+Generated TS/Rust descriptors, Rust current/prior fixtures, Docker context and
+current documentation are synchronized. All 119 profile/factory/admission/effort
+controls pass with one existing historical skip, including corrupt-byte rejection
+before spawn/bridge; runner noemit and generation checks pass. The first restricted
+attempt stopped at loopback lease admission and is retained, not counted as byte
+validation. Native/Rust execution and final package qualification remain cloud gates.
+
+The maintain-storybook source review found concrete fixture incompatibilities:
+the general-settings endpoint and scoped runner-discovery defaults were absent.
+The shared preview now returns that settings contract and explicitly simulated
+Legacy discovery for Claude/Codex, exposes the loaded native adapter, and includes
+Opus 5.5 while retaining explicit older-model examples. These fixture defaults are
+not rollout qualification. Catalog fingerprints/classification and affected story
+rendering must be reconciled after the final parent is frozen; source-only review
+is not an executed Storybook or provider pass. Published draft heads remain fixed
+while the source owner finishes the canonical contribution/catalog cleanup.
+
+## Published canonical parent and later master blocker — 2026-10-12
+
+The canonical prerequisite is published as
+`64c074fb8da1b31f8d6042c4fef48dc4164e759b`; all 54 exact-head checks pass
+with four conditional skips, fresh 5/5 and all review threads resolved. Its hosted
+native transport suite passes 246/246, closing the fake-native-fixture limitation
+for that literal source. Its four provider-free producers also pass, while clean
+consumers remain in progress. Those checks are not relabeled as this chat's Claude
+input/profile composition. Root retains sequential normal merge/staging ownership;
+code-owner approval is still required and production is not promoted.
+
+Local composition preserves the source repair with no duplicate lifecycle delta:
+the transport diff against 64 contains only Claude effort additions. The old Codex
+base branch `1a0ca66242121e39d88455aa2b52a07acc4a07d9` still lacks the current-
+master parent, so publishing the current protocol would expose 468 upstream files.
+The root-owned dependency must be reconciled before the review slices can again
+be verified under the 100-file limit. Cross-chat dispatch still needs direct
+human authorization in this chat; a concrete dependency-coordination question is
+pending. No frozen root branch was mutated.
+
+Master then advanced to task-workspace source
+`f329b24ee12496e710ad17377ec7716e0eee22ef`, making the canonical prerequisite
+conflicted. The source owner is reconciling its three conflicts and requested that
+leaf CI/package campaigns wait for the next published parent. All local Claude
+changes and earlier package/task evidence are preserved, and no new paid turn,
+local Rust/Docker build or leaf package campaign is dispatched during that hold.
+
+The current Storybook catalog is reconciled with 224 story files and all 2,223
+pre-move IDs preserved. Fifty-three source-affected entries retain their prior
+review classifications. Six bounded fixture plays and reset pass; exact cases,
+source scope, simulated boundaries and omitted coverage are recorded in
+`maps/storybook-map/REVIEW.md`. This does not qualify the final installed runtime.

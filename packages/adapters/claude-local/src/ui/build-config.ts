@@ -45,8 +45,6 @@ export function buildClaudeLocalConfig(v: CreateConfigValues): Record<string, un
   if (Object.keys(env).length > 0) ac.env = env;
   const nativeSelected = v.runner === "paperclip"
     || ((v.runner === undefined || v.runner === "auto") && v.resolvedRunner === "paperclip");
-  // Only a resolved native form omits the Legacy default. Explicit limits
-  // still reach the server's compatibility check.
   if (!nativeSelected || v.maxTurnsPerRun !== 1000) ac.maxTurnsPerRun = v.maxTurnsPerRun;
   if (nativeSelected && v.adapterSchemaValues?.acpxPermissionMode !== undefined) {
     ac.acpxPermissionMode = v.adapterSchemaValues.acpxPermissionMode;

@@ -13407,7 +13407,6 @@ async function createRunnerdBackendWithinSessionClaim(
   } satisfies NativeSessionBackend & { bindManagedSession(session: NativeSession): NativeSession };
 }
 
-/** Shared task/setup preparation; setup exercises the same remote artifact contract. */
 export function createRemoteNativeArtifactPreparation(input: {
   target: Extract<AdapterExecutionTarget, { kind: "remote" }>;
   runner: CommandManagedRuntimeRunner;
@@ -13420,7 +13419,6 @@ export function createRemoteNativeArtifactPreparation(input: {
   runnerRemoteCodexNpmSpec?: string | null;
   model?: string | null;
   reuseRetainedRunner?: boolean;
-  /** The selected Pi companion or bundled provider image verifies its target-platform artifact. */
   targetPlatformArtifactVerified?: boolean;
   trace?: NativeRunTrace;
   onLog?: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
@@ -13473,9 +13471,6 @@ export function createRemoteNativeArtifactPreparation(input: {
     }
     const versionOutput = `${versionResult.stdout}\n${versionResult.stderr}`;
     const version = parseCodexCliVersion(versionOutput);
-    // The install pin describes our tested image, not a CLI admission rule.
-    // Ordinary installations reach the real app-server/model probe; a version
-    // difference alone must neither fail setup nor replace a working CLI.
     if (version !== REMOTE_PROVIDER_PACK_PINS.codex && !reportedCodexVersions.has(version)) {
       reportedCodexVersions.add(version);
       await input.onLog?.(
@@ -13485,9 +13480,6 @@ export function createRemoteNativeArtifactPreparation(input: {
     }
   };
 
-  // Image policy: keep one latest stable CLI installation shared by native and
-  // local adapters. Preferred bin entries must point to that same installation;
-  // never bake an older global CLI alongside a private runner-only version.
   const discoverPreinstalledExecutable = async (
     name: "paperclip-runnerd" | "codex",
   ) => {
@@ -13522,8 +13514,6 @@ export function createRemoteNativeArtifactPreparation(input: {
   };
 
   const prepare = async (requiredMode: "dial_wss" | "listen_ws") => {
-    // Compatibility metadata does not prove artifact identity. Reuse only the
-    // exact controller-owned bytes when the controller artifact is available.
     const matchesControllerRunnerArtifact = async (executable: string): Promise<boolean> => {
       const expected = createHash("sha256")
         .update(readFileSync(controllerRunnerBinary))
@@ -13545,7 +13535,6 @@ export function createRemoteNativeArtifactPreparation(input: {
           /^[a-f0-9]{64}\s/.test(probe.stdout) &&
           probe.stdout.trim().split(/\s+/)[0] === expected;
       } catch {
-        // An unavailable checksum uses the verified staging path.
         return false;
       }
     };
@@ -13594,9 +13583,6 @@ export function createRemoteNativeArtifactPreparation(input: {
       }
     }
     if (!runnerArtifactPrepared) {
-      // Upload the same artifact used for the controller identity. The server
-      // vendors the runner under vendor/paperclip-runner/bin, so the package
-      // development fallback cannot locate it in a deployed server.
       const sourceBinary = controllerRunnerBinary;
       if (!existsSync(sourceBinary)) {
         throw new Error("runner_remote_artifact_unavailable");

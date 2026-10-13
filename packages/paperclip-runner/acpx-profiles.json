@@ -14,12 +14,12 @@
       "requiresProviderPolicy": false
     },
     "pi": {
-      "agentProfileVersion": 24,
+      "agentProfileVersion": 25,
       "agentServerPackage": "pi-acp",
       "agentServerVersion": "0.0.33",
       "agentRuntimePackage": "@earendil-works/pi-coding-agent",
       "agentRuntimeVersion": "1.0.0",
-      "commandDigest": "sha256:d25d674cda9a0853bdbf0521025099f1424c573d2f533630cb67d90e1bfcda3b",
+      "commandDigest": "sha256:dd67387487dadb08da76534c057dc0aa059f7698d1779cbd5fc452813828167a",
       "requiresProviderPolicy": true
     },
     "cursor": {

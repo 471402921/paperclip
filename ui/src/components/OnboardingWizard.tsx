@@ -1060,9 +1060,6 @@ function OnboardingWizardInner({
   }, effectiveOnboardingOpen && step === 4 && canUseLocalLogin && credentialMode !== "api" &&
     Boolean(managedProvider) && !savedSubscription && !savedKeys.storedLogin.data && !managedBindingForStep(),
   );
-  // A result from a previous selection must not hire or advance this wizard.
-  // Discovery starts after environment settings resolve. A later target or
-  // runner change invalidates the configuration an in-flight test was built from.
   useEffect(() => {
     autoConnectStartedRef.current = false;
     hiringAgentRef.current = null;

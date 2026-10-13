@@ -1,9 +1,6 @@
 import { centsToUsd, unitsToCents, usdToUnits } from "@paperclipai/shared";
 import type { AdapterUsageCheckpoint } from "@paperclipai/adapter-utils";
 
-// Direct Anthropic API list prices, verified per model below:
-// https://platform.claude.com/docs/en/about-claude/pricing
-// Keep this bounded to exact qualified models; aliases and other billers stay unknown.
 const RATE_CARDS: Record<string, { rates: readonly string[]; version: string }> = {
   "claude-sonnet-5": { rates: ["2", "0.2", "4", "10"], version: "anthropic-standard-2026-10-07" },
   "claude-opus-5-5": { rates: ["4", "0.2", "8", "20"], version: "anthropic-standard-2026-10-12" },

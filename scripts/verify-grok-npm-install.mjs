@@ -36,8 +36,6 @@ async function verifyMacConsumer(packageDirectory, sourceRevision, receiptPath) 
     for (const directory of [consumer, home, tools, join(root, 'tmp'), join(root, 'cache')]) mkdirSync(directory);
     const npmCli = realpathSync(execFileSync('/usr/bin/which', ['npm'], { encoding: 'utf8' }).trim());
     symlinkSync(process.execPath, join(tools, 'node'));
-    // npm subprocesses get a Node-only owned tool directory; no ambient harness
-    // command can hide missing installed dependencies.
     const env = { PATH: `${tools}:/usr/bin:/bin:/usr/sbin:/sbin`, HOME: home, TMPDIR: join(root, 'tmp'),
       npm_config_cache: join(root, 'cache'), npm_config_audit: 'false', npm_config_fund: 'false' };
     const run = (command, args, cwd = consumer, runEnv = env) => execFileSync(command, args, { cwd, env: runEnv,
@@ -148,13 +146,8 @@ async function verifyLinuxArmConsumer(packageDirectory, sourceRevision, receiptP
     const daemon = probe('daemon-probe.mjs', installedDaemonProbeSource(installed, '/consumer', sourceRevision));
     assert.equal(daemon.target, 'linux-arm64');
     const codex = probe('codex-probe.mjs', installedCodexProbeSource(installed + '/index.js', '/consumer', undefined, { nativeCodex: true }));
-    // Reuse the existing zero-turn hook as read-only verifier source. All
-    // production imports still resolve from the installed consumer graph.
     cpSync(join(repo, 'tests/runner-e2e/installed-cli.ts'), join(assets, 'installed-cli.ts'));
     writeFileSync(join(assets, 'types.js'), stripTypeScriptTypes(readFileSync(join(repo, 'tests/runner-e2e/types.ts'), 'utf8')));
-    // The restricted install container deliberately forbids nested namespaces.
-    // Keep its lifecycle/no-network proof, then test the exact same bind-mounted
-    // graph on the native host using Codex's normal read-only namespace policy.
     const home = join(root, 'host-home'), hostTmp = join(root, 'host-tmp');
     for (const directory of [home, hostTmp]) mkdirSync(directory, { mode: 0o700 });
     const hostEnv = { PATH: `${dirname(process.execPath)}:/usr/bin:/bin:/usr/sbin:/sbin`, HOME: home, TMPDIR: hostTmp, LC_ALL: 'C', TZ: 'UTC' };
@@ -332,9 +325,6 @@ try {
   timing.stage_pack_ms = Math.round(performance.now() - packStarted);
   Object.assign(timing, packTimings(packs, concurrency));
 
-  // Preserve the exact Linux-produced public tarballs for independent Mac
-  // consumers even if a later Linux runtime probe fails. This is a packaging
-  // receipt, never an installation or provider-admission pass.
   if (process.env.PAPERCLIP_RUNNER_PUBLIC_PACKS_DIR) {
     const output = resolve(process.env.PAPERCLIP_RUNNER_PUBLIC_PACKS_DIR);
     assert.equal(JSON.parse(readFileSync(join(repo, 'server/dist/build-info.json'))).commit, sourceRevision);

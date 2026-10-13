@@ -7,7 +7,6 @@ export interface AgentRunnerAvailability {
   defaultRunner: AgentRunner;
 }
 
-/** Only qualified harnesses graduate their creation default. */
 export function paperclipRunnerProfileForHarness(harness: string): { provider: "codex" } | { provider: "acpx"; acpxAgent: "claude" } | undefined {
   if (harness === "codex_local") return { provider: "codex" };
   if (harness === "claude_local") return { provider: "acpx", acpxAgent: "claude" };

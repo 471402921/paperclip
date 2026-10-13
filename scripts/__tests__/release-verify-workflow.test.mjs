@@ -845,9 +845,6 @@ const waitForFixture = async (predicate, label) => {
   assert.fail(label);
 };
 
-// Execute the workflow's actual coordinator with two tiny local Node commands.
-// Both must cross the start barrier before either can finish; no pnpm, Cargo,
-// provider, registry, or Docker build runs in these fixtures.
 async function withNativePreparationFixture(mode, check) {
   const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'native-preparation-')));
   let controller;
@@ -1014,7 +1011,6 @@ test("ARM qualification binds separate product and reusable-workflow revisions e
         TOOLING_WORKFLOW_REF: "paperclipai/paperclip/.github/workflows/release-smoke.yml@refs/heads/qualification",
         TOOLING_WORKFLOW_PATH: ".github/workflows/release-smoke.yml",
         FIXTURE_PRODUCT_HEAD: productHead, FIXTURE_TOOLING_HEAD: toolingHead, FIXTURE_PREPARED: prepared,
-        // Reusable calls retain the caller context; it must not select tooling.
         GITHUB_REPOSITORY: "different/caller", GITHUB_SHA: "d".repeat(40),
       } });
       assert.equal(result.status, expectedStatus, result.stderr);

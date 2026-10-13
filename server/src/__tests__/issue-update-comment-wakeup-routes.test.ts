@@ -276,8 +276,6 @@ describe("issue update comment wakeups", () => {
     mockIssueService.getWakeableParentAfterChildCompletion.mockResolvedValue(null);
     mockIssueService.getCurrentScheduledRetry.mockResolvedValue(null);
     mockIssueService.listReviewAttention.mockResolvedValue(new Map());
-    // A fresh route graph is fixture preparation, not request execution. Keep
-    // per-case module resets while charging the cold transform to hookTimeout.
     routeFixture = await loadRouteFixture();
   });
 
