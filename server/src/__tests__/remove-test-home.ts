@@ -9,8 +9,7 @@ import path from "node:path";
  * in them read-only (`makeDirectoriesReadOnly` in
  * services/native-runtime/runtime-context.ts), and a run that is still
  * finishing when the worker exits can leave such a bundle under the worker's
- * home. Removing a file inside a read-only directory fails with `EACCES`
- * or, on macOS, the recursive removal can report `ENOTEMPTY` instead.
+ * home. Removing a file inside a read-only directory fails with `EACCES`,
  * Vitest reports it as an unhandled error, and the shard fails after every
  * test passed. So on a permission error every directory in the tree is made
  * writable first and the removal is tried once more.
@@ -23,8 +22,6 @@ export function removeTestHome(home: string): void {
     const permissionError = isPermissionError(error);
     if (!permissionError && (error as NodeJS.ErrnoException | null)?.code !== "ENOTEMPTY") throw error;
     const restored = makeDirectoriesWritable(home);
-    // ENOTEMPTY also has unrelated causes; retry only after restoring an
-    // actual read-only directory, and still surface a failed second removal.
     if (!permissionError && !restored) throw error;
     fs.rmSync(home, options);
   }
@@ -51,7 +48,6 @@ function makeDirectoriesWritable(directory: string): boolean {
       fs.chmodSync(directory, stat.mode | 0o700);
       restored = true;
     } catch {
-      // A directory that cannot be changed still fails the removal below, loudly.
     }
   }
   let entries: fs.Dirent[];

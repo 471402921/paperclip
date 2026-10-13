@@ -1144,8 +1144,6 @@ export function environmentService(db: Db) {
           values.metadata = userMetadata;
         } else {
           const replacement = userMetadata === null ? sql`null::jsonb` : sql`${JSON.stringify(userMetadata)}::jsonb`;
-          // Preserve the current private subtree in the same statement. A route's
-          // earlier read must never replace a newer concurrent probe receipt.
           metadataUpdate = sql`case when ${environments.metadata} ? ${SANDBOX_PLATFORM_PROBE_METADATA_KEY}
             then coalesce(${replacement}, '{}'::jsonb) || jsonb_build_object(
               ${SANDBOX_PLATFORM_PROBE_METADATA_KEY}::text, ${environments.metadata}->${SANDBOX_PLATFORM_PROBE_METADATA_KEY})

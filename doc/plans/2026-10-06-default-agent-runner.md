@@ -2,10 +2,90 @@
 
 Updated 2026-10-12.
 
+## Production readiness: owned startup correction
+
+The human requests production readiness; preparation and normal sequential
+merges remain authorized. Production deployment and provisioning-default
+promotion remain separate actions. Nothing in this checkpoint is merged or
+deployed, and the stack is not production-ready.
+
+Runtime prerequisite behavior is `ce23716503a2c9158b5a7ab74ab61571ff4ee7a3`
+on `codex/runner-native-platform-prerequisites`, in
+[#16028](https://github.com/paperclipai/paperclip/pull/16028). Final qualification
+reproduced close returning before credential preparation drained, followed by
+registration and launch. Both direct close and real driver cancellation failed
+on literal `5a9ce11`. The initial shared repair from Claude commit `463ebb` is
+reused, with independently identified duplicate-admission, shutdown-readiness and
+resume ordering corrections. All five source findings are closed in matching
+source review. Absolute cleanup deadlines, primary cancellation errors,
+unauthenticated-process protection and existing agents' runner choices remain.
+
+The existing suites pass 32 credential-free controls across three files; both
+canonical runner TypeScript no-emit checks pass. No new suite, local Rust/Docker
+build, provider call or credential-content read was used. Actual daemon
+readiness/recovery controls remain **hosted-CI required**: local worktrees lack
+the existing fake-Codex/fake-harness executables. The failed local native attempt
+never reached the readiness assertion and is not qualification. Receipts are
+`/private/tmp/pr2-463ebb-owned-startup-review-closure-receipt.json` and
+`/private/tmp/ci-final-owned-startup-five-gap-closure-review.json`.
+
+Normal automatic merge is disabled and the prerequisite is draft while this
+correction receives fresh full CI, package qualification and 5/5 review.
+Earlier green checks at `5a9ce11` remain historical. Actual code-owner approval
+is still required; no protection is bypassed. The updated runs/adapters map pair
+records source-only scope, bringing the prerequisite review to 63 files after the required Storybook
+catalog review below.
+
+Codex remains `1a0ca66242121e39d88455aa2b52a07acc4a07d9` in
+[#15683](https://github.com/paperclipai/paperclip/pull/15683), based on the previous
+prerequisite. The Claude owner retains its branches, cached guided-setup fix,
+verification and separate $50 allowance. Coordinate reconciliation of the common
+repair before rewriting those branches; don't duplicate it in a leaf slice.
+
+The idle [local preview](http://127.0.0.1:3125/COD/agents/all) still serves literal
+behavior `fe1ecf1c34`, recovery ready and zero active runs. Its four saved
+legacy/native configurations and two historical native records remain preserved;
+it has not been refreshed to this new runtime. Final local/managed acceptance
+must use the tested source, independent file checks and follow-up continuity.
+
+The prepared private execution checklist reuses existing evals, installation,
+Cloud composition and campaign paths. Required holds are final source/image/
+migrator, the actual verified-master private distribution, pinned QA onboarding,
+warm/cold signup, production baseline and previous-image compatibility. Production
+Fleet Admin sign-in is pending. Current paid holds remain $248.179254104 of $250;
+unknown/cleanup holds stay reserved, and the unstarted managed envelope is $2.50.
+No new image, paid resource, rollout or default promotion was dispatched.
+
+Master reconciliation uses `4b958ecbd8f33a7782fe6f29ec825f80f636b833`.
+The new contribution rules are satisfied: 157 added comment annotations were
+removed from 35 files, with identical executable JavaScript/TypeScript emission,
+parsed workflow values, 77 action pins and shell commands. No code file crosses
+from below 1,000 lines to above that limit. Final focused checks pass 248 tests
+(107 workflow/package, 54 runner, 42 server, 45 E2E support). Both runner no-emit
+checks and the canonical server/E2E no-emit checks pass with isolated matching
+workspace dependencies. Only JavaScript/TypeScript preparation ran locally;
+root preview links and data stayed unchanged. The earlier linked-source failures
+remain recorded and are superseded only by the new canonical check receipt.
+
+The existing Storybook catalog has 21 source-review fingerprint updates because
+its declared runs/adapters map input changed. All affected stories, subjects,
+wrappers and fixtures remain byte-identical to master. Review classifications
+stay unchanged. The catalog check passes 223 files/2,210 stories; this is
+structural/source evidence, not visual or live proof. Source receipts are
+`/private/tmp/pr2-9f59-comments-cleanup-receipt.json`,
+`/private/tmp/pr2-storybook-owned-final-receipt.json` and
+`/private/tmp/pr2-frozen-canonical-noemit-receipt.json`.
+
+Next action: publish this reviewed prerequisite correction, require fresh hosted
+gates, reconcile Codex and Claude with its actual source, then resume the existing
+remote package/immutable preview and dedicated staging qualification. Merge ready
+slices normally in the agreed order; actual production readiness requires the
+private distribution and rollback/forward-recovery evidence afterward.
+
 ## CI fixture, network policy and map synchronization checkpoint
 
 Runtime prerequisite source is `5a9ce11c49db31440863d633426ebe30bcc850ca`
-with 60 changed files. The hosted static check on literal Codex source `eee0534`
+with 59 changed files. The hosted static check on literal Codex source `eee0534`
 passed 133 cases and failed one: its isolated assembly fixture omitted the new
 target JSON, so the helper failed before its existing Cursor-identity assertion.
 The fixture now copies that exact inert JSON; all negative assertions remain.

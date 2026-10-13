@@ -133,7 +133,6 @@ test('verification never elevates PR-controlled provisioning or cleanup on the h
 
 test('the image and Grok downloads start before staging and join without weakening the npm checks', () => {
   const source = readFileSync(new URL('../verify-grok-npm-install.mjs', import.meta.url), 'utf8');
-  // The optional Mac consumer owns separate scratch and no Linux prefetches.
   const linuxSource = source.slice(source.indexOf("assert.equal(process.platform, 'linux'"));
   const position = fragment => { const index = linuxSource.indexOf(fragment); assert.notEqual(index, -1, `verifier must contain ${fragment}`); return index; };
   // Exactly the pinned consumer image is pulled, for the platform the probes run on.
@@ -332,8 +331,6 @@ test('the installed Codex probe exercises the public export and rejects incomple
     writeFileSync(legacyCommand, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
     writeFileSync(index, `export const resolvePinnedCodexCommand = () => ${JSON.stringify(legacyCommand)};`);
     result = run(); assert.notEqual(result.status, 0); assert.match(result.stderr, /Selected Codex platform version must match the qualified pin/);
-    // Native Codex uses protocol compatibility, not the ACPX version allowlist.
-    // Keep exact official-npm host provenance and the selected resource boundary.
     mkdirSync(join(legacy, 'vendor'));
     const legacyNative = join(legacy, 'vendor', triple, 'codex', process.platform === 'win32' ? 'codex.exe' : 'codex');
     mkdirSync(join(legacy, 'vendor', triple, 'codex'), { recursive: true }); writeFileSync(legacyNative, nativeBytes, { mode: 0o755 });

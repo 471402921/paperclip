@@ -32,8 +32,6 @@ export async function verifyPiPackagedDaemon(server, daemon, target, runnerBinar
     assert.equal(`sha256:${createHash('sha256').update(bytes).digest('hex')}`, artifact.sha256);
     assert.equal(runnerBinaryTarget(bytes), target);
   } else {
-    // Existing host-only source packages have no multi-target release manifest.
-    // They must still use their exact normal flat daemon, never an override.
     assert.equal(await realpath(daemon), expectedPath);
     assert.equal(runnerBinaryTarget(await readFile(expectedPath)), target);
   }

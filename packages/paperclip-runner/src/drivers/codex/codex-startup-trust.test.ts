@@ -31,8 +31,6 @@ vi.mock("smol-toml", async (importOriginal) => {
     ...actual,
     parse: (...args: Parameters<typeof actual.parse>) => {
       const result = actual.parse(...args);
-      // Exercise both table representations independently of the installed
-      // parser version while retaining the real TOML values.
       setTablePrototypes(result);
       return result;
     },

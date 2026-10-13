@@ -154,8 +154,6 @@ describeEmbeddedPostgres("environmentService leases", () => {
         config: { config: { ...config, image: `registry.example.test/runtime@sha256:${"b".repeat(64)}` } },
         driver: { driver: "ssh", config: { host: "fixture.example.test", username: "fixture" } },
       };
-      // Interleave the real probe UPDATE after the save is prepared but before its
-      // real UPDATE executes. This reproduces the stale route-read/write window.
       const delayedWriteDb = {
         update(table: typeof environments) {
           const prepared = db.update(table);
