@@ -1,7 +1,7 @@
 import * as cloudIdentity from "../cloud-runtime-identity.js";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
-import { upsertIssueDocumentSchema } from "@paperclipai/shared";
+import { LOW_TRUST_REVIEW_PRESET, upsertIssueDocumentSchema } from "@paperclipai/shared";
 import { and, eq, inArray } from "drizzle-orm";
 import {
   activityLog,
@@ -27,6 +27,7 @@ import { PaperclipRunnerSemanticAuthority } from "./runner-semantic-authority.js
 import { createAssignedMcpTools } from "./assigned-mcp-tools.js";
 import type { ToolGatewayService } from "../tool-gateway.js";
 import { READ_CURRENT_WAKE_COMMENTS_TOOL_NAME } from "./current-wake-comments.js";
+import { buildLowTrustSourceTrust, buildPromotedSourceTrust, LOW_TRUST_QUARANTINED_BODY } from "../source-trust.js";
 import { CAPABILITY_SEMANTIC_TOOL_CATALOG, runnerCodexDynamicToolsFit } from "../../vendor/paperclip-runner/index.js";
 
 describe("PaperclipRunnerToolAuthority", () => {
@@ -227,6 +228,62 @@ describe("PaperclipRunnerToolAuthority", () => {
         .toMatchObject({ id: commentIds[1], origin: "fast_response", fastResponseRequestId: requestId,
           authorAgentId: agentId, body: "I will check the configuration." });
     } finally {
+      await db.delete(issueComments).where(inArray(issueComments.id, commentIds));
+    }
+  });
+
+  it.each([false, true])("legacy history preserves source trust for a current reader run (low trust: %s)", async (lowTrustReader) => {
+    const commentIds = Array.from({ length: 4 }, () => randomUUID());
+    const [originalRun] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, runId));
+    const [originalIssue] = await db.select().from(issues).where(eq(issues.id, issueId));
+    const quarantine = buildLowTrustSourceTrust({ issueId, runId, agentId });
+    const promotion = buildPromotedSourceTrust({
+      sourceIssueId: issueId, sourceArtifactKind: "comment", sourceArtifactId: commentIds[2],
+      promotedByActorType: "user", promotedByActorId: "board-user",
+    });
+    const at = new Date("2026-10-13T12:00:00Z");
+    await db.insert(issueComments).values([
+      { id: commentIds[0], companyId, issueId, authorAgentId: agentId, authorType: "agent",
+        body: "QUARANTINED legacy history canary", sourceTrust: quarantine, createdAt: at },
+      { id: commentIds[1], companyId, issueId, authorAgentId: agentId, authorType: "agent",
+        origin: "fast_response", body: "QUARANTINED acknowledgement canary", sourceTrust: quarantine,
+        createdAt: new Date(at.getTime() + 1000) },
+      { id: commentIds[2], companyId, issueId, authorAgentId: agentId, authorType: "agent",
+        body: "Reviewed and promoted summary", sourceTrust: promotion, createdAt: new Date(at.getTime() + 2000) },
+      { id: commentIds[3], companyId, issueId, authorUserId: "board-user", authorType: "user",
+        body: "Trusted coordination message", createdAt: new Date(at.getTime() + 3000) },
+    ]);
+    try {
+      if (lowTrustReader) {
+        const executionPolicy = { authorizationPolicy: { trustBoundary: {
+          mode: LOW_TRUST_REVIEW_PRESET, companyId, rootIssueId: issueId,
+        } } };
+        await db.update(issues).set({ executionPolicy }).where(eq(issues.id, issueId));
+        await db.update(heartbeatRuns).set({ contextSnapshot: { issueId, executionPolicy } }).where(eq(heartbeatRuns.id, runId));
+        // Relaxing the live task must not relabel the already-admitted reader run.
+        await db.update(issues).set({ executionPolicy: null }).where(eq(issues.id, issueId));
+      }
+      const semantic = new PaperclipRunnerSemanticAuthority(db, { companyId, agentId, issueId, runId });
+      const result = await semantic.dispatch({
+        callId: `legacy-trust-history-${lowTrustReader}`, operationId: "get_task_history", input: { limit: 4 },
+        correlation: { runId, normalizedSessionId: randomUUID(), turnId: "history", itemId: "history" },
+      });
+      expect(result).toMatchObject({ ok: true });
+      expect(result.ok ? result.value : null).toMatchObject({ comments: [
+        { id: commentIds[0], sourceTrust: quarantine,
+          body: lowTrustReader ? "QUARANTINED legacy history canary" : LOW_TRUST_QUARANTINED_BODY },
+        { id: commentIds[1], origin: "fast_response", sourceTrust: quarantine,
+          body: `[Paperclip acknowledgement; not agent work] ${lowTrustReader ? "QUARANTINED acknowledgement canary" : LOW_TRUST_QUARANTINED_BODY}` },
+        { id: commentIds[2], sourceTrust: promotion, body: "Reviewed and promoted summary" },
+        { id: commentIds[3], sourceTrust: null, body: "Trusted coordination message" },
+      ] });
+      if (!lowTrustReader) expect(JSON.stringify(result)).not.toContain("QUARANTINED legacy history canary");
+      if (!lowTrustReader) expect(JSON.stringify(result)).not.toContain("QUARANTINED acknowledgement canary");
+      expect((await db.select().from(issueComments).where(eq(issueComments.id, commentIds[0])))[0])
+        .toMatchObject({ body: "QUARANTINED legacy history canary", sourceTrust: quarantine });
+    } finally {
+      await db.update(heartbeatRuns).set({ contextSnapshot: originalRun!.contextSnapshot }).where(eq(heartbeatRuns.id, runId));
+      await db.update(issues).set({ executionPolicy: originalIssue!.executionPolicy }).where(eq(issues.id, issueId));
       await db.delete(issueComments).where(inArray(issueComments.id, commentIds));
     }
   });

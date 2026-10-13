@@ -1,6 +1,6 @@
 {
-  "id": "ccab5966-22b1-4810-8f73-52405d455ac9",
-  "prevId": "7be2d67f-767c-4975-9688-22b4fad5d94c",
+  "id": "ce4b87e3-af8c-4084-9d0d-086b09f89364",
+  "prevId": "549b4a96-0d43-4ff7-8d03-5836e3ac2e35",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4095,6 +4095,12 @@
         "metadata": {
           "name": "metadata",
           "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -60369,12 +60375,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "detector_removal_requested_at": {
-          "name": "detector_removal_requested_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "detector_removed_at": {
           "name": "detector_removed_at",
           "type": "timestamp with time zone",
@@ -60928,19 +60928,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "signal_attempt": {
-          "name": "signal_attempt",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "signal_notified_at": {
-          "name": "signal_notified_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         },
         "source_event_id": {
           "name": "source_event_id",
