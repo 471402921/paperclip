@@ -14,7 +14,7 @@ import { instanceSettingsService } from "../../services/instance-settings.js";
 import { updateAgentConfigurationInTransaction } from "../../services/agent-configuration-transaction.js";
 import { canConfigureAgentConnection, scheduleAgentLifecycle } from "../agent-lifecycle/index.js";
 import { authorizationService, issueReadSqlCondition, type AuthorizationActor } from "../../services/authorization.js";
-import { logActivity } from "../../services/activity-log.js";
+import { logActivity, publishActivity, type ActivityPublication } from "../../services/activity-log.js";
 import { issueService } from "../../services/issues.js";
 import { getNativeReviewAssignment, readNativeReviewAssignmentContext } from "../../services/native-runtime/native-review-participant.js";
 import { withExternalAdmissionGuard, assertNoExternalOverlap, type ExternalAdmissionTransaction } from "./admission.js";
@@ -254,8 +254,13 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
       if(c.command==="challenge.confirm") {
         const b=await subjectBinding(s,false);
         if(!b.receiverContactAt)throw conflict("No persisted receiver contact yet.");
-        const [ready]=await db.update(bindings).set({status:"ready",verifiedReplyAt:new Date(),challengeHash:null,challengeExpiresAt:null,revision:b.revision+1,updatedAt:new Date()}).where(and(eq(bindings.id,b.id),eq(bindings.generation,b.generation),eq(bindings.challengeHash,museCredentialHash(c.nonce)),gt(bindings.challengeExpiresAt,new Date()),isNull(bindings.revokedAt))).returning();
-        if(!ready)throw conflict("Challenge expired or does not match.");
+        const publications: ActivityPublication[] = [];
+        await db.transaction(async tx => {
+          const [ready]=await tx.update(bindings).set({status:"ready",verifiedReplyAt:new Date(),challengeHash:null,challengeExpiresAt:null,revision:b.revision+1,updatedAt:new Date()}).where(and(eq(bindings.id,b.id),eq(bindings.generation,b.generation),eq(bindings.challengeHash,museCredentialHash(c.nonce)),gt(bindings.challengeExpiresAt,new Date()),isNull(bindings.revokedAt))).returning();
+          if(!ready)throw conflict("Challenge expired or does not match.");
+          await logActivity(tx as unknown as Db,{companyId:b.companyId,actorType:"agent",actorId:b.agentId,agentId:b.agentId,responsibleUserIdOverride:b.operatorId,action:"muse.background_reply_verified",entityType:"agent",entityId:b.agentId,details:{bindingId:b.id,generation:b.generation,authorizingUserId:b.operatorId,requestId:c.requestId}},publications);
+        });
+        publications.forEach(publishActivity);
         void scheduleAgentLifecycle(db,b.agentId);
         return {status:"ready",bindingId:b.id,generation:b.generation};
       }
@@ -286,13 +291,32 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
     },
     async cleanup(s:AgentConnectionSubject,command:{command:"control.inspect"}|{command:"worker.quiescent";boundary:MuseStopBoundary;requestId:string}) {
       if(command.command==="control.inspect") {const rows=await db.select({boundary:holds.stopBoundary,workerReportedAt:holds.workerReportedAt,nativeEffectsUnknown:holds.nativeEffectsUnknown}).from(holds).where(and(eq(holds.bindingId,s.bindingId),eq(holds.bindingGeneration,s.generation),eq(holds.companyId,s.companyId)));return {boundaries:rows,externalStopConfirmed:false};}
-      return db.transaction(tx=>withExternalAdmissionGuard(tx,s.companyId,s.agentId,async()=>{
+      const publications: ActivityPublication[] = [];
+      const result = await db.transaction(tx=>withExternalAdmissionGuard(tx,s.companyId,s.agentId,async()=>{
         const [hold]=await tx.select().from(holds).where(and(eq(holds.companyId,s.companyId),eq(holds.agentId,s.agentId),eq(holds.bindingId,s.bindingId),eq(holds.bindingGeneration,s.generation),eq(holds.assignmentId,command.boundary.assignmentId))).for("update");
         if(!hold?.stopBoundary||externalOperationDigest("tool",{boundary:hold.stopBoundary})!==externalOperationDigest("tool",{boundary:command.boundary}))throw conflict("Cleanup boundary does not match.");
-        await tx.update(holds).set({workerReportedAt:new Date(),updatedAt:new Date()}).where(eq(holds.id,hold.id));return {status:"worker_reported",externalStopConfirmed:false,nativeEffectsUnknown:hold.nativeEffectsUnknown};
+        if (!hold.workerReportedAt) {
+          await tx.update(holds).set({workerReportedAt:new Date(),updatedAt:new Date()}).where(eq(holds.id,hold.id));
+          await logActivity(tx as unknown as Db,{companyId:s.companyId,actorType:"agent",actorId:s.agentId,agentId:s.agentId,responsibleUserIdOverride:s.authorizingUserId,action:"muse.worker_quiescence_reported",entityType:"agent",entityId:s.agentId,details:{bindingId:s.bindingId,generation:s.generation,authorizingUserId:s.authorizingUserId,requestId:command.requestId,boundary:command.boundary,nativeEffectsUnknown:hold.nativeEffectsUnknown,externalStopConfirmed:false}},publications);
+        }
+        return {status:"worker_reported",externalStopConfirmed:false,nativeEffectsUnknown:hold.nativeEffectsUnknown};
       }));
+      publications.forEach(publishActivity);
+      return result;
     },
-    async detectorCleanup(s:AgentConnectionSubject,removed:boolean) {await db.update(bindings).set({...(removed?{detectorRemovedAt:new Date()}:{detectorRemovalRequestedAt:new Date()}),updatedAt:new Date()}).where(and(eq(bindings.id,s.bindingId),eq(bindings.generation,s.generation),eq(bindings.companyId,s.companyId)));return {status:removed?"detector_removed":"detector_removal_requested",externalStopConfirmed:false};},
+    async detectorCleanup(s:AgentConnectionSubject,removed:boolean) {
+      const publications: ActivityPublication[] = [];
+      await db.transaction(async tx => {
+        const [b] = await tx.select().from(bindings).where(and(eq(bindings.id,s.bindingId),eq(bindings.generation,s.generation),eq(bindings.companyId,s.companyId),eq(bindings.agentId,s.agentId))).for("update");
+        if (!b) throw forbidden("Cleanup binding changed.");
+        if (removed ? !b.detectorRemovedAt : !b.detectorRemovalRequestedAt) {
+          await tx.update(bindings).set({...(removed?{detectorRemovedAt:new Date()}:{detectorRemovalRequestedAt:new Date()}),updatedAt:new Date()}).where(eq(bindings.id,b.id));
+          await logActivity(tx as unknown as Db,{companyId:b.companyId,actorType:"agent",actorId:b.agentId,agentId:b.agentId,responsibleUserIdOverride:b.operatorId,action:removed?"muse.detector_removal_reported":"muse.detector_removal_requested",entityType:"agent",entityId:b.agentId,details:{bindingId:b.id,generation:b.generation,authorizingUserId:b.operatorId,externalStopConfirmed:false}},publications);
+        }
+      });
+      publications.forEach(publishActivity);
+      return {status:removed?"detector_removed":"detector_removal_requested",externalStopConfirmed:false};
+    },
     async authorizingUserIdForBinding(ref:{companyId:string;agentId:string;bindingId:string;bindingGeneration:number}) {
       const [b]=await db.select().from(bindings).where(and(eq(bindings.id,ref.bindingId),eq(bindings.generation,ref.bindingGeneration),eq(bindings.companyId,ref.companyId),eq(bindings.agentId,ref.agentId),isNull(bindings.revokedAt)));
       if(!b||!await identity.enabled())throw forbidden("Muse binding unavailable.");await assertMuseCurrentAuthority(db,b);return b.operatorId;

@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { activityLog } from "@paperclipai/db";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { agents, agentWakeupRequests, authUsers, companies, companyMemberships, createDb, closeRegisteredClients, applyPendingMigrations, externalAgentHolds, heartbeatRuns, issueAccessGrants, issueComments, issues, projects, principalPermissionGrants, museAgentBindings as bindings, museCredentials, museInputDeliveries, museMailboxItems as mailbox, museRunnerAssignments as assignments, museRunnerOperations as operations, nativeRunFinalizations } from "@paperclipai/db";
@@ -73,8 +74,13 @@ describe("personal Muse control plane",()=>{
     expect((await museReceiver(db).signal(signal)).signal).toBeNull();await museReceiver(db).flush();
     const [after]=await db.select().from(museCredentials).where(eq(museCredentials.id,before.id));expect(after.expiresAt).toEqual(before.expiresAt);
     const items=await f.broker.inspect(f.subject,{version:1,query:"mailbox",after:0}) as {items:Array<{references:{nonce:string}}>};expect(items.items).toHaveLength(1);
-    await f.broker.act(f.subject,{version:1,command:"challenge.confirm",nonce:items.items[0].references.nonce,requestId:randomUUID()});
+    const requestId = randomUUID(), nonce = items.items[0].references.nonce;
+    await f.broker.act(f.subject,{version:1,command:"challenge.confirm",nonce,requestId});
     expect((await f.broker.bindingForAgent(f.company.id,f.agent.id))?.backgroundReplyVerified).toBe(true);
+    const logs = await db.select().from(activityLog).where(and(eq(activityLog.companyId,f.company.id),eq(activityLog.action,"muse.background_reply_verified")));
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({actorType:"agent",actorId:f.agent.id,agentId:f.agent.id,responsibleUserId:f.operatorId,details:{bindingId:f.binding.id,generation:1,authorizingUserId:f.operatorId,requestId}});
+    expect(JSON.stringify(logs)).not.toContain(nonce);
   });
   it("retains a mailbox batch until its prior durable cursor is acknowledged",async()=>{
     const f=await fixture();await db.insert(mailbox).values({companyId:f.company.id,bindingId:f.binding.id,bindingGeneration:1,kind:"follow_up",sourceEventId:randomUUID(),references:{}});
@@ -220,11 +226,27 @@ describe("personal Muse control plane",()=>{
       await f.broker.revoke(f.company.id,f.agent.id,f.operatorId,{bindingId:f.binding.id,generation:1,expectedRevision:state.revision});
       const stopped=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!,boundary=stopped.stop.boundary!;expect(stopped.stop.status).toBe("cannot_confirm");
       await instanceSettingsService(db).updateExperimental({enableMuse:false});
-      const cleanup=await f.identity.authenticate(f.credentials.cleanupToken,"cleanup");expect((await f.broker.cleanup(cleanup,{command:"worker.quiescent",boundary,requestId:randomUUID()})).externalStopConfirmed).toBe(false);
+      const cleanup=await f.identity.authenticate(f.credentials.cleanupToken,"cleanup"), requestId=randomUUID();
+      expect((await f.broker.cleanup(cleanup,{command:"worker.quiescent",boundary,requestId})).externalStopConfirmed).toBe(false);
+      await f.broker.cleanup(cleanup,{command:"worker.quiescent",boundary,requestId});
+      const logs=await db.select().from(activityLog).where(and(eq(activityLog.companyId,f.company.id),eq(activityLog.action,"muse.worker_quiescence_reported")));
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toMatchObject({actorType:"agent",actorId:f.agent.id,responsibleUserId:f.operatorId,details:{authorizingUserId:f.operatorId,bindingId:f.binding.id,generation:1,boundary,nativeEffectsUnknown:true,externalStopConfirmed:false,requestId}});
       await f.broker.attestStop(f.company.id,f.agent.id,f.operatorId,{boundary,expectedRevision:stopped.revision,workerStopped:true});
       const [hold]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));expect(hold.workerUnknown).toBe(false);expect(hold.nativeEffectsUnknown).toBe(true);expect(hold.releasedAt).toBeNull();
       await expect(f.identity.authenticate(f.credentials.accessToken)).rejects.toThrow();
     }finally{await instanceSettingsService(db).updateExperimental({enableMuse:true});await f.detach();}
+  });
+  it("audits detector cleanup once per observation and preserves exact agent attribution",async()=>{
+    const f=await fixture();
+    const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;
+    await f.broker.revoke(f.company.id,f.agent.id,f.operatorId,{bindingId:f.binding.id,generation:1,expectedRevision:state.revision});
+    const subject=await f.identity.authenticate(f.credentials.detectorCleanupToken,"detector_cleanup");
+    for (const removed of [false,false,true,true]) expect((await f.broker.detectorCleanup(subject,removed)).externalStopConfirmed).toBe(false);
+    const logs=await db.select().from(activityLog).where(and(eq(activityLog.companyId,f.company.id),sql`${activityLog.action} like 'muse.detector_removal_%'`));
+    expect(logs.map(row=>row.action).sort()).toEqual(["muse.detector_removal_reported","muse.detector_removal_requested"]);
+    for (const log of logs) expect(log).toMatchObject({actorType:"agent",actorId:f.agent.id,agentId:f.agent.id,responsibleUserId:f.operatorId,details:{bindingId:f.binding.id,generation:1,authorizingUserId:f.operatorId,externalStopConfirmed:false}});
+    await expect(f.broker.detectorCleanup({...subject,agentId:randomUUID()},true)).rejects.toThrow("binding changed");
   });
   it("reports the exact old stop revision after repair and cancels only the fenced native run",async()=>{
     const f=await active();try {
