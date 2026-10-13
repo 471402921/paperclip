@@ -1,0 +1,24 @@
+{
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "description": "Repository contributor instructions and routing to scoped architecture rules."
+    },
+    {
+      "path": "docs/api/agents.md",
+      "description": "Agent API documentation retained from the existing Greptile agent-file context. This is API reference material, not contributor instructions."
+    },
+    {
+      "path": "rules/pull-request-review.mdc",
+      "description": "Existing Paperclip review guidance for PR descriptions, UI evidence, and growth of large source files."
+    },
+    {
+      "path": "rules/chat-channel-platform-boundaries.mdc",
+      "description": "Architecture requirements and review criteria for separating chat channel platform implementations from shared orchestration.",
+      "scope": [
+        "server/src/services/chat-channels/**",
+        "server/src/services/chat-channels.ts"
+      ]
+    }
+  ]
+}

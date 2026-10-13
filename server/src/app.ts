@@ -29,6 +29,7 @@ import { publicMcpIngressRoutes, publicMcpManagementRoutes } from "./routes/publ
 import { agentAvatarRoutes } from "./routes/agent-avatars.js";
 import { decisionModelRoutes } from "./routes/decision-models.js";
 import { aiConnectionRoutes } from "./routes/ai-connections.js";
+import { taskWorkspaceRoutes } from "./routes/task-workspaces.js";
 import { projectToolRoutes } from "./routes/project-tools.js";
 import { emailChannelService } from "./services/email-channels.js";
 import { emailRoutes, emailWebhookRoutes } from "./routes/email.js";
@@ -68,6 +69,7 @@ import {
 } from "./services/company-import-transfers.js";
 import { companyTransferRunService } from "./services/company-transfer-runs.js";
 import { healthRoutes } from "./routes/health.js";
+import { livenessRoutes } from "./routes/liveness.js";
 import { cloudRuntimeIdentityMiddleware } from "./middleware/cloud-runtime-identity.js";
 import { cloudControlMiddleware } from "./middleware/cloud-control.js";
 import { cloudRoutes } from "./routes/cloud.js";
@@ -326,7 +328,7 @@ export function createChatReconciliationCoordinator(input: {
   projectRunMilestones: () => Promise<number>;
   flushPublications: () => Promise<unknown>;
   processPendingSlackFileUploadReceipts?: () => Promise<unknown>;
-  processPendingSlackSessionSyncs: () => Promise<unknown>;
+  processPendingSlackSessionSyncs?: () => Promise<unknown>;
   onError: (lane: ChatReconciliationLane, error: unknown) => void;
 }) {
   let stopped = false;
@@ -373,7 +375,7 @@ export function createChatReconciliationCoordinator(input: {
       milestoneReconciliation.poll();
       publicationReconciliation.poll();
       if (input.processPendingSlackFileUploadReceipts) start("Slack file receipts", input.processPendingSlackFileUploadReceipts);
-      start("Slack session status", input.processPendingSlackSessionSyncs);
+      if (input.processPendingSlackSessionSyncs) start("Slack session status", input.processPendingSlackSessionSyncs);
     },
     notifyPublications() {
       milestoneReconciliation.notify();
@@ -605,6 +607,9 @@ export async function createApp(
   const publicMcpIngress = Router();
 
   app.use(cloudRuntimeIdentityMiddleware(db));
+  // Routine probes stop before session/actor resolution, even after claim.
+  // Keep hostname validation and the signed-bootstrap endpoint guard above.
+  app.use("/api/liveness", livenessRoutes());
   // A signed claim above commits identity before any normal request can seed
   // company data. Unclaimed probes bypass session resolution as well as SQL.
   app.use(cloudWarmStandbyMiddleware(isWarmStandby, health, staticUi));
@@ -832,6 +837,7 @@ export async function createApp(
   api.use(assetRoutes(db, opts.storageService));
   api.use(agentProfileAvatarRoutes(db, opts.storageService));
   api.use(projectToolRoutes(db));
+  api.use(taskWorkspaceRoutes(db));
   api.use(projectRoutes(db));
   api.use(caseRoutes(db, opts.storageService));
   api.use(issueTreeControlRoutes(db, { pluginWorkerManager: workerManager }));
@@ -1263,7 +1269,9 @@ export async function createApp(
       await chatChannels.reconcileProviderRuntimes();
       await chatChannels.voice.reconcile();
     },
-    processPendingDeliveries: () => chatChannels.processPendingChatMaintenance(),
+    // Chat delivery, action, and Telegram discovery workers now own these
+    // duties. Keep the coordinator's other maintenance lanes independent.
+    processPendingDeliveries: async () => undefined,
     processFailedGitHubWebhookDeliveries: () =>
       chatChannels.processFailedGitHubWebhookDeliveries(),
     projectRunMilestones: () =>
@@ -1271,8 +1279,6 @@ export async function createApp(
         publicBaseUrl: opts.authPublicBaseUrl,
       }),
     flushPublications: () => reconcileChatPublicationMaintenance(),
-    processPendingSlackSessionSyncs: () =>
-      chatChannels.processPendingSlackSessionSyncs(),
     onError: (lane, err) => {
       logger.error({ err, lane }, `Failed to reconcile chat ${lane}`);
     },
