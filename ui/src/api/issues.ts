@@ -283,6 +283,8 @@ export const issuesApi = {
       `/issues/${id}/stalled-review-decision`,
       data,
     ),
+  resumeWorkspaceFinalization: (id: string, data: { actionId: string; runId: string; ownerToken: string; controllerAndCopybackStopped: true; stopEvidence: string }) =>
+    api.post<{ runId: string; resultId: string; status: "queued" }>(`/issues/${id}/recovery-actions/resume-workspace-finalization`, data),
   retryWorkspaceExport: (id: string, data: { actionId: string; runId: string; repairNote: string }) =>
     api.post<{ runId: string; resultId: string; leaseId: string; status: "queued" }>(`/issues/${id}/recovery-actions/retry-workspace-export`, data),
   resolveRecoveryAction: (
@@ -292,7 +294,7 @@ export const issuesApi = {
       workspaceBaseRef?: { requestedRef: string; branch: string };
       actionId?: string;
       outcome: "restored" | "false_positive" | "blocked" | "cancelled";
-      sourceIssueStatus: "todo" | "done" | "in_review" | "blocked";
+      sourceIssueStatus: Issue["status"];
       resolutionNote?: string | null;
     },
   ) =>

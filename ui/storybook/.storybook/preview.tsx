@@ -1,3 +1,4 @@
+import { activatePreparedFixtures } from "../support/capability-gaps/api";
 import { useLayoutEffect, useState, type ReactNode } from "react";
 import type { Preview } from "@storybook/react-vite";
 import { MINIMAL_VIEWPORTS } from "storybook/viewport";
@@ -764,6 +765,7 @@ function StorybookProviders({
 
   if (typeof window !== "undefined") {
     installStorybookApiFixtures();
+    activatePreparedFixtures();
   }
 
   const [viewportReady, setViewportReady] = useState(() => !initialViewportWidth || window.parent === window || window.innerWidth === initialViewportWidth);

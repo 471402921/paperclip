@@ -79,6 +79,17 @@ retry and some operator controls require board. Completion or cancellation of a
 task does not clear its exact unresolved native workspace owner hold. Physical
 owner release still requires the [operator stop-verification procedure](../../doc/native-workspace-finalization-recovery.md).
 
+For a resolved legacy action that retains a file hold, the same resolution API
+supports source-only file repair. Board runtime management and recovery-resolution
+authority are required. The request identifies the exact source action/run and
+records recovered-file evidence; the server verifies the original stop receipt.
+It preserves the current task status and does not wake or replay the agent. The
+task form fails closed without permission or source bindings. Agent Chat retains
+the file diagnosis while this hold exists. The
+[repair route regressions](../../server/src/__tests__/workspace-restore-repair-route.test.ts)
+and [file form](../../ui/src/components/WorkspaceFileRecovery.test.tsx) cover the
+local contract; they do not independently recover files or qualify a live provider.
+
 Evidence: `source-only` — [implementation](../../server/src/routes/issues.ts#L9478) at
 the reviewed commit above. Exact owner hold retention in the
 [recovery state helper](../../server/src/services/native-runtime/native-workspace-finalization-recovery-state.ts)
@@ -129,23 +140,40 @@ Review: `baseline`.
 API: `present` — representative operation IDs:
 
 - `POST /api/issues/{id}/recovery-actions/retry-workspace-export`.
+- `POST /api/issues/{id}/recovery-actions/resume-workspace-finalization`.
 - `POST /api/execution-workspaces/{id}/reconcile-branch`.
 
 Agent access: `restricted` — Board/runtime management APIs; agent reads diagnosis and
 performs permitted workspace work.
 
-Policy: Task/run visibility, run ownership and source/action policy; workspace export
-retry and some operator controls require board.
+Policy: Export retry and branch reconciliation require board runtime management.
+Physical-owner stop confirmation uses the separate `runtime:confirm_owner_stop`
+action. It requires active company owner/admin membership, trusted local board
+access, or instance administration. Agents and ordinary runtime managers are denied.
+The exact source task, running native run, accepted result and owner receipt must
+match; active copyback locks, live local writers, and newer runs prevent admission.
+An authorized administrator must first verify through the deployment platform that
+the exact controller and all copyback children stopped, then attest that evidence.
+Elapsed time, an expired coordinator lease or a lost advisory connection is not proof.
+Only the exact owner receipt is released; normal reconciliation performs export and
+commitment without another provider turn or bypassing existing task waits.
 
-Evidence: `source-only` — [implementation](../../server/src/routes/issues.ts#L9478) at
-the reviewed commit above.
+Evidence: `source-only` — [route](../../server/src/routes/issues.ts),
+[administrator authorization](../../server/src/services/authorization.ts), and
+[owner admission](../../server/src/services/native-runtime/native-workspace-owner-recovery.ts)
+reviewed for this change. Local authorization, route, UI and finalization regressions
+cover member/agent denial, exact-owner admission and the real reconciler preserving
+monitor and approval waits. This is not live provider-stop proof.
 
-Verification: `not-run` — assert the documented agent denial with an owned test fixture;
+Verification: `not-run` for live agent/deployment execution — assert the documented agent denial with an owned test fixture;
 verify any listed agent request/result path separately. A delegated operation needs its
 own policy and access review.
 
 Gaps: Export retry and branch reconciliation require board runtime:manage at
-their HTTP routes. Native `call_api` preserves these denials.
+their HTTP routes. The exact-owner operator fallback additionally requires
+runtime:confirm_owner_stop. Native call_api preserves these agent denials.
+Automatic managed-cloud recovery uses independently verified, signed platform
+proof through the finalization reconciler; agents cannot attest owner shutdown.
 
 ## `unknown-outcome`
 

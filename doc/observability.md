@@ -161,6 +161,30 @@ This document also holds three local instrumentation contracts: native runner
 traces, sandbox startup traces, and sandbox duplex transport instrumentation.
 Those sections follow below.
 
+## Controller preparation phases
+
+With an operator OTLP endpoint, `paperclip.heartbeat-preparation` emits active
+`heartbeat.prepare.<phase>` spans around environment selection, execution
+configuration, session preparation, workspace preparation, GitHub environment
+and launcher preparation, run output initialization, workspace validation,
+runtime services, instruction files, and runtime selection. Database and HTTP
+instrumentation can attach child spans during each awaited operation.
+
+Each phase starts a new root trace and links to the active trigger span when
+one exists. An unsampled HTTP request must not suppress diagnostics for the
+background run it starts. Root traces still follow the operator's configured
+sampler. The trigger's trace remains unchanged, and overlapping runs keep
+their own phase and child contexts.
+
+These spans exist before provider dispatch, including setup failures. Each has
+only the existing `paperclip.task.run.run_id` attribute: the first 12 hexadecimal
+characters of the run UUID's SHA-256 hash. Failed operations set error status
+without recording exception messages, paths, inputs, or returned content.
+Search by that hash without a root-name filter to include these preparation
+traces; the provider lifecycle trace is created later and can have a different
+trace ID. Without an endpoint, tracing remains a no-op. These spans add no
+first-party Telemetry events or database run-log writes.
+
 ## Native Runner Trace Spans
 
 Paperclip Runner task runs emit a single foldable OpenTelemetry trace. This is

@@ -1,4 +1,5 @@
 import { assertTaskWorkspaceAccess, assertTaskWorkspaceSourceProjectAccess } from "./task-workspace-source-access.js";
+import { verifiedRecordedIsolatedRemoteSource } from "./isolated-remote-workspace-source.js";
 import { parseObject } from "../adapters/utils.js";
 import { resolveCoreTrustPreset } from "./trust-preset-resolver.js";
 import { CONTROLLER_PROVISION_COPY_ONLY, workspaceRequiresCopyOnlyProvisioning } from "./workspace-host-provision.js";
@@ -1397,7 +1398,7 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
     return resolveEffectiveWorkspaceStrategyType(mode, config);
   }
 
-  async function validateSelection(input: { taskCreation?: TaskWorkspaceCreationTrustContext; companyId: string; actor: AuthorizationActor; selection: TaskWorkspaceSelection; issueId?: string | null; parentIssueId?: string | null; assigneeAgentId?: string | null; assigneeUserId?: string | null; assigneeAdapterOverrides?: unknown; projectId?: string | null; executionPolicy?: unknown }, reader: Db | DbTransaction = db) {
+  async function validateSelection(input: { taskCreation?: TaskWorkspaceCreationTrustContext; companyId: string; actor: AuthorizationActor; selection: TaskWorkspaceSelection; issueId?: string | null; parentIssueId?: string | null; assigneeAgentId?: string | null; assigneeUserId?: string | null; assigneeAdapterOverrides?: unknown; projectId?: string | null; executionPolicy?: unknown; preserveImplicitDefaultSettings?: boolean }, reader: Db | DbTransaction = db) {
     const selection = taskWorkspaceSelectionSchema.parse(input.selection);
     if (selection.kind === "existing") {
       const [workspace] = await reader.select().from(executionWorkspaces).where(and(
@@ -1422,15 +1423,24 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
         ));
       if (!source) throw notFound("Workspace source is unavailable or inaccessible");
       const mode = selection.mode === "shared" ? "shared_workspace" : "isolated_workspace";
+      let executionWorkspaceSettings: Record<string, unknown> = { mode };
+      if (input.preserveImplicitDefaultSettings) {
+        const [task] = input.issueId ? await reader.select({ settings: issues.executionWorkspaceSettings,
+          intent: issues.workspaceSelection }).from(issues).where(and(eq(issues.id, input.issueId),
+          eq(issues.companyId, input.companyId), await issueReadSqlCondition(reader, input.actor))) : [];
+        if (!task || !["project", "task_default"].includes(task.intent?.source ?? "")
+          || !isDeepStrictEqual(task.intent?.selection, selection)) throw conflict("Task workspace default changed");
+        executionWorkspaceSettings = { ...parseObject(task.settings), mode };
+      }
       const strategy = await resolveSourceWorkspaceStrategy({ ...input, typedSelection: true,
-        executionWorkspaceSettings: { mode }, executionWorkspacePolicy: source.executionWorkspacePolicy }, reader);
+        executionWorkspaceSettings, executionWorkspacePolicy: source.executionWorkspacePolicy }, reader);
       await assertTaskWorkspaceSourceProjectAccess(reader, input.actor, input.companyId, source.projectId, {
         write: strategy !== "git_worktree",
         issueId: input.issueId, parentIssueId: input.parentIssueId,
         assigneeAgentId: input.assigneeAgentId, assigneeUserId: input.assigneeUserId,
       });
       return { executionWorkspaceId: null, projectWorkspaceId: source.id, executionWorkspacePreference: null,
-        executionWorkspaceSettings: { mode: selection.mode === "shared" ? "shared_workspace" : "isolated_workspace" } };
+        executionWorkspaceSettings };
     }
     return { executionWorkspaceId: null, projectWorkspaceId: null, executionWorkspacePreference: null,
       executionWorkspaceSettings: { mode: "shared_workspace" } };
@@ -3280,7 +3290,9 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
           .where(and(eq(projects.companyId, snapshot.companyId), snapshot.projectId ? eq(projects.id, snapshot.projectId) : sql`false`))
           .then((rows) => parseProjectExecutionWorkspacePolicy(rows[0]?.executionWorkspacePolicy)),
       ]);
-      let resolvedBaseCwd = projectWorkspace?.cwd ?? null;
+      let resolvedBaseCwd: string | null;
+      try { resolvedBaseCwd = await verifiedRecordedIsolatedRemoteSource(snapshot) ?? projectWorkspace?.cwd ?? null; }
+      catch { return { ok: false, code: "rebuild_failed", message: "Failed to rebuild the execution workspace" }; }
       if (isClosedExecutionWorkspaceStatus(snapshot.status) && resolvedBaseCwd == null && snapshot.strategyType === "git_worktree" && snapshot.projectId) {
         try {
           const managedWorkspace = await ensureManagedProjectWorkspace({
