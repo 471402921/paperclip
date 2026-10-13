@@ -1,4 +1,8 @@
-# Execution workspaces, services, and files
+---
+navigation: {"section":"Projects and execution","sectionOrder":40,"order":30}
+---
+
+# Workspaces, services, and files
 
 A project or task can use a managed workspace with inspectable files, Git state, services, and runtime controls. Operators can follow its lifecycle through provisioning, use, and closure.
 
@@ -107,3 +111,12 @@ Manual: Provision a disposable workspace, wait for readiness, start an available
   provider home have separate meanings. Private source ownership remains attached
   to copied files after source configuration changes or workspace closure.
 - Use [recovery](./recovery.md) for divergence/export repair and [CLI operations](./cli-operations.md) for local worktree tooling.
+
+### Storybook verification
+
+#### `closure`
+
+Scope: ui
+Storybook: Close-readiness checks, pending changes/active runs, blocked/pending/error close, retry close and eligible reopening.
+Production: Confirm owned workspace shutdown, preserved files/Git state and permitted lifecycle transition/reopening; Browser Use session closure is unrelated.
+Sources: Source: [ExecutionWorkspaceDetail.tsx](../../ui/src/pages/ExecutionWorkspaceDetail.tsx), [ExecutionWorkspaceCloseDialog.tsx](../../ui/src/components/ExecutionWorkspaceCloseDialog.tsx), [execution-workspaces.ts](../../server/src/routes/execution-workspaces.ts). Tests: [execution-workspaces-routes.test.ts](../../server/src/__tests__/execution-workspaces-routes.test.ts), [execution-workspaces-service.test.ts](../../server/src/__tests__/execution-workspaces-service.test.ts), [execution-workspace-reopen.test.ts](../../server/src/__tests__/execution-workspace-reopen.test.ts)

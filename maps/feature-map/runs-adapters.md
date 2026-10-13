@@ -1,3 +1,7 @@
+---
+navigation: {"section":"Agents and reusable capabilities","sectionOrder":30,"order":20}
+---
+
 # Runs, harnesses, and model accounts
 
 Operators choose an agent harness and model account, inspect execution history and transcripts, and distinguish a working configuration from a successful task result.

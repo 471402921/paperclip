@@ -19,7 +19,20 @@ const meta = {
   title:
     "Automation and structured work/Status cards/Authoring, updates and archive",
   component: StatusCardHost,
-  parameters: { layout: "padded", initialEntries: ["/status"] },
+  parameters: { layout: "padded", initialEntries: ["/status"],
+    paperclip: {
+      "capabilities": [
+        "status-cards/authoring",
+        "status-cards/generation",
+        "status-cards/inspection",
+        "status-cards/archive"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "StatusCards board/drawer with current/stale/error/live setup, list states, create, refresh, inspection and archive/restoration. Mutable receipts and setup task ID are fixtures; no summarizer execution or revision-history parity is claimed."
+    },
+  },
   beforeEach: ({ parameters }) => {
     let card = makeStatusCard({
       state: parameters.cardState ?? "active",

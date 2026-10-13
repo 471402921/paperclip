@@ -27,7 +27,17 @@ const meta = {
   title:
     "Projects and execution/Workspaces, services, and files/Close readiness",
   component: CloseWorkspace,
-  parameters: { layout: "padded" },
+  parameters: { layout: "padded",
+    paperclip: {
+      "capabilities": [
+        "workspaces/closure"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Readiness dialog with loading, inspection failure/403, running-task block and pending/accepted archive response. No real workspace cleanup, Git removal or service shutdown is performed."
+    },
+  },
   beforeEach: ({ parameters }) =>
     prepareFixtureApi(
       [

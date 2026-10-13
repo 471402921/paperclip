@@ -100,16 +100,33 @@ The governing rule is: **skill permissions are opt-in restrictions, not opt-in c
 
 Core Paperclip owns the skill runtime, company-boundary enforcement, policy evaluation contract, API denials, validation, path containment, secret redaction, and activity logging. Those safety invariants cannot be disabled by policy. Open-by-default skill work never authorizes arbitrary host-path reads, unsafe executable content, or policy edits: local imports and scans must stay within Paperclip-known workspace or managed-skill roots, remote sources must resolve to validated immutable content, and platform safety denials must stay distinct from optional administrative restrictions. Paperclip EE may provide detailed administration for per-agent, per-role, per-action, per-source, and protected-skill rules, but EE is not required to use skills and is not an enforcement boundary. Without EE, companies remain open by default and any already-configured restrictions continue to be enforced by core.
 
-GitHub repositories are first-class sources within Skills. People import selected
-skills through their existing GitHub connection and manually refresh installed
-snapshots. The source records repository, branch, path, and installed commit;
-the connection supplies caller-authorized access. Originals remain viewable and
-testable, with independent editable copies. New upstream skills require selection,
-and deselection or upstream removal retains installed content. Disconnecting removes
-the source after an explicit choice: keep independent editable copies in My Skills,
-or delete its imported skills. Copies preserve agent assignments; skills still
-used by agents must be detached before deletion. Already-disconnected sources
-can be removed through the same flow.
+GitHub repositories attached to new projects automatically become skill sources.
+Paperclip imports their skills and checks the configured branch every five minutes,
+using the setup person's authorized GitHub connection. New skills import automatically
+unless excluded. Existing projects can adopt their repositories from Skills → Sources;
+existing manually imported sources preserve their selections and gain automatic updates.
+Refresh remains available, and operators can pause automatic updates.
+If a tracked repository grows beyond the supported package size, its installed
+repository skills and shared dependencies remain available until a safe refresh
+can succeed. Initial oversized imports can use self-contained skill packages;
+packages with omitted dependencies are invalid and are not installed.
+
+Project-derived skills inherit current project access. Access through any originating
+project is sufficient, including the responsible-user restrictions on agent execution.
+Existing explicit company imports retain their visibility. Editable copies inherit
+project restrictions; private content cannot be published or exported implicitly.
+Detachment retains installed content and access provenance. Deleting its last project
+never makes a skill company-visible.
+
+Task and routine skill mentions remain stable references to the latest installed version.
+Each execution records the immutable versions it uses; resuming keeps those versions,
+while a new execution resolves latest again. Upstream failures and removals preserve
+installed snapshots. GitHub refresh does not delay task execution.
+
+Disconnecting removes a repository from Sources after an explicit choice: keep
+independent editable copies in My Skills, or delete its imported skills. Kept
+copies and derived forks retain their project access restrictions. Copies preserve
+agent assignments; skills used by agents must be detached before deletion.
 
 An explicit restricted policy may deny selected operations or switch to a default-deny preset with explicit allow rules. Core exposes a stable versioned policy API so EE and other administrative clients configure and simulate the same evaluator used by skill mutation routes. Core Skill Studio only needs to perform normal skill work, explain an explicit denial, and point administrators to EE when its richer policy UI is available; it must not recreate a partial enterprise permission editor.
 

@@ -97,6 +97,16 @@ const meta = {
           "Shipped recovery notice/card. Decisions alter local fixture state only. Bounded attempts, unknown-side-effect replay and real continuation require production tests.",
       },
     },
+    paperclip: {
+      "capabilities": [
+        "recovery/exhaustion",
+        "recovery/unknown-outcome"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Exhaustion notice, blocked authority, retry pending/failure/accepted and inactive notice; unknown-outcome action card is rendered separately. Retry callbacks and disposition context are simulated; no real continuation proof. The expanded native copyback recovery recipe requires harness stop proof; these generic exhaustion/queued-response fixtures do not establish that path. Retained legacy files use a separate recovery form with verified stop evidence; these exhaustion and response-queue examples do not establish file repair."
+    },
   },
 } satisfies Meta<typeof Recovery>;
 export default meta;

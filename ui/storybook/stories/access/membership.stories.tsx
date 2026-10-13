@@ -36,7 +36,17 @@ const meta = {
   title:
     "Getting started and access/Login, invitations, and access/Organization membership",
   component: MembershipHost,
-  parameters: { layout: "padded" },
+  parameters: { layout: "padded",
+    paperclip: {
+      "capabilities": [
+        "access/membership"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "CompanyAccess member list and role change with loading/empty/failure/403 and failed mutation toast. Backend actor authority, invite lifecycle and durable membership are not verified."
+    },
+  },
   beforeEach: ({ parameters }) => {
     member = { ...member, membershipRole: "operator", status: "active" };
     return prepareFixtureApi(

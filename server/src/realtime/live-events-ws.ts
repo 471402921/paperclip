@@ -1,3 +1,4 @@
+import { skillAccessService } from "../services/skill-access.js";
 import { createHash } from "node:crypto";
 import type { IncomingMessage, Server as HttpServer } from "node:http";
 import { createRequire } from "node:module";
@@ -302,6 +303,13 @@ export function setupLiveEventsWebSocketServer(
           .where(and(eq(issues.id, issueId), eq(issues.companyId, event.companyId))).limit(1);
         if (!issue || !(await access.decide({ actor: context!.actor, action: "issue:read",
           resource: { type: "issue", companyId: event.companyId, issueId } })).allowed) return null;
+      }
+      if (["company_skill", "company_skill_source"].includes(String(payload.entityType)) && typeof payload.entityId === "string") {
+        try {
+          const skills = skillAccessService(db, context!.actor);
+          if (payload.entityType === "company_skill") await skills.assertSkill(event.companyId, payload.entityId);
+          else await skills.assertSource(event.companyId, payload.entityId);
+        } catch { return null; }
       }
       if (payload.entityType === "project" && typeof payload.entityId === "string") {
         const [project] = await db.select({ id: projects.id }).from(projects)

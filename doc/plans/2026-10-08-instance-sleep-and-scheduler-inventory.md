@@ -76,6 +76,21 @@ Implementation: `packages/db/src/work-signals.ts`,
 `server/src/services/work-scheduler.ts`, `delivery-work-coordinator.ts`, and
 `delivery-work-notifications.ts`.
 
+## Routine external-wake contract
+
+Updated: 2026-10-13. Signed Cloud control callers can request the earliest
+supported future routine deadline during an owned idle hold. The report binds
+its generation to the process, hold and routine/trigger catalog. Cloud must
+commit a durable alarm and revalidate the same generation before stopping.
+See [idle-sleep safety](../idle-sleep-safety.md#scheduled-routine-wake-protocol).
+
+This is a bounded routine-only slice of external waking. Existing routine
+execution, catch-up and local ticking remain unchanged. It does not expose the
+whole work scheduler's deadline or migrate other loops. Unknown triggers,
+pending work, agent timers, plugin jobs and other unsupported sources remain
+sleep blockers. Full provider sleep/wake qualification and fleet enablement
+remain open; route and embedded-Postgres tests establish the local contract.
+
 ## Using this checklist
 
 Items have stable IDs so they can become separate issues or PRs. All boxes start

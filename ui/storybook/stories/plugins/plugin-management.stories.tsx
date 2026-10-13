@@ -16,7 +16,18 @@ const meta = {
   id: "feature-plugin-management",
   title: "Apps, channels, and extensions/Plugins/Installation and lifecycle",
   component: Plugins,
-  parameters: { layout: "padded" },
+  parameters: { layout: "padded",
+    paperclip: {
+      "capabilities": [
+        "plugins/installation",
+        "plugins/lifecycle"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "PluginManager list states, install pending/error/success, disable and uninstall receipts. Local record transitions only; package loading and worker lifecycle require production verification."
+    },
+  },
   beforeEach: ({ parameters }) =>
     installPluginFixtures(
       parameters.fixtureState as FixtureState,

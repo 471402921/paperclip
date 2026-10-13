@@ -1,6 +1,6 @@
 {
-  "id": "8d2191b5-07d1-432e-a4d9-f0a4e63ab8df",
-  "prevId": "ebff3947-c566-4465-bf64-45325b14a970",
+  "id": "d56c94d7-acb9-4009-adb5-010d1e4822a4",
+  "prevId": "e9a4bbc2-b22c-48a1-a74c-f108cd7b20ec",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -16852,6 +16852,53 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.company_skill_import_budgets": {
+      "name": "company_skill_import_budgets",
+      "schema": "",
+      "columns": {
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "available_bytes": {
+          "name": "available_bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 536870912
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "company_skill_import_budgets_company_id_companies_id_fk": {
+          "name": "company_skill_import_budgets_company_id_companies_id_fk",
+          "tableFrom": "company_skill_import_budgets",
+          "tableTo": "companies",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.company_skill_source_entries": {
       "name": "company_skill_source_entries",
       "schema": "",
@@ -17091,6 +17138,72 @@
           "notNull": true,
           "default": true
         },
+        "removed_at": {
+          "name": "removed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "automatic_updates": {
+          "name": "automatic_updates",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "import_new_skills": {
+          "name": "import_new_skills",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "access_scope": {
+          "name": "access_scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'company'"
+        },
+        "refresh_user_id": {
+          "name": "refresh_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refresh_agent_id": {
+          "name": "refresh_agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refresh_local_trusted": {
+          "name": "refresh_local_trusted",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "refresh_grant_id": {
+          "name": "refresh_grant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_sync_at": {
+          "name": "next_sync_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "failure_count": {
+          "name": "failure_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "revision": {
           "name": "revision",
           "type": "integer",
@@ -17115,6 +17228,26 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "last_scan_tree_sha": {
+          "name": "last_scan_tree_sha",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "automatic_budget_bytes": {
+          "name": "automatic_budget_bytes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 536870912
+        },
+        "automatic_budget_at": {
+          "name": "automatic_budget_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         },
         "last_error": {
           "name": "last_error",
@@ -17166,6 +17299,7 @@
             }
           ],
           "isUnique": true,
+          "where": "\"company_skill_sources\".\"removed_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -17193,6 +17327,7 @@
             }
           ],
           "isUnique": true,
+          "where": "\"company_skill_sources\".\"removed_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -17211,13 +17346,275 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.project_skill_sources": {
+      "name": "project_skill_sources",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
         },
-        "company_skill_sources_connection_id_tool_connections_id_fk": {
-          "name": "company_skill_sources_connection_id_tool_connections_id_fk",
-          "tableFrom": "company_skill_sources",
-          "tableTo": "tool_connections",
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_id": {
+          "name": "source_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "repository_url": {
+          "name": "repository_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tracking_ref": {
+          "name": "tracking_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "active": {
+          "name": "active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "refresh_user_id": {
+          "name": "refresh_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refresh_agent_id": {
+          "name": "refresh_agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refresh_local_trusted": {
+          "name": "refresh_local_trusted",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refresh_grant_id": {
+          "name": "refresh_grant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_sync_at": {
+          "name": "next_sync_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "failure_count": {
+          "name": "failure_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_token": {
+          "name": "lease_token",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_expires_at": {
+          "name": "lease_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "project_skill_sources_workspace_repo_ref_idx": {
+          "name": "project_skill_sources_workspace_repo_ref_idx",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "repository_url",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "tracking_ref",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "project_skill_sources_source_project_idx": {
+          "name": "project_skill_sources_source_project_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "project_skill_sources_sync_idx": {
+          "name": "project_skill_sources_sync_idx",
+          "columns": [
+            {
+              "expression": "active",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "next_sync_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "project_skill_sources_company_id_companies_id_fk": {
+          "name": "project_skill_sources_company_id_companies_id_fk",
+          "tableFrom": "project_skill_sources",
+          "tableTo": "companies",
           "columnsFrom": [
-            "connection_id"
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_skill_sources_project_id_projects_id_fk": {
+          "name": "project_skill_sources_project_id_projects_id_fk",
+          "tableFrom": "project_skill_sources",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_skill_sources_workspace_id_project_workspaces_id_fk": {
+          "name": "project_skill_sources_workspace_id_project_workspaces_id_fk",
+          "tableFrom": "project_skill_sources",
+          "tableTo": "project_workspaces",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "project_skill_sources_source_id_company_skill_sources_id_fk": {
+          "name": "project_skill_sources_source_id_company_skill_sources_id_fk",
+          "tableFrom": "project_skill_sources",
+          "tableTo": "company_skill_sources",
+          "columnsFrom": [
+            "source_id"
           ],
           "columnsTo": [
             "id"
@@ -18676,6 +19073,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'company'"
+        },
+        "access_source_id": {
+          "name": "access_source_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "public_share_token": {
           "name": "public_share_token",
@@ -59936,38 +60339,14 @@
           "primaryKey": false,
           "notNull": false
         },
-        "qualification_started_at": {
-          "name": "qualification_started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "qualification_expires_at": {
           "name": "qualification_expires_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
-        "deadline_enforced_at": {
-          "name": "deadline_enforced_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cadence_evidence_incomplete_at": {
-          "name": "cadence_evidence_incomplete_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "cleanup_expires_at": {
           "name": "cleanup_expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "detector_removal_requested_at": {
-          "name": "detector_removal_requested_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -60526,19 +60905,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "signal_attempt": {
-          "name": "signal_attempt",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "signal_notified_at": {
-          "name": "signal_notified_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "source_event_id": {
           "name": "source_event_id",
           "type": "text",
@@ -60714,20 +61080,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
-        },
-        "timestamps": {
-          "name": "timestamps",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "incomplete": {
-          "name": "incomplete",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "contacts": {
           "name": "contacts",

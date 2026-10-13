@@ -43,6 +43,15 @@ const meta = {
           "Production task bubble with the saved attachment receipt and channel attribution. Provider upload, delivery, download authority and replay require production tests.",
       },
     },
+    paperclip: {
+      "capabilities": [
+        "chat-channels/attachments"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "TaskChatBubble with received/outbound saved attachment receipts, no/multiple files and missing filename. File links are fictional; no download, provider transfer or authorization is proved."
+    },
   },
 } satisfies Meta<typeof TaskChatBubble>;
 export default meta;

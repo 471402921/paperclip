@@ -11,7 +11,18 @@ const meta = {
   title:
     "Getting started and access/Companies and portability/Selection and archived organizations",
   component: Companies,
-  parameters: { layout: "padded" },
+  parameters: { layout: "padded",
+    paperclip: {
+      "capabilities": [
+        "companies/selection",
+        "companies/archive"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Companies list, selection storage and archived-company restoration with loading/empty/error/403. This covers the archive list/restoration side; CompanySettings archive confirmation remains an additional UI scenario."
+    },
+  },
   beforeEach: ({ parameters }) => {
     let companies =
       parameters.fixtureState === "empty"

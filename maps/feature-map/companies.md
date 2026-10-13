@@ -1,3 +1,7 @@
+---
+navigation: {"section":"Getting started and access","sectionOrder":10,"order":30}
+---
+
 # Companies and portability
 
 An operator can switch between companies, change their identity and settings, archive them, and preview an import or export. Each company remains a separate scope for work and agents.
@@ -76,3 +80,30 @@ Use an owned provider fixture for failure states; record any actual provider usa
   A fast-response receipt is an acknowledgement, not completed agent work.
   History visibility and connection-management authority are separate; task links
   in history also require access to the underlying task.
+
+### Storybook verification
+
+#### `selection`
+
+Scope: ui
+Storybook: Company list/create/switcher; empty, loading, error, unavailable company and switched navigation.
+Production: Switch and reload between companies; verify tasks/agents/cache/routes remain scoped and unauthorized company requests fail.
+Sources: Source: [Companies.tsx](../../ui/src/pages/Companies.tsx), [CompanySwitcher.tsx](../../ui/src/components/CompanySwitcher.tsx), [CompanyContext.tsx](../../ui/src/context/CompanyContext.tsx). Tests: [Companies.test.tsx](../../ui/src/pages/Companies.test.tsx), [CompanyContext.test.tsx](../../ui/src/context/CompanyContext.test.tsx), [companies-route-cross-company-authz.test.ts](../../server/src/__tests__/companies-route-cross-company-authz.test.ts)
+
+#### `archive`
+
+Scope: ui
+Storybook: Archive confirmation, pending/error and departure navigation; archived list entry and Unarchive action.
+Production: Archive eligible agents/runs without deleting history; restoration handles archival-specific pause and navigates to correct company.
+Sources: Source: [CompanySettings.tsx](../../ui/src/pages/CompanySettings.tsx), [Companies.tsx](../../ui/src/pages/Companies.tsx), [companies.ts](../../ui/src/api/companies.ts). Tests: [CompanySettingsArchive.test.tsx](../../ui/src/pages/CompanySettingsArchive.test.tsx), [Companies.test.tsx](../../ui/src/pages/Companies.test.tsx), [companies-service.test.ts](../../server/src/__tests__/companies-service.test.ts)
+
+#### `portability`
+
+Scope: ui
+Storybook: Import/export preview, conflict choice, warnings, async progress/failure/success and restricted managed deployment.
+Production: Apply real small package to disposable target; inspect counts/references/conflicts, source immutability and credential exclusions; imported task requires separate runnable-account proof.
+Sources: Source: [CompanyImport.tsx](../../ui/src/pages/CompanyImport.tsx), [CompanyExport.tsx](../../ui/src/pages/CompanyExport.tsx), [companies.ts](../../ui/src/api/companies.ts). Tests: [CompanyImport.test.tsx](../../ui/src/pages/CompanyImport.test.tsx), [CompanyExport.test.tsx](../../ui/src/pages/CompanyExport.test.tsx), [company-portability-routes.test.ts](../../server/src/__tests__/company-portability-routes.test.ts), [company-import-export-e2e.test.ts](../../cli/src/__tests__/company-import-export-e2e.test.ts)
+
+### Documentation scope: Company and instance administration
+
+Core administration/import/export/operator workflows are mapped; cloud/self-hosted differences, migration/restore compatibility, and platform-specific service variants need deeper recipes.

@@ -28,6 +28,15 @@ const meta = {
           "Shipped PipelineSettings with isolated API receipts. Guards, durable transitions, automation execution and learning provenance require production tests.",
       },
     },
+    paperclip: {
+      "capabilities": [
+        "pipelines/stages"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Production PipelineSettings stage editor with filled configuration, no stages, pending/error/403. This pass renders the shipped controls; saved stage/automation changes remain production obligations."
+    },
   },
   beforeEach: ({ parameters }) =>
     installPipelineFixture(parameters.fixtureState as FixtureState, {

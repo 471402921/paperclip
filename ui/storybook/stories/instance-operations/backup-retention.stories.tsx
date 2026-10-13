@@ -19,6 +19,16 @@ const meta = {
           "Shipped general settings. Retention changes persist within this fixture; database backup and restoration require operator verification.",
       },
     },
+    paperclip: {
+      "capabilities": [
+        "instance-operations/backup",
+        "instance-operations/configuration"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Retention presets, initial read, loading, error, denial and pending/saved selection in InstanceGeneralSettings. Backup creation/restore and real settings authority remain production obligations. The recipe distinguishes process liveness from authenticated database readiness; these examples do not exercise that operator API boundary."
+    },
   },
   beforeEach: ({ parameters }) => {
     settings = instanceGeneralSettingsSchema.parse({});

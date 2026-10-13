@@ -94,7 +94,17 @@ const meta = {
   title:
     "Apps, channels, and extensions/Tool gateways and access profiles/Named gateway tokens",
   component: Tokens,
-  parameters: { layout: "padded" },
+  parameters: { layout: "padded",
+    paperclip: {
+      "capabilities": [
+        "gateways-profiles/tokens"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Named, empty and expired token history; issuance pending/error/403/success and name-confirmed revocation. Tokens are fictional; real bearer expiry, scope and revocation need API verification."
+    },
+  },
   beforeEach: ({ parameters }) => {
     let current = {
       ...gateway,

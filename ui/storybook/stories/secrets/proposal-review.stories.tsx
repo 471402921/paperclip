@@ -51,7 +51,17 @@ const meta = {
   id: "feature-secret-proposal-review",
   title: "Apps, channels, and extensions/Secrets and proposals/Proposal review",
   component: ProposalReview,
-  parameters: { layout: "padded" },
+  parameters: { layout: "padded",
+    paperclip: {
+      "capabilities": [
+        "secrets/proposals"
+      ],
+      "status": "current",
+      "implementation": "production",
+      "boundary": "fixtures",
+      "notes": "Pending proposal, authority preflight block, list states and rejected proposal/rejection error. ProposalsTab and its dialogs are shipped; secret creation, values and grant authority are not exercised."
+    },
+  },
   beforeEach: ({ parameters }) => {
     rows =
       parameters.fixtureState === "empty"

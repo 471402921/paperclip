@@ -1,3 +1,7 @@
+---
+navigation: {"section":"Tasks and conversations","sectionOrder":20,"order":10}
+---
+
 # Task creation and lifecycle
 
 People create, assign, organize, discuss, and finish tasks. A task retains its owner, project, priority, history, and outputs as it moves through the work lifecycle.
@@ -73,3 +77,7 @@ Manual: Add a comment and edit authorized properties. Reload and verify history,
 - A status label alone does not prove that the requested work exists.
 - Single-assignee and atomic checkout rules still apply when tasks are created from different hosts.
 - Use [coordination](./task-coordination.md), [steering](./steering.md), and [documents](./documents-artifacts.md) for their distinct workflows.
+
+### Documentation scope: Tasks, conversations, and attention
+
+Recipes cover the main task/conversation/attention workflows. Full shell, permission, attachment, long-thread, and concurrency permutations remain to be enumerated.
