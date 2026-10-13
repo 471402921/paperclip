@@ -70,14 +70,14 @@ describe("Muse progress UTF-8 bounds", () => {
 
 
 it("keeps installed-version declarations finite and backward compatible", () => {
-  expect(MUSE_ASSET_VERSION).toBe(5);
-  expect(MUSE_CLIENT_VERSION).toBe("5");
+  expect(MUSE_ASSET_VERSION).toBe(6);
+  expect(MUSE_CLIENT_VERSION).toBe("6");
   expect(museQuerySchema.parse({ version: 1, query: "identify" })).toEqual({ version: 1, query: "identify" });
-  for (const clientVersion of ["2", "3", "4", "5"]) {
+  for (const clientVersion of ["2", "3", "4", "5", "6"]) {
     expect(museQuerySchema.parse({ version: 1, query: "identify", clientVersion })).toMatchObject({ clientVersion });
     expect(musePairSchema.parse({ version: 1, ticket: "synthetic-unused-ticket", clientVersion })).toMatchObject({ clientVersion });
   }
-  for (const clientVersion of ["1", "6"]) {
+  for (const clientVersion of ["1", "7"]) {
     expect(() => museQuerySchema.parse({ version: 1, query: "identify", clientVersion })).toThrow();
     expect(() => musePairSchema.parse({ version: 1, ticket: "synthetic-unused-ticket", clientVersion })).toThrow();
   }
@@ -85,7 +85,7 @@ it("keeps installed-version declarations finite and backward compatible", () => 
 
 it("exposes only the exact immutable asset paths for all four versions", () => {
   expect(MUSE_PUBLIC_ROUTES.filter(({ path }) => path.includes("/assets/"))).toEqual(
-    [1, 2, 3, 4, 5].flatMap((version) => ["manifest.json", "client.py", "detector.sh", "instructions.md"].map((name) => ({
+    [1, 2, 3, 4, 5, 6].flatMap((version) => ["manifest.json", "client.py", "detector.sh", "instructions.md"].map((name) => ({
       method: "GET", path: `/api/muse/v1/assets/${version}/${name}`,
     }))),
   );

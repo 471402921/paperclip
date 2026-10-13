@@ -8,13 +8,26 @@ describe("personal Muse client durability", () => {
   it("preserves identities, private credentials, and input receipts across transport failures", () => {
     execFileSync("python3", [
       fileURLToPath(new URL("./fixtures/muse-client-contract.py", import.meta.url)),
-      fileURLToPath(new URL("../services/scripts/muse-client.py", import.meta.url)),
+      fileURLToPath(new URL("../services/scripts/v6/client.py", import.meta.url)),
     ], { encoding: "utf8", timeout: 30_000 });
   });
 });
 
 
 describe("Muse approval-aware setup",()=>{
+  it("preserves the published asset5 pins after completion guidance changes", async () => {
+    expect((await museReceiverAssets(5)).manifest.assets).toEqual({
+  "client.py": {
+    "sha256": "55001af1ac3f5e2e904af1254180d4852025e41ed5c424c0814831a9537e50ca"
+  },
+  "detector.sh": {
+    "sha256": "1cbd1dd379987c7dadebbc466af312d72065e322d19c1ac2d8931ae2779885d7"
+  },
+  "instructions.md": {
+    "sha256": "46488fc1f50520e5f0a53e2a1cd4f944fcf4bd5cacad57de1d68d41d10904041"
+  }
+});
+  });
   it("preserves the published asset4 pins after a receiver update", async () => {
     const assets = await museReceiverAssets(4);
     expect(assets.manifest.assets).toEqual({
@@ -23,9 +36,9 @@ describe("Muse approval-aware setup",()=>{
       "instructions.md": { sha256: "d57f1c43c0d3c7a76f9ed99e73a5a5cdb46c2b7e470efd451519bc3cc3d7d8f3" },
     });
   });
-  it("orders current-chat consent, pinned asset5, public preflight, authenticated status and hook registration",async()=>{
+  it("orders current-chat consent, pinned asset6, public preflight, authenticated status and hook registration",async()=>{
     const assets=await museReceiverAssets(),instruction=await buildMuseSetupInstruction("https://approval.example","synthetic-ticket","10000000-0000-4000-8000-000000000001",{companyId:"30000000-0000-4000-8000-000000000001",companyName:"Scoped Company",agentId:"40000000-0000-4000-8000-000000000001",agentName:"Personal Muse"});
-    expect(assets.manifest.assetVersion).toBe(5);expect(instruction).toContain("/assets/5/");expect(instruction).toContain(assets.manifest.assets["client.py"].sha256);
+    expect(assets.manifest.assetVersion).toBe(6);expect(instruction).toContain("/assets/6/");expect(instruction).toContain(assets.manifest.assets["client.py"].sha256);
     expect(instruction.indexOf("credentials.request_api_access")).toBeLessThan(instruction.indexOf("After consent, download"));
     expect(instruction.indexOf(" preflight.")).toBeLessThan(instruction.indexOf("Then run the client status"));
     expect(instruction.indexOf("Then run the client status")).toBeLessThan(instruction.indexOf("hooks.add"));

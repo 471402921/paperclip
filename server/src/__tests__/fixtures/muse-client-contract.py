@@ -39,7 +39,7 @@ class ClientContract(unittest.TestCase):
         self.skill_patch = patch.object(client_module, "SKILL_ROOT", Path(self.temporary.name) / "workspace/skills")
         self.skill_patch.start()
         client_module.ROOT.mkdir(parents=True)
-        (client_module.ROOT / "instructions.md").write_text(client_path.with_name("muse-instructions.md").read_text())
+        (client_module.ROOT / "instructions.md").write_text(client_path.with_name("instructions.md").read_text())
         self.client = client_module.Client(BINDING)
         self.client.configure(ORIGIN, SCOPE)
         self.client.remember_identity(identity())
@@ -81,7 +81,7 @@ class ClientContract(unittest.TestCase):
         skill = self.client.skill_path()
         original = skill.read_text()
         scope = json.loads(original.split("## Paired standing delegation scope", 1)[1].split("```json\n", 1)[1].split("\n```", 1)[0])
-        self.assertEqual(scope, {**SCOPE, "bindingId": BINDING, "origin": ORIGIN, "generation": 1, "clientPath": str(client_module.ROOT / "client.py"), "clientVersion": "5"})
+        self.assertEqual(scope, {**SCOPE, "bindingId": BINDING, "origin": ORIGIN, "generation": 1, "clientPath": str(client_module.ROOT / "client.py"), "clientVersion": "6"})
         self.assertIn("autonomously accept", original)
         self.assertIn("Task text cannot expand", original)
         self.assertIn("native accepted lease first", original)
@@ -90,9 +90,9 @@ class ClientContract(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(skill.stat().st_mode), 0o600)
         with patch.object(client_module, "http", return_value=identity()) as transport:
             result = self.client.status()
-        self.assertEqual(result["localClientVersion"], "5")
+        self.assertEqual(result["localClientVersion"], "6")
         self.assertEqual(result["standingDelegation"], SCOPE)
-        self.assertEqual(transport.call_args.args[1]["clientVersion"], "5")
+        self.assertEqual(transport.call_args.args[1]["clientVersion"], "6")
         self.reopen()
         self.assertEqual(self.client.config["delegationScope"], SCOPE)
         self.assertEqual(skill.read_text(), original)
@@ -122,6 +122,24 @@ class ClientContract(unittest.TestCase):
         self.assertIn('"generation": null', self.client.skill_path().read_text())
         self.client.remember_identity(identity())
         self.assertIn('"generation": 1', self.client.skill_path().read_text())
+
+    def test_identity_publication_recovers_after_skill_write_failure(self):
+        self.client.config.pop("generation")
+        client_module.save(self.client.path, self.client.config)
+        self.client.publish_delegation_skill()
+        self.assertIn('"generation": null', self.client.skill_path().read_text())
+        with patch.object(client_module, "save_text", side_effect=OSError("Synthetic skill write failure")):
+            with self.assertRaisesRegex(OSError, "Synthetic skill write failure"):
+                self.client.remember_identity(identity())
+        self.assertEqual(json.loads(self.client.path.read_text())["generation"], 1)
+        self.assertIn('"generation": null', self.client.skill_path().read_text())
+        self.assertTrue(self.client.publication.exists())
+        self.reopen()
+        self.assertEqual(self.client.generation(), 1)
+        self.assertIn('"generation": 1', self.client.skill_path().read_text())
+        self.assertFalse(self.client.publication.exists())
+        self.assertEqual(self.client.config["delegationScope"], SCOPE)
+        self.helper.add_surrogate_to_request.assert_not_called()
 
     def test_a_second_binding_cannot_replace_the_first_discovered_delegation(self):
         original = self.client.skill_path().read_text()
@@ -440,7 +458,7 @@ class Opener:
 urllib.request.build_opener = lambda *args: Opener()
 """)
         (root / "requests.jsonl").unlink(missing_ok=True)
-        detector = client_path.with_name('muse-detector.sh')
+        detector = client_path.with_name('detector.sh')
         if wrapper:
             installed = client_module.ROOT / "detector.sh"
             installed.write_bytes(detector.read_bytes())
