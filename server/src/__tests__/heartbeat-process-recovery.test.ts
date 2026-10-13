@@ -10382,6 +10382,11 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       expect(runs).toHaveLength(2);
 
       const retryRun = runs.find((row) => row.id !== runId);
+      expect(retryRun?.id).toBeTruthy();
+      expect(retryRun).toMatchObject({
+        status: "scheduled_retry",
+        scheduledRetryAttempt: 1,
+      });
       expect(
         retryRun?.contextSnapshot as Record<string, unknown> | undefined,
       ).toMatchObject({
@@ -11187,37 +11192,6 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     if (runId) {
       await waitForRunToSettle(heartbeat, runId);
     }
-  });
-
-  it("re-enqueues continuation for stranded in-progress work with no active run", async () => {
-    const { companyId, agentId, issueId, runId } =
-      await seedStrandedIssueFixture({
-        status: "in_progress",
-        runStatus: "failed",
-      });
-    const heartbeat = heartbeatService(db);
-
-    const result = await heartbeat.reconcileStrandedAssignedIssues();
-    expect(result.dispatchRequeued).toBe(0);
-    expect(result.continuationRequeued).toBe(1);
-    expect(result.escalated).toBe(0);
-    expect(result.issueIds).toEqual([issueId]);
-
-    const runs = await selectRecoveryRunsByAgent(agentId);
-    expect(runs).toHaveLength(2);
-
-    const retryRun = runs.find((row) => row.id !== runId);
-    expect(retryRun?.id).toBeTruthy();
-    expect(
-      (retryRun?.contextSnapshot as Record<string, unknown>)?.retryReason,
-    ).toBe("transient_failure");
-    expect(
-      retryRun?.contextSnapshot as Record<string, unknown>,
-    ).not.toHaveProperty("modelProfile");
-    expect(retryRun).toMatchObject({
-      status: "scheduled_retry",
-      scheduledRetryAttempt: 1,
-    });
   });
 
   it("does not run generic continuation recovery for a paused unfinished session goal", async () => {
