@@ -35,6 +35,28 @@ New workflow versions merged into master then receive runner access without a
 separate SHA allowlist update. Dependabot leaves this first-party reference on
 master.
 
+Runner selection calls `ci-routing.yml@master` on the dedicated
+`paperclip-ci-routing-x64` AWS Fleet. The `paperclip-ci-routing` runner group
+admits only `paperclipai/paperclip/.github/workflows/ci-routing.yml@refs/heads/master`
+and repository ID `1170821064`. GitHub evaluates the canonical repository, author, and sender checks before
+allocating reserved capacity. The validated admission snapshot (`AWS_CI_ROUTING_USER_IDS_SOURCE` and
+`AWS_CI_ROUTING_USER_IDS`) must match `AWS_CI_TRUSTED_USER_IDS`. Refresh it through
+the runner-group configuration helper when the roster changes. Missing, stale,
+or malformed settings keep hosted routing available without evaluating JSON
+in the job's placement expression. Unapproved PRs use hosted metadata routing;
+approved manual canaries on master can use the reserved pool. The routing
+workflow reads GitHub metadata without checking out or executing PR code. Its author, sender, rerun actor,
+repository, head, and merge validation still decide whether tests can use AWS.
+Unapproved test workloads continue to use GitHub-hosted runners.
+
+The routing Fleet has two warm On-Demand runners and a four-runner ceiling.
+Test fleets cannot consume its runner slots. Hosted test queues therefore do
+not block AWS runner selection. A manual dispatch of `ci-routing.yml` on master
+checks placement without launching the test matrix; its non-PR event returns
+the hosted test-runner output. Configure and verify the group and Fleet before
+merging this caller. To roll back, restore the hosted gate and retain the routing
+workflow authorization until assigned jobs finish.
+
 Keep the `.github/**` rule in `.github/CODEOWNERS` and the active master ruleset's
 code-owner review requirement enabled. This covers the caller, the trusted
 workflow, and CODEOWNERS itself. Existing administrator pull-request bypasses
@@ -101,6 +123,20 @@ API responses and MCP transports keep their existing compression behavior.
 ## Storybook
 
 The board UI Storybook keeps stories and Storybook config under `ui/storybook/` so component review files stay out of the app source routes.
+
+Stories are grouped in `ui/storybook/stories/<feature-area>/` and the sidebar follows
+the feature map's sections and feature names. Shared fixtures live in
+`ui/storybook/support/`. Keep each suite's explicit meta `id` and catalog `stableId`
+when changing titles or locations so existing review links remain valid.
+
+Start from the downstream [Storybook feature index](../maps/storybook-map/INDEX.md)
+to find existing stories by capability. Its [contract](../maps/storybook-map/README.md)
+separates production subjects, prototype implementations, simulated data, and
+source-review status. Use `maintain-storybook` to reconcile stories/fixtures with
+the feature map, and `review-storybook` to exercise them with existing tools.
+Run `node scripts/storybook-catalog.mjs` after affected story or review-source
+changes; review drift before updating fingerprints, then regenerate with `--write`.
+The feature map remains an upstream input and needs no Storybook-specific fields.
 
 **Chat & Comments → Human identity** covers other-human names and avatars on
 left-aligned task messages alongside agents; only the viewer’s own messages are blue/right-aligned. Its review guide explains the data flow; the task journey uses representative
@@ -2239,3 +2275,12 @@ Chromium. The test starts its own loopback Vite server and mocks API responses;
 it needs no running Paperclip instance or provider credentials. The same spec lives
 in the default `test:e2e` discovery tree, so the existing Chrome CI shards run it
 on pull requests.
+
+### Slack provisioning paths
+
+Self-hosted development continues to use independent Slack app setup. Managed
+Slack installation is a disabled-by-default Cloud feature that also requires the
+companion broker profile and Slack approval. Do not add manager client credentials
+to a local `.env` or an open-source deployment. See
+[Slack setup and Cloud qualification](connections/slack-setup.md) for the gates,
+recovery behavior, and production-component stories.
