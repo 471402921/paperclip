@@ -666,3 +666,33 @@ phase instrumentation was removed. Evidence:
 `/private/tmp/claude-pause-route-targeted-phases.log`, and
 `/private/tmp/claude-pause-route-hook-controls.log`. Exact-head cloud verification
 is still required; no timeout is waived and no provider or native build was run.
+
+## Mobile retained-preview inspection — 2026-10-12
+
+The in-app browser's viewport override did not apply, including to a fresh tab,
+so it supplies no mobile acceptance evidence. The existing Product E2E
+`openConnectionBrowser` helper then opened a private temporary Chromium profile
+against the retained preview. At an actual 390×844 viewport, light and dark
+runner menus fit within the document's 390 px scroll width. Enter opens the
+Runner listbox with native/Legacy choices; Escape preserves the saved native
+choice. Screenshots fast-forward CSS color transitions. Mutation requests were
+blocked by the test browser (none attempted); no provider prompts or setup probes
+were sent. This is a bounded UI inspection, not a catalog workflow grade.
+
+Evidence remains tied to compiled source
+`557c3064a30779e86e1ae312eab3d1d42c3a8b8d` with the recorded controller
+overlays, and must be repeated against final installed packages. The older
+preview's Linux Legacy default label is not evidence for the later platform Auto
+change. Report, light screenshot and dark screenshot are attached to the completed
+isolated x64 task as work products, with independently downloaded SHA-256 matches.
+The task stays done and the agent stays idle. The Product E2E helper's local source
+is `42e5d9bae436254bba6747e7d26be0cce13b3d0c`.
+Report attachment: `e6206748-a785-4c02-9bbf-f4db8a3b22f9`, work product
+`e7f6a023-e754-424b-bdc5-eb4087a79172`; light attachment
+`7c324aa1-d1c0-45cd-b314-c3106cac302d`, work product
+`e81b6b06-e64d-4ed5-aca7-c936a5235c81`; dark attachment
+`2815f32b-86d5-48ed-a0f4-7e35554e54ca`, work product
+`6fb9753e-19e0-496f-bf0a-f2de4d331895`.
+Local receipts: `/private/tmp/claude-responsive-preview-evidence.json`,
+`/private/tmp/claude-responsive-evidence-upload.json`, and
+`/private/tmp/claude-responsive-evidence-independent-check.json`.
