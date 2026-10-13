@@ -288,3 +288,56 @@ The last real assignment remains incomplete and its worker_reported stop hold
 is not released. Any release requires an honest ordinary exact-boundary operator
 attestation. No new assignment or 24-hour campaign begins over that hold. The old
 experiment remains stopped.
+
+
+## Asset6 live failure and current-master repair, October 13 at 22:01 UTC
+
+The frozen asset6 candidate was `7305efe445022205a6440ef8a6caa02460edba9d`.
+Its independent authenticated background verification succeeded. A fresh real
+research assignment was offered 3.120 seconds after creation and claimed after
+103.649 seconds, with native acceptance another 431 milliseconds later. Muse
+submitted the structured question. The operator answered through Paperclip.
+The worker acknowledged the input notification but the answer helper failed;
+there was no canonical consumption, published document, or native completion.
+This is failed prequalification, not a reliability sample.
+
+After ordinary Stop and task cancellation, Muse independently reported the exact
+worker quiescent. The operator used the existing exact-boundary attestation to
+release that hold. Independent private tools were not certified stopped. A
+read-only diagnostic after cancellation requested only checkpoint shape fields.
+Muse confirmed valid JSON object, with the helper's `inputs` field missing. No
+checkpoint contents, credential files, Vault values or surrogate headers were
+read. The diagnostic was an operator intervention, not unattended success.
+
+The client and model shared the same continuation pathname. Immutable asset7
+separates helper-owned input receipts from model-owned work state, preserving
+legacy prepared command identities and failing closed on malformed helper
+receipts. This correction and its live retry are still in progress. The fixture
+is deliberately offline for source assembly; its database and OAuth grant remain.
+
+The master cutoff has advanced to `edcfcaf3f69abfda12fcbc63225f7346f53450aa`.
+New master migrations341–342 require the Muse suffix343–347. SQL identity,
+applied history and credential values must be preserved by normal migration
+reconciliation. Master's new Storybook annotations and ignored generated outputs
+replace the obsolete aggregate catalog/fingerprint workflow.
+
+Frozen7305 passed full workspace typecheck and build. The required local full
+test command remains incomplete: owned embedded PostgreSQL initialization hit
+host shared-memory limits, and one adapter-utils publication-race assertion
+failed in the broader remainder. Both attempts and clean focused reruns are
+retained. Source equality and a passing focused master case do not prove those
+failures were inherited. No full-green local claim is made.
+
+The frozen Linux Runner compiled and passed installed-package lookup/startup and
+its network-disabled Muse native contract. A first twenty-minute packing attempt
+was stopped at its bound; a separately bounded pack-only recovery passed using
+byte-identical official pack/install/consumer function bodies. This is local
+Linux emulation and synthetic protocol evidence, not a deployed managed tenant
+or personal Muse task completion. New master contains no Runner/Rust/eval source
+changes, to be rechecked on assembly.
+
+Next critical gate: freeze asset7 on the fixed current-master stack and complete
+the real research/document/clarification task. Follow-up and fresh-conversation
+proactive intake must then pass before starting the new24-hour campaign. The old
+experiment remains stopped, Muse remains experimental and disabled by default,
+and no Cloud tenant or production rollout is claimed qualified.
