@@ -40,6 +40,12 @@ Automated: [activity service](../../server/src/__tests__/activity-service.test.t
 
 Manual: Find a known mutation by actor/resource and a known run by status. Change filters, load more, and follow the source links. Reload the chosen view and verify no company leakage or duplicate events. Inspect a routine run from its audit entry.
 
+Issue activity is also available through `GET /api/issues/{id}/activity`.
+[Agent authorization](../../server/src/__tests__/activity-routes.test.ts) and
+[sandbox bridge](../../packages/adapter-utils/src/sandbox-callback-bridge.test.ts)
+regressions cover this route separately from company-wide audit. Live sandbox
+agent access remains unverified; use the companion recipe.
+
 Audit-event Load more and run listings differ: Runs currently loads at most 200
 entries without pagination. The tested RoutineAuditActivity component has no
 registered activity-route host; inspect execution links actually offered by

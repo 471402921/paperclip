@@ -35,7 +35,18 @@ Preconditions: follow the [baseline](./README.md#before-driving-a-journey). Seed
 
 Automated: [archive routes](../../server/src/__tests__/inbox-archive-routes.test.ts) cover server mutations. [Task-list helpers](../../ui/src/pages/Issues.test.tsx) cover search URLs, pagination, and presentation constants; they do not render the combined Inbox/Tasks page. Reading, archiving, and navigating that page remain manual checks.
 
+Automated: [Issue service regressions](../../server/src/__tests__/issues-service.test.ts)
+cover exclusion of historical automatic read cleanup from user participation,
+unread counts, and activity timestamps while retaining explicit user decisions
+and audit history.
+
 Manual: Read an unread task, return to Unread, archive a handled item, and reload. Verify personal triage state changes while task status stays correct. Switch users and companies to check isolation.
+
+Seed a completed task whose only activity under the viewing user is automatic
+read cleanup. Refresh Mine and Unread: the task must not appear through that
+participation, while the cleanup remains in activity history. Record an explicit
+user recovery decision on a separate task and verify it still counts. This
+browser journey remains manual.
 
 ### `decisions`
 
