@@ -720,12 +720,39 @@ describe("personal Muse control plane",()=>{
     const [ended]=await db.select().from(bindings).where(eq(bindings.id,f.binding.id));expect(ended.revokedAt).toBeInstanceOf(Date);expect(ended.deadlineEnforcedAt).toBeInstanceOf(Date);
   });
   it("rejects a claim when reassignment commits while its exact issue lock is held",async()=>{
-    const f=await active();let unlock!:()=>void,held!:()=>void;
+    const f=await active();let unlock!:()=>void,held!:()=>void,holderPid!:number;
     const gate=new Promise<void>(resolve=>{unlock=resolve;}),locked=new Promise<void>(resolve=>{held=resolve;});
-    const reassignment=db.transaction(async tx=>{await tx.select({id:issues.id}).from(issues).where(eq(issues.id,f.issue.id)).for("update");held();await gate;await tx.update(issues).set({assigneeAgentId:null,checkoutRunId:null,executionRunId:null}).where(eq(issues.id,f.issue.id));});
+    const reassignment=db.transaction(async tx=>{
+      holderPid=(await tx.execute<{pid:number}>(sql`select pg_backend_pid() as pid`))[0].pid;
+      await tx.select({id:issues.id}).from(issues).where(eq(issues.id,f.issue.id)).for("update");held();await gate;
+      await tx.update(issues).set({assigneeAgentId:null,checkoutRunId:null,executionRunId:null}).where(eq(issues.id,f.issue.id));
+    });
     await locked;let settled=false;
     const claim=f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()}).finally(()=>{settled=true;});
-    try {await new Promise(resolve=>setTimeout(resolve,50));expect(settled).toBe(false);unlock();await reassignment;await expect(claim).rejects.toThrow("task");expect(f.sent).toEqual([]);expect((await db.select().from(assignments).where(eq(assignments.id,f.assignment.id)))[0].claimedAt).toBeNull();}finally{unlock();await f.detach();}
+    void claim.catch(()=>{});
+    try {
+      // Observe the real DB wait, rather than assume asynchronous preflight
+      // checks have reached reservation after an arbitrary sleep. This holder
+      // locks only this task; blocker PID + issues FOR UPDATE identifies the
+      // claim's admission barrier without recording private SQL or parameters.
+      let waiting=false;const deadline=Date.now()+5000;
+      while(Date.now()<deadline&&!settled) {
+        const waiters=await db.execute<{pid:number}>(sql`
+          select waiter.pid from pg_stat_activity waiter
+          where waiter.datname=current_database() and waiter.wait_event_type='Lock'
+            and ${holderPid}=any(pg_blocking_pids(waiter.pid))
+            and waiter.query ~* '(from|join)[[:space:]]+"?issues"?'
+            and waiter.query ~* 'for[[:space:]]+update'
+          limit 2`);
+        if(waiters.length===1){waiting=true;break;}
+        await new Promise(resolve=>setTimeout(resolve,25));
+      }
+      expect(waiting).toBe(true);expect(settled).toBe(false);
+      unlock();await reassignment;
+      await expect(claim).rejects.toThrow("current task");
+      expect(f.sent).toEqual([]);
+      expect((await db.select().from(assignments).where(eq(assignments.id,f.assignment.id)))[0].claimedAt).toBeNull();
+    } finally {unlock();await reassignment;await claim.catch(()=>{});await f.detach();}
   });
   it("reconciles pending sends to an independent unknown barrier on controller recovery",async()=>{
     const f=await active();await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});await f.detach();
