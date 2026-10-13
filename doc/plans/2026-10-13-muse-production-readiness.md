@@ -34,7 +34,8 @@ Date: 2026-10-13. Owner: this integration task. This updates the accepted Muse p
 | 24-hour reliability | Not run; prior experiment is not reusable qualification | Freeze candidate; bounded unattended monitor with deterministic samples, cadence and queue-to-claim/full-response timings; report incomplete evidence and owned-resource cleanup. |
 | Review and release | Previous draft PRs were green/5of5 on old heads | Current targeted checks → required full checks/token gates → current-head CI/review. Keep manageable logical PRs/dependencies. Separate review-ready, qualified, merged, deployed, and canary-verified. |
 
-Next critical-path gate: reconcile current master and implement the approved receiver boundary, then prove the actual personal Muse readiness round trip before broadening the live campaign.
+Next critical-path gate: establish explicit standing delegation in onboarding,
+then prove actual autonomous acceptance and completion before the live campaign.
 
 The previous receiver test remains stopped. No October 10 scripted evidence establishes actual Muse execution, first-time onboarding, Cloud deployment, or unattended reliability. Existing credentials and private fixture data are never copied into this plan or public PRs.
 
@@ -81,3 +82,118 @@ OAuth grant is not yet installed. The final control checks passed51 Muse cases,
 101 existing Dot/personal OAuth cases,23 supported-client cases and11 protocol
 cases. The rendered expiry journey revealed a missing Reconnect action, now
 covered by the actual invitation component regression. UI checks passed27 cases.
+
+## Actual provider checkpoint, October 13 at 17:26 UTC
+
+The current source candidate is `51ad4ba59021d5d281736b4c5d4d541d58036aea`,
+following integration commit `f6285c7b5a0a82b5cbba53ea67ab18bc99426eee`.
+The later change surfaces Vault Connect in the current Muse conversation before
+background installation; it does not alter the immutable receiver asset2 bytes.
+
+The first actual installation attempt created a visible background task but
+made no observed installation, credential request, or hook progress. A read-only
+operator status inquiry after approximately ten minutes found no active worker,
+installed files, or new hook. That attempt is failed/assisted onboarding evidence,
+not an unattended success. Its expired one-use ticket was replaced normally.
+One subsequent ticket expired while its Connect action was pending; it was also
+replaced through the ordinary connection API.
+
+An explicit current-conversation credential request then completed Muse's normal
+Vault Connect flow. The user authorized the agent to perform the test connection
+consent. Authd preserved the pairing-ticket query and supplied its actual callback,
+public-client registration and S256 PKCE. Paperclip observed an active credential
+for the intended disposable company and named agent at 17:26 UTC. No credential
+was exported from Muse, copied manually, or written by the worker. This establishes
+actual supported OAuth bootstrap, not yet a surrogate-authenticated worker read,
+background reply, task execution, or unattended first-time setup.
+
+The native smoke fixture also passed two scripted assignments on the integrated
+candidate: document publication, structured clarification/answer consumption,
+native finalization and follow-up. Its first attempt failed because the Runner
+WebSocket resolved to a public hostname exposing only the approved Muse routes.
+The fixture was repaired using the existing `PAPERCLIP_API_URL` loopback setting;
+no new public Runner route or provider fallback was added. A fresh ordinary run
+then passed. These remain local synthetic results, separate from personal Muse
+and managed Cloud qualification.
+
+The required full Core test suite is still running. Updated reviewable PR slices
+are being reconstructed on the frozen master cutoff. The five-second receiver,
+real work in both directions, deployed managed artifact, and new 24-hour campaign
+remain release gates. The previous experiment remains stopped.
+
+## Actual provider checkpoint, October 13 at 18:44 UTC
+
+Serving source `d80cca8d7ec2d5e19f8396b6b563acf515f1a48b` publishes immutable
+asset3. Core and Cloud match 24 bounded protocol routes. Full workspace typecheck
+and build passed on this source. Required full tests have retained failures in
+unchanged baseline suites; focused reruns passed where recorded, but the complete
+run is not green. Remaining serialized phases are still being executed.
+
+The actual Secure Vault grant completed an authenticated scoped identity read.
+Aggregate metadata also proves a rotating refresh and a 900-second maximum
+access-token lifetime. Neither raw credentials nor surrogate headers were
+exported. Early network reads required normal provider approvals and exceeded
+the old 30-second timeout. Asset3 adds a bounded 120-second preflight and an
+honest timeout/permission-wait diagnostic. A manual server restart and approved
+provider permission actions are recorded setup interventions, not unattended
+first-time onboarding evidence. Muse's actual Always allow card covered the
+parent domain and subdomains; the setup now warns about the displayed scope.
+
+Muse installed the five-second managed hook, persistent skill, and asset3 client.
+A subsequent independent detector wake confirmed the authenticated readiness
+challenge at 18:23:47 UTC. Paperclip observed paired, receiver detected, and
+background reply verified separately. This establishes actual background
+connectivity, not full task execution or proven effective five-second cadence.
+
+The first real research/clarification assignment was queued at 18:30:22.994 UTC
+and offered 2.096 seconds later. Muse woke and read the authenticated offer, but
+asked for fresh permission to accept. There was no claim, native acceptance,
+document, question, or result. The normal deadline fenced the assignment and
+failed its native run at 18:40:24.485 UTC. Muse then observed the revocation and
+reported no work. No admitted effects or uncertain-operation holds were present.
+This is a failed unattended acceptance attempt; it is not a successful sample.
+
+Diagnosis: setup clearly says signals and offers do not grant execution authority
+but does not clearly grant standing permission to request native acceptance.
+Correct onboarding must authorize autonomous receipt, validation, and acceptance
+for the exact company and named agent. Work still requires the native accepted
+receipt and current lease; task content cannot expand delegation or override
+Muse's own permissions. Publish corrected instructions as asset4 without changing
+asset1–3 bytes. Deliver this authorization to the existing test connection as a
+recorded onboarding repair, then test a fresh assignment without a chat nudge.
+
+Review also found a resumed-hire retention defect and missing agent-attributed
+readiness/cleanup activity history. Fixes and regression checks are in progress.
+The task thread must show Waiting for Muse until native acceptance rather than
+implying the worker is thinking.
+
+The new 24-hour test has not begun. Actual work in both directions, clarification,
+follow-up, effective cadence, managed Linux execution, and deployed tenant proof
+remain release gates. The old experiment stays stopped and the provider stays
+experimental/default off.
+
+## Asset4 assembly and prequalification repair
+
+Asset4 adds exact company/agent standing delegation, binding-specific persistent
+skills and authenticated installed-version reporting. Historical asset1–3 bytes
+are unchanged. Muse acknowledged a direct scoped user authorization at 19:14 UTC
+and reported no inline mailbox read, claim, or challenge acknowledgement. This is
+a recorded onboarding repair, not a successful task or qualification sample.
+
+The final stack also retains resumed invitations after readiness, audits
+readiness/cleanup with the named agent and authorizing person, and displays
+Waiting for Muse/Dot until native acceptance. Question sets share Runner's
+196 KiB serialized UTF-8 bound. The five migration SQL files and original journal
+timestamps are preserved, with coherent snapshot predecessors. No live database
+reset or direct receipt edit was performed during assembly.
+
+Prequalification receiver measurements over 20 minutes contained 214 contacts:
+median gap 5.780 seconds, p90 6.126 seconds, maximum 7.584 seconds; 210 of 213 gaps
+were at most seven seconds. This is promising cadence evidence, not the required
+24-hour observation or a completed assignment.
+
+The full frozen asset3 test coverage retains failed attempts. Its control file
+passed 52 cases. Unchanged bounded reruns passed the invitation-list and native
+bootstrap cases where recorded, while one pipelines case remains reproducibly
+unresolved. A clean frozen-master baseline is being tested before attributing
+that failure. The required final-candidate checks and live journeys remain open.
