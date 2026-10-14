@@ -86,6 +86,38 @@ describe("personal Muse control plane",()=>{
     expect(logs[0]).toMatchObject({actorType:"agent",actorId:f.agent.id,agentId:f.agent.id,responsibleUserId:f.operatorId,details:{bindingId:f.binding.id,generation:1,authorizingUserId:f.operatorId,requestId}});
     expect(JSON.stringify(logs)).not.toContain(nonce);
   });
+  it("keeps expired legacy readiness quiet after an acknowledged item becomes eligible for rearm",async()=>{
+    const f=await fixture(),signal=await f.identity.authenticate(f.credentials.signalToken,"signal");
+    const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;
+    await f.broker.verify(f.company.id,f.agent.id,{bindingId:f.binding.id,generation:1,expectedRevision:state.revision});
+    const [challenge]=await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"readiness_challenge")));
+    await db.update(bindings).set({challengeExpiresAt:new Date(Date.now()-1)}).where(eq(bindings.id,f.binding.id));
+    const poll=()=>museReceiver(db).signal(signal);
+    expect(await poll()).toEqual({version:1,signal:null});
+    await f.broker.inspect(f.subject,{version:1,query:"mailbox",after:challenge.id});
+    await db.update(mailbox).set({signalNotifiedAt:new Date(Date.now()-60000)}).where(eq(mailbox.id,challenge.id));
+    expect(await poll()).toEqual({version:1,signal:null});
+    expect((await db.select().from(mailbox).where(eq(mailbox.id,challenge.id)))[0].signalAttempt).toBe(0);
+  });
+  it("signals only the current unread legacy readiness nonce with a stable reference",async()=>{
+    const f=await fixture(),signal=await f.identity.authenticate(f.credentials.signalToken,"signal");
+    const verify=async()=>{const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;return f.broker.verify(f.company.id,f.agent.id,{bindingId:f.binding.id,generation:1,expectedRevision:state.revision});};
+    const firstPending=await verify();expect(await verify()).toEqual(firstPending);
+    expect(await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"readiness_challenge")))).toHaveLength(1);
+    await db.update(bindings).set({challengeExpiresAt:new Date(Date.now()-1)}).where(eq(bindings.id,f.binding.id));await verify();
+    const challenges=await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"readiness_challenge"))).orderBy(mailbox.id);
+    expect(challenges).toHaveLength(2);
+    const current=(await db.select().from(bindings).where(eq(bindings.id,f.binding.id)))[0];
+    expect(museCredentialHash(String(challenges[1].references.nonce))).toBe(current.challengeHash);
+    const poll=()=>museReceiver(db).signal(signal),first=await poll();
+    expect(first).toEqual({version:1,signal:{reference:`${f.binding.id}:1:${challenges[1].id}:1`}});expect(await poll()).toEqual(first);
+    const saved=await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"readiness_challenge"))).orderBy(mailbox.id);
+    expect(saved.map(item=>item.signalAttempt)).toEqual([0,1]);
+    await f.broker.inspect(f.subject,{version:1,query:"mailbox",after:challenges[1].id});expect(await poll()).toEqual({version:1,signal:null});
+    await db.update(bindings).set({challengeExpiresAt:new Date(Date.now()-1)}).where(eq(bindings.id,f.binding.id));await verify();
+    const all=await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"readiness_challenge"))).orderBy(mailbox.id);
+    expect(all).toHaveLength(3);expect(await poll()).toEqual({version:1,signal:{reference:`${f.binding.id}:1:${all[2].id}:1`}});
+  });
   it.each(["automatic","board"] as const)("audits %s readiness only on first change with the actual actor",async source=>{
     const f=await fixture(false),operatorId=source==="board"?randomUUID():undefined;
     if(operatorId){
