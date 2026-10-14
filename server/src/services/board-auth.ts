@@ -188,6 +188,7 @@ export function boardAuthService(db: Db) {
       const created = await tx.select({ companyId: activityLog.companyId }).from(activityLog)
         .innerJoin(companies, eq(companies.id, activityLog.companyId))
         .where(and(eq(activityLog.actorType, "user"), eq(activityLog.actorId, key.userId),
+          eq(activityLog.responsibleUserId, key.userId), eq(activityLog.entityType, "user"), eq(activityLog.entityId, key.userId),
           eq(activityLog.action, "board_api_key.created"), sql`${activityLog.details}->>'boardApiKeyId' = ${key.id}`));
       for (const row of created) companyIds.add(row.companyId);
       const approved = await tx.select({ companyId: cliAuthChallenges.requestedCompanyId }).from(cliAuthChallenges)

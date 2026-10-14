@@ -1211,3 +1211,7 @@ Revocation records use the current key owner and trusted original creation or
 approved-challenge company context. Removing a company membership does not
 remove that audit history. Revocation and its audit records commit together;
 an audit failure leaves the key unchanged so the operation can be retried.
+Historical creation rows with a NULL responsible user do not provide trusted
+revocation context. The original approved challenge or current authorized
+company context can still provide that destination. Client-supplied activity
+rows cannot establish key ownership or a revocation audit destination.

@@ -304,19 +304,24 @@ databaseSuite("CLI challenge authority and transitions (real PostgreSQL)", () =>
     const approved = await f.service.approveCliAuthChallenge(f.challenge.id, f.challengeSecret, f.userId);
     const keyId = approved.challenge.boardApiKeyId!;
     const foreign = await fixture();
-    await db.insert(activityLog).values({ companyId: foreign.companyId, actorType: "user", actorId: foreign.userId,
-      action: "board_api_key.created", entityType: "user", entityId: foreign.userId, details: { boardApiKeyId: keyId } });
     await db.update(cliAuthChallenges).set({ boardApiKeyId: keyId, approvedByUserId: foreign.userId, approvedAt: new Date() })
       .where(eq(cliAuthChallenges.id, foreign.challenge.id));
     await db.update(companyMemberships).set({ status: "suspended" }).where(eq(companyMemberships.principalId, f.userId));
     expect(await f.service.resolveBoardActivityCompanyIds({ userId: f.userId, requestedCompanyId: foreign.companyId })).toEqual([]);
-    const [{ default: express }, { default: request }, { actorMiddleware }, { accessRoutes }, { errorHandler }] = await Promise.all([
-      import("express"), import("supertest"), import("../middleware/auth.js"), import("../routes/access.js"), import("../middleware/error-handler.js"),
+    const [{ default: express }, { default: request }, { actorMiddleware }, { accessRoutes }, { errorHandler }, { activityRoutes }] = await Promise.all([
+      import("express"), import("supertest"), import("../middleware/auth.js"), import("../routes/access.js"), import("../middleware/error-handler.js"), import("../routes/activity.js"),
     ]);
     const app = express(); app.use(express.json());
     app.use(actorMiddleware(db, { deploymentMode: "authenticated", resolveSession: async req => (req.header("X-Test-Session") === f.userId || req.header("X-Test-Session") === foreign.userId)
       ? { session: { id: "synthetic-session" }, user: { id: req.header("X-Test-Session"), name: "CLI owner", email: "owner@example.invalid" } } as any : null }));
-    app.use("/api", accessRoutes(db, { deploymentMode: "authenticated", deploymentExposure: "private", bindHost: "127.0.0.1", allowedHostnames: [] })); app.use(errorHandler);
+    app.use("/api", accessRoutes(db, { deploymentMode: "authenticated", deploymentExposure: "private", bindHost: "127.0.0.1", allowedHostnames: [] })); app.use("/api", activityRoutes(db)); app.use(errorHandler);
+    const foreignKey = await f.service.createNamedBoardApiKey({ userId: foreign.userId, name: "Synthetic foreign operator" });
+    const forged = await request(app).post(`/api/companies/${foreign.companyId}/activity`).set("Authorization", `Bearer ${foreignKey.token}`).send({
+      actorType: "user", actorId: f.userId, action: "board_api_key.created", entityType: "user", entityId: f.userId,
+      responsibleUserId: f.userId, responsible_user_id: f.userId, details: { boardApiKeyId: keyId, responsibleUserId: f.userId },
+    });
+    expect(forged.status).toBe(201);
+    expect(forged.body.responsibleUserId).toBeNull();
     expect(await f.service.revokeBoardApiKey(keyId, { userId: foreign.userId, revokedVia: "board_api_key_lifecycle" })).toBeNull();
     const denied = await request(app).delete(`/api/board-api-keys/${keyId}`).set("X-Test-Session", foreign.userId);
     expect(denied.status).toBe(404);
@@ -330,6 +335,32 @@ databaseSuite("CLI challenge authority and transitions (real PostgreSQL)", () =>
     const matching = rows.filter(row => row.details?.boardApiKeyId === keyId);
     expect(matching).toHaveLength(1);
     expect(matching[0]).toMatchObject({ companyId: f.companyId, actorId: f.userId, details: { boardApiKeyId: keyId, revokedVia } });
+  });
+
+  it("retains server-derived named-key creation context while rejecting public same-owner audit forgeries", async () => {
+    const f = await fixture(), foreign = await fixture();
+    await f.service.approveCliAuthChallenge(f.challenge.id, f.challengeSecret, f.userId);
+    const [{ default: express }, { default: request }, { actorMiddleware }, { accessRoutes }, { activityRoutes }, { errorHandler }] = await Promise.all([
+      import("express"), import("supertest"), import("../middleware/auth.js"), import("../routes/access.js"), import("../routes/activity.js"), import("../middleware/error-handler.js"),
+    ]);
+    const app = express(); app.use(express.json()); app.use(actorMiddleware(db, { deploymentMode: "authenticated", resolveSession: async () => null }));
+    app.use("/api", accessRoutes(db, { deploymentMode: "authenticated", deploymentExposure: "private", bindHost: "127.0.0.1", allowedHostnames: [] }));
+    app.use("/api", activityRoutes(db)); app.use(errorHandler);
+    const created = await request(app).post("/api/board-api-keys").set("Authorization", `Bearer ${f.pendingBoardToken}`)
+      .send({ name: "Synthetic named key", requestedCompanyId: f.companyId });
+    expect(created.status).toBe(201);
+    expect(await db.select().from(cliAuthChallenges).where(eq(cliAuthChallenges.boardApiKeyId, created.body.id))).toHaveLength(0);
+    const foreignKey = await f.service.createNamedBoardApiKey({ userId: foreign.userId, name: "Synthetic foreign operator" });
+    const forged = await request(app).post(`/api/companies/${foreign.companyId}/activity`).set("Authorization", `Bearer ${foreignKey.token}`).send({
+      actorType: "user", actorId: f.userId, action: "board_api_key.created", entityType: "user", entityId: f.userId,
+      responsibleUserId: f.userId, details: { boardApiKeyId: created.body.id, responsibleUserId: f.userId },
+    });
+    expect(forged.status).toBe(201); expect(forged.body.responsibleUserId).toBeNull();
+    await db.update(companyMemberships).set({ status: "suspended" }).where(eq(companyMemberships.principalId, f.userId));
+    expect((await request(app).post("/api/cli-auth/revoke-current").set("Authorization", `Bearer ${created.body.token}`)).status).toBe(200);
+    const rows = (await db.select().from(activityLog).where(eq(activityLog.action, "board_api_key.revoked")))
+      .filter(row => row.details?.boardApiKeyId === created.body.id);
+    expect(rows).toHaveLength(1); expect(rows[0]).toMatchObject({ companyId: f.companyId, actorId: f.userId });
   });
 
   it("rolls back revocation when a second company audit fails and retries first-only", async () => {
