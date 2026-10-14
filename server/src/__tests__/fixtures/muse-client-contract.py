@@ -26,7 +26,7 @@ SCOPE = {"companyId": "30000000-0000-4000-8000-000000000001", "companyName": "Sc
 CREDENTIAL_NAME = "custom.paperclip-muse-" + BINDING
 
 def identity():
-    return {"bindingId": BINDING, "generation": 1, "companyId": "30000000-0000-4000-8000-000000000001", "agentId": "40000000-0000-4000-8000-000000000001"}
+    return {"bindingId": BINDING, "generation": 1, "companyId": SCOPE["companyId"], "agentId": SCOPE["agentId"]}
 
 
 class ClientContract(unittest.TestCase):
@@ -516,6 +516,29 @@ urllib.request.build_opener = lambda *args: Opener()
         output, requests = self.run_detector(dry=False)
         self.assertIn('SILENT:No queued work', output); self.assertNotIn('WAKE:', output)
         self.assert_public_request(requests)
+
+    def assert_receiver_sequence(self, responses):
+        self.assertEqual(len(responses), 6)
+        offered_a, idle_a, offered_b, duplicate_b, rearmed_b, claimed_b = responses
+        self.assertEqual(idle_a, {"version": 1, "signal": None})
+        self.assertEqual(claimed_b, {"version": 1, "signal": None})
+        self.assertEqual(duplicate_b, offered_b)
+        references = [value["signal"]["reference"] for value in (offered_a, offered_b, rearmed_b)]
+        self.assertEqual(len(set(references)), 3)
+        marker = Path(self.temporary.name) / "hooks/state" / ("paperclip-" + BINDING) / "signal"
+        expected_markers = [references[0], references[0], references[1], references[1], references[2], references[2]]
+        for response, expected, expected_marker in zip(responses, ("wake", "idle", "wake", "duplicate", "wake", "idle"), expected_markers):
+            output, requests = self.run_detector(response=response, dry=False, wrapper=True)
+            self.assert_public_request(requests)
+            self.assertNotIn("DISABLE", output)
+            self.assertNotIn("Receiver unavailable", output)
+            if expected == "wake":
+                self.assertIn("WAKE:PAPERCLIP_MUSE:", output)
+                self.assertIn("binding " + BINDING, output)
+            else:
+                self.assertNotIn("WAKE:", output)
+                self.assertIn("Signal already observed" if expected == "duplicate" else "No queued work", output)
+            self.assertEqual(marker.read_text().strip(), expected_marker)
 
     def test_running_detector_rejects_legacy_reference_and_extra_receiver_fields(self):
         output, requests = self.run_detector(response={'version': 1, 'signal': {'reference': BINDING + ':1:1:1'}})
@@ -1129,4 +1152,14 @@ urllib.request.build_opener = lambda *args: Opener()
         self.assertEqual(answer["continuationReceiptId"], rows["question-2"]["continuationReceiptId"])
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--receiver-sequence"]:
+        sequence = json.load(sys.stdin)
+        BINDING, ORIGIN, SCOPE = sequence["bindingId"], sequence["origin"], sequence["scope"]
+        CREDENTIAL_NAME = "custom.paperclip-muse-" + BINDING
+        fixture = ClientContract()
+        case = unittest.FunctionTestCase(lambda: fixture.assert_receiver_sequence(sequence["responses"]), setUp=fixture.setUp, tearDown=fixture.tearDown)
+        result = unittest.TextTestRunner().run(case)
+        if result.wasSuccessful():
+            print(json.dumps({"outputs": ["wake", "idle", "wake", "duplicate", "wake", "idle"], "providerAcknowledgement": "not_observed"}))
+        sys.exit(0 if result.wasSuccessful() else 1)
     unittest.main()

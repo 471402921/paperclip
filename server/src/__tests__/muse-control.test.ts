@@ -1,4 +1,6 @@
 import express from "express";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { activityLog, documents, issueDocuments } from "@paperclipai/db";
 import request from "supertest";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -1083,6 +1085,47 @@ describe("personal Muse control plane",()=>{
       const retry=await museReceiver(db).signal(f.binding.id);expect(retry.signal?.reference).not.toEqual(first.signal?.reference);
       await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});expect((await museReceiver(db).signal(f.binding.id)).signal).toBeNull();
     }finally{await f.detach();}
+  });
+  it("wakes the exact v9 detector for a distinct offer after native success and mailbox acknowledgement",async()=>{
+    const first=await active(await oauthFixture(true));
+    let second:Awaited<ReturnType<typeof active>>|undefined;
+    try {
+      const poll=()=>museReceiver(db).signal(first.binding.id,oauthResource);
+      const offeredA=await poll();expect(offeredA.signal?.reference).toMatch(/^sha256:[a-f0-9]{64}$/);
+      expect(await first.broker.act(first.subject,{version:1,command:"accept",assignmentId:first.assignment.id,requestId:randomUUID()})).toMatchObject({status:"accepted"});
+      expect(await first.broker.act(first.subject,{version:1,command:"finish",assignmentId:first.assignment.id,requestId:randomUUID(),result:{}})).toMatchObject({status:"completed"});
+      await db.update(heartbeatRuns).set({status:"succeeded",finishedAt:new Date()}).where(eq(heartbeatRuns.id,first.runId));
+      await first.broker.reconcileTerminalAssignments(first.company.id,first.agent.id,first.binding.id);
+      const [completed]=await db.select().from(assignments).where(eq(assignments.id,first.assignment.id));
+      expect(completed).toMatchObject({status:"settled",nativeAcceptedAt:expect.any(Date),acceptedResultAt:expect.any(Date),finalizedAt:expect.any(Date)});
+      const inbox=await first.broker.inspect(first.subject,{version:1,query:"mailbox",after:0}) as {items:Array<{assignmentId:string|null}>;nextCursor:number};
+      expect(inbox.items.some(item=>item.assignmentId===first.assignment.id)).toBe(true);
+      await first.broker.inspect(first.subject,{version:1,query:"mailbox",after:inbox.nextCursor});
+      expect((await db.select().from(bindings).where(eq(bindings.id,first.binding.id)))[0].workerCursor).toBe(inbox.nextCursor);
+      const idleAfterSuccess=await poll();expect(idleAfterSuccess).toEqual({version:1,signal:null});
+      await first.detach();
+      second=await active(first);
+      expect(second.assignment.id).not.toBe(first.assignment.id);expect(second.runId).not.toBe(first.runId);
+      expect(second.assignment.bindingId).toBe(first.binding.id);expect(second.assignment.bindingGeneration).toBe(first.binding.generation);
+      const [offerB]=await db.select().from(mailbox).where(and(eq(mailbox.assignmentId,second.assignment.id),eq(mailbox.kind,"assignment")));
+      const offeredB=await poll();
+      expect(offeredB).toEqual({version:1,signal:{reference:"sha256:"+createHash("sha256").update(`${first.binding.id}:${first.binding.generation}:${offerB.sourceEventId}:1`).digest("hex")}});
+      expect(offeredB.signal?.reference).not.toBe(offeredA.signal?.reference);
+      const duplicateB=await poll();expect(duplicateB).toEqual(offeredB);
+      await db.update(mailbox).set({signalNotifiedAt:new Date(Date.now()-31000)}).where(eq(mailbox.id,offerB.id));
+      const rearmedB=await poll();
+      expect(rearmedB).toEqual({version:1,signal:{reference:"sha256:"+createHash("sha256").update(`${first.binding.id}:${first.binding.generation}:${offerB.sourceEventId}:2`).digest("hex")}});
+      expect(rearmedB.signal?.reference).not.toBe(offeredB.signal?.reference);
+      expect(await second.broker.act(second.subject,{version:1,command:"accept",assignmentId:second.assignment.id,requestId:randomUUID()})).toMatchObject({status:"accepted"});
+      const [claimed]=await db.select().from(assignments).where(eq(assignments.id,second.assignment.id));
+      expect(claimed).toMatchObject({claimedAt:expect.any(Date),nativeAcceptedAt:expect.any(Date)});
+      const idleAfterClaim=await poll();expect(idleAfterClaim).toEqual({version:1,signal:null});
+      const proof=JSON.parse(execFileSync("python3",[
+        fileURLToPath(new URL("./fixtures/muse-client-contract.py",import.meta.url)),
+        fileURLToPath(new URL("../services/scripts/v9/client.py",import.meta.url)),"--receiver-sequence",
+      ],{input:JSON.stringify({bindingId:first.binding.id,origin:oauthOrigin,scope:{companyId:first.company.id,companyName:first.company.name,agentId:first.agent.id,agentName:first.agent.name},responses:[offeredA,idleAfterSuccess,offeredB,duplicateB,rearmedB,idleAfterClaim]}),encoding:"utf8",timeout:10000}));
+      expect(proof).toEqual({outputs:["wake","idle","wake","duplicate","wake","idle"],providerAcknowledgement:"not_observed"});
+    }finally{await second?.detach();await first.detach();}
   });
   it("rejects missing public origin before replacing a durable connection",async()=>{
     const f=await fixture(),state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;
