@@ -41,9 +41,9 @@ export function museTransportRoutes(db:Db,publicOrigin?:string,options:{allowLeg
   for(const route of MUSE_PUBLIC_ROUTES) {
     const handler=async(req:Request,res:express.Response)=>{
       bound(req);
-      const asset = /^\/api\/muse\/v1\/assets\/([12345678])\/(manifest\.json|client\.py|detector\.sh|instructions\.md)$/.exec(route.path);
+      const asset = /^\/api\/muse\/v1\/assets\/([123456789])\/(manifest\.json|client\.py|detector\.sh|instructions\.md)$/.exec(route.path);
       if (asset) {
-        const assets = await museReceiverAssets(asset[1] === "1" ? 1 : asset[1] === "2" ? 2 : asset[1] === "3" ? 3 : asset[1] === "4" ? 4 : asset[1] === "5" ? 5 : asset[1] === "6" ? 6 : asset[1] === "7" ? 7 : 8);
+        const assets = await museReceiverAssets(asset[1] === "1" ? 1 : asset[1] === "2" ? 2 : asset[1] === "3" ? 3 : asset[1] === "4" ? 4 : asset[1] === "5" ? 5 : asset[1] === "6" ? 6 : asset[1] === "7" ? 7 : asset[1] === "8" ? 8 : 9);
         res.set("Cache-Control", "public, max-age=31536000, immutable");
         if (asset[2] === "manifest.json") res.json(assets.manifest);
         else res.type("text/plain").send(asset[2] === "client.py" ? assets.client : asset[2] === "detector.sh" ? assets.detector : assets.instructions);

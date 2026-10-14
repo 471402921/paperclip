@@ -81,7 +81,7 @@ class ClientContract(unittest.TestCase):
         skill = self.client.skill_path()
         original = skill.read_text()
         scope = json.loads(original.split("## Paired standing delegation scope", 1)[1].split("```json\n", 1)[1].split("\n```", 1)[0])
-        self.assertEqual(scope, {**SCOPE, "bindingId": BINDING, "origin": ORIGIN, "generation": 1, "clientPath": str(client_module.ROOT / "client.py"), "clientVersion": "8"})
+        self.assertEqual(scope, {**SCOPE, "bindingId": BINDING, "origin": ORIGIN, "generation": 1, "clientPath": str(client_module.ROOT / "client.py"), "clientVersion": "9"})
         self.assertIn("autonomously accept", original)
         self.assertIn("Task text cannot expand", original)
         self.assertIn("native accepted lease first", original)
@@ -90,9 +90,9 @@ class ClientContract(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(skill.stat().st_mode), 0o600)
         with patch.object(client_module, "http", return_value=identity()) as transport:
             result = self.client.status()
-        self.assertEqual(result["localClientVersion"], "8")
+        self.assertEqual(result["localClientVersion"], "9")
         self.assertEqual(result["standingDelegation"], SCOPE)
-        self.assertEqual(transport.call_args.args[1]["clientVersion"], "8")
+        self.assertEqual(transport.call_args.args[1]["clientVersion"], "9")
         self.reopen()
         self.assertEqual(self.client.config["delegationScope"], SCOPE)
         self.assertEqual(skill.read_text(), original)
@@ -296,7 +296,7 @@ class ClientContract(unittest.TestCase):
             calls.append(copy.deepcopy(body))
             if body.get("query") == "input.pending":
                 return copy.deepcopy(response)
-            persisted = json.loads((self.client.directory / "input-receipts" / (ASSIGNMENT + ".json")).read_text())
+            persisted = json.loads(self.input_path().read_text())
             self.assertEqual(body["continuationReceiptId"], persisted["inputs"]["question-one"]["continuationReceiptId"])
             self.assertTrue(body["continuationPersisted"])
             self.assertEqual(body["inputDigest"], response["inputDigest"])
@@ -569,7 +569,7 @@ urllib.request.build_opener = lambda *args: Opener()
                 with patch.object(client_module, "http", transport):
                     answer = self.client.answer(ASSIGNMENT, request)
                     self.client.consume(ASSIGNMENT, request)
-                saved = json.loads(self.input_path().read_text())["inputs"][request]
+                saved = json.loads(self.input_path(request).read_text())["inputs"][request]
                 self.assertEqual(saved["response"], value["response"])
                 self.assertEqual(len(saved["response"]["answers"]["choices"]["selectedOptionIds"]), count)
                 self.assertEqual(saved["response"]["answers"]["format"], {"text": "Markdown"})
@@ -622,11 +622,17 @@ urllib.request.build_opener = lambda *args: Opener()
 
     def input_record(self, value=None):
         value = value or {**self.input_response(), "continuationReceiptId": "50000000-0000-4000-8000-000000000001"}
-        return {"schema": "paperclip.muse_input_receipts.v1", "bindingId": BINDING, "generation": 1,
+        return {"schema": "paperclip.muse_input_receipts.v2", "bindingId": BINDING, "generation": 1,
                 "assignmentId": ASSIGNMENT, "inputs": {"question-one": value}}
 
-    def input_path(self):
+    def input_path(self, request="question-one"):
+        return self.client.input_receipt_path(ASSIGNMENT, request)
+
+    def aggregate_input_path(self):
         return self.client.directory / "input-receipts" / (ASSIGNMENT + ".json")
+
+    def aggregate_record(self, inputs):
+        return {"schema": "paperclip.muse_input_receipts.v1", "bindingId": BINDING, "generation": 1, "assignmentId": ASSIGNMENT, "inputs": inputs}
 
     def legacy_input_path(self):
         return self.client.directory / "continuations" / (ASSIGNMENT + ".json")
@@ -649,7 +655,7 @@ urllib.request.build_opener = lambda *args: Opener()
                 self.assertEqual(result["response"], self.input_response()["response"])
                 self.assertEqual(legacy.read_text(), original)
                 self.assertEqual(work.read_bytes(), work_bytes)
-                self.assertEqual(json.loads(self.input_path().read_text())["schema"], "paperclip.muse_input_receipts.v1")
+                self.assertEqual(json.loads(self.input_path().read_text())["schema"], "paperclip.muse_input_receipts.v2")
                 self.assertEqual(transport.call_count, 1)
 
     def test_valid_legacy_prepared_consume_migrates_without_changing_any_identity(self):
@@ -689,7 +695,7 @@ urllib.request.build_opener = lambda *args: Opener()
             cases.append(self.input_record({**row, **change}))
         for record in cases:
             with self.subTest(record=record):
-                self.input_path().parent.mkdir(exist_ok=True)
+                self.input_path().parent.mkdir(parents=True, exist_ok=True)
                 self.input_path().write_text(json.dumps(record)); original = self.input_path().read_bytes()
                 with patch.object(client_module, "http", return_value=self.input_response()) as transport:
                     for action in (self.client.answer, self.client.consume):
@@ -701,8 +707,8 @@ urllib.request.build_opener = lambda *args: Opener()
                 self.assertFalse(self.client.journal_path("consume:" + ASSIGNMENT + ":question-one").exists())
 
     def test_duplicate_json_keys_are_not_silently_adopted_as_a_helper_receipt(self):
-        self.input_path().parent.mkdir(exist_ok=True)
-        self.input_path().write_text('{"schema":"paperclip.muse_input_receipts.v1","inputs":{},"inputs":null}')
+        self.input_path().parent.mkdir(parents=True, exist_ok=True)
+        self.input_path().write_text('{"schema":"paperclip.muse_input_receipts.v2","inputs":{},"inputs":null}')
         with patch.object(client_module, "http") as transport:
             with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid"):
                 self.client.consume(ASSIGNMENT, "question-one")
@@ -915,6 +921,212 @@ urllib.request.build_opener = lambda *args: Opener()
             result = self.client.answer(ASSIGNMENT, "question-one")
         self.assertEqual(result["continuationReceiptId"], record["inputs"]["question-one"]["continuationReceiptId"])
         self.assertEqual(self.legacy_input_path().read_bytes(), original)
+
+    def large_input(self, request, size=100000):
+        value = self.input_response(requestId=request, response={"schema": "paperclip.question_response.v1", "answers": {"answer": {"text": "x" * size}}})
+        value["inputDigest"] = "sha256:" + client_module.hashlib.sha256(client_module.canonical({key: value[key] for key in ("requestId", "turnId", "response")})).hexdigest()
+        return value
+
+    def historical_rows(self, count=3, size=100000):
+        import uuid
+        return {"question-" + str(index): {**self.large_input("question-" + str(index), size),
+            "continuationReceiptId": str(uuid.uuid5(uuid.UUID(BINDING), "question-" + str(index)))} for index in range(1, count + 1)}
+
+    def prepared_input_command(self, row):
+        body = {**self.client.consume_body(row), "requestId": "60000000-0000-4000-8000-000000000001"}
+        key = "consume:" + ASSIGNMENT + ":" + row["requestId"]
+        journal = {"command": body, "digest": client_module.hashlib.sha256(client_module.canonical({k:v for k,v in body.items() if k != "requestId"})).hexdigest(), "state": "prepared"}
+        client_module.save(self.client.journal_path(key), journal)
+        return body, key
+
+    def test_many_large_answers_use_independent_bounded_files_across_restarts(self):
+        commands = []; consumed = set()
+        def transport(url, body=None, token=None):
+            if body.get("query"): return {**self.large_input(body["nativeRequestId"]), "consumed": body["nativeRequestId"] in consumed}
+            commands.append(copy.deepcopy(body)); consumed.add(body["nativeRequestId"])
+            return {"status": "consumed", "requestId": body["nativeRequestId"], "inputDigest": body["inputDigest"]}
+        with patch.object(client_module, "http", transport):
+            for index in range(1, 26):
+                request = "question-" + str(index)
+                answer = self.client.answer(ASSIGNMENT, request)
+                self.client.consume(ASSIGNMENT, request)
+                self.assertEqual(json.loads(self.input_path(request).read_text())["inputs"][request]["continuationReceiptId"], answer["continuationReceiptId"])
+                self.assertLessEqual(self.input_path(request).stat().st_size, client_module.MAX_INPUT_RECEIPT_BYTES)
+                if index % 5 == 0: self.reopen()
+        self.assertEqual(len(commands), 25)
+        self.assertEqual(len({body["requestId"] for body in commands}), 25)
+        self.assertFalse(self.aggregate_input_path().exists())
+        self.assertEqual(len(list(self.input_path().parent.glob("*.json"))), 25)
+        self.assertTrue(all(len(path.stem) == 64 for path in self.input_path().parent.glob("*.json")))
+
+    def test_oversized_old_aggregate_migrates_and_lost_ack_keeps_prepared_identity(self):
+        rows = self.historical_rows(20)
+        client_module.save(self.aggregate_input_path(), self.aggregate_record(rows))
+        original = self.aggregate_input_path().read_bytes()
+        self.assertGreater(len(original), client_module.MAX_BYTES)
+        self.assertLessEqual(len(original), client_module.MAX_LEGACY_INPUT_RECEIPTS_BYTES)
+        row = rows["question-20"]; body, key = self.prepared_input_command(row)
+        prepared = self.client.journal_path(key).read_bytes(); commands = []
+        def transport(url, request=None, token=None):
+            if request.get("query"): return {**{k:v for k,v in row.items() if k != "continuationReceiptId"}, "consumed": bool(commands)}
+            commands.append(copy.deepcopy(request))
+            if len(commands) == 1: raise RuntimeError("Synthetic consume response lost")
+            return {"status": "consumed", "requestId": row["requestId"], "inputDigest": row["inputDigest"]}
+        with patch.object(client_module, "http", transport):
+            answer = self.client.answer(ASSIGNMENT, row["requestId"])
+            self.assertEqual(answer["continuationReceiptId"], row["continuationReceiptId"])
+            self.assertEqual(self.client.journal_path(key).read_bytes(), prepared)
+            with self.assertRaisesRegex(RuntimeError, "response lost"): self.client.consume(ASSIGNMENT, row["requestId"])
+            self.reopen(); self.client.answer(ASSIGNMENT, row["requestId"])
+            self.client.consume(ASSIGNMENT, row["requestId"]); self.client.consume(ASSIGNMENT, row["requestId"])
+        self.assertEqual(commands, [body, body]); self.assertEqual(self.aggregate_input_path().read_bytes(), original)
+        for request, old in rows.items():
+            saved = json.loads(self.input_path(request).read_text())["inputs"][request]
+            self.assertEqual({k:v for k,v in saved.items() if k != "consumed"}, {k:v for k,v in old.items() if k != "consumed"})
+
+    def test_partial_migration_crash_retries_exact_targets_before_any_transport(self):
+        rows = self.historical_rows(); client_module.save(self.aggregate_input_path(), self.aggregate_record(rows))
+        original = self.aggregate_input_path().read_bytes(); save = client_module.save
+        def interrupted(path, value):
+            if path == self.input_path("question-2"): raise OSError("Synthetic interrupted migration")
+            return save(path, value)
+        with patch.object(client_module, "save", interrupted), patch.object(client_module, "http") as transport:
+            with self.assertRaises(OSError): self.client.answer(ASSIGNMENT, "question-3")
+            transport.assert_not_called()
+        first = self.input_path("question-1").read_bytes(); self.assertFalse((self.input_path().parent / "migration.json").exists())
+        self.reopen()
+        value = {k:v for k,v in rows["question-3"].items() if k != "continuationReceiptId"}
+        with patch.object(client_module, "http", return_value=value), patch.object(client_module.uuid, "uuid4", side_effect=AssertionError("Migration must not allocate an identity")):
+            answer = self.client.answer(ASSIGNMENT, "question-3")
+        self.assertEqual(answer["continuationReceiptId"], rows["question-3"]["continuationReceiptId"])
+        self.assertEqual(self.input_path("question-1").read_bytes(), first); self.assertEqual(self.aggregate_input_path().read_bytes(), original)
+        self.assertTrue((self.input_path().parent / "migration.json").exists())
+
+    def test_conflicting_partial_target_fails_before_publishing_other_receipts(self):
+        rows = self.historical_rows(); client_module.save(self.aggregate_input_path(), self.aggregate_record(rows))
+        conflicting = {**rows["question-2"], "continuationReceiptId": "50000000-0000-4000-8000-000000000002"}
+        client_module.save(self.input_path("question-2"), self.client.input_envelope(ASSIGNMENT, {"question-2": conflicting}))
+        original = self.input_path("question-2").read_bytes()
+        with patch.object(client_module, "http") as transport:
+            with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid"): self.client.answer(ASSIGNMENT, "question-3")
+            transport.assert_not_called()
+        self.assertEqual(self.input_path("question-2").read_bytes(), original)
+        self.assertFalse(self.input_path("question-1").exists()); self.assertFalse(self.input_path("question-3").exists())
+        self.assertFalse((self.input_path().parent / "migration.json").exists())
+
+    def test_historical_and_individual_read_bounds_fail_closed_without_echoing_values(self):
+        for path, maximum in ((self.aggregate_input_path(), client_module.MAX_LEGACY_INPUT_RECEIPTS_BYTES), (self.input_path(), client_module.MAX_INPUT_RECEIPT_BYTES)):
+            path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(b" " * (maximum + 1))
+            with patch.object(client_module, "http") as transport:
+                with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid") as error: self.client.answer(ASSIGNMENT, "question-one")
+                self.assertNotIn(str(path), str(error.exception)); transport.assert_not_called()
+            self.assertEqual(path.stat().st_size, maximum + 1); path.unlink()
+
+    def test_malformed_or_duplicate_aggregate_is_never_partially_migrated(self):
+        rows = self.historical_rows(2); valid = self.aggregate_record(rows)
+        invalid = [json.dumps({**valid, "unexpected": "synthetic-private-value"}),
+                   json.dumps({**valid, "generation": True}),
+                   json.dumps(self.aggregate_record({**rows, "question-2": {**rows["question-2"], "turnId": None}})),
+                   json.dumps(valid)[:-1] + ',"inputs":{} }']
+        for content in invalid:
+            self.aggregate_input_path().parent.mkdir(exist_ok=True); self.aggregate_input_path().write_text(content)
+            with patch.object(client_module, "http") as transport:
+                with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid") as error: self.client.answer(ASSIGNMENT, "question-1")
+                self.assertNotIn("synthetic-private", str(error.exception)); transport.assert_not_called()
+            self.assertEqual(self.aggregate_input_path().read_text(), content)
+            self.assertFalse(self.input_path("question-1").exists()); self.assertFalse((self.input_path().parent / "migration.json").exists())
+
+    def near_transport_input(self, unit):
+        value = self.input_response(response={"schema": "paperclip.question_response.v1", "answers": {"answer-" + str(index): {"text": ""} for index in range(64)}})
+        remaining = client_module.MAX_BYTES - len(client_module.canonical(value))
+        unit_bytes = len(client_module.canonical(unit)) - 2
+        for answer in value["response"]["answers"].values():
+            count = min(remaining // unit_bytes, 100000 // len(unit))
+            answer["text"] = unit * count; remaining -= count * unit_bytes
+            if remaining < unit_bytes and len(answer["text"]) + remaining <= 100000:
+                answer["text"] += "a" * remaining; remaining = 0; break
+        self.assertEqual(remaining, 0)
+        value["inputDigest"] = "sha256:" + client_module.hashlib.sha256(client_module.canonical({key: value[key] for key in ("requestId", "turnId", "response")})).hexdigest()
+        self.assertEqual(len(client_module.canonical(value)), client_module.MAX_BYTES)
+        return value
+
+    def test_ascii_and_utf8_escaped_near_transport_answers_remain_readable_after_save(self):
+        for unit in ("a", "答😀\n\"\\\t"):
+            with self.subTest(unit=unit):
+                if self.input_path().exists(): self.input_path().unlink()
+                key = "consume:" + ASSIGNMENT + ":question-one"
+                if self.client.journal_path(key).exists(): self.client.journal_path(key).unlink()
+                value = self.near_transport_input(unit)
+                def transport(url, body=None, token=None):
+                    if body.get("query"): return value
+                    return {"status": "consumed", "requestId": value["requestId"], "inputDigest": value["inputDigest"]}
+                with patch.object(client_module, "http", transport):
+                    answer = self.client.answer(ASSIGNMENT, "question-one")
+                    self.assertGreater(self.input_path().stat().st_size, client_module.MAX_BYTES)
+                    self.assertLessEqual(self.input_path().stat().st_size, client_module.MAX_INPUT_RECEIPT_BYTES)
+                    self.reopen(); self.assertEqual(self.client.consume(ASSIGNMENT, "question-one")["status"], "consumed")
+                self.assertEqual(json.loads(self.input_path().read_text())["inputs"]["question-one"]["continuationReceiptId"], answer["continuationReceiptId"])
+
+    def test_current_writer_rejects_an_unreadable_record_before_publication(self):
+        value = self.input_response(response={"schema": "paperclip.question_response.v1", "answers": {"answer-" + str(i): {"text": "x" * 100000} for i in range(21)}})
+        value["inputDigest"] = "sha256:" + client_module.hashlib.sha256(client_module.canonical({key: value[key] for key in ("requestId", "turnId", "response")})).hexdigest()
+        with patch.object(client_module, "http", return_value=value) as transport:
+            with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid"): self.client.answer(ASSIGNMENT, "question-one")
+            self.assertFalse(any(call.args[1].get("command") for call in transport.call_args_list))
+        self.assertFalse(self.input_path().exists())
+
+    def test_committed_migration_detects_source_missing_target_and_identity_tampering(self):
+        rows = self.historical_rows(1); request = "question-1"
+        client_module.save(self.aggregate_input_path(), self.aggregate_record(rows))
+        with patch.object(client_module, "http", return_value={k:v for k,v in rows[request].items() if k != "continuationReceiptId"}): self.client.answer(ASSIGNMENT, request)
+        source = self.aggregate_input_path().read_bytes(); target = self.input_path(request).read_bytes()
+        for changed in ("source", "missing", "turn", "digest", "receipt", "marker"):
+            marker_path = self.input_path().parent / "migration.json"; marker = marker_path.read_bytes()
+            if changed == "source": self.aggregate_input_path().write_bytes(source + b" ")
+            elif changed == "missing": self.input_path(request).unlink()
+            elif changed == "marker": marker_path.write_text('{"schema":"paperclip.muse_input_receipts_migration.v1","entries":{},"entries":null}')
+            else:
+                record = json.loads(target); row = record["inputs"][request]
+                field = {"turn": "turnId", "digest": "inputDigest", "receipt": "continuationReceiptId"}[changed]
+                row[field] = {"turn": "changed-turn", "digest": "sha256:" + "a" * 64, "receipt": "50000000-0000-4000-8000-000000000009"}[changed]
+                client_module.save(self.input_path(request), record)
+            with patch.object(client_module, "http") as transport:
+                with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid"): self.client.consume(ASSIGNMENT, request)
+                transport.assert_not_called()
+            self.aggregate_input_path().write_bytes(source); self.input_path(request).write_bytes(target); marker_path.write_bytes(marker)
+
+    def test_migration_marker_crash_reuses_prevalidated_files_without_rewriting_them(self):
+        rows = self.historical_rows(2); client_module.save(self.aggregate_input_path(), self.aggregate_record(rows)); save = client_module.save
+        marker = self.input_path().parent / "migration.json"
+        def interrupted(path, value):
+            if path == marker: raise OSError("Synthetic marker commit lost")
+            return save(path, value)
+        with patch.object(client_module, "save", interrupted), patch.object(client_module, "http") as transport:
+            with self.assertRaises(OSError): self.client.answer(ASSIGNMENT, "question-2")
+            transport.assert_not_called()
+        first = self.input_path("question-1").read_bytes(); modified = self.input_path("question-1").stat().st_mtime_ns
+        self.reopen()
+        with patch.object(client_module, "http", return_value={k:v for k,v in rows["question-2"].items() if k != "continuationReceiptId"}): self.client.answer(ASSIGNMENT, "question-2")
+        self.assertEqual(self.input_path("question-1").read_bytes(), first); self.assertEqual(self.input_path("question-1").stat().st_mtime_ns, modified)
+        self.assertTrue(marker.exists())
+
+    def test_migration_source_change_cannot_commit_a_digest_from_different_bytes(self):
+        rows = self.historical_rows(2); client_module.save(self.aggregate_input_path(), self.aggregate_record(rows))
+        original = self.aggregate_input_path().read_bytes(); save = client_module.save
+        def changed(path, value):
+            result = save(path, value)
+            if path == self.input_path("question-1"): self.aggregate_input_path().write_bytes(original + b" ")
+            return result
+        with patch.object(client_module, "save", changed), patch.object(client_module, "http") as transport:
+            with self.assertRaisesRegex(RuntimeError, "input_receipt_invalid"): self.client.answer(ASSIGNMENT, "question-2")
+            transport.assert_not_called()
+        self.assertFalse((self.input_path().parent / "migration.json").exists())
+        # Restore only the synthetic source changed by this test, then retry the
+        # exact copies; no replacement receipt or consume identity is permitted.
+        self.aggregate_input_path().write_bytes(original); self.reopen()
+        with patch.object(client_module, "http", return_value={k:v for k,v in rows["question-2"].items() if k != "continuationReceiptId"}):
+            answer = self.client.answer(ASSIGNMENT, "question-2")
+        self.assertEqual(answer["continuationReceiptId"], rows["question-2"]["continuationReceiptId"])
 
 if __name__ == "__main__":
     unittest.main()
