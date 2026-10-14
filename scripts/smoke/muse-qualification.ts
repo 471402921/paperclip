@@ -8,12 +8,12 @@ import { qualificationReport, qualificationCadence } from "./muse-qualification-
 
 const HOUR = 3_600_000;
 interface Sample {
-  slot: number; issueId?: string; queuedAt?: string; offeredAt?: string; claimedAt?: string;
+  slot: number; issueId?: string; assignmentId?: string; queuedAt?: string; offeredAt?: string; claimedAt?: string;
   nativeAcceptedAt?: string; acceptedResultAt?: string; finalizedAt?: string;
-  runId?: string; nativeSucceeded?: boolean; documentSha256?: string; unattended: true; attempts: number;
+  runId?: string; verdict?: "pending" | "succeeded" | "terminal_failure"; terminalFailureAt?: string; nativeSucceeded?: boolean; documentSha256?: string; unattended: true; attempts: number;
 }
 interface State {
-  version: 2; apiBase: string; companyId: string; agentId: string; bindingId: string; generation: number;
+  version: 3; apiBase: string; companyId: string; agentId: string; bindingId: string; generation: number;
   expectedRevision: number; qualificationId: string; evidenceMode: "live" | "synthetic"; startedAt?: string; expiresAt?: string;
   coreRevision: string; runnerRevision: string; environment: "local" | "cloud" | "self-hosted";
   samples: Sample[]; stopped: boolean; interventions: Array<{ kind: string; at: string }>;
@@ -79,26 +79,52 @@ async function readEvidence(state: State) {
   return request<MuseQualificationEvidence>(state, "GET", qualificationPath(state) + "?" + query);
 }
 async function collect(state: State, evidence: MuseQualificationEvidence) {
+  if (evidence.qualificationId !== state.qualificationId || evidence.startedAt !== state.startedAt || evidence.expiresAt !== state.expiresAt) {
+    throw new Error("Qualification evidence changed; preserve the original campaign");
+  }
+  const resolved = new Set<Sample>();
   for (const sample of state.samples) {
     if (!sample.issueId) continue;
     const assignments = evidence.assignments.filter(assignment => assignment.issueId === sample.issueId);
     sample.attempts = assignments.length;
     if (assignments.length !== 1) continue;
     const assignment = assignments[0]!;
-    sample.runId = assignment.runId;
+    if ((sample.assignmentId && sample.assignmentId !== assignment.id) || (sample.runId && sample.runId !== assignment.runId)) {
+      throw new Error("Sample assignment changed; preserve the original identities");
+    }
+    sample.assignmentId = assignment.id; sample.runId = assignment.runId;
     for (const key of ["offeredAt", "claimedAt", "nativeAcceptedAt", "acceptedResultAt", "finalizedAt"] as const) {
+      if (sample[key] && assignment[key] !== sample[key]) throw new Error("Sample timestamp changed; preserve the original campaign");
       if (assignment[key]) sample[key] = assignment[key]!;
     }
-    if (!sample.finalizedAt || sample.documentSha256) continue;
+    const unclaimedFailure = assignment.status === "fenced" && !sample.claimedAt && !sample.nativeAcceptedAt
+      && !sample.acceptedResultAt && !sample.finalizedAt;
+    const finalized = assignment.status === "settled" && !!sample.finalizedAt;
+    if (!unclaimedFailure && !finalized) continue;
+    if (finalized && sample.nativeSucceeded && sample.documentSha256) { resolved.add(sample); continue; }
+    const run = await request<{ id: string; companyId: string; agentId: string; nativeIssueId: string | null;
+      status: string; runtimeMode: string; finishedAt: string | null }>(state, "GET", `/heartbeat-runs/${sample.runId}`);
+    if (run.id !== sample.runId || run.companyId !== state.companyId || run.agentId !== state.agentId || run.nativeIssueId !== sample.issueId) {
+      throw new Error("Sample run identity changed; preserve the original campaign");
+    }
+    const finishedAt = run.finishedAt ? Date.parse(run.finishedAt) : NaN;
+    if (unclaimedFailure && run.runtimeMode === "native" && run.status === "failed" && Number.isFinite(finishedAt)
+        && finishedAt >= Date.parse(assignment.offeredAt) && finishedAt <= Date.now()) {
+      if (sample.terminalFailureAt && sample.terminalFailureAt !== run.finishedAt) throw new Error("Sample failure timestamp changed");
+      sample.verdict = "terminal_failure"; sample.nativeSucceeded = false; sample.terminalFailureAt = run.finishedAt!;
+      resolved.add(sample); continue;
+    }
+    if (!finalized || run.status !== "succeeded" || run.runtimeMode !== "native") continue;
     const issue = await request<{ status: string }>(state, "GET", `/issues/${sample.issueId}`);
-    const run = await request<{ status: string; runtimeMode: string }>(state, "GET", `/heartbeat-runs/${sample.runId}`);
-    if (issue.status !== "done" || run.status !== "succeeded" || run.runtimeMode !== "native") continue;
+    if (issue.status !== "done") continue;
     const document = await request<{ body: string }>(state, "GET", `/issues/${sample.issueId}/documents/report`);
     if (!document.body?.trim()) continue;
-    sample.nativeSucceeded = true;
+    sample.nativeSucceeded = true; sample.verdict = "succeeded";
     sample.documentSha256 = createHash("sha256").update(document.body).digest("hex");
+    resolved.add(sample);
   }
   await save(state);
+  return resolved;
 }
 async function tick(state: State, stop = false) {
   if (!state.startedAt) { if (stop) throw new Error("Qualification start is unresolved; inspect server evidence before cleanup"); await begin(state); }
@@ -109,22 +135,23 @@ async function tick(state: State, stop = false) {
     state.stopped = true; await save(state);
   }
   const evidence = await readEvidence(state);
-  await collect(state, evidence);
+  const resolved = await collect(state, evidence);
   const connection = await status(state);
   const binding = connection.binding;
   if (binding?.id !== state.bindingId || binding.generation !== state.generation) throw new Error("Connection changed; original qualification cannot be resumed");
   const hour = Math.floor((Date.now() - Date.parse(state.startedAt!)) / HOUR);
-  const pending = state.samples.some(sample => !sample.nativeSucceeded);
-  const healthy = binding.status === "ready" && binding.backgroundReplyVerified && binding.liveAssignments === 0
-    && binding.uncertainOperations === 0 && binding.pendingInputs === 0 && binding.stop.status === "none"
+  const pending = state.samples.some(sample => !resolved.has(sample));
+  const healthy = connection.enabled && binding.status === "ready" && binding.credentialState === "active"
+    && binding.backgroundReplyVerified && binding.liveAssignments === 0
+    && binding.uncertainOperations === 0 && binding.pendingInputs === 0 && binding.stop.status === "none" && !binding.stop.nativeEffectsUnknown
     && binding.lastReceiverContactAt && Date.now() - Date.parse(binding.lastReceiverContactAt) < 90_000;
-  if (!state.stopped && !expired && hour >= 0 && hour < 24 && !(hour >= 6 && hour < 9)
-      && healthy && !pending && !state.samples.some(sample => sample.slot === hour)) {
-    state.samples.push({ slot: hour, unattended: true, attempts: 0 }); await save(state);
+  const scheduledHour = hour >= 0 && hour < 24 && !(hour >= 6 && hour < 9);
+  if (!state.stopped && !expired && scheduledHour && healthy && !pending && !state.samples.some(sample => sample.slot === hour)) {
+    state.samples.push({ slot: hour, unattended: true, attempts: 0, verdict: "pending" }); await save(state);
   }
   // A lost create response retries the same public API idempotency key, never a new task.
   const creating = state.samples.find(sample => !sample.issueId);
-  if (creating && !state.stopped && !expired && healthy) {
+  if (creating && !state.stopped && !expired && scheduledHour && creating.slot === hour && healthy) {
     const title = `Muse qualification sample ${creating.slot}`;
     const issue = await request<{ id: string; createdAt: string }>(state, "POST", `/companies/${state.companyId}/issues`, {
       title, description: `Unattended personal Muse receiver qualification, sample ${creating.slot}. Save a short Markdown task document with key report explaining which sample arrived and that it was received through the installed Paperclip receiver. Use only Paperclip task tools; no external service or unrelated changes. Complete this task through the native runner after saving the document.`,
@@ -142,7 +169,7 @@ async function main() {
     const evidenceMode = required("--evidence-mode");
     if (evidenceMode !== "live" && evidenceMode !== "synthetic") throw new Error("Declare live personal Muse or synthetic fixture evidence");
     if (!["local", "cloud", "self-hosted"].includes(environment)) throw new Error("Unknown environment");
-    const state: State = { version: 2, apiBase: origin(required("--api-base")), companyId: uuid(required("--company-id")), agentId: uuid(required("--agent-id")),
+    const state: State = { version: 3, apiBase: origin(required("--api-base")), companyId: uuid(required("--company-id")), agentId: uuid(required("--agent-id")),
       bindingId: "", generation: 0, expectedRevision: 0, qualificationId: randomUUID(), evidenceMode,
       coreRevision: revision(required("--core-revision")), runnerRevision: revision(required("--runner-revision")),
       environment: environment as State["environment"], samples: [], interventions: [], stopped: false };
@@ -155,7 +182,7 @@ async function main() {
     return;
   }
   const state = JSON.parse(await readFile(statePath, "utf8")) as State;
-  if (state.version !== 2 || origin(state.apiBase) !== state.apiBase) throw new Error("Unsupported qualification state");
+  if (state.version !== 3 || origin(state.apiBase) !== state.apiBase) throw new Error("Unsupported qualification state");
   if (!["check", "stop", "report"].includes(command ?? "")) throw new Error("Use start, check, stop or report");
   const result = command === "report" ? { evidence: await readEvidence(state), connection: await status(state) } : await tick(state, command === "stop");
   // API evidence is retained privately. The dedicated projector prints only allowlisted facts.
@@ -170,6 +197,11 @@ async function main() {
     cleanup: { authorityRevoked: result.evidence.authorityRevoked, workerStopUnconfirmed: result.connection.binding?.stop.status === "cannot_confirm" || result.connection.binding?.stop.status === "worker_reported",
       nativeEffectsUnknown: result.connection.binding?.stop.nativeEffectsUnknown ?? true },
     interventions: state.interventions,
+  });
+  report.samples = report.samples.map((sample: { nativeSucceeded: boolean }, index: number) => {
+    const retained = state.samples[index], failedAt = Date.parse(retained?.terminalFailureAt ?? "");
+    return { ...sample, verdict: retained?.verdict === "terminal_failure" ? "terminal_failure" : sample.nativeSucceeded ? "succeeded" : "pending",
+      terminalFailureAt: Number.isFinite(failedAt) ? new Date(failedAt).toISOString() : null };
   });
   console.log(JSON.stringify(report, null, 2));
 }
