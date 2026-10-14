@@ -18,7 +18,7 @@ import { logActivity, publishActivity, type ActivityPublication } from "../../se
 import { issueService } from "../../services/issues.js";
 import { resolveCoreTrustPreset } from "../../services/trust-preset-resolver.js";
 import { normalizeIssueExecutionPolicy } from "../../services/issue-execution-policy.js";
-import { buildLowTrustSourceTrust, isLowTrustQuarantined, resolveActorSourceTrustForIssue, sanitizeQuarantinedCommentForHigherTrust } from "../../services/source-trust.js";
+import { buildLowTrustSourceTrust, isLowTrustQuarantined, redactQuarantinedBodyForHigherTrust, resolveActorSourceTrustForIssue, sanitizeQuarantinedCommentForHigherTrust } from "../../services/source-trust.js";
 import { getNativeReviewAssignment, readNativeReviewAssignmentContext } from "../../services/native-runtime/native-review-participant.js";
 import { withExternalAdmissionGuard, assertNoExternalOverlap, type ExternalAdmissionTransaction } from "./admission.js";
 import { createNativeExternalBroker } from "./native-broker.js";
@@ -191,10 +191,11 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
       if((await inspectMuseConnectionCredential(db,b,b.grantId?connectionResource():undefined)).state!=="active")throw forbidden("Muse credentials expired or were revoked. Reconnect Muse before dispatching work.");
       return {companyId,agentId,bindingId,bindingGeneration:b.generation,acceptByUnixMs:Date.now()+10*60_000,expiresAtUnixMs:Math.min(Date.now()+2*60*60_000,b.qualificationExpiresAt?.getTime()??Infinity)};
     },
-    async verify(companyId:string,agentId:string,input:{bindingId:string;generation:number;expectedRevision:number}) {
+    async verify(companyId:string,agentId:string,input:{bindingId:string;generation:number;expectedRevision:number},operatorId?:string) {
       if(!await identity.enabled())throw forbidden("Muse is disabled.");
       const nonce=randomBytes(24).toString("base64url");
-      return db.transaction(tx=>withExternalAdmissionGuard(tx,companyId,agentId,async()=>{
+      const publications:ActivityPublication[]=[];
+      const result=await db.transaction(tx=>withExternalAdmissionGuard(tx,companyId,agentId,async()=>{
         const [b]=await tx.select().from(bindings).where(and(eq(bindings.id,input.bindingId),eq(bindings.companyId,companyId),eq(bindings.agentId,agentId),eq(bindings.generation,input.generation),eq(bindings.revision,input.expectedRevision),isNull(bindings.revokedAt))).for("update");
         if(!b||!b.pairedAt||!b.receiverContactAt)throw conflict("Pair Muse and detect the receiver before verifying.");
         await assertMuseCurrentAuthority(tx,b,true);
@@ -202,8 +203,10 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
         const expiry=new Date(Date.now()+10*60_000);
         await tx.update(bindings).set({challengeHash:museCredentialHash(nonce),challengeExpiresAt:expiry,revision:b.revision+1,updatedAt:new Date()}).where(eq(bindings.id,b.id));
         await tx.insert(mailbox).values({companyId,bindingId:b.id,bindingGeneration:b.generation,kind:"readiness_challenge",sourceEventId:`muse-challenge:${randomUUID()}`,references:{nonce}});
+        await logActivity(tx as unknown as Db,{companyId,actorType:operatorId?"user":"system",actorId:operatorId??"muse-runner",agentId, responsibleUserIdOverride:operatorId??b.operatorId,action:"muse.readiness_challenge_created",entityType:"agent",entityId:agentId,details:{bindingId:b.id,generation:b.generation,revision:b.revision+1,authorizingUserId:b.operatorId,expiresAt:expiry.toISOString()}},publications);
         return {bindingId:b.id,generation:b.generation,revision:b.revision+1,expiresAt:expiry.toISOString(),status:"pending" as const};
       }));
+      publications.forEach(publishActivity);return result;
     },
     async revoke(companyId:string,agentId:string,operatorId:string,input?:{bindingId:string;generation:number;expectedRevision:number}) {
       const runs=await db.transaction(tx=>withExternalAdmissionGuard(tx,companyId,agentId,async()=>{
@@ -249,7 +252,8 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
     },
     async beginQualification(input:{companyId:string;agentId:string;bindingId:string;generation:number;expectedRevision:number;qualificationId:string;expiresAt:Date;operatorId:string}) {
       if(input.expiresAt<=new Date()||input.expiresAt.getTime()>Date.now()+24*60*60_000)throw conflict("Qualification requires a bounded future deadline of at most 24 hours.");
-      return db.transaction(tx=>withExternalAdmissionGuard(tx,input.companyId,input.agentId,async()=>{
+      const publications:ActivityPublication[]=[];
+      const result=await db.transaction(tx=>withExternalAdmissionGuard(tx,input.companyId,input.agentId,async()=>{
         const [b]=await tx.select().from(bindings).where(and(eq(bindings.id,input.bindingId),eq(bindings.companyId,input.companyId),eq(bindings.agentId,input.agentId),eq(bindings.generation,input.generation),eq(bindings.revision,input.expectedRevision),eq(bindings.status,"ready"),isNull(bindings.revokedAt))).for("update");
         if(!b) {
           const [same]=await tx.select().from(bindings).where(and(eq(bindings.id,input.bindingId),eq(bindings.companyId,input.companyId),eq(bindings.agentId,input.agentId),eq(bindings.qualificationId,input.qualificationId)));
@@ -259,9 +263,12 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
         if(b.qualificationId===input.qualificationId&&b.qualificationStartedAt&&b.qualificationExpiresAt)return {qualificationId:input.qualificationId,startedAt:b.qualificationStartedAt.toISOString(),expiresAt:b.qualificationExpiresAt.toISOString(),revision:b.revision};
         if(b.qualificationId)throw conflict("Another qualification already exists.");
         await assertMuseCurrentAuthority(tx,b);
-        await tx.update(bindings).set({qualificationId:input.qualificationId,qualificationStartedAt:new Date(input.expiresAt.getTime()-24*60*60_000),qualificationExpiresAt:input.expiresAt,revision:b.revision+1,updatedAt:new Date()}).where(eq(bindings.id,b.id));
-        return {qualificationId:input.qualificationId,startedAt:new Date(input.expiresAt.getTime()-24*60*60_000).toISOString(),expiresAt:input.expiresAt.toISOString(),revision:b.revision+1};
+        const startedAt=new Date(input.expiresAt.getTime()-24*60*60_000);
+        await tx.update(bindings).set({qualificationId:input.qualificationId,qualificationStartedAt:startedAt,qualificationExpiresAt:input.expiresAt,revision:b.revision+1,updatedAt:new Date()}).where(eq(bindings.id,b.id));
+        await logActivity(tx as unknown as Db,{companyId:input.companyId,actorType:"user",actorId:input.operatorId,agentId:input.agentId,action:"muse.qualification_started",entityType:"agent",entityId:input.agentId,details:{bindingId:b.id,generation:b.generation,revision:b.revision+1,authorizingUserId:b.operatorId,qualificationId:input.qualificationId,startedAt:startedAt.toISOString(),expiresAt:input.expiresAt.toISOString()}},publications);
+        return {qualificationId:input.qualificationId,startedAt:startedAt.toISOString(),expiresAt:input.expiresAt.toISOString(),revision:b.revision+1};
       }));
+      publications.forEach(publishActivity);return result;
     },
     async endQualification(input:{companyId:string;agentId:string;bindingId:string;qualificationId:string;operatorId:string}) {
       const [b]=await db.select().from(bindings).where(and(eq(bindings.id,input.bindingId),eq(bindings.companyId,input.companyId),eq(bindings.agentId,input.agentId),eq(bindings.qualificationId,input.qualificationId)));
@@ -367,8 +374,10 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
         const comments=await issueService(db).listComments(issue.id,{limit:100});
         return {comments:isLowTrustQuarantined(readerSourceTrust)?comments:comments.map(sanitizeQuarantinedCommentForHigherTrust)};
       }
-      const [document]=await db.select({key:issueDocuments.key,title:documents.title,body:documents.latestBody,revision:documents.latestRevisionNumber}).from(issueDocuments).innerJoin(documents,and(eq(documents.id,issueDocuments.documentId),eq(documents.companyId,s.companyId))).where(and(eq(issueDocuments.companyId,s.companyId),eq(issueDocuments.issueId,issue.id),eq(issueDocuments.key,q.key)));
-      if(!document)throw notFound("Document not found.");return {document};
+      const [document]=await db.select({key:issueDocuments.key,title:documents.title,body:documents.latestBody,revision:documents.latestRevisionNumber,sourceTrust:documents.sourceTrust}).from(issueDocuments).innerJoin(documents,and(eq(documents.id,issueDocuments.documentId),eq(documents.companyId,s.companyId))).where(and(eq(issueDocuments.companyId,s.companyId),eq(issueDocuments.issueId,issue.id),eq(issueDocuments.key,q.key)));
+      if(!document)throw notFound("Document not found.");
+      const readerSourceTrust=await resolveActorSourceTrustForIssue({db,issue,actor:{actorType:"agent",actorId:s.agentId,agentId:s.agentId,runId:null}});
+      return {document:isLowTrustQuarantined(readerSourceTrust)?document:redactQuarantinedBodyForHigherTrust(document)};
     },
     async cleanup(s:AgentConnectionSubject,command:{command:"control.inspect"}|{command:"worker.quiescent";boundary:MuseStopBoundary;requestId:string}) {
       const publications: ActivityPublication[] = [];

@@ -3,9 +3,12 @@ import express from "express";
 import request from "supertest";
 import type { Db } from "@paperclipai/db";
 import { museQualificationRoutes } from "../routes/muse-qualification.js";
-const mocks = vi.hoisted(() => ({ beginQualification: vi.fn(), endQualification: vi.fn(), readQualificationEvidence: vi.fn(), decide: vi.fn(), getById: vi.fn() }));
+import { museBoardRoutes } from "../routes/muse.js";
+const mocks = vi.hoisted(() => ({ beginQualification: vi.fn(), endQualification: vi.fn(), readQualificationEvidence: vi.fn(), verify: vi.fn(), decide: vi.fn(), getById: vi.fn() }));
 vi.mock("../services/muse-runner-broker.js", () => ({ museRunnerBroker: () => mocks }));
 vi.mock("../services/access.js", () => ({ accessService: () => mocks }));
+vi.mock("../services/authorization.js", () => ({ authorizationService: () => mocks }));
+vi.mock("../modules/external-agents/index.js", () => ({ museExternalAgents: () => mocks }));
 vi.mock("../services/agents.js", () => ({ agentService: () => mocks }));
 const companyId = "10000000-0000-4000-8000-000000000001", agentId = "20000000-0000-4000-8000-000000000001";
 const bindingId = "30000000-0000-4000-8000-000000000001", qualificationId = "40000000-0000-4000-8000-000000000001";
@@ -15,6 +18,7 @@ function app(actor: Record<string, unknown> = { type: "board", source: "board_ke
   const result = express(); result.use(express.json());
   result.use((req, _res, next) => { Object.assign(req, { actor }); next(); });
   result.use(museQualificationRoutes({} as Db));
+  result.use(museBoardRoutes({} as Db));
   result.use((error: { status?: number; name?: string }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status(error.status ?? (error.name === "ZodError" ? 400 : 500)).json({ error: "request_rejected" });
   });
@@ -27,6 +31,7 @@ beforeEach(() => {
   mocks.beginQualification.mockResolvedValue({ qualificationId, startedAt: "2099-01-01T00:00:00.000Z", expiresAt: "2099-01-02T00:00:00.000Z", revision: 3 });
   mocks.endQualification.mockResolvedValue(undefined);
   mocks.readQualificationEvidence.mockResolvedValue({ assignments: [], contacts: [] });
+  mocks.verify.mockResolvedValue({ status: "pending" });
 });
 describe("operator-only Muse qualification routes", () => {
   it("uses current operator permission and a server-bounded 24h deadline", async () => {
@@ -66,5 +71,26 @@ describe("operator-only Muse qualification routes", () => {
     expect(mocks.readQualificationEvidence).toHaveBeenCalledWith(companyId, agentId, bindingId, qualificationId);
     expect((await request(app()).delete(path).send({ bindingId, qualificationId })).status).toBe(204);
     expect(mocks.endQualification).toHaveBeenCalledWith({ companyId, agentId, operatorId: "operator", bindingId, qualificationId });
+  });
+});
+
+describe("board Muse verification attribution", () => {
+  const verifyPath = `/companies/${companyId}/agents/${agentId}/muse-binding/verify`;
+  const verifyBody = { bindingId, generation: 1, expectedRevision: 2 };
+  it("passes only the authorized server-derived board caller to verification", async () => {
+    const actor = { type: "board", source: "session", userId: "actual-board-caller", companyIds: [companyId] };
+    expect((await request(app(actor)).post(verifyPath).send(verifyBody)).status).toBe(200);
+    expect(mocks.verify).toHaveBeenCalledExactlyOnceWith(companyId, agentId, verifyBody, "actual-board-caller");
+    expect(mocks.decide).toHaveBeenCalledWith(expect.objectContaining({ actor, action: "agent_config:update", scope: { requiresChangeGrant: true } }));
+  });
+  it("rejects caller-supplied audit identity before verification", async () => {
+    expect((await request(app()).post(verifyPath).send({ ...verifyBody, operatorId: "spoofed-caller" })).status).toBe(400);
+    expect(mocks.verify).not.toHaveBeenCalled();
+  });
+  it("does not verify when current board authority or company scope is denied", async () => {
+    mocks.decide.mockResolvedValueOnce({ allowed: false, explanation: "Not allowed" });
+    expect((await request(app()).post(verifyPath).send(verifyBody)).status).toBe(403);
+    expect((await request(app({ type: "board", source: "board_key", userId: "operator", companyIds: [] })).post(verifyPath).send(verifyBody)).status).toBe(403);
+    expect(mocks.verify).not.toHaveBeenCalled();
   });
 });
