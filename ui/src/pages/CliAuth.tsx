@@ -123,7 +123,7 @@ export function CliAuthPage() {
       <Card className="block p-6">
         <h1 className="text-xl font-semibold">Approve Paperclip CLI access</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          A local Paperclip CLI process is requesting board access to this instance.
+          A CLI client is requesting full board access to the organizations you can access on this instance. Approve only if you started this request in your own terminal.
         </p>
 
         <div className="mt-5 space-y-3 text-sm">
@@ -143,7 +143,7 @@ export function CliAuthPage() {
           </div>
           {challenge.requestedCompanyName && (
             <div>
-              <div className="text-muted-foreground">Requested organization</div>
+              <div className="text-muted-foreground">Organization for audit context</div>
               <div className="text-foreground">{challenge.requestedCompanyName}</div>
             </div>
           )}
@@ -159,7 +159,9 @@ export function CliAuthPage() {
 
         {!challenge.canApprove && (
           <p className="mt-4 text-sm text-destructive">
-            This challenge requires instance-admin access. Sign in with an instance admin account to approve it.
+            {challenge.requestedAccess === "instance_admin_required"
+              ? "This challenge requires instance-admin access. Sign in with an instance admin account to approve it."
+              : "You do not have access to the requested organization."}
           </p>
         )}
 

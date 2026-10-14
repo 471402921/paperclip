@@ -1,6 +1,7 @@
 import express from "express";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createInviteRateLimiter, type InviteRateLimiter } from "../services/invite-rate-limit.js";
 
 const mockAccessService = vi.hoisted(() => ({
   isInstanceAdmin: vi.fn(),
@@ -52,7 +53,7 @@ function registerModuleMocks() {
 
 let appImportCounter = 0;
 
-async function createApp(actor: any, db: any = {} as any) {
+async function createApp(actor: any, db: any = {} as any, options: { cliAuthCreateRateLimiter?: InviteRateLimiter; cliAuthPollRateLimiter?: InviteRateLimiter } = {}) {
   appImportCounter += 1;
   const routeModulePath = `../routes/access.js?cli-auth-routes-${appImportCounter}`;
   const middlewareModulePath = `../middleware/index.js?cli-auth-routes-${appImportCounter}`;
@@ -84,6 +85,7 @@ async function createApp(actor: any, db: any = {} as any) {
       deploymentExposure: "private",
       bindHost: "127.0.0.1",
       allowedHostnames: [],
+      ...options,
     }),
   );
   app.use(errorHandler);
@@ -133,6 +135,91 @@ describe("cli auth routes", () => {
     });
     expect(res.body.boardApiToken).toBe("pcp_board_token");
     expect(res.body.approvalUrl).toContain("/cli-auth/12345678-1234-4123-8123-123456789abc?token=pcp_cli_auth_secret");
+  });
+
+  it("bounds anonymous create and poll independently without trusting spoofed forwarding headers", async () => {
+    let now = 1_000;
+    mockBoardAuthService.createCliAuthChallenge.mockResolvedValue({
+      challenge: { id: "12345678-1234-4123-8123-123456789abc", expiresAt: new Date(Date.now() + 60_000) },
+      challengeSecret: "pcp_cli_auth_secret", pendingBoardToken: "pcp_board_token",
+    });
+    mockBoardAuthService.describeCliAuthChallenge.mockResolvedValue({ id: "12345678-1234-4123-8123-123456789abc", status: "pending", requestedAccess: "board" });
+    const app = await createApp({ type: "none", source: "none" }, {}, {
+      cliAuthCreateRateLimiter: createInviteRateLimiter({ maxRequests: 2, now: () => now }),
+      cliAuthPollRateLimiter: createInviteRateLimiter({ maxRequests: 2, now: () => now }),
+    });
+    const payload = { command: "paperclipai auth login", requestedAccess: "board" };
+    for (let i = 0; i < 2; i++) expect((await request(app).post("/api/cli-auth/challenges").set("X-Forwarded-For", `198.51.100.${i}`).send(payload)).status).toBe(201);
+    const blocked = await request(app).post("/api/cli-auth/challenges").set("X-Forwarded-For", "203.0.113.7").send(payload);
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers["retry-after"]).toBe("60");
+    expect(blocked.headers["cache-control"]).toBe("no-store");
+    expect(blocked.headers["referrer-policy"]).toBe("no-referrer");
+    expect(mockBoardAuthService.createCliAuthChallenge).toHaveBeenCalledTimes(2);
+    const path = "/api/cli-auth/challenges/12345678-1234-4123-8123-123456789abc?token=pcp_cli_auth_secret";
+    for (let i = 0; i < 2; i++) expect((await request(app).get(path).set("X-Forwarded-For", `198.51.100.${i}`)).status).toBe(200);
+    expect((await request(app).get(path).set("X-Forwarded-For", "203.0.113.8")).status).toBe(429);
+    expect(mockBoardAuthService.describeCliAuthChallenge).toHaveBeenCalledTimes(2);
+    now += 60_000;
+    expect((await request(app).post("/api/cli-auth/challenges").send(payload)).status).toBe(201);
+    expect((await request(app).get(path)).status).toBe(200);
+  });
+
+  it("preserves the normal one-second CLI poll cadence throughout the ten-minute challenge", async () => {
+    let now = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    mockBoardAuthService.describeCliAuthChallenge.mockResolvedValue({ id: "12345678-1234-4123-8123-123456789abc", status: "pending", requestedAccess: "board" });
+    const app = await createApp({ type: "none", source: "none" });
+    try {
+      for (let i = 0; i < 600; i++) {
+        const response = await request(app).get("/api/cli-auth/challenges/12345678-1234-4123-8123-123456789abc?token=pcp_cli_auth_secret");
+        expect(response.status).toBe(200);
+        expect(response.headers["x-ratelimit-limit"]).toBe("120");
+        now += 1_000;
+      }
+    } finally { vi.restoreAllMocks(); }
+  });
+
+  it("keeps challenge capabilities out of HTTP caches and referrers", async () => {
+    mockBoardAuthService.createCliAuthChallenge.mockResolvedValue({
+      challenge: { id: "12345678-1234-4123-8123-123456789abc", expiresAt: new Date(Date.now() + 60_000) },
+      challengeSecret: "pcp_cli_auth_secret", pendingBoardToken: "pcp_board_token",
+    });
+    mockBoardAuthService.describeCliAuthChallenge.mockResolvedValue({ id: "12345678-1234-4123-8123-123456789abc", status: "pending", requestedAccess: "board" });
+    const app = await createApp({ type: "none", source: "none" });
+    const responses = [
+      await request(app).post("/api/cli-auth/challenges").send({ command: "paperclipai auth login" }),
+      await request(app).get("/api/cli-auth/challenges/12345678-1234-4123-8123-123456789abc?token=pcp_cli_auth_secret"),
+      await request(app).get("/api/cli-auth/challenges/12345678-1234-4123-8123-123456789abc"),
+      await request(app).get("/api/cli-auth/challenges/not-a-uuid?token=pcp_cli_auth_secret"),
+      await request(app).post("/api/cli-auth/challenges/12345678-1234-4123-8123-123456789abc/approve").send({ token: "pcp_cli_auth_secret" }),
+    ];
+    for (const response of responses) {
+      expect(response.headers["cache-control"]).toBe("no-store");
+      expect(response.headers["referrer-policy"]).toBe("no-referrer");
+    }
+  });
+
+  it("does not offer approval for an inaccessible requested organization", async () => {
+    mockBoardAuthService.describeCliAuthChallenge.mockResolvedValue({
+      id: "12345678-1234-4123-8123-123456789abc", status: "pending", requestedAccess: "board", requestedCompanyId: "company-private",
+    });
+    const app = await createApp({ type: "board", source: "session", userId: "user-1", companyIds: ["company-public"] });
+    const response = await request(app).get("/api/cli-auth/challenges/12345678-1234-4123-8123-123456789abc?token=pcp_cli_auth_secret");
+    expect(response.body.canApprove).toBe(false);
+  });
+
+  it("does not duplicate key-creation audit on a same-user approval retry", async () => {
+    mockBoardAuthService.approveCliAuthChallenge.mockResolvedValue({
+      status: "approved", created: false,
+      challenge: { id: "12345678-1234-4123-8123-123456789abc", boardApiKeyId: "board-key-1", requestedAccess: "board", expiresAt: new Date(Date.now() + 60_000) },
+    });
+    mockBoardAuthService.resolveBoardActivityCompanyIds.mockResolvedValue(["company-1"]);
+    const app = await createApp({ type: "board", source: "session", userId: "user-1" });
+    const response = await request(app).post("/api/cli-auth/challenges/12345678-1234-4123-8123-123456789abc/approve").send({ token: "pcp_cli_auth_secret" });
+    expect(response.status).toBe(200);
+    expect(response.body.approved).toBe(true);
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
   it("rejects anonymous access to generic skill documents", async () => {
