@@ -1200,3 +1200,14 @@ Supported providers:
 
 - `local_disk` (default; local single-user installs)
 - `s3` (S3-compatible object storage)
+
+When a challenge poll receives HTTP 429, the CLI waits for `Retry-After` and
+continues the same challenge. A missing or invalid value uses the normal poll
+interval. The wait never extends the original challenge deadline and never
+creates another challenge or key. This allows concurrent logins on a shared IP
+to complete after the process-local limit clears.
+
+Revocation records use the current key owner and trusted original creation or
+approved-challenge company context. Removing a company membership does not
+remove that audit history. Revocation and its audit records commit together;
+an audit failure leaves the key unchanged so the operation can be retried.

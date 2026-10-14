@@ -422,7 +422,7 @@ describe("cli auth routes", () => {
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
-  it("logs revoke activity with resolved audit company ids", async () => {
+  it("delegates owner-bound revocation and atomic audit to the service", async () => {
     mockBoardAuthService.assertCurrentBoardKey.mockResolvedValue({
       id: "board-key-3",
       userId: "admin-2",
@@ -440,17 +440,11 @@ describe("cli auth routes", () => {
     const res = await request(app).post("/api/cli-auth/revoke-current").send({});
 
     expect(res.status).toBe(200);
-    expect(mockBoardAuthService.resolveBoardActivityCompanyIds).toHaveBeenCalledWith({
-      userId: "admin-2",
-      boardApiKeyId: "board-key-3",
+    expect(mockBoardAuthService.revokeBoardApiKey).toHaveBeenCalledWith("board-key-3", {
+      userId: "admin-2", revokedVia: "cli_auth_logout",
     });
-    expect(mockLogActivity).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        companyId: "company-z",
-        action: "board_api_key.revoked",
-      }),
-    );
+    expect(mockBoardAuthService.resolveBoardActivityCompanyIds).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
   it("creates a named board API key and logs audit activity", async () => {
@@ -545,13 +539,11 @@ describe("cli auth routes", () => {
     const revokeRes = await request(app).delete(`/api/board-api-keys/${keyId}`);
     expect(revokeRes.status).toBe(200);
     expect(revokeRes.body).toEqual({ ok: true, keyId });
-    expect(mockLogActivity).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        companyId: "company-1",
-        action: "board_api_key.revoked",
-      }),
-    );
+    expect(mockBoardAuthService.revokeBoardApiKey).toHaveBeenCalledWith(keyId, {
+      userId: "user-1", revokedVia: "board_api_key_lifecycle",
+    });
+    expect(mockBoardAuthService.resolveBoardActivityCompanyIds).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
   it("rejects malformed board API key IDs before database lookup", async () => {

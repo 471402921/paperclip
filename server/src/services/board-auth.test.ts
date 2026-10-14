@@ -1,5 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createInviteRateLimiter } from "./invite-rate-limit.js";
 import { eq, sql } from "drizzle-orm";
 import { activityLog, authUsers, boardApiKeys, cliAuthChallenges, companies, companyMemberships, createDb, getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "@paperclipai/db";
 import type { Db } from "@paperclipai/db";
@@ -292,6 +297,125 @@ databaseSuite("CLI challenge authority and transitions (real PostgreSQL)", () =>
     expect(new Set(identity.body.companyIds)).toEqual(new Set([f.companyId, secondCompanyId]));
     expect((await request(app).post("/api/cli-auth/revoke-current").set("Authorization", `Bearer ${boardApiToken}`)).status).toBe(200);
     expect((await request(app).get("/api/cli-auth/me").set("Authorization", `Bearer ${boardApiToken}`)).status).toBe(401);
+  });
+
+  it.each(["cli_auth_logout", "board_api_key_lifecycle"])("keeps owner-bound historical revocation audit after membership loss through %s", async revokedVia => {
+    const f = await fixture();
+    const approved = await f.service.approveCliAuthChallenge(f.challenge.id, f.challengeSecret, f.userId);
+    const keyId = approved.challenge.boardApiKeyId!;
+    const foreign = await fixture();
+    await db.insert(activityLog).values({ companyId: foreign.companyId, actorType: "user", actorId: foreign.userId,
+      action: "board_api_key.created", entityType: "user", entityId: foreign.userId, details: { boardApiKeyId: keyId } });
+    await db.update(cliAuthChallenges).set({ boardApiKeyId: keyId, approvedByUserId: foreign.userId, approvedAt: new Date() })
+      .where(eq(cliAuthChallenges.id, foreign.challenge.id));
+    await db.update(companyMemberships).set({ status: "suspended" }).where(eq(companyMemberships.principalId, f.userId));
+    expect(await f.service.resolveBoardActivityCompanyIds({ userId: f.userId, requestedCompanyId: foreign.companyId })).toEqual([]);
+    const [{ default: express }, { default: request }, { actorMiddleware }, { accessRoutes }, { errorHandler }] = await Promise.all([
+      import("express"), import("supertest"), import("../middleware/auth.js"), import("../routes/access.js"), import("../middleware/error-handler.js"),
+    ]);
+    const app = express(); app.use(express.json());
+    app.use(actorMiddleware(db, { deploymentMode: "authenticated", resolveSession: async req => (req.header("X-Test-Session") === f.userId || req.header("X-Test-Session") === foreign.userId)
+      ? { session: { id: "synthetic-session" }, user: { id: req.header("X-Test-Session"), name: "CLI owner", email: "owner@example.invalid" } } as any : null }));
+    app.use("/api", accessRoutes(db, { deploymentMode: "authenticated", deploymentExposure: "private", bindHost: "127.0.0.1", allowedHostnames: [] })); app.use(errorHandler);
+    expect(await f.service.revokeBoardApiKey(keyId, { userId: foreign.userId, revokedVia: "board_api_key_lifecycle" })).toBeNull();
+    const denied = await request(app).delete(`/api/board-api-keys/${keyId}`).set("X-Test-Session", foreign.userId);
+    expect(denied.status).toBe(404);
+    expect(await f.service.findBoardApiKeyByToken(f.pendingBoardToken)).not.toBeNull();
+    const response = revokedVia === "cli_auth_logout"
+      ? await request(app).post("/api/cli-auth/revoke-current").set("Authorization", `Bearer ${f.pendingBoardToken}`).send({ requestedCompanyId: foreign.companyId })
+      : await request(app).delete(`/api/board-api-keys/${keyId}`).set("X-Test-Session", f.userId);
+    expect(response.status).toBe(200);
+    expect(await f.service.findBoardApiKeyByToken(f.pendingBoardToken)).toBeNull();
+    const rows = await db.select().from(activityLog).where(eq(activityLog.action, "board_api_key.revoked"));
+    const matching = rows.filter(row => row.details?.boardApiKeyId === keyId);
+    expect(matching).toHaveLength(1);
+    expect(matching[0]).toMatchObject({ companyId: f.companyId, actorId: f.userId, details: { boardApiKeyId: keyId, revokedVia } });
+  });
+
+  it("rolls back revocation when a second company audit fails and retries first-only", async () => {
+    const f = await fixture();
+    const secondCompanyId = randomUUID();
+    await db.insert(companies).values({ id: secondCompanyId, name: "Second revocation context", issuePrefix: `R${secondCompanyId.slice(0, 7)}` });
+    await db.insert(companyMemberships).values({ companyId: secondCompanyId, principalType: "user", principalId: f.userId, status: "active", membershipRole: "owner" });
+    const approved = await f.service.approveCliAuthChallenge(f.challenge.id, f.challengeSecret, f.userId);
+    const keyId = approved.challenge.boardApiKeyId!;
+    const [{ default: express }, { default: request }, { actorMiddleware }, { accessRoutes }, { errorHandler }] = await Promise.all([
+      import("express"), import("supertest"), import("../middleware/auth.js"), import("../routes/access.js"), import("../middleware/error-handler.js"),
+    ]);
+    const app = express(); app.use(express.json()); app.use(actorMiddleware(db, { deploymentMode: "authenticated", resolveSession: async () => null }));
+    app.use("/api", accessRoutes(db, { deploymentMode: "authenticated", deploymentExposure: "private", bindHost: "127.0.0.1", allowedHostnames: [] })); app.use(errorHandler);
+    await db.execute(sql.raw(`alter table activity_log add constraint board_cli_revoke_failure check (action != 'board_api_key.revoked' or company_id != '${secondCompanyId}')`));
+    try {
+      expect((await request(app).post("/api/cli-auth/revoke-current").set("Authorization", `Bearer ${f.pendingBoardToken}`)).status).toBe(500);
+      expect(await f.service.findBoardApiKeyByToken(f.pendingBoardToken)).not.toBeNull();
+      expect((await db.select().from(activityLog).where(eq(activityLog.actorId, f.userId))).filter(row => row.action === "board_api_key.revoked")).toHaveLength(0);
+    } finally { await db.execute(sql`alter table activity_log drop constraint board_cli_revoke_failure`); }
+    expect((await request(app).post("/api/cli-auth/revoke-current").set("Authorization", `Bearer ${f.pendingBoardToken}`)).status).toBe(200);
+    const revoked = (await db.select().from(activityLog).where(eq(activityLog.actorId, f.userId))).filter(row => row.action === "board_api_key.revoked");
+    expect(new Set(revoked.map(row => row.companyId))).toEqual(new Set([f.companyId, secondCompanyId]));
+    expect(revoked).toHaveLength(2);
+    expect((await request(app).post("/api/cli-auth/revoke-current").set("Authorization", `Bearer ${f.pendingBoardToken}`)).status).toBe(401);
+    expect((await db.select().from(activityLog).where(eq(activityLog.action, "board_api_key.revoked"))).filter(row => row.details?.boardApiKeyId === keyId)).toHaveLength(2);
+  });
+
+  it("finishes three real CLI logins sharing one limited IP without changing their challenges", async () => {
+    const f = await fixture();
+    const [{ default: express }, { default: request }, { actorMiddleware }, { accessRoutes }, { errorHandler }] = await Promise.all([
+      import("express"), import("supertest"), import("../middleware/auth.js"), import("../routes/access.js"), import("../middleware/error-handler.js"),
+    ]);
+    const clockStart = Date.now(); let clock = clockStart;
+    const limiter = createInviteRateLimiter({ maxRequests: 120, now: () => clock });
+    const created: Array<{ id: string; token: string; boardApiToken: string; expiresAt: string }> = [];
+    let throttled = 0, releaseThrottles!: () => void;
+    const allThrottled = new Promise<void>(resolve => { releaseThrottles = resolve; });
+    const app = express(); app.use(express.json());
+    app.use(actorMiddleware(db, { deploymentMode: "authenticated", resolveSession: async req => req.header("X-Test-Session") === f.userId
+      ? { session: { id: "synthetic-shared-session" }, user: { id: f.userId, name: "CLI owner", email: "owner@example.invalid" } } as any : null }));
+    app.use((req, res, next) => {
+      const original = res.json.bind(res);
+      res.json = body => { if (req.method === "POST" && req.originalUrl.split("?", 1)[0] === "/api/cli-auth/challenges" && res.statusCode === 201) created.push(body); return original(body); };
+      res.on("finish", () => { if (req.method === "GET" && res.statusCode === 429) { throttled++; if (throttled === 3) releaseThrottles(); } }); next();
+    });
+    app.use("/api", accessRoutes(db, { deploymentMode: "authenticated", deploymentExposure: "private", bindHost: "127.0.0.1", allowedHostnames: [], cliAuthPollRateLimiter: limiter })); app.use(errorHandler);
+    const server = app.listen(0, "127.0.0.1"); await new Promise<void>(resolve => server.once("listening", resolve));
+    const address = server.address(); if (!address || typeof address === "string") throw new Error("Synthetic CLI server has no port");
+    const apiBase = `http://127.0.0.1:${address.port}`;
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), "board-cli-shared-ip-"));
+    const children: Array<ReturnType<typeof spawn>> = [];
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      for (let i = 0; i < 120; i++) expect((await fetch(`${apiBase}/api/cli-auth/challenges/${f.challenge.id}?token=${f.challengeSecret}`)).status).toBe(200);
+      clock = clockStart + 59_900;
+      const module = new URL("../../../cli/src/client/board-auth.ts", import.meta.url).href;
+      const loader = new URL("../../node_modules/tsx/dist/loader.mjs", import.meta.url).href;
+      const outcomes = [0, 1, 2].map(i => {
+        const worker = path.join(folder, `client-${i}.mjs`);
+        fs.writeFileSync(worker, `import { loginBoardCli } from ${JSON.stringify(module)}; await loginBoardCli(${JSON.stringify({ apiBase, requestedAccess: "board", requestedCompanyId: f.companyId, storePath: path.join(folder, `auth-${i}.json`), openBrowser: false, print: false })});`, { mode: 0o600 });
+        const child = spawn(process.execPath, ["--import", loader, worker], { cwd: folder, stdio: ["ignore", "ignore", "pipe"] }); children.push(child);
+        let errors = ""; child.stderr?.on("data", chunk => { errors += chunk.toString(); });
+        return new Promise<{ code: number | null; errors: string }>(resolve => child.once("exit", code => resolve({ code, errors })));
+      });
+      await Promise.race([allThrottled, new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error("Three CLI workers did not reach the real shared-IP limit")), 5000); })]);
+      clearTimeout(timeout); expect(created).toHaveLength(3);
+      for (const challenge of created) expect((await request(app).post(`/api/cli-auth/challenges/${challenge.id}/approve`).set("X-Test-Session", f.userId).send({ token: challenge.token })).status).toBe(200);
+      clock = clockStart + 60_001;
+      expect(await Promise.all(outcomes)).toEqual([0, 1, 2].map(() => ({ code: 0, errors: "" })));
+      expect(created).toHaveLength(3); expect(throttled).toBe(3);
+      for (let i = 0; i < 3; i++) {
+        const store = JSON.parse(fs.readFileSync(path.join(folder, `auth-${i}.json`), "utf8"));
+        const saved = store.credentials[apiBase];
+        expect(created.some(challenge => challenge.boardApiToken === saved.token)).toBe(true);
+        expect(saved.userId).toBe(f.userId);
+      }
+      for (const challenge of created) {
+        const [stored] = await db.select().from(cliAuthChallenges).where(eq(cliAuthChallenges.id, challenge.id));
+        expect(stored.expiresAt.toISOString()).toBe(challenge.expiresAt); expect(stored.approvedByUserId).toBe(f.userId);
+      }
+    } finally {
+      clearTimeout(timeout);
+      for (const child of children) if (child.exitCode === null) { child.kill("SIGTERM"); await new Promise(resolve => child.once("exit", resolve)); }
+      server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); fs.rmSync(folder, { recursive: true, force: true });
+    }
   });
 
   it("omits private organization and approver identity from anonymous capability polling", async () => {

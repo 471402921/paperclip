@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
+  activityLog,
   authUsers,
   boardApiKeys,
   cliAuthChallenges,
@@ -172,14 +173,46 @@ export function boardAuthService(db: Db) {
     return inFlight;
   }
 
-  async function revokeBoardApiKey(id: string) {
-    const now = new Date();
-    return db
-      .update(boardApiKeys)
-      .set({ revokedAt: now, lastUsedAt: now })
-      .where(and(eq(boardApiKeys.id, id), isNull(boardApiKeys.revokedAt)))
-      .returning()
-      .then((rows) => rows[0] ?? null);
+  async function revokeBoardApiKey(id: string, input: {
+    userId: string;
+    revokedVia: "cli_auth_logout" | "board_api_key_lifecycle";
+  }) {
+    const publications: ActivityPublication[] = [];
+    const result = await db.transaction(async tx => {
+      await tx.execute(sql`select ${boardApiKeys.id} from ${boardApiKeys}
+        where ${boardApiKeys.id} = ${id} and ${boardApiKeys.userId} = ${input.userId} for update`);
+      const [key] = await tx.select().from(boardApiKeys).where(and(eq(boardApiKeys.id, id), eq(boardApiKeys.userId, input.userId)));
+      if (!key || key.revokedAt) return null;
+      const access = await resolveBoardAccess(key.userId, tx);
+      const companyIds = new Set(await activityCompanyIdsForAccess(access, null, tx));
+      const created = await tx.select({ companyId: activityLog.companyId }).from(activityLog)
+        .innerJoin(companies, eq(companies.id, activityLog.companyId))
+        .where(and(eq(activityLog.actorType, "user"), eq(activityLog.actorId, key.userId),
+          eq(activityLog.action, "board_api_key.created"), sql`${activityLog.details}->>'boardApiKeyId' = ${key.id}`));
+      for (const row of created) companyIds.add(row.companyId);
+      const approved = await tx.select({ companyId: cliAuthChallenges.requestedCompanyId }).from(cliAuthChallenges)
+        .innerJoin(companies, eq(companies.id, cliAuthChallenges.requestedCompanyId))
+        .where(and(eq(cliAuthChallenges.boardApiKeyId, key.id), eq(cliAuthChallenges.approvedByUserId, key.userId),
+          sql`${cliAuthChallenges.approvedAt} is not null`));
+      for (const row of approved) if (row.companyId) companyIds.add(row.companyId);
+      const now = new Date();
+      const [revoked] = await tx.update(boardApiKeys).set({ revokedAt: now, lastUsedAt: now })
+        .where(and(eq(boardApiKeys.id, key.id), eq(boardApiKeys.userId, input.userId), isNull(boardApiKeys.revokedAt))).returning();
+      if (!revoked) return null;
+      for (const companyId of companyIds) {
+        await logActivity(tx as unknown as Db, {
+          companyId, actorType: "user", actorId: key.userId, action: "board_api_key.revoked", entityType: "user", entityId: key.userId,
+          details: { boardApiKeyId: key.id, revokedVia: input.revokedVia,
+            ...(input.revokedVia === "board_api_key_lifecycle" ? { name: key.name } : {}) },
+        }, publications);
+      }
+      return revoked;
+    });
+    for (const publication of publications) {
+      try { publishActivity(publication); }
+      catch (err) { logger.warn({ err }, "Failed to publish committed Board key revocation activity"); }
+    }
+    return result;
   }
 
   async function createNamedBoardApiKey(input: {

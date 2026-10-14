@@ -2960,28 +2960,8 @@ export function accessRoutes(
     }
     const key = await boardAuth.getBoardApiKeyForUser(keyId, req.actor.userId);
     if (!key) throw notFound("Board API key not found");
-    const revoked = await boardAuth.revokeBoardApiKey(key.id);
+    const revoked = await boardAuth.revokeBoardApiKey(key.id, { userId: req.actor.userId, revokedVia: "board_api_key_lifecycle" });
     if (!revoked) throw notFound("Board API key not found");
-
-    const companyIds = await boardAuth.resolveBoardActivityCompanyIds({
-      userId: req.actor.userId,
-      boardApiKeyId: key.id,
-    });
-    for (const companyId of companyIds) {
-      await logActivity(db, {
-        companyId,
-        actorType: "user",
-        actorId: req.actor.userId,
-        action: "board_api_key.revoked",
-        entityType: "user",
-        entityId: req.actor.userId,
-        details: {
-          boardApiKeyId: key.id,
-          name: key.name,
-          revokedVia: "board_api_key_lifecycle",
-        },
-      });
-    }
 
     res.json({ ok: true, keyId: key.id });
   });
@@ -2994,25 +2974,7 @@ export function accessRoutes(
       req.actor.keyId,
       req.actor.userId,
     );
-    await boardAuth.revokeBoardApiKey(key.id);
-    const companyIds = await boardAuth.resolveBoardActivityCompanyIds({
-      userId: key.userId,
-      boardApiKeyId: key.id,
-    });
-    for (const companyId of companyIds) {
-      await logActivity(db, {
-        companyId,
-        actorType: "user",
-        actorId: key.userId,
-        action: "board_api_key.revoked",
-        entityType: "user",
-        entityId: key.userId,
-        details: {
-          boardApiKeyId: key.id,
-          revokedVia: "cli_auth_logout",
-        },
-      });
-    }
+    await boardAuth.revokeBoardApiKey(key.id, { userId: key.userId, revokedVia: "cli_auth_logout" });
     res.json({ revoked: true, keyId: key.id });
   });
 
