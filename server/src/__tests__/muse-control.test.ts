@@ -14,6 +14,7 @@ import { museRunnerBroker } from "../services/muse-runner-broker.js";
 import { dotRunnerBroker } from "../services/dot-runner-broker.js";
 import { museReceiver } from "../services/muse-receiver.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import { subscribeCompanyLiveEvents } from "../services/live-events.js";
 import { LOW_TRUST_QUARANTINED_BODY, buildLowTrustSourceTrust, buildPromotedSourceTrust, sanitizeQuarantinedCommentForHigherTrust } from "../services/source-trust.js";
 import { PaperclipRunnerToolAuthority } from "../services/native-runtime/paperclip-runner-tool-authority.js";
 import { assertNoExternalOverlap, withExternalAdmissionGuard } from "../modules/external-agents/index.js";
@@ -84,6 +85,59 @@ describe("personal Muse control plane",()=>{
     expect(logs).toHaveLength(1);
     expect(logs[0]).toMatchObject({actorType:"agent",actorId:f.agent.id,agentId:f.agent.id,responsibleUserId:f.operatorId,details:{bindingId:f.binding.id,generation:1,authorizingUserId:f.operatorId,requestId}});
     expect(JSON.stringify(logs)).not.toContain(nonce);
+  });
+  it.each(["automatic","board"] as const)("audits %s readiness only on first change with the actual actor",async source=>{
+    const f=await fixture(false),operatorId=source==="board"?randomUUID():undefined;
+    if(operatorId){
+      await db.insert(authUsers).values({id:operatorId,name:"Actual board caller",email:operatorId+"@example.test",createdAt:new Date(),updatedAt:new Date()});
+      await db.insert(companyMemberships).values({companyId:f.company.id,principalType:"user",principalId:operatorId,membershipRole:"owner",status:"active"});
+      await db.update(bindings).set({receiverContactAt:new Date()}).where(eq(bindings.id,f.binding.id));
+    }
+    const events:Array<Record<string,unknown>>=[];
+    const unsubscribe=subscribeCompanyLiveEvents(f.company.id,event=>{if(event.type==="activity.logged")events.push(event.payload);});
+    try {
+      if(source==="automatic"){
+        const signal=await f.identity.authenticate(f.credentials.signalToken,"signal");
+        await museReceiver(db).signal(signal);await museReceiver(db).flush();
+      } else {
+        const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;
+        await f.broker.verify(f.company.id,f.agent.id,{bindingId:f.binding.id,generation:1,expectedRevision:state.revision},operatorId);
+      }
+      const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;
+      const challenge=(await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"readiness_challenge"))))[0]!;
+      const pending=await f.broker.verify(f.company.id,f.agent.id,{bindingId:f.binding.id,generation:1,expectedRevision:state.revision},operatorId);
+      expect(pending).toMatchObject({revision:state.revision,expiresAt:state.challengeExpiresAt});
+      await expect(f.broker.verify(f.company.id,f.agent.id,{bindingId:f.binding.id,generation:2,expectedRevision:state.revision},operatorId)).rejects.toThrow("before verifying");
+      const logs=await db.select().from(activityLog).where(and(eq(activityLog.companyId,f.company.id),eq(activityLog.action,"muse.readiness_challenge_created")));
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toMatchObject({actorType:source==="board"?"user":"system",actorId:operatorId??"muse-runner",agentId:f.agent.id,responsibleUserId:operatorId??f.operatorId,entityType:"agent",entityId:f.agent.id,details:{bindingId:f.binding.id,generation:1,revision:state.revision,authorizingUserId:f.operatorId,expiresAt:state.challengeExpiresAt}});
+      expect(events.filter(event=>event.action==="muse.readiness_challenge_created")).toHaveLength(1);
+      expect((await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"readiness_challenge"))))).toHaveLength(1);
+      const serialized=JSON.stringify({logs,events});
+      for(const secret of [f.ticket,f.credentials.accessToken,f.credentials.refreshToken,f.credentials.signalToken,f.credentials.cleanupToken,f.credentials.detectorCleanupToken,String(challenge.references.nonce)])expect(serialized).not.toContain(secret);
+    } finally {unsubscribe();}
+  });
+  it("audits first qualification with the actual operator and preserves idempotent reads",async()=>{
+    const f=await fixture(),operatorId=randomUUID();
+    await db.insert(authUsers).values({id:operatorId,name:"Qualification board caller",email:operatorId+"@example.test",createdAt:new Date(),updatedAt:new Date()});
+    await db.insert(companyMemberships).values({companyId:f.company.id,principalType:"user",principalId:operatorId,membershipRole:"owner",status:"active"});
+    const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!,qualificationId=randomUUID();
+    const input={companyId:f.company.id,agentId:f.agent.id,bindingId:f.binding.id,generation:1,expectedRevision:state.revision,qualificationId,expiresAt:new Date(Date.now()+24*60*60_000),operatorId};
+    const events:Array<Record<string,unknown>>=[];
+    const unsubscribe=subscribeCompanyLiveEvents(f.company.id,event=>{if(event.type==="activity.logged")events.push(event.payload);});
+    try {
+      const first=await f.broker.beginQualification(input);
+      expect(await f.broker.beginQualification({...input,expiresAt:new Date(Date.now()+60_000)})).toEqual(first);
+      expect(await f.broker.beginQualification({...input,expectedRevision:first.revision})).toEqual(first);
+      await f.broker.readQualificationEvidence(f.company.id,f.agent.id,f.binding.id,qualificationId);
+      await expect(f.broker.beginQualification({...input,companyId:randomUUID()})).rejects.toThrow("Connection changed");
+      const logs=await db.select().from(activityLog).where(and(eq(activityLog.companyId,f.company.id),eq(activityLog.action,"muse.qualification_started")));
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toMatchObject({actorType:"user",actorId:operatorId,agentId:f.agent.id,responsibleUserId:operatorId,entityType:"agent",entityId:f.agent.id,details:{bindingId:f.binding.id,generation:1,revision:first.revision,authorizingUserId:f.operatorId,qualificationId,startedAt:first.startedAt,expiresAt:first.expiresAt}});
+      expect(events.filter(event=>event.action==="muse.qualification_started")).toHaveLength(1);
+      const serialized=JSON.stringify({logs,events});
+      for(const secret of [f.ticket,f.credentials.accessToken,f.credentials.refreshToken,f.credentials.signalToken,f.credentials.cleanupToken,f.credentials.detectorCleanupToken])expect(serialized).not.toContain(secret);
+    } finally {unsubscribe();}
   });
   it("retains a mailbox batch until its prior durable cursor is acknowledged",async()=>{
     const f=await fixture();await db.insert(mailbox).values({companyId:f.company.id,bindingId:f.binding.id,bindingGeneration:1,kind:"follow_up",sourceEventId:randomUUID(),references:{}});
