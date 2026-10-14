@@ -1391,8 +1391,6 @@ describe("realizeExecutionWorkspace", () => {
   it.each(["missing", "empty"] as const)("records the actual lookup and fetch outcome for a %s origin", async (mode) => {
     const { repoRoot } = await createClonedRepoWithRemote();
     await runGit(repoRoot, mode === "missing" ? ["remote", "remove", "origin"] : ["config", "remote.origin.url", ""]);
-    // Observe ordinary Git independently before invoking the workspace resolver.
-    // Empty URLs return either blank output or the remote name across Git versions.
     const remoteUrl = mode === "empty" ? await readGit(repoRoot, ["remote", "get-url", "origin"]) : null;
     if (mode === "empty") expect(["", "origin"]).toContain(remoteUrl);
     let authCalls = 0;
@@ -1410,7 +1408,7 @@ describe("realizeExecutionWorkspace", () => {
       expect(readUnresolvedWorkspaceBaseRefDiagnostic(error)).toEqual({ schemaVersion: 1,
         remoteLookup: "empty", authLookup: "not_requested", fetch: "not_attempted", refResolution: "failed", refExitCode: 128 });
     } else {
-      // Git returned the remote name, so the authenticated fetch fails.
+      // Git returns the remote name when its URL is empty, then the fetch fails.
       expect(error.fetchError).toBeTruthy();
       // Fetch and the bounded default-branch suggestion each use the credential resolver.
       expect(authCalls).toBe(2);
