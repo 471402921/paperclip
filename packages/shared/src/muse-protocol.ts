@@ -35,15 +35,19 @@ export const MUSE_CLEANUP_TTL_MS = 24 * 60 * 60_000;
 export const MUSE_IDLE_OPERATIONS = ["identify", "task.list", "task.search", "task.read", "task.history", "task.document.read", "task.create", "task.comment"] as const;
 const id = z.uuid();
 const boundedId = z.string().min(1).max(200);
-// Keep these transport bounds aligned with Runner's external-provider validation.
+// Runtime correlation must also be representable by the native question bridge.
+// Canonical per-question/option identities retain their separate string grammar.
 const nativeRequestId = z.string().min(1).max(160).refine(
-  (value) => !/[^A-Za-z0-9._:-]/.test(value),
-  "Native request IDs must contain only ASCII letters, digits, '.', '_', ':', or '-'.",
+  (value) => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(value),
+  "Native request IDs must start with an ASCII letter or digit and contain only ASCII letters, digits, '.', '_', ':', or '-'.",
 );
 const utf8Encoder = new TextEncoder();
 const nativeQuestionSet = paperclipQuestionSetPayloadSchema.refine(
   value => utf8Encoder.encode(JSON.stringify(value)).byteLength <= 196 * 1024,
   "Question sets must not exceed Runner's 196 KiB durable UTF-8 byte bound.",
+).refine(
+  value => value.questions.every(question => question.textValidation?.pattern === undefined),
+  "Native question patterns are unsupported by the bounded question bridge.",
 );
 const progressText = z.string().trim().min(1).max(12000).refine(
   (value) => utf8Encoder.encode(value).byteLength <= 12000,

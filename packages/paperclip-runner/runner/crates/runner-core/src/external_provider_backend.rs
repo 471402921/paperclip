@@ -154,6 +154,36 @@ fn bounded_id(value: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || b"._:-".contains(&c))
 }
 
+// The server native-question bridge uses this grammar for runtime correlation,
+// independently of canonical per-question and option identities.
+fn native_request_id(value: &str) -> bool {
+    value.len() <= 160
+        && value
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphanumeric)
+        && bounded_id(value)
+}
+
+fn validate_muse_question_set(value: &Value) -> Result<(), DurableRunnerError> {
+    crate::acpx_event_payload::validate_question_set(value).map_err(|e| invalid(e.to_string()))?;
+    for question in value["questions"].as_array().into_iter().flatten() {
+        let validation = &question["textValidation"];
+        if validation.get("pattern").is_some() {
+            // The native bridge cannot budget provider-authored JavaScript regex.
+            return Err(invalid("Muse native question patterns are unsupported"));
+        }
+        if matches!((validation["minLength"].as_u64(), validation["maxLength"].as_u64()),
+            (Some(minimum), Some(maximum)) if minimum > maximum)
+            || matches!((validation["minimum"].as_f64(), validation["maximum"].as_f64()),
+                (Some(minimum), Some(maximum)) if minimum > maximum)
+        {
+            return Err(invalid("Muse native question bounds conflict"));
+        }
+    }
+    Ok(())
+}
+
 impl State {
     fn codec(&self) -> Result<ExternalProviderCodec, DurableRunnerError> {
         match self.descriptor.kind.as_str() {
@@ -219,8 +249,7 @@ impl State {
             return Err(invalid("Muse runtime input capacity exceeded"));
         }
         for (id, input) in &self.runtime_inputs {
-            if !bounded_id(id)
-                || id.len() > 160
+            if !native_request_id(id)
                 || input.request["requestId"] != json!(id)
                 || input.request["turnId"] != json!(self.turn_id)
                 || input.request["schema"] != json!("paperclip.runtime_request.v2")
@@ -228,8 +257,7 @@ impl State {
             {
                 return Err(invalid("Muse runtime input checkpoint identity mismatch"));
             }
-            crate::acpx_event_payload::validate_question_set(&input.request["input"])
-                .map_err(|e| invalid(e.to_string()))?;
+            validate_muse_question_set(&input.request["input"])?;
             match &input.response {
                 Some(response) => {
                     crate::question_response::validate_question_response(
@@ -294,6 +322,15 @@ impl State {
                 > 256 * 1024
         {
             return Err(invalid("Dot operation authority or digest mismatch"));
+        }
+        if op.action == "request_user_input" {
+            if !op.input["requestId"]
+                .as_str()
+                .is_some_and(native_request_id)
+            {
+                return Err(invalid("Muse native request identity is invalid"));
+            }
+            validate_muse_question_set(&op.input["questionSet"])?;
         }
         Ok(())
     }
@@ -548,12 +585,9 @@ impl ExternalCommandExecutor {
                 }
                 let request_id = op.input["requestId"]
                     .as_str()
-                    .filter(|id| bounded_id(id) && id.len() <= 160)
                     .ok_or_else(|| invalid("Muse native request identity is invalid"))?
                     .to_owned();
                 let question_set = op.input["questionSet"].clone();
-                crate::acpx_event_payload::validate_question_set(&question_set)
-                    .map_err(|e| invalid(e.to_string()))?;
                 if state.runtime_inputs.len() >= 256
                     || state.runtime_inputs.contains_key(&request_id)
                 {
@@ -1348,6 +1382,183 @@ mod tests {
     }
     fn muse_response() -> Value {
         json!({"schema":"paperclip.question_response.v1","answers":{"environment":{"selectedOptionIds":["test"]}}})
+    }
+    fn assert_question_rejected_without_effects(request_id: &str, question_set: Value) {
+        let dir = TestDirectory::new();
+        let mut muse = prepared_codec(dir.path(), ExternalProviderCodec::Muse);
+        accept(&mut muse);
+        let path = dir.path().join(MUSE_PROVIDER_STATE_FILE);
+        let before = fs::read(&path).unwrap();
+        let before_events = muse.poll_events().unwrap();
+        assert!(
+            muse.execute(&command(
+                "external_provider.operation",
+                operation(
+                    "unsupported-question",
+                    "request_user_input",
+                    json!({"requestId":request_id,"questionSet":question_set}),
+                ),
+            ))
+            .is_err(),
+            "unsupported native question was accepted: {request_id}"
+        );
+        assert_eq!(fs::read(&path).unwrap(), before);
+        assert!(muse.state.as_ref().unwrap().runtime_inputs.is_empty());
+        assert_eq!(muse.poll_events().unwrap().len(), before_events.len());
+        assert!(!muse
+            .poll_events()
+            .unwrap()
+            .iter()
+            .any(|event| event.event_type == "runtime_request.created"
+                || (event.event_type == "external_provider.operation_settled"
+                    && event.payload["requestId"] == "unsupported-question")));
+        drop(muse);
+        let mut recovered = ExternalCommandExecutor::with_codec(
+            dir.path(),
+            &config(dir.path()),
+            ExternalProviderCodec::Muse,
+        );
+        let snapshot = call(&mut recovered, "session.snapshot", json!({}));
+        assert_eq!(snapshot["status"], "running");
+        assert_eq!(snapshot["pendingRuntimeRequests"], json!([]));
+        assert_eq!(snapshot["unconsumedInputs"], 0);
+        assert_eq!(snapshot["operationCount"], 1);
+    }
+    #[test]
+    fn muse_rejects_bridge_unsupported_native_request_ids_before_effects() {
+        for request_id in [
+            ".question",
+            "_question",
+            ":question",
+            "-question",
+            "",
+            "question space",
+            "question/1",
+            "questioné",
+            &"q".repeat(161),
+        ] {
+            assert_question_rejected_without_effects(request_id, muse_question());
+        }
+    }
+    #[test]
+    fn muse_rejects_bridge_unsupported_question_patterns_before_effects() {
+        for pattern in ["^[0-9]+$", "", "(a+)+$", "["] {
+            let text = json!({"schema":"paperclip.question_set.v1","questions":[{
+                "id":"digits","prompt":"Number?","required":true,"answerMode":"text",
+                "textValidation":{"pattern":pattern}}]});
+            assert_question_rejected_without_effects("native-question", text);
+            let mut choice = muse_question();
+            choice["questions"][0]["customAnswer"] = json!({"enabled":true});
+            choice["questions"][0]["textValidation"] = json!({"pattern":pattern});
+            assert_question_rejected_without_effects("native-question", choice);
+        }
+    }
+    #[test]
+    fn muse_rejects_canonical_question_bound_conflicts_before_effects() {
+        for validation in [
+            json!({"minLength":2,"maxLength":1}),
+            json!({"minimum":2,"maximum":1}),
+        ] {
+            assert_question_rejected_without_effects(
+                "native-question",
+                json!({
+                "schema":"paperclip.question_set.v1","questions":[{
+                    "id":"amount","prompt":"Amount?","required":true,"answerMode":"text",
+                    "textValidation":validation}]}),
+            );
+        }
+        let mut duplicate = muse_question();
+        duplicate["questions"][0]["options"][1]["id"] = json!("prod");
+        assert_question_rejected_without_effects("native-question", duplicate);
+    }
+    #[test]
+    fn muse_accepts_native_request_and_independent_canonical_question_id_grammars() {
+        let dir = TestDirectory::new();
+        let mut muse = prepared_codec(dir.path(), ExternalProviderCodec::Muse);
+        accept(&mut muse);
+        let request_id = format!("1{}", ".:_-".repeat(39) + "abc");
+        assert_eq!(request_id.len(), 160);
+        let questions = json!({"schema":"paperclip.question_set.v1","title":"Complete form",
+            "description":"Synthetic grammar coverage","submitLabel":"Choose",
+            "questions":[
+                {"id":".question","prompt":"Which environment?","required":true,"answerMode":"single_select",
+                    "options":[{"id":"_option","label":"Test"},{"id":"option space","label":"Production"}],
+                    "customAnswer":{"enabled":true,"label":"Other","placeholder":"Environment"}},
+                {"id":"é amount","prompt":"Amount?","required":false,"answerMode":"text","initialText":"2",
+                    "textValidation":{"inputType":"integer","minLength":0,"maxLength":3,"minimum":1,"maximum":10}},
+                {"id":"multi","prompt":"Select features","required":true,"answerMode":"multi_select",
+                    "options":[{"id":":feature","label":"First"},{"id":"-feature","label":"Second"}]}]});
+        call(
+            &mut muse,
+            "external_provider.operation",
+            operation(
+                "ask-valid",
+                "request_user_input",
+                json!({
+            "requestId":request_id,"questionSet":questions}),
+            ),
+        );
+        let created = muse
+            .poll_events()
+            .unwrap()
+            .into_iter()
+            .filter(|event| event.event_type == "runtime_request.created")
+            .collect::<Vec<_>>();
+        assert_eq!(created.len(), 1);
+        assert_eq!(created[0].payload["request"]["requestId"], request_id);
+        assert_eq!(created[0].payload["request"]["input"], questions);
+        drop(muse);
+        let mut recovered = ExternalCommandExecutor::with_codec(
+            dir.path(),
+            &config(dir.path()),
+            ExternalProviderCodec::Muse,
+        );
+        assert_eq!(
+            call(&mut recovered, "session.snapshot", json!({}))["pendingRuntimeRequests"][0]
+                ["input"],
+            questions
+        );
+    }
+    #[test]
+    fn muse_recovery_rejects_bridge_unsupported_question_checkpoints() {
+        for invalid_id in [true, false] {
+            let dir = TestDirectory::new();
+            let mut muse = prepared_codec(dir.path(), ExternalProviderCodec::Muse);
+            accept(&mut muse);
+            call(
+                &mut muse,
+                "external_provider.operation",
+                operation(
+                    "ask-valid",
+                    "request_user_input",
+                    json!({"requestId":"native-question","questionSet":muse_question()}),
+                ),
+            );
+            drop(muse);
+            let path = dir.path().join(MUSE_PROVIDER_STATE_FILE);
+            let mut saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            if invalid_id {
+                let mut input = saved["runtimeInputs"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("native-question")
+                    .unwrap();
+                input["request"]["requestId"] = json!(".question");
+                saved["runtimeInputs"][".question"] = input;
+            } else {
+                saved["runtimeInputs"]["native-question"]["request"]["input"]["questions"][0]
+                    ["textValidation"] = json!({"pattern":"^[0-9]+$"});
+            }
+            fs::write(path, serde_json::to_vec(&saved).unwrap()).unwrap();
+            let mut recovered = ExternalCommandExecutor::with_codec(
+                dir.path(),
+                &config(dir.path()),
+                ExternalProviderCodec::Muse,
+            );
+            assert!(recovered
+                .execute(&command("session.snapshot", json!({})))
+                .is_err());
+        }
     }
     #[test]
     fn muse_question_answer_is_native_durable_and_finish_requires_exact_ingestion() {

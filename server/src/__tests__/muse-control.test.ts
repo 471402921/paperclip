@@ -14,7 +14,7 @@ import { museRunnerBroker } from "../services/muse-runner-broker.js";
 import { dotRunnerBroker } from "../services/dot-runner-broker.js";
 import { museReceiver } from "../services/muse-receiver.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
-import { LOW_TRUST_QUARANTINED_BODY, sanitizeQuarantinedCommentForHigherTrust } from "../services/source-trust.js";
+import { LOW_TRUST_QUARANTINED_BODY, buildLowTrustSourceTrust, buildPromotedSourceTrust, sanitizeQuarantinedCommentForHigherTrust } from "../services/source-trust.js";
 import { PaperclipRunnerToolAuthority } from "../services/native-runtime/paperclip-runner-tool-authority.js";
 import { assertNoExternalOverlap, withExternalAdmissionGuard } from "../modules/external-agents/index.js";
 import { digestPaperclipSemanticContent, externalOperationDigest, type ExternalProviderOperation } from "../vendor/paperclip-runner/index.js";
@@ -243,6 +243,58 @@ describe("personal Muse control plane",()=>{
       await expect(f.broker.act(f.subject,{...command,requestId:randomUUID(),projectId:outside.id})).rejects.toThrow();
       expect(await db.select().from(issues).where(and(eq(issues.companyId,f.company.id),eq(issues.projectId,outside.id)))).toEqual([]);
     }
+  });
+  it.each(["agent","project"] as const)("idle history rechecks the current %s reader trust without rewriting stored comments",async source=>{
+    const f=await fixture();
+    const [project]=await db.insert(projects).values({companyId:f.company.id,name:"Idle history trust"}).returning();
+    const policy={trustPreset:"low_trust_review",trustBoundary:{mode:"low_trust_review",companyId:f.company.id,projectIds:[project.id]}};
+    if(source==="agent")await db.update(agents).set({permissions:{canCreateTasks:true,authorizationPolicy:policy}}).where(eq(agents.id,f.agent.id));
+    else await db.update(projects).set({executionWorkspacePolicy:{authorizationPolicy:policy}}).where(eq(projects.id,project.id));
+    const [issue]=await db.insert(issues).values({companyId:f.company.id,projectId:project.id,title:"Idle history",status:"todo",assigneeAgentId:f.agent.id,responsibleUserId:f.operatorId}).returning();
+    const created=await f.broker.act(f.subject,{version:1,command:"task.comment",requestId:randomUUID(),issueId:issue.id,body:"QUARANTINED idle body canary"});
+    const quarantinedId=String(created.commentId),promotedId=randomUUID(),standardId=randomUUID(),at=new Date("2026-10-13T12:00:00Z");
+    const presentation={kind:"message" as const,tone:"neutral" as const,title:"QUARANTINED idle title canary",detailsDefaultOpen:false};
+    const metadata={version:1 as const,sections:[{rows:[{type:"text" as const,text:"QUARANTINED idle metadata canary"}]}]};
+    await db.update(issueComments).set({presentation,metadata,createdAt:at}).where(eq(issueComments.id,quarantinedId));
+    await db.insert(issueComments).values([
+      {id:promotedId,companyId:f.company.id,issueId:issue.id,authorAgentId:f.agent.id,authorType:"agent",body:"Reviewed promoted summary",sourceTrust:buildPromotedSourceTrust({sourceIssueId:issue.id,sourceArtifactKind:"comment",sourceArtifactId:quarantinedId,promotedByActorType:"user",promotedByActorId:f.operatorId}),createdAt:new Date(at.getTime()+1000)},
+      {id:standardId,companyId:f.company.id,issueId:issue.id,authorUserId:f.operatorId,authorType:"user",body:"Ordinary human coordination",createdAt:new Date(at.getTime()+2000)},
+    ]);
+    const saved=await db.select().from(issueComments).where(eq(issueComments.issueId,issue.id)).orderBy(issueComments.id);
+    const read=async()=>await f.broker.inspect(f.subject,{version:1,query:"task.history",issueId:issue.id}) as {comments:Array<typeof issueComments.$inferSelect>};
+    const before=await read();
+    expect(before.comments.map(comment=>comment.id)).toEqual([standardId,promotedId,quarantinedId]);
+    expect(before.comments[2]).toMatchObject({body:"QUARANTINED idle body canary",presentation,metadata,sourceTrust:{disposition:"quarantined",sourceAgentId:f.agent.id,sourceRunId:null}});
+    await db.update(agents).set({permissions:{canCreateTasks:true}}).where(eq(agents.id,f.agent.id));
+    await db.update(projects).set({executionWorkspacePolicy:{}}).where(eq(projects.id,project.id));
+    const after=await read();
+    expect(after.comments.map(({id,sourceTrust})=>({id,sourceTrust}))).toEqual(before.comments.map(({id,sourceTrust})=>({id,sourceTrust})));
+    expect(after.comments.map(comment=>comment.body)).toEqual(["Ordinary human coordination","Reviewed promoted summary",LOW_TRUST_QUARANTINED_BODY]);
+    expect(after.comments[2]).toMatchObject({presentation:null,metadata:null});
+    expect(JSON.stringify(after)).not.toContain("QUARANTINED idle");
+    expect(await db.select().from(issueComments).where(eq(issueComments.issueId,issue.id)).orderBy(issueComments.id)).toEqual(saved);
+  });
+  it("idle history quarantines another restricted author and retains private and current-authorizer checks",async()=>{
+    const f=await fixture(),owner=randomUUID();
+    await db.insert(authUsers).values({id:owner,name:"Private owner",email:owner+"@example.test",createdAt:new Date(),updatedAt:new Date()});
+    const [project]=await db.insert(projects).values({companyId:f.company.id,name:"Shared history"}).returning();
+    const [restricted]=await db.insert(agents).values({companyId:f.company.id,name:"Restricted author",role:"engineer",status:"active",adapterType:"process",permissions:{authorizationPolicy:{trustPreset:"low_trust_review",trustBoundary:{mode:"low_trust_review",companyId:f.company.id,projectIds:[project.id]}}}}).returning();
+    const [issue]=await db.insert(issues).values({companyId:f.company.id,projectId:project.id,title:"Private mixed history",status:"todo",visibility:"private",assigneeAgentId:f.agent.id,responsibleUserId:owner}).returning();
+    const [comment]=await db.insert(issueComments).values({companyId:f.company.id,issueId:issue.id,authorAgentId:restricted.id,authorType:"agent",body:"Other restricted author canary",sourceTrust:buildLowTrustSourceTrust({issueId:issue.id,agentId:restricted.id})}).returning();
+    const request={version:1 as const,query:"task.history" as const,issueId:issue.id};
+    await expect(f.broker.inspect(f.subject,request)).rejects.toThrow("unavailable");
+    const [grant]=await db.insert(issueAccessGrants).values({issueId:issue.id,subjectType:"user",subjectId:f.operatorId,source:"explicit"}).returning();
+    const history=await f.broker.inspect(f.subject,request) as {comments:Array<typeof issueComments.$inferSelect>};
+    expect(history.comments).toHaveLength(1);
+    expect(history.comments[0]).toMatchObject({id:comment.id,authorAgentId:restricted.id,sourceTrust:comment.sourceTrust,body:LOW_TRUST_QUARANTINED_BODY});
+    expect(JSON.stringify(history)).not.toContain(comment.body);
+    expect((await db.select().from(issueComments).where(eq(issueComments.id,comment.id)))[0]).toEqual(comment);
+    await db.delete(issueAccessGrants).where(eq(issueAccessGrants.id,grant.id));
+    await expect(f.broker.inspect(f.subject,request)).rejects.toThrow("unavailable");
+    await db.insert(issueAccessGrants).values({issueId:issue.id,subjectType:"user",subjectId:f.operatorId,source:"explicit"});
+    expect((await f.broker.inspect(f.subject,request) as {comments:unknown[]}).comments).toHaveLength(1);
+    await db.update(companyMemberships).set({status:"inactive"}).where(and(eq(companyMemberships.companyId,f.company.id),eq(companyMemberships.principalId,f.operatorId)));
+    await expect(f.broker.inspect(f.subject,request)).rejects.toThrow();
   });
   it("applies idle creation grants to the actual inherited parent project",async()=>{
     const f=await fixture();const [project]=await db.insert(projects).values({companyId:f.company.id,name:"Protected intake",executionWorkspacePolicy:{authorizationPolicy:{assignmentPolicy:{mode:"protected"}}}}).returning();
