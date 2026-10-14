@@ -33,6 +33,18 @@ impl ExternalProviderCodec {
             Self::Muse => "muse",
         }
     }
+    fn label(self) -> &'static str {
+        match self {
+            Self::Dot => "Dot",
+            Self::Muse => "Muse",
+        }
+    }
+    fn assignment_expired_code(self) -> &'static str {
+        match self {
+            Self::Dot => "dot_assignment_expired",
+            Self::Muse => "muse_assignment_expired",
+        }
+    }
     fn driver(self) -> &'static str {
         match self {
             Self::Dot => "openai_dot_mcp",
@@ -519,7 +531,10 @@ impl ExternalCommandExecutor {
         if now >= state.descriptor.expires_at_unix_ms
             || matches!(state.lifecycle.as_str(), "fenced" | "closed")
         {
-            return Err(invalid("Dot assignment authority is fenced or expired"));
+            return Err(invalid(format!(
+                "{} assignment authority is fenced or expired",
+                state.codec()?.label()
+            )));
         }
         if let Some(existing) = state.operations.get(&op.request_id) {
             if existing.operation != op {
@@ -541,7 +556,10 @@ impl ExternalCommandExecutor {
         let outcome = match op.action.as_str() {
             "accept" => {
                 if state.lifecycle != "offered" || now >= state.descriptor.accept_by_unix_ms {
-                    return Err(invalid("Dot assignment is unavailable for acceptance"));
+                    return Err(invalid(format!(
+                        "{} assignment is unavailable for acceptance",
+                        state.codec()?.label()
+                    )));
                 }
                 state.lifecycle = "running".to_owned();
                 state.push("turn.started", json!({"provider":state.descriptor.kind,"providerTurnId":state.turn_id,"turnId":state.turn_id}))?;
@@ -959,7 +977,8 @@ impl CommandExecutor for ExternalCommandExecutor {
             let expiry = (|| -> Result<(), DurableRunnerError> {
                 s.tools.settle_turn("authority_expired").map_err(|e| invalid(e.to_string()))?;
                 s.push("external_provider.dispatch_requested", json!({"binding":s.binding(),"kind":"authority_revoked","reason":"authority_expired","externalStopConfirmed":false}))?;
-                s.push("turn.failed", json!({"provider":s.descriptor.kind,"providerTurnId":s.turn_id,"error":{"code":"dot_assignment_expired","message":"Dot assignment acceptance or execution authority expired."}}))?;
+                let codec = s.codec()?;
+                s.push("turn.failed", json!({"provider":s.descriptor.kind,"providerTurnId":s.turn_id,"error":{"code":codec.assignment_expired_code(),"message":format!("{} assignment acceptance or execution authority expired.", codec.label())}}))?;
                 s.push("run.terminal", json!({"schema":"paperclip.prp.terminal.v1","turnTerminalState":"failed","runTerminalState":"failed","reportedWorkDisposition":"needs_review"}))?;
                 Ok(())
             })().and_then(|_| self.save());
@@ -1375,6 +1394,123 @@ mod tests {
                 operation("accept-2", "accept", json!({}))
             ))
             .is_err());
+    }
+    fn assert_assignment_expiry_provider(
+        codec: ExternalProviderCodec,
+        expected_code: &str,
+        expected_message: &str,
+    ) {
+        for running in [false, true] {
+            let dir = TestDirectory::new();
+            let mut executor = prepared_codec(dir.path(), codec);
+            if running {
+                accept(&mut executor);
+            }
+            let now = crate::durable::current_unix_ms().unwrap();
+            let state = executor.state.as_mut().unwrap();
+            state.descriptor.accept_by_unix_ms = now - 2;
+            if running {
+                state.descriptor.expires_at_unix_ms = now - 1;
+            }
+            let events = executor.poll_events().unwrap();
+            let failed: Vec<_> = events
+                .iter()
+                .filter(|event| event.event_type == "turn.failed")
+                .collect();
+            assert_eq!(failed.len(), 1);
+            assert_eq!(
+                failed[0].payload,
+                json!({"provider":codec.kind(),"providerTurnId":"turn-1", "error":{
+                    "code":expected_code,"message":expected_message}})
+            );
+            let fence: Vec<_> = events
+                .iter()
+                .filter(|event| {
+                    event.event_type == "external_provider.dispatch_requested"
+                        && event.payload["kind"] == "authority_revoked"
+                })
+                .collect();
+            assert_eq!(fence.len(), 1);
+            assert_eq!(fence[0].payload["reason"], "authority_expired");
+            assert_eq!(fence[0].payload["externalStopConfirmed"], false);
+            let terminal = events
+                .iter()
+                .find(|event| event.event_type == "run.terminal")
+                .unwrap();
+            assert_eq!(
+                terminal.payload,
+                json!({"schema":"paperclip.prp.terminal.v1",
+                "turnTerminalState":"failed","runTerminalState":"failed",
+                "reportedWorkDisposition":"needs_review"})
+            );
+            assert_eq!(executor.state.as_ref().unwrap().lifecycle, "fenced");
+            let serialized = serde_json::to_value(&events).unwrap();
+            assert_eq!(
+                serde_json::to_value(executor.poll_events().unwrap()).unwrap(),
+                serialized
+            );
+            let mut recovered =
+                ExternalCommandExecutor::with_codec(dir.path(), &config(dir.path()), codec);
+            assert_eq!(
+                serde_json::to_value(recovered.poll_events().unwrap()).unwrap(),
+                serialized
+            );
+        }
+    }
+    #[test]
+    fn muse_assignment_expiry_reports_muse_and_preserves_durable_fence() {
+        assert_assignment_expiry_provider(
+            ExternalProviderCodec::Muse,
+            "muse_assignment_expired",
+            "Muse assignment acceptance or execution authority expired.",
+        );
+    }
+    #[test]
+    fn dot_assignment_expiry_preserves_exact_existing_error_and_durable_fence() {
+        assert_assignment_expiry_provider(
+            ExternalProviderCodec::Dot,
+            "dot_assignment_expired",
+            "Dot assignment acceptance or execution authority expired.",
+        );
+    }
+    fn assert_assignment_authority_errors(codec: ExternalProviderCodec, expected_label: &str) {
+        for condition in ["fenced", "expired", "accept_deadline"] {
+            let dir = TestDirectory::new();
+            let mut executor = prepared_codec(dir.path(), codec);
+            let now = crate::durable::current_unix_ms().unwrap();
+            let state = executor.state.as_mut().unwrap();
+            match condition {
+                "fenced" => state.lifecycle = "fenced".to_owned(),
+                "expired" => {
+                    state.descriptor.accept_by_unix_ms = now - 2;
+                    state.descriptor.expires_at_unix_ms = now - 1;
+                }
+                "accept_deadline" => state.descriptor.accept_by_unix_ms = now - 1,
+                _ => unreachable!(),
+            }
+            let before = serde_json::to_value(&executor.state).unwrap();
+            let error = executor
+                .execute(&command(
+                    "external_provider.operation",
+                    operation("unavailable-accept", "accept", json!({})),
+                ))
+                .unwrap_err();
+            let suffix = if condition == "accept_deadline" {
+                "assignment is unavailable for acceptance"
+            } else {
+                "assignment authority is fenced or expired"
+            };
+            assert_eq!(error.to_string(), format!("{expected_label} {suffix}"));
+            assert_eq!(serde_json::to_value(&executor.state).unwrap(), before);
+        }
+    }
+    #[test]
+    fn muse_assignment_rejections_name_muse_and_leave_no_receipt_or_event() {
+        assert_assignment_authority_errors(ExternalProviderCodec::Muse, "Muse");
+    }
+    #[test]
+    fn dot_assignment_rejections_preserve_exact_existing_text_and_no_effects() {
+        assert_assignment_authority_errors(ExternalProviderCodec::Dot, "Dot");
     }
     fn muse_question() -> Value {
         json!({"schema":"paperclip.question_set.v1","questions":[{"id":"environment","prompt":"Which environment?","required":true,"answerMode":"single_select",
