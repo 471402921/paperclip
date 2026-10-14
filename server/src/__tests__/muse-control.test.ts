@@ -1167,6 +1167,37 @@ describe("personal Muse control plane",()=>{
     }finally{await f.detach();}
   });
 
+  it("keeps expired readiness quiet even after an acknowledged item becomes eligible for rearm",async()=>{
+    const f=await oauthFixture(true),app=transport();
+    const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;
+    await f.broker.verify(f.company.id,f.agent.id,{bindingId:f.binding.id,generation:1,expectedRevision:state.revision});
+    const [challenge]=await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"readiness_challenge")));
+    await db.update(bindings).set({challengeExpiresAt:new Date(Date.now()-1)}).where(eq(bindings.id,f.binding.id));
+    const poll=()=>request(app).get("/api/muse/v1/signal").set("X-Paperclip-Muse-Binding",f.binding.id);
+    expect((await poll()).body).toEqual({version:1,signal:null});
+    const ack=await request(app).post("/api/muse/v1/queries").set("Authorization","Bearer "+f.tokens!.access_token).send({version:1,query:"mailbox",after:challenge.id});
+    expect(ack.status).toBe(200);
+    await db.update(mailbox).set({signalNotifiedAt:new Date(Date.now()-60000)}).where(eq(mailbox.id,challenge.id));
+    expect((await poll()).body).toEqual({version:1,signal:null});
+    expect((await db.select().from(mailbox).where(eq(mailbox.id,challenge.id)))[0].signalAttempt).toBe(0);
+  });
+  it("signals only the current unread readiness nonce and keeps its opaque reference stable",async()=>{
+    const f=await oauthFixture(true),app=transport();
+    const verify=async()=>{const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;await f.broker.verify(f.company.id,f.agent.id,{bindingId:f.binding.id,generation:1,expectedRevision:state.revision});};
+    await verify();await db.update(bindings).set({challengeExpiresAt:new Date(Date.now()-1)}).where(eq(bindings.id,f.binding.id));await verify();
+    const challenges=await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"readiness_challenge"))).orderBy(mailbox.id);
+    expect(challenges).toHaveLength(2);
+    const current=(await db.select().from(bindings).where(eq(bindings.id,f.binding.id)))[0];
+    expect(museCredentialHash(String(challenges[1].references.nonce))).toBe(current.challengeHash);
+    const poll=()=>request(app).get("/api/muse/v1/signal").set("X-Paperclip-Muse-Binding",f.binding.id);
+    const first=await poll(),second=await poll();expect(first.status).toBe(200);expect(first.body.signal?.reference).toMatch(/^sha256:/);expect(second.body).toEqual(first.body);
+    const saved=await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"readiness_challenge"))).orderBy(mailbox.id);
+    expect(saved.map(item=>item.signalAttempt)).toEqual([0,1]);
+    const ack=await request(app).post("/api/muse/v1/queries").set("Authorization","Bearer "+f.tokens!.access_token).send({version:1,query:"mailbox",after:challenges[1].id});
+    expect(ack.status).toBe(200);expect((await poll()).body).toEqual({version:1,signal:null});
+    await db.update(bindings).set({challengeExpiresAt:new Date(Date.now()-1)}).where(eq(bindings.id,f.binding.id));await verify();expect((await poll()).body.signal?.reference).toMatch(/^sha256:/);
+  });
+
   it("keeps paused and feature-disabled public receivers idle, resumes them, and fences lost current authority",async()=>{
     const f=await active();try {
       const app=transport(),poll=()=>request(app).get("/api/muse/v1/signal").set("X-Paperclip-Muse-Binding",f.binding.id);
