@@ -1167,6 +1167,136 @@ describe("personal Muse control plane",()=>{
     }finally{await f.detach();}
   });
 
+  it.each(["enableMuse","enableNativeRunner"] as const)("delivers only feature-disabled stop control while %s is off",async flag=>{
+    const oauth=await oauthFixture(true),f=await active(oauth),app=transport();try {
+      await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+      const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;
+      await f.broker.verify(f.company.id,f.agent.id,{bindingId:f.binding.id,generation:1,expectedRevision:state.revision});
+      const nativeRequestId="disabled_question",response={schema:"paperclip.question_response.v1",answers:{answer:{text:"PRIVATE pending input canary"}}};
+      const inputDigest=digestPaperclipSemanticContent({requestId:nativeRequestId,turnId:f.ref.turnId,response});
+      await f.port.inputAvailable({sourceEventId:randomUUID(),payload:{binding:f.ref,requestId:nativeRequestId,turnId:f.ref.turnId,inputDigest,response}});
+      await db.insert(operations).values({companyId:f.company.id,assignmentId:f.assignment.id,requestId:randomUUID(),digest:"pending",command:{action:"tool"},status:"pending"});
+      await instanceSettingsService(db).updateExperimental({[flag]:false});
+      // A real native fence fact must remain ingestible after ordinary work is
+      // disabled. Both exact replay and a later fact preserve the same boundary.
+      const fence={sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}};
+      await f.port.dispatch(fence);await f.port.dispatch(fence);
+      const [hold]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      const [stop]=await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"authority_revoked")));
+      const authorization="Bearer "+oauth.tokens!.access_token;
+      const poll=()=>request(app).get("/api/muse/v1/signal").set("X-Paperclip-Muse-Binding",f.binding.id);
+      const [signal,inbox,inspection]=await Promise.all([
+        poll(),request(app).post("/api/muse/v1/queries").set("Authorization",authorization).send({version:1,query:"mailbox",after:0}),
+        request(app).post("/api/muse/v1/cleanup").set("Authorization",authorization).send({version:1,command:"control.inspect"}),
+      ]);
+      expect({signal:!!signal.body.signal,mailbox:inbox.status,cleanup:inspection.status}).toEqual({signal:true,mailbox:200,cleanup:200});
+      expect(signal.body.signal.reference).toMatch(/^sha256:/);expect((await poll()).body).toEqual(signal.body);
+      expect(inbox.body.items.map((item:{kind:string})=>item.kind)).toEqual(["authority_revoked"]);
+      expect(inbox.body.items[0].references.boundary).toEqual(hold.stopBoundary);
+      expect(JSON.stringify(inbox.body)).not.toContain("PRIVATE pending input canary");
+      expect(inspection.body).toMatchObject({boundaries:[{boundary:hold.stopBoundary,nativeEffectsUnknown:true}],externalStopConfirmed:false});
+      const workQueries=[{query:"identify"},{query:"assignment.read",assignmentId:f.assignment.id},{query:"input.pending",assignmentId:f.assignment.id,nativeRequestId},
+        {query:"task.list"},{query:"task.search",text:"Muse"},{query:"task.read",issueId:f.issue.id},{query:"task.history",issueId:f.issue.id},
+        {query:"task.document.read",issueId:f.issue.id,key:"memo"},{query:"operation.receipt",assignmentId:f.assignment.id,requestId:f.sent[0].requestId}];
+      for(const query of workQueries)expect((await request(app).post("/api/muse/v1/queries").set("Authorization",authorization).send({version:1,...query})).status).toBe(503);
+      const workCommands=[{command:"accept",assignmentId:f.assignment.id},{command:"progress",assignmentId:f.assignment.id,text:"no new effect"},
+        {command:"tool",assignmentId:f.assignment.id,name:"read_task",input:{}},{command:"finish",assignmentId:f.assignment.id,result:{schema:"paperclip.run_result.v1"}},
+        {command:"request_user_input",assignmentId:f.assignment.id,nativeRequestId:"new_question",questionSet:{schema:"paperclip.question_set.v1",questions:[{id:"answer",prompt:"No new question",required:true,answerMode:"text"}]}},
+        {command:"consume_input",assignmentId:f.assignment.id,nativeRequestId,inputDigest,continuationReceiptId:randomUUID(),continuationPersisted:true},
+        {command:"challenge.confirm",nonce:"unchanged-private-challenge"},{command:"work.request",issueId:f.issue.id},
+        {command:"task.comment",issueId:f.issue.id,body:"No idle effect"},{command:"task.create",title:"No idle task"}];
+      for(const command of workCommands)expect((await request(app).post("/api/muse/v1/commands").set("Authorization",authorization).send({version:1,requestId:randomUUID(),...command})).status).toBe(503);
+      await expect(f.broker.snapshot(f.company.id,f.agent.id,f.binding.id)).rejects.toThrow("disabled");
+      await expect(f.broker.act(f.subject,{version:1,command:"task.comment",issueId:f.issue.id,requestId:randomUUID(),body:"No direct idle effect"})).rejects.toThrow();
+      await expect(f.broker.assertRunAuthority({binding:{companyId:f.company.id,agentId:f.agent.id,runId:f.runId},provider:{binding:f.ref}} as Parameters<typeof f.broker.assertRunAuthority>[0])).rejects.toThrow();
+      const report={version:1,command:"worker.quiescent",boundary:hold.stopBoundary,requestId:randomUUID()};
+      for(let retry=0;retry<2;retry++)expect((await request(app).post("/api/muse/v1/cleanup").set("Authorization",authorization).send(report)).body).toEqual({status:"worker_reported",externalStopConfirmed:false,nativeEffectsUnknown:true});
+      for(let retry=0;retry<2;retry++)expect((await request(app).post("/api/muse/v1/queries").set("Authorization",authorization).send({version:1,query:"mailbox",after:stop.id})).body).toMatchObject({items:[],nextCursor:stop.id});
+      expect((await poll()).body).toEqual({version:1,signal:null});
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:fence.payload});
+      const [saved]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.id,hold.id));
+      expect(saved).toMatchObject({stopBoundary:hold.stopBoundary,workerUnknown:true,nativeEffectsUnknown:true,releasedAt:null});expect(saved.workerReportedAt).toBeInstanceOf(Date);
+      expect(f.sent).toHaveLength(1);
+      const ordinary=await db.select().from(mailbox).where(eq(mailbox.bindingId,f.binding.id));
+      expect(ordinary.filter(item=>item.kind!=="authority_revoked").every(item=>item.signalNotifiedAt===null)).toBe(true);
+      expect((await db.select().from(activityLog).where(and(eq(activityLog.companyId,f.company.id),eq(activityLog.action,"muse.worker_quiescence_reported"))))).toHaveLength(1);
+    }finally{await instanceSettingsService(db).updateExperimental({enableMuse:true,enableNativeRunner:true});await f.detach();}
+  });
+  it.each(["access_expired","grant_revoked","connection_revoked","refresh_expired","membership_lost","resource_changed","generation_changed","released","stop_window_expired"] as const)("disabled stop control retains current credential and boundary denial: %s",async fault=>{
+    const oauth=await oauthFixture(true),f=await active(oauth),app=transport();try {
+      await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      const [hold]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      await instanceSettingsService(db).updateExperimental({enableMuse:false});
+      if(fault==="access_expired")await db.update(mcpOauthTokens).set({expiresAt:new Date(Date.now()-1)}).where(eq(mcpOauthTokens.id,f.subject.credentialId));
+      if(fault==="connection_revoked")await f.broker.revoke(f.company.id,f.agent.id,f.operatorId);
+      if(fault==="grant_revoked")await db.update(mcpOauthGrants).set({revokedAt:new Date()}).where(eq(mcpOauthGrants.id,f.binding.grantId!));
+      if(fault==="refresh_expired")await db.update(mcpOauthTokens).set({expiresAt:new Date(Date.now()-1)}).where(and(eq(mcpOauthTokens.grantId,f.binding.grantId!),eq(mcpOauthTokens.kind,"refresh")));
+      if(fault==="membership_lost")await db.update(companyMemberships).set({status:"inactive"}).where(and(eq(companyMemberships.companyId,f.company.id),eq(companyMemberships.principalId,f.operatorId)));
+      if(fault==="resource_changed")await db.update(mcpOauthGrants).set({resource:"https://other.example/api/muse/v1"}).where(eq(mcpOauthGrants.id,f.binding.grantId!));
+      if(fault==="generation_changed")await db.update(bindings).set({generation:2}).where(eq(bindings.id,f.binding.id));
+      if(fault==="released")await db.update(externalAgentHolds).set({releasedAt:new Date(),workerUnknown:false}).where(eq(externalAgentHolds.id,hold.id));
+      if(fault==="stop_window_expired")await db.update(mailbox).set({createdAt:new Date(Date.now()-24*60*60000-1)}).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"authority_revoked")));
+      const authorization="Bearer "+oauth.tokens!.access_token;
+      const expected=["generation_changed","released","stop_window_expired"].includes(fault)?403:401;
+      for(const command of [{command:"control.inspect"},{command:"worker.quiescent",boundary:hold.stopBoundary,requestId:randomUUID()}])expect((await request(app).post("/api/muse/v1/cleanup").set("Authorization",authorization).send({version:1,...command})).status).toBe(expected);
+      expect((await request(app).post("/api/muse/v1/queries").set("Authorization",authorization).send({version:1,query:"mailbox",after:0})).status).toBe(expected);
+      const [saved]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.id,hold.id));expect(saved.workerReportedAt).toBeNull();expect(saved.stopBoundary).toEqual(hold.stopBoundary);expect(f.sent).toHaveLength(1);
+      const signal=await request(app).get("/api/muse/v1/signal").set("X-Paperclip-Muse-Binding",f.binding.id);
+      if(["grant_revoked","connection_revoked","refresh_expired","membership_lost","resource_changed"].includes(fault))expect(signal.status).toBe(410);
+      else expect(signal.body).toEqual({version:1,signal:null});
+    }finally{await instanceSettingsService(db).updateExperimental({enableMuse:true,enableNativeRunner:true});await f.detach();}
+  });
+  it.each(["mailbox","report"] as const)("disabled stop control rechecks an access token that expires while its %s lock is held",async kind=>{
+    const oauth=await oauthFixture(true),f=await active(oauth),app=transport();let release=()=>{},holder:Promise<void>|undefined;try {
+      await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});
+      await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});
+      const [hold]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,f.assignment.id));
+      await instanceSettingsService(db).updateExperimental({enableMuse:false});
+      let ready=()=>{},holderPid=0;const gate=new Promise<void>(resolve=>{release=resolve;}),locked=new Promise<void>(resolve=>{ready=resolve;});
+      holder=db.transaction(async tx=>{
+        holderPid=(await tx.execute<{pid:number}>(sql`select pg_backend_pid() as pid`))[0].pid;
+        const wait=async()=>{ready();await gate;};
+        if(kind==="report")await withExternalAdmissionGuard(tx,f.company.id,f.agent.id,wait);
+        else {await tx.select({id:bindings.id}).from(bindings).where(eq(bindings.id,f.binding.id)).for("update");await wait();}
+      });
+      await locked;let settled=false;
+      const body=kind==="mailbox"?{version:1,query:"mailbox",after:0}:{version:1,command:"worker.quiescent",boundary:hold.stopBoundary,requestId:randomUUID()};
+      const call=request(app).post(kind==="mailbox"?"/api/muse/v1/queries":"/api/muse/v1/cleanup").set("Authorization","Bearer "+oauth.tokens!.access_token).send(body).then(response=>{settled=true;return response;});
+      let waiting=false;const deadline=Date.now()+5000;
+      while(Date.now()<deadline&&!settled) {
+        const [observed]=await db.execute<{waiting:boolean}>(sql`select exists(select 1 from pg_stat_activity where datname=current_database() and wait_event_type='Lock' and ${holderPid} = any(pg_blocking_pids(pid)) and (query ilike '%muse_agent_bindings%' or query ilike '%pg_advisory_xact_lock%')) as waiting`);
+        if(observed.waiting){waiting=true;break;}await new Promise(resolve=>setTimeout(resolve,20));
+      }
+      expect(waiting).toBe(true);expect(settled).toBe(false);
+      await db.update(mcpOauthTokens).set({expiresAt:new Date(Date.now()-1)}).where(eq(mcpOauthTokens.id,f.subject.credentialId));
+      release();await holder;expect((await call).status).toBe(401);
+      const [current]=await db.select().from(bindings).where(eq(bindings.id,f.binding.id));expect(current.workerCursor).toBe(0);
+      expect((await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.id,hold.id)))[0].workerReportedAt).toBeNull();expect(f.sent).toHaveLength(1);
+    }finally{release();await holder;await instanceSettingsService(db).updateExperimental({enableMuse:true,enableNativeRunner:true});await f.detach();}
+  });
+  it.each(["enableMuse","enableNativeRunner"] as const)("disabled stop control requires a durable fence before using %s current credentials",async flag=>{
+    const f=await oauthFixture(true),app=transport();try {
+      await instanceSettingsService(db).updateExperimental({[flag]:false});
+      expect((await request(app).get("/api/muse/v1/signal").set("X-Paperclip-Muse-Binding",f.binding.id)).body).toEqual({version:1,signal:null});
+      expect((await request(app).post("/api/muse/v1/queries").set("Authorization","Bearer "+f.tokens!.access_token).send({version:1,query:"mailbox",after:0})).status).toBe(403);
+      expect((await request(app).post("/api/muse/v1/cleanup").set("Authorization","Bearer "+f.tokens!.access_token).send({version:1,command:"control.inspect"})).status).toBe(403);
+    }finally{await instanceSettingsService(db).updateExperimental({enableMuse:true,enableNativeRunner:true});}
+  });
+  it("disabled stop control cannot report or disclose another company's boundary",async()=>{
+    const firstOauth=await oauthFixture(true),secondOauth=await oauthFixture(true),first=await active(firstOauth),second=await active(secondOauth),app=transport();try {
+      for(const f of [first,second]){await f.broker.act(f.subject,{version:1,command:"accept",assignmentId:f.assignment.id,requestId:randomUUID()});await f.port.dispatch({sourceEventId:randomUUID(),payload:{kind:"authority_revoked",binding:f.ref}});}
+      const [firstHold]=await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.assignmentId,first.assignment.id));
+      await instanceSettingsService(db).updateExperimental({enableMuse:false});
+      const authorization="Bearer "+secondOauth.tokens!.access_token;
+      const inbox=await request(app).post("/api/muse/v1/queries").set("Authorization",authorization).send({version:1,query:"mailbox",after:0});expect(inbox.status).toBe(200);
+      expect(inbox.body.items.every((item:{kind:string;bindingId:string})=>item.kind==="authority_revoked"&&item.bindingId===second.binding.id)).toBe(true);
+      expect(JSON.stringify(inbox.body)).not.toContain(first.assignment.id);
+      const report=await request(app).post("/api/muse/v1/cleanup").set("Authorization",authorization).send({version:1,command:"worker.quiescent",boundary:firstHold.stopBoundary,requestId:randomUUID()});expect(report.status).toBe(409);
+      expect((await db.select().from(externalAgentHolds).where(eq(externalAgentHolds.id,firstHold.id)))[0].workerReportedAt).toBeNull();
+    }finally{await instanceSettingsService(db).updateExperimental({enableMuse:true,enableNativeRunner:true});await first.detach();await second.detach();}
+  });
+
   it("keeps expired readiness quiet even after an acknowledged item becomes eligible for rearm",async()=>{
     const f=await oauthFixture(true),app=transport();
     const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;

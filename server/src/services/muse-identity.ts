@@ -13,12 +13,12 @@ export type MuseCredentialKind = typeof credentials.$inferSelect.kind;
 export type MuseIdentityDatabase = Db | ExternalAdmissionTransaction;
 /** A scoped fence is reportable only while its exact assignment and durable
  * boundary still agree. Callers independently validate the credential lane. */
-export function museCleanupBoundaryIds(db:MuseIdentityDatabase,s:AgentConnectionSubject,revoked=false,now=new Date()) {
+function scopedMuseStopBoundaryIds(db:MuseIdentityDatabase,b:Pick<typeof bindings.$inferSelect,"id"|"companyId"|"agentId"|"generation"|"operatorId">,revoked:boolean,now:Date,provider="muse") {
   return db.select({id:holds.id}).from(holds)
     .innerJoin(assignments,and(eq(assignments.id,holds.assignmentId),eq(assignments.companyId,holds.companyId),eq(assignments.agentId,holds.agentId),eq(assignments.bindingId,holds.bindingId),eq(assignments.bindingGeneration,holds.bindingGeneration),eq(assignments.runId,holds.runId),eq(assignments.status,"fenced")))
-    .innerJoin(bindings,and(eq(bindings.id,holds.bindingId),eq(bindings.companyId,holds.companyId),eq(bindings.agentId,holds.agentId),eq(bindings.generation,holds.bindingGeneration),eq(bindings.operatorId,s.authorizingUserId),revoked?sql`${bindings.revokedAt} is not null`:isNull(bindings.revokedAt),revoked?gt(bindings.cleanupExpiresAt,now):inArray(bindings.status,["connected","ready"])))
+    .innerJoin(bindings,and(eq(bindings.id,holds.bindingId),eq(bindings.companyId,holds.companyId),eq(bindings.agentId,holds.agentId),eq(bindings.generation,holds.bindingGeneration),eq(bindings.operatorId,b.operatorId),revoked?sql`${bindings.revokedAt} is not null`:isNull(bindings.revokedAt),revoked?gt(bindings.cleanupExpiresAt,now):inArray(bindings.status,["connected","ready"])))
     .innerJoin(mailbox,and(eq(mailbox.companyId,holds.companyId),eq(mailbox.bindingId,holds.bindingId),eq(mailbox.bindingGeneration,holds.bindingGeneration),eq(mailbox.assignmentId,holds.assignmentId),eq(mailbox.kind,"authority_revoked"),sql`${mailbox.references}->'boundary' = ${holds.stopBoundary}`))
-    .where(and(sql`${s.provider} = 'muse'`,eq(holds.provider,"muse"),eq(holds.companyId,s.companyId),eq(holds.agentId,s.agentId),eq(holds.bindingId,s.bindingId),eq(holds.bindingGeneration,s.generation),isNull(holds.releasedAt),
+    .where(and(sql`${provider} = 'muse'`,eq(holds.provider,"muse"),eq(holds.companyId,b.companyId),eq(holds.agentId,b.agentId),eq(holds.bindingId,b.id),eq(holds.bindingGeneration,b.generation),isNull(holds.releasedAt),
       sql`${holds.stopBoundary}->>'bindingId' = ${bindings.id}::text`,
       sql`${holds.stopBoundary}->>'generation' = ${bindings.generation}::text`,
       sql`${holds.stopBoundary}->>'assignmentId' = ${assignments.id}::text`,
@@ -27,6 +27,13 @@ export function museCleanupBoundaryIds(db:MuseIdentityDatabase,s:AgentConnection
       sql`${holds.stopBoundary}->>'assignmentRevision' = ${assignments.revision}::text`))
     .groupBy(holds.id)
     .having(revoked?sql`true`:sql`min(${mailbox.createdAt}) > ${new Date(now.getTime()-MUSE_CLEANUP_TTL_MS).toISOString()}::timestamptz and min(${mailbox.createdAt}) <= ${now.toISOString()}::timestamptz`);
+}
+export function museCleanupBoundaryIds(db:MuseIdentityDatabase,s:AgentConnectionSubject,revoked=false,now=new Date()) {
+  return scopedMuseStopBoundaryIds(db,{id:s.bindingId,companyId:s.companyId,agentId:s.agentId,generation:s.generation,operatorId:s.authorizingUserId},revoked,now,s.provider);
+}
+/** Public control selection uses persisted binding scope, never a worker subject. */
+export function museStopControlBoundaryIds(db:MuseIdentityDatabase,b:typeof bindings.$inferSelect,now=new Date()) {
+  return scopedMuseStopBoundaryIds(db,b,false,now);
 }
 export async function assertMuseCurrentAuthority(db: MuseIdentityDatabase, b: typeof bindings.$inferSelect, allowSetup = false, allowPaused = false) {
   const [agent] = await db.select().from(agents).where(and(eq(agents.id,b.agentId),eq(agents.companyId,b.companyId)));
@@ -69,6 +76,24 @@ export async function assertMuseSubjectCredential(db: MuseIdentityDatabase, s: A
       eq(credentials.kind,"access"),isNull(credentials.revokedAt),isNull(credentials.consumedAt),gt(credentials.expiresAt,new Date())));
     if (!c || b.grantId) throw unauthorized("Muse test credential is unavailable.");
   }
+  return b;
+}
+/** Disabled OAuth cannot refresh. Do not wake a worker for stop control when
+ * no live access credential remains; resuming the feature can restore refresh. */
+export async function hasMuseStopControlAccess(db:MuseIdentityDatabase,b:typeof bindings.$inferSelect) {
+  const now=new Date();
+  const [access]=b.grantId
+    ? await db.select({id:mcpOauthTokens.id}).from(mcpOauthTokens).where(and(eq(mcpOauthTokens.grantId,b.grantId),eq(mcpOauthTokens.kind,"access"),isNull(mcpOauthTokens.usedAt),gt(mcpOauthTokens.expiresAt,now))).limit(1)
+    : await db.select({id:credentials.id}).from(credentials).where(and(eq(credentials.companyId,b.companyId),eq(credentials.bindingId,b.id),eq(credentials.bindingGeneration,b.generation),eq(credentials.kind,"access"),isNull(credentials.revokedAt),isNull(credentials.consumedAt),gt(credentials.expiresAt,now))).limit(1);
+  return !!access;
+}
+/** Feature-off control requires a live presented credential and an exact,
+ * bounded durable fence. It grants no assignment, task content or tool authority. */
+export async function assertMuseDisabledStopControlCredential(db:MuseIdentityDatabase,s:AgentConnectionSubject,expectedResource?:string) {
+  const b=await assertMuseSubjectCredential(db,s,expectedResource);
+  await assertMuseReceiverAuthority(db,b,expectedResource);
+  const [boundary]=await museStopControlBoundaryIds(db,b).limit(1);
+  if(!boundary)throw forbidden("Muse stop control is unavailable.");
   return b;
 }
 /** Strict OAuth revocation never inherits the legacy cleanup exception. */
@@ -147,9 +172,10 @@ export function museIdentity(db: Db) {
   }
   return {
     enabled,
-    async authenticateOAuthAccess(value:string,publicOrigin?:string):Promise<AgentConnectionSubject> {
+    async authenticateOAuthAccess(value:string,publicOrigin?:string,options:{stopControl?:boolean}={}):Promise<AgentConnectionSubject> {
       const {museOAuth}=await import("./muse-oauth.js");
-      const principal=await museOAuth(db,publicOrigin).authenticateAccess(value);
+      const oauth=museOAuth(db,publicOrigin);
+      const principal=await (options.stopControl?oauth.authenticateMuseStopControlAccess(value):oauth.authenticateAccess(value));
       const [b]=await db.select().from(bindings).where(and(eq(bindings.grantId,principal.grant.id),eq(bindings.companyId,principal.grant.companyId),
         eq(bindings.agentId,principal.grant.agentId!),eq(bindings.operatorId,principal.grant.userId),isNull(bindings.revokedAt)));
       if(!b)throw unauthorized("Muse OAuth binding is unavailable.");
@@ -158,6 +184,7 @@ export function museIdentity(db: Db) {
         agentId:b.agentId,bindingId:b.id,generation:b.generation,authorizingUserId:b.operatorId,credentialId:principal.accessTokenId};
       const expectedResource=musePublicOrigin(publicOrigin)+MUSE_RESOURCE_PATH;
       await assertMuseSubjectCredential(db,subject,expectedResource);await assertMuseReceiverAuthority(db,b,expectedResource);
+      if(options.stopControl&&!await enabled())await assertMuseDisabledStopControlCredential(db,subject,expectedResource);
       await db.update(bindings).set({workerActivityAt:new Date()}).where(and(eq(bindings.id,b.id),eq(bindings.grantId,principal.grant.id),isNull(bindings.revokedAt)));
       await db.update(mcpOauthTokens).set({expiresAt:new Date(Date.now()+MUSE_REFRESH_INACTIVITY_MS)}).where(and(eq(mcpOauthTokens.grantId,principal.grant.id),
         eq(mcpOauthTokens.kind,"refresh"),isNull(mcpOauthTokens.usedAt),gt(mcpOauthTokens.expiresAt,new Date())));
@@ -200,7 +227,7 @@ export function museIdentity(db: Db) {
       if (!result) throw unauthorized("Refresh replay, expiry, or lost rotation requires reconnect.");
       return result;
     },
-    async authenticate(value: string, kind: MuseCredentialKind="access"): Promise<AgentConnectionSubject> {
+    async authenticate(value: string, kind: MuseCredentialKind="access",options:{stopControl?:boolean}={}): Promise<AgentConnectionSubject> {
       if (kind === "signal") throw unauthorized("Signal credentials are no longer supported.");
       const [c]=await db.select().from(credentials).where(and(eq(credentials.tokenHash,museCredentialHash(value)),eq(credentials.kind,kind),isNull(credentials.revokedAt),isNull(credentials.consumedAt),gt(credentials.expiresAt,new Date())));
       const [b]=c?await db.select().from(bindings).where(and(eq(bindings.id,c.bindingId),eq(bindings.companyId,c.companyId))):[];
@@ -211,7 +238,11 @@ export function museIdentity(db: Db) {
         else if (!b.revokedAt || !b.cleanupExpiresAt || b.cleanupExpiresAt<=new Date() || c.bindingGeneration!==b.generation) throw unauthorized("Cleanup authority expired.");
       } else {
         await expireQualification(b);
-        if (!await enabled() || b.revokedAt || c.bindingGeneration!==b.generation) throw unauthorized("Muse authority was fenced.");
+        if (b.revokedAt || c.bindingGeneration!==b.generation) throw unauthorized("Muse authority was fenced.");
+        if(!await enabled()) {
+          if(!options.stopControl||kind!=="access")throw unauthorized("Muse authority was fenced.");
+          await assertMuseDisabledStopControlCredential(db,{provider:"muse",credentialSource:"legacy",companyId:b.companyId,agentId:b.agentId,bindingId:b.id,generation:c.bindingGeneration,authorizingUserId:b.operatorId,credentialId:c.id});
+        }
         await assertMuseCurrentAuthority(db,b,true,true);
         if (kind==="access") {
           await db.update(bindings).set({workerActivityAt:new Date()}).where(and(eq(bindings.id,b.id),eq(bindings.generation,b.generation),isNull(bindings.revokedAt)));

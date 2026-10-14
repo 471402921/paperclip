@@ -338,8 +338,8 @@ export function createPublicMcpOAuth(db: Db, config: PublicMcpConfig, options: {
     }));
   }
 
-  async function authenticateAccess(token: string): Promise<McpPrincipal & { accessTokenId: string }> {
-      await assertEnabled();
+  async function authenticateToken(token: string, museStopControl = false): Promise<McpPrincipal & { accessTokenId: string }> {
+      if(!museAgentConnection||!museStopControl)await assertEnabled();
       const [row] = await db.select({ token: mcpOauthTokens, grant: mcpOauthGrants, company: { id: companies.id, name: companies.name, issuePrefix: companies.issuePrefix, status: companies.status } })
         .from(mcpOauthTokens).innerJoin(mcpOauthGrants, eq(mcpOauthTokens.grantId, mcpOauthGrants.id))
         .innerJoin(companies, eq(companies.id, mcpOauthGrants.companyId))
@@ -349,6 +349,8 @@ export function createPublicMcpOAuth(db: Db, config: PublicMcpConfig, options: {
       try { return { grant: row.grant, company: row.company, actor: await actorForGrant(row.grant), accessTokenId: row.token.id }; }
       catch (error) { if (museAgentConnection && !(error instanceof McpOAuthError) && !(error instanceof HttpError && [401,403,404,410].includes(error.status))) throw error; throw new McpOAuthError("invalid_token", "Paperclip access is no longer available.", 401); }
   }
+
+  const authenticateAccess=(token:string)=>authenticateToken(token);
 
   return {
     config, mode, issuer, isEnabled, assertEnabled,
@@ -644,6 +646,12 @@ export function createPublicMcpOAuth(db: Db, config: PublicMcpConfig, options: {
       return { ...row, actor: await actorForGrant(row.grant, queryDb) };
     },
     authenticateAccess,
+    /** This authenticates only a Muse token; the Muse boundary must independently
+     * admit its bounded stop control. Personal MCP and Dot keep their normal gate. */
+    async authenticateMuseStopControlAccess(token:string) {
+      if(!museAgentConnection)throw new McpOAuthError("access_denied","Use the dedicated Muse stop control.",403);
+      return authenticateToken(token,true);
+    },
     async authenticate(token: string): Promise<McpPrincipal> {
       const principal = await authenticateAccess(token);
       return { grant: principal.grant, company: principal.company, actor: principal.actor };

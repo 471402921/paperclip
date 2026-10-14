@@ -26,10 +26,10 @@ export function museTransportRoutes(db:Db,publicOrigin?:string,options:{allowLeg
   });
   router.use("/api/muse/v1",express.json({limit:MUSE_MAX_BODY_BYTES,strict:true}));
   router.use("/api/muse/v1/oauth",express.urlencoded({extended:false,limit:"16kb"}));
-  async function authenticateWorker(req:Request,kind:"access"|"cleanup"|"detector_cleanup"="access") {
+  async function authenticateWorker(req:Request,kind:"access"|"cleanup"|"detector_cleanup"="access",stopControl=false) {
     const value=bearer(req);
     try {
-      return await (options.allowLegacyCredentials&&!value.startsWith("pcmcp_at_") ? identity.authenticate(value,kind) : identity.authenticateOAuthAccess(value,publicOrigin));
+      return await (options.allowLegacyCredentials&&!value.startsWith("pcmcp_at_") ? identity.authenticate(value,kind,{stopControl}) : identity.authenticateOAuthAccess(value,publicOrigin,{stopControl}));
     }catch(error){
       // Worker transport uses REST errors. OAuth protocol errors retain their
       // retryable status without leaking token or provider exception details.
@@ -69,9 +69,11 @@ export function museTransportRoutes(db:Db,publicOrigin?:string,options:{allowLeg
       if(route.path.endsWith("/pair")) {if(!options.allowLegacyCredentials)throw notFound("Legacy test pairing is unavailable.");const value=musePairSchema.parse(req.body);res.json(await identity.pair(value.ticket,value.clientVersion));return;}
       if(route.path.endsWith("/refresh")) {if(!options.allowLegacyCredentials)throw notFound("Legacy test refresh is unavailable.");const value=museRefreshSchema.parse(req.body);res.json(await identity.refresh(value.refreshToken));return;}
       if(route.path.endsWith("/signal")) {const bindingId=z.uuid().parse(req.get("X-Paperclip-Muse-Binding"));res.json(await receiver.signal(bindingId,musePublicOrigin(publicOrigin)+MUSE_RESOURCE_PATH));return;}
-      if(route.path.endsWith("/cleanup")) {const value=museCleanupSchema.parse(req.body);const subject=await authenticateWorker(req,"cleanup");res.json(await broker.cleanup(subject,value));return;}
+      if(route.path.endsWith("/cleanup")) {const value=museCleanupSchema.parse(req.body);const subject=await authenticateWorker(req,"cleanup",true);res.json(await broker.cleanup(subject,value));return;}
       if(route.path.endsWith("/detector-cleanup")) {const value=museDetectorCleanupSchema.parse(req.body),subject=await authenticateWorker(req,"detector_cleanup");if(value.bindingId!==subject.bindingId||value.generation!==subject.generation)throw forbidden("Detector cleanup identity mismatch.");res.json(await broker.detectorCleanup(subject,"detectorRemoved" in value));return;}
-      const subject=await authenticateWorker(req);
+      const query=route.path.endsWith("/queries")?museQuerySchema.safeParse(req.body):null;
+      // Only a validated, content-free mailbox read may use disabled stop auth.
+      const subject=await authenticateWorker(req,"access",!!query?.success&&query.data.query==="mailbox");
       if(route.path.endsWith("/commands"))res.json(await broker.act(subject,museCommandSchema.parse(req.body)));
       else res.json(await broker.inspect(subject,museQuerySchema.parse(req.body)));
     };

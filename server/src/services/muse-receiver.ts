@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
-import { museAgentBindings as bindings, museMailboxItems as mailbox, museRunnerAssignments as assignments, museReceiverContactBuckets as buckets, type Db } from "@paperclipai/db";
-import { assertMuseReceiverAuthority, assertMuseCurrentAuthority, inspectMuseConnectionCredential, museIdentity } from "./muse-identity.js";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { museAgentBindings as bindings, museMailboxItems as mailbox, museRunnerAssignments as assignments, museReceiverContactBuckets as buckets, externalAgentHolds as holds, type Db } from "@paperclipai/db";
+import { assertMuseReceiverAuthority, assertMuseCurrentAuthority, inspectMuseConnectionCredential, museIdentity, museStopControlBoundaryIds, hasMuseStopControlAccess } from "./muse-identity.js";
 import { canConfigureAgentConnection } from "../modules/agent-lifecycle/index.js";
 import { HttpError } from "../errors.js";
 const PERSISTENCE_LAG_MS=30_000;
@@ -84,13 +84,15 @@ function createReceiver(db:Db) {
         throw error;
       }
       contacted = current;
-      if (!await museIdentity(db).enabled()) return idle;
       // Pausing suppresses ordinary work, while the worker still needs its
       // exact stop boundary to quiesce and report through authenticated control.
-      const stopOnly = agent.status === "paused" && !canConfigureAgentConnection(agent);
+      const disabled=!await museIdentity(db).enabled();
+      if(disabled&&!await hasMuseStopControlAccess(tx,current))return idle;
+      const stopOnly = disabled || (agent.status === "paused" && !canConfigureAgentConnection(agent));
+      const boundaries=tx.select({boundary:holds.stopBoundary}).from(holds).where(inArray(holds.id,museStopControlBoundaryIds(tx,current)));
       const [item] = await tx.select({ item: mailbox }).from(mailbox).leftJoin(assignments, eq(assignments.id, mailbox.assignmentId))
         .where(and(eq(mailbox.bindingId, current.id), eq(mailbox.bindingGeneration, current.generation),
-          stopOnly ? sql`(${mailbox.kind} = 'authority_revoked' and ${mailbox.id} > ${current.workerCursor})`
+          stopOnly ? and(eq(mailbox.kind,"authority_revoked"),sql`${mailbox.id} > ${current.workerCursor}`,inArray(sql`${mailbox.references}->'boundary'`,boundaries))
             : sql`((${mailbox.kind} = 'assignment' and ${assignments.claimedAt} is null and ${assignments.status} = 'offered') or (${mailbox.kind} = 'readiness_challenge' and ${!!current.challengeHash && !!current.challengeExpiresAt && current.challengeExpiresAt > new Date()} and ${mailbox.id} > ${current.workerCursor} and encode(sha256(convert_to(${mailbox.references}->>'nonce','UTF8')),'hex') = ${current.challengeHash}) or (${mailbox.kind} not in ('assignment','readiness_challenge') and ${mailbox.id} > ${current.workerCursor}))`))
         .orderBy(asc(mailbox.id)).limit(1);
       if (!item) return idle;

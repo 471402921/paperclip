@@ -9,7 +9,7 @@ import { MUSE_TICKET_TTL_MS, MUSE_CLEANUP_TTL_MS, MUSE_RESOURCE_PATH, museStopBo
   type MuseQuery, type MusePairing, type MuseStopBoundary, type MuseQualificationEvidence, type MuseQualificationBeginResult } from "@paperclipai/shared";
 import { externalOperationDigest, parsePaperclipQuestionSet, type MuseBindingSnapshot, type ExternalProviderPort, type ExternalProviderOperation } from "../../vendor/paperclip-runner/index.js";
 import { conflict, forbidden, notFound, unprocessable } from "../../errors.js";
-import { museIdentity, museCredentialHash, assertMuseCurrentAuthority, assertMuseSubjectCredential, inspectMuseConnectionCredential, assertMuseCleanupCredential, museCleanupBoundaryIds } from "../../services/muse-identity.js";
+import { museIdentity, museCredentialHash, assertMuseCurrentAuthority, assertMuseSubjectCredential, inspectMuseConnectionCredential, assertMuseCleanupCredential, museCleanupBoundaryIds, assertMuseDisabledStopControlCredential, museStopControlBoundaryIds } from "../../services/muse-identity.js";
 import { instanceSettingsService } from "../../services/instance-settings.js";
 import { updateAgentConfigurationInTransaction } from "../../services/agent-configuration-transaction.js";
 import { canConfigureAgentConnection, scheduleAgentLifecycle } from "../agent-lifecycle/index.js";
@@ -43,9 +43,12 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
   async function heartbeat() { const configured=heartbeatContexts.get(db); if(configured)return configured; return (await import("../../services/heartbeat.js")).heartbeatService(db); }
   function agentActor(s:AgentConnectionSubject,runId?:string,responsibleUserId?:string|null):AuthorizationActor {return {type:"agent",agentId:s.agentId,companyId:s.companyId,runId,authorizingUserId:s.authorizingUserId,onBehalfOfUserId:responsibleUserId};}
   function authorizerActor(s:AgentConnectionSubject):AuthorizationActor { return {type:"board",userId:s.authorizingUserId,source:"session",ignoreInstanceAdmin:true}; }
-  async function subjectBinding(s:AgentConnectionSubject,ready=true,paused=false) {
+  async function subjectBinding(s:AgentConnectionSubject,ready=true,paused=false,stopControl=false) {
     const b=await assertMuseSubjectCredential(db,s,s.credentialSource==="oauth"?connectionResource():undefined);
-    if(!await identity.enabled()) throw forbidden("Muse normal authority is unavailable.");
+    if(!await identity.enabled()) {
+      if(!stopControl)throw forbidden("Muse normal authority is unavailable.");
+      await assertMuseDisabledStopControlCredential(db,s,s.credentialSource==="oauth"?connectionResource():undefined);
+    }
     if(b.qualificationExpiresAt && b.qualificationExpiresAt<=new Date()) { await broker.endQualification({companyId:b.companyId,agentId:b.agentId,bindingId:b.id,qualificationId:b.qualificationId!,operatorId:b.operatorId}); throw forbidden("Qualification deadline elapsed."); }
     await assertMuseCurrentAuthority(db,b,!ready,paused);
     return b;
@@ -330,7 +333,7 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
       return operation(s,c.assignmentId,c.requestId,c.command,input,c.command==="consume_input"?{continuationReceiptId:c.continuationReceiptId,continuationPersisted:c.continuationPersisted}:undefined);
     },
     async inspect(s:AgentConnectionSubject,q:MuseQuery):Promise<Record<string,unknown>> {
-      const b=await subjectBinding(s,q.query!=="mailbox"&&q.query!=="identify",q.query==="mailbox");
+      const b=await subjectBinding(s,q.query!=="mailbox"&&q.query!=="identify",q.query==="mailbox",q.query==="mailbox");
       if(q.query==="identify") {
         if(q.clientVersion)await db.transaction(tx=>withExternalAdmissionGuard(tx,b.companyId,b.agentId,async()=>{
           const [current]=await tx.select().from(bindings).where(and(eq(bindings.id,b.id),eq(bindings.companyId,s.companyId),eq(bindings.agentId,s.agentId),eq(bindings.generation,s.generation),isNull(bindings.revokedAt))).for("update");
@@ -342,7 +345,13 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
       }
       if(q.query==="mailbox")return db.transaction(async tx=>{
         const [current]=await tx.select().from(bindings).where(and(eq(bindings.id,b.id),eq(bindings.generation,b.generation),isNull(bindings.revokedAt))).for("update");if(!current)throw forbidden("Binding changed.");
-        const rows=await tx.select().from(mailbox).where(and(eq(mailbox.bindingId,b.id),eq(mailbox.bindingGeneration,b.generation),gt(mailbox.id,q.after))).orderBy(asc(mailbox.id)).limit(50);
+        await assertMuseSubjectCredential(tx,s,s.credentialSource==="oauth"?connectionResource():undefined);
+        await assertMuseCurrentAuthority(tx,current,true,true);
+        const disabled=!await identity.enabled();
+        if(disabled)await assertMuseDisabledStopControlCredential(tx,s,s.credentialSource==="oauth"?connectionResource():undefined);
+        const boundaries=tx.select({boundary:holds.stopBoundary}).from(holds).where(inArray(holds.id,museStopControlBoundaryIds(tx,current)));
+        const rows=await tx.select().from(mailbox).where(and(eq(mailbox.bindingId,b.id),eq(mailbox.bindingGeneration,b.generation),gt(mailbox.id,q.after),
+          disabled?and(eq(mailbox.kind,"authority_revoked"),inArray(sql`${mailbox.references}->'boundary'`,boundaries)):undefined)).orderBy(asc(mailbox.id)).limit(50);
         const cursor=rows.at(-1)?.id??q.after;
         await tx.update(bindings).set({workerCursor:Math.max(current.workerCursor,q.after)}).where(eq(bindings.id,b.id));
         return {bindingId:b.id,generation:b.generation,items:rows,nextCursor:cursor};
