@@ -18,7 +18,7 @@ alias was retained. This is a reviewed subset, not an exhaustive audit.
   `src/__tests__/` and their owner suites in `src/services/native-runtime/`
   are collected by the same vitest project.
 - `scripts/general-server-shard-durations.json` (averaged from real PR runs
-  38076844891 / 38076892444, 2026-10-10, serial maxWorkers=1 lanes) lists both
+  38076844891 / 38076972444, 2026-10-10, serial maxWorkers=1 lanes) lists both
   each alias and its owner with separately measured durations, proving both
   execute in the required PR lanes.
 - `scripts/run-vitest-stable.mjs` excludes only the chat suite and
