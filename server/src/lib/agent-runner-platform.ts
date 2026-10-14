@@ -5,16 +5,17 @@ export function localAgentRunnerTarget(): { driver: "local"; platform: NodeJS.Pl
   let libc: "glibc" | "unknown" = "unknown";
   let glibcVersion: string | undefined;
   try {
-    const previousExcludeNetwork = process.report.excludeNetwork;
-    process.report.excludeNetwork = true;
+    const report = process.report as typeof process.report & { excludeNetwork: boolean };
+    const previousExcludeNetwork = report.excludeNetwork;
+    report.excludeNetwork = true;
     try {
-      const { header } = process.report.getReport() as { header?: { glibcVersionRuntime?: unknown } };
+      const { header } = report.getReport() as { header?: { glibcVersionRuntime?: unknown } };
       if (typeof header?.glibcVersionRuntime === "string" && header.glibcVersionRuntime.trim()) {
         libc = "glibc";
         glibcVersion = header.glibcVersionRuntime.trim();
       }
     } finally {
-      process.report.excludeNetwork = previousExcludeNetwork;
+      report.excludeNetwork = previousExcludeNetwork;
     }
   } catch { /* An unidentified libc must not select a GNU/Linux binary. */ }
   return { driver: "local", platform: process.platform, architecture: process.arch, libc, ...(glibcVersion === undefined ? {} : { glibcVersion }) };
