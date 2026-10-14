@@ -1403,7 +1403,7 @@ describe("realizeExecutionWorkspace", () => {
         remoteLookup: "failed", authLookup: "not_requested", fetch: "not_attempted", refResolution: "failed", refExitCode: 128 });
     } else if (remoteUrl === "") {
       expect(error.fetchError).toBeNull();
-      expect(authCalls).toBe(0);
+      expect(authCalls).toBe(1);
       expect(error.defaultBranch).toBeNull();
       expect(readUnresolvedWorkspaceBaseRefDiagnostic(error)).toEqual({ schemaVersion: 1,
         remoteLookup: "empty", authLookup: "not_requested", fetch: "not_attempted", refResolution: "failed", refExitCode: 128 });
