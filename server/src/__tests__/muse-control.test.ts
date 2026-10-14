@@ -14,6 +14,7 @@ import { museRunnerBroker } from "../services/muse-runner-broker.js";
 import { dotRunnerBroker } from "../services/dot-runner-broker.js";
 import { museReceiver } from "../services/muse-receiver.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import { subscribeCompanyLiveEvents } from "../services/live-events.js";
 import { LOW_TRUST_QUARANTINED_BODY, buildLowTrustSourceTrust, buildPromotedSourceTrust, sanitizeQuarantinedCommentForHigherTrust } from "../services/source-trust.js";
 import { PaperclipRunnerToolAuthority } from "../services/native-runtime/paperclip-runner-tool-authority.js";
 import { assertNoExternalOverlap, withExternalAdmissionGuard } from "../modules/external-agents/index.js";
@@ -84,6 +85,91 @@ describe("personal Muse control plane",()=>{
     expect(logs).toHaveLength(1);
     expect(logs[0]).toMatchObject({actorType:"agent",actorId:f.agent.id,agentId:f.agent.id,responsibleUserId:f.operatorId,details:{bindingId:f.binding.id,generation:1,authorizingUserId:f.operatorId,requestId}});
     expect(JSON.stringify(logs)).not.toContain(nonce);
+  });
+  it("keeps expired legacy readiness quiet after an acknowledged item becomes eligible for rearm",async()=>{
+    const f=await fixture(),signal=await f.identity.authenticate(f.credentials.signalToken,"signal");
+    const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;
+    await f.broker.verify(f.company.id,f.agent.id,{bindingId:f.binding.id,generation:1,expectedRevision:state.revision});
+    const [challenge]=await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"readiness_challenge")));
+    await db.update(bindings).set({challengeExpiresAt:new Date(Date.now()-1)}).where(eq(bindings.id,f.binding.id));
+    const poll=()=>museReceiver(db).signal(signal);
+    expect(await poll()).toEqual({version:1,signal:null});
+    await f.broker.inspect(f.subject,{version:1,query:"mailbox",after:challenge.id});
+    await db.update(mailbox).set({signalNotifiedAt:new Date(Date.now()-60000)}).where(eq(mailbox.id,challenge.id));
+    expect(await poll()).toEqual({version:1,signal:null});
+    expect((await db.select().from(mailbox).where(eq(mailbox.id,challenge.id)))[0].signalAttempt).toBe(0);
+  });
+  it("signals only the current unread legacy readiness nonce with a stable reference",async()=>{
+    const f=await fixture(),signal=await f.identity.authenticate(f.credentials.signalToken,"signal");
+    const verify=async()=>{const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;return f.broker.verify(f.company.id,f.agent.id,{bindingId:f.binding.id,generation:1,expectedRevision:state.revision});};
+    const firstPending=await verify();expect(await verify()).toEqual(firstPending);
+    expect(await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"readiness_challenge")))).toHaveLength(1);
+    await db.update(bindings).set({challengeExpiresAt:new Date(Date.now()-1)}).where(eq(bindings.id,f.binding.id));await verify();
+    const challenges=await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"readiness_challenge"))).orderBy(mailbox.id);
+    expect(challenges).toHaveLength(2);
+    const current=(await db.select().from(bindings).where(eq(bindings.id,f.binding.id)))[0];
+    expect(museCredentialHash(String(challenges[1].references.nonce))).toBe(current.challengeHash);
+    const poll=()=>museReceiver(db).signal(signal),first=await poll();
+    expect(first).toEqual({version:1,signal:{reference:`${f.binding.id}:1:${challenges[1].id}:1`}});expect(await poll()).toEqual(first);
+    const saved=await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"readiness_challenge"))).orderBy(mailbox.id);
+    expect(saved.map(item=>item.signalAttempt)).toEqual([0,1]);
+    await f.broker.inspect(f.subject,{version:1,query:"mailbox",after:challenges[1].id});expect(await poll()).toEqual({version:1,signal:null});
+    await db.update(bindings).set({challengeExpiresAt:new Date(Date.now()-1)}).where(eq(bindings.id,f.binding.id));await verify();
+    const all=await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"readiness_challenge"))).orderBy(mailbox.id);
+    expect(all).toHaveLength(3);expect(await poll()).toEqual({version:1,signal:{reference:`${f.binding.id}:1:${all[2].id}:1`}});
+  });
+  it.each(["automatic","board"] as const)("audits %s readiness only on first change with the actual actor",async source=>{
+    const f=await fixture(false),operatorId=source==="board"?randomUUID():undefined;
+    if(operatorId){
+      await db.insert(authUsers).values({id:operatorId,name:"Actual board caller",email:operatorId+"@example.test",createdAt:new Date(),updatedAt:new Date()});
+      await db.insert(companyMemberships).values({companyId:f.company.id,principalType:"user",principalId:operatorId,membershipRole:"owner",status:"active"});
+      await db.update(bindings).set({receiverContactAt:new Date()}).where(eq(bindings.id,f.binding.id));
+    }
+    const events:Array<Record<string,unknown>>=[];
+    const unsubscribe=subscribeCompanyLiveEvents(f.company.id,event=>{if(event.type==="activity.logged")events.push(event.payload);});
+    try {
+      if(source==="automatic"){
+        const signal=await f.identity.authenticate(f.credentials.signalToken,"signal");
+        await museReceiver(db).signal(signal);await museReceiver(db).flush();
+      } else {
+        const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;
+        await f.broker.verify(f.company.id,f.agent.id,{bindingId:f.binding.id,generation:1,expectedRevision:state.revision},operatorId);
+      }
+      const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!;
+      const challenge=(await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"readiness_challenge"))))[0]!;
+      const pending=await f.broker.verify(f.company.id,f.agent.id,{bindingId:f.binding.id,generation:1,expectedRevision:state.revision},operatorId);
+      expect(pending).toMatchObject({revision:state.revision,expiresAt:state.challengeExpiresAt});
+      await expect(f.broker.verify(f.company.id,f.agent.id,{bindingId:f.binding.id,generation:2,expectedRevision:state.revision},operatorId)).rejects.toThrow("before verifying");
+      const logs=await db.select().from(activityLog).where(and(eq(activityLog.companyId,f.company.id),eq(activityLog.action,"muse.readiness_challenge_created")));
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toMatchObject({actorType:source==="board"?"user":"system",actorId:operatorId??"muse-runner",agentId:f.agent.id,responsibleUserId:operatorId??f.operatorId,entityType:"agent",entityId:f.agent.id,details:{bindingId:f.binding.id,generation:1,revision:state.revision,authorizingUserId:f.operatorId,expiresAt:state.challengeExpiresAt}});
+      expect(events.filter(event=>event.action==="muse.readiness_challenge_created")).toHaveLength(1);
+      expect((await db.select().from(mailbox).where(and(eq(mailbox.bindingId,f.binding.id),eq(mailbox.kind,"readiness_challenge"))))).toHaveLength(1);
+      const serialized=JSON.stringify({logs,events});
+      for(const secret of [f.ticket,f.credentials.accessToken,f.credentials.refreshToken,f.credentials.signalToken,f.credentials.cleanupToken,f.credentials.detectorCleanupToken,String(challenge.references.nonce)])expect(serialized).not.toContain(secret);
+    } finally {unsubscribe();}
+  });
+  it("audits first qualification with the actual operator and preserves idempotent reads",async()=>{
+    const f=await fixture(),operatorId=randomUUID();
+    await db.insert(authUsers).values({id:operatorId,name:"Qualification board caller",email:operatorId+"@example.test",createdAt:new Date(),updatedAt:new Date()});
+    await db.insert(companyMemberships).values({companyId:f.company.id,principalType:"user",principalId:operatorId,membershipRole:"owner",status:"active"});
+    const state=(await f.broker.bindingForAgent(f.company.id,f.agent.id))!,qualificationId=randomUUID();
+    const input={companyId:f.company.id,agentId:f.agent.id,bindingId:f.binding.id,generation:1,expectedRevision:state.revision,qualificationId,expiresAt:new Date(Date.now()+24*60*60_000),operatorId};
+    const events:Array<Record<string,unknown>>=[];
+    const unsubscribe=subscribeCompanyLiveEvents(f.company.id,event=>{if(event.type==="activity.logged")events.push(event.payload);});
+    try {
+      const first=await f.broker.beginQualification(input);
+      expect(await f.broker.beginQualification({...input,expiresAt:new Date(Date.now()+60_000)})).toEqual(first);
+      expect(await f.broker.beginQualification({...input,expectedRevision:first.revision})).toEqual(first);
+      await f.broker.readQualificationEvidence(f.company.id,f.agent.id,f.binding.id,qualificationId);
+      await expect(f.broker.beginQualification({...input,companyId:randomUUID()})).rejects.toThrow("Connection changed");
+      const logs=await db.select().from(activityLog).where(and(eq(activityLog.companyId,f.company.id),eq(activityLog.action,"muse.qualification_started")));
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toMatchObject({actorType:"user",actorId:operatorId,agentId:f.agent.id,responsibleUserId:operatorId,entityType:"agent",entityId:f.agent.id,details:{bindingId:f.binding.id,generation:1,revision:first.revision,authorizingUserId:f.operatorId,qualificationId,startedAt:first.startedAt,expiresAt:first.expiresAt}});
+      expect(events.filter(event=>event.action==="muse.qualification_started")).toHaveLength(1);
+      const serialized=JSON.stringify({logs,events});
+      for(const secret of [f.ticket,f.credentials.accessToken,f.credentials.refreshToken,f.credentials.signalToken,f.credentials.cleanupToken,f.credentials.detectorCleanupToken])expect(serialized).not.toContain(secret);
+    } finally {unsubscribe();}
   });
   it("retains a mailbox batch until its prior durable cursor is acknowledged",async()=>{
     const f=await fixture();await db.insert(mailbox).values({companyId:f.company.id,bindingId:f.binding.id,bindingGeneration:1,kind:"follow_up",sourceEventId:randomUUID(),references:{}});
@@ -293,6 +379,56 @@ describe("personal Muse control plane",()=>{
     await expect(f.broker.inspect(f.subject,request)).rejects.toThrow("unavailable");
     await db.insert(issueAccessGrants).values({issueId:issue.id,subjectType:"user",subjectId:f.operatorId,source:"explicit"});
     expect((await f.broker.inspect(f.subject,request) as {comments:unknown[]}).comments).toHaveLength(1);
+    await db.update(companyMemberships).set({status:"inactive"}).where(and(eq(companyMemberships.companyId,f.company.id),eq(companyMemberships.principalId,f.operatorId)));
+    await expect(f.broker.inspect(f.subject,request)).rejects.toThrow();
+  });
+  it.each(["agent","project"] as const)("idle documents recheck current %s reader trust and preserve stored bytes",async source=>{
+    const f=await fixture();
+    const [project]=await db.insert(projects).values({companyId:f.company.id,name:"Idle document trust"}).returning();
+    const policy={trustPreset:"low_trust_review",trustBoundary:{mode:"low_trust_review",companyId:f.company.id,projectIds:[project.id]}};
+    if(source==="agent")await db.update(agents).set({permissions:{canCreateTasks:true,authorizationPolicy:policy}}).where(eq(agents.id,f.agent.id));
+    else await db.update(projects).set({executionWorkspacePolicy:{authorizationPolicy:policy}}).where(eq(projects.id,project.id));
+    const [issue]=await db.insert(issues).values({companyId:f.company.id,projectId:project.id,title:"Idle document context",status:"todo",assigneeAgentId:f.agent.id,responsibleUserId:f.operatorId}).returning();
+    const [quarantined]=await db.insert(documents).values({companyId:f.company.id,title:"Restricted plan",latestBody:"QUARANTINED document body canary",latestRevisionNumber:3,createdByAgentId:f.agent.id,sourceTrust:buildLowTrustSourceTrust({issueId:issue.id,agentId:f.agent.id})}).returning();
+    const [promoted]=await db.insert(documents).values({companyId:f.company.id,title:"Reviewed plan",latestBody:"Reviewed promoted document",sourceTrust:buildPromotedSourceTrust({sourceIssueId:issue.id,sourceArtifactKind:"document",sourceArtifactId:quarantined.id,promotedByActorType:"user",promotedByActorId:f.operatorId})}).returning();
+    const [standard]=await db.insert(documents).values({companyId:f.company.id,title:"Ordinary plan",latestBody:"Ordinary human document",createdByUserId:f.operatorId}).returning();
+    await db.insert(issueDocuments).values([quarantined,promoted,standard].map((document,index)=>({companyId:f.company.id,issueId:issue.id,documentId:document.id,key:["plan","reviewed","ordinary"][index]!})));
+    const saved=await db.select().from(documents).where(eq(documents.companyId,f.company.id)).orderBy(documents.id);
+    const read=async(key:string)=>await f.broker.inspect(f.subject,{version:1,query:"task.document.read",issueId:issue.id,key}) as {document:{key:string,title:string|null,body:string,revision:number,sourceTrust:typeof quarantined.sourceTrust}};
+    expect((await read("plan")).document.body).toBe(quarantined.latestBody);
+    await db.update(agents).set({permissions:{canCreateTasks:true}}).where(eq(agents.id,f.agent.id));
+    await db.update(projects).set({executionWorkspacePolicy:{}}).where(eq(projects.id,project.id));
+    const after=await read("plan");
+    expect(after.document.body).toBe(LOW_TRUST_QUARANTINED_BODY);
+    expect(after.document).toEqual({key:"plan",title:quarantined.title,body:LOW_TRUST_QUARANTINED_BODY,revision:3,sourceTrust:quarantined.sourceTrust});
+    expect(JSON.stringify(after)).not.toContain(quarantined.latestBody);
+    expect((await read("reviewed")).document).toMatchObject({body:promoted.latestBody,sourceTrust:promoted.sourceTrust});
+    expect((await read("ordinary")).document).toMatchObject({body:standard.latestBody,sourceTrust:null});
+    expect(await db.select().from(documents).where(eq(documents.companyId,f.company.id)).orderBy(documents.id)).toEqual(saved);
+  });
+  it("idle documents retain private, company and current-authorizer checks",async()=>{
+    const f=await fixture(),owner=randomUUID();
+    await db.insert(authUsers).values({id:owner,name:"Private document owner",email:owner+"@example.test",createdAt:new Date(),updatedAt:new Date()});
+    const [restricted]=await db.insert(agents).values({companyId:f.company.id,name:"Restricted document author",role:"engineer",status:"active",adapterType:"process"}).returning();
+    const [issue]=await db.insert(issues).values({companyId:f.company.id,title:"Private document",status:"todo",visibility:"private",assigneeAgentId:f.agent.id,responsibleUserId:owner}).returning();
+    const [document]=await db.insert(documents).values({companyId:f.company.id,title:"Private plan",latestBody:"OTHER restricted document canary",createdByAgentId:restricted.id,sourceTrust:buildLowTrustSourceTrust({issueId:issue.id,agentId:restricted.id})}).returning();
+    await db.insert(issueDocuments).values({companyId:f.company.id,issueId:issue.id,documentId:document.id,key:"plan"});
+    const request={version:1 as const,query:"task.document.read" as const,issueId:issue.id,key:"plan"};
+    await expect(f.broker.inspect(f.subject,request)).rejects.toThrow("unavailable");
+    const [grant]=await db.insert(issueAccessGrants).values({issueId:issue.id,subjectType:"user",subjectId:f.operatorId,source:"explicit"}).returning();
+    const result=await f.broker.inspect(f.subject,request) as {document:{body:string,sourceTrust:typeof document.sourceTrust}};
+    expect(result.document.body).toBe(LOW_TRUST_QUARANTINED_BODY);
+    expect(result.document.sourceTrust).toEqual(document.sourceTrust);
+    expect((await db.select().from(documents).where(eq(documents.id,document.id)))[0]).toEqual(document);
+    const [foreign]=await db.insert(companies).values({name:"Foreign documents",issuePrefix:"FD"+randomBytes(3).toString("hex")}).returning();
+    const [foreignIssue]=await db.insert(issues).values({companyId:foreign.id,title:"Foreign issue"}).returning();
+    const [foreignDocument]=await db.insert(documents).values({companyId:foreign.id,latestBody:"Foreign document canary"}).returning();
+    await db.insert(issueDocuments).values({companyId:f.company.id,issueId:issue.id,documentId:foreignDocument.id,key:"foreign"});
+    await expect(f.broker.inspect(f.subject,{...request,issueId:foreignIssue.id})).rejects.toThrow("unavailable");
+    await expect(f.broker.inspect(f.subject,{...request,key:"foreign"})).rejects.toThrow("Document not found");
+    await db.delete(issueAccessGrants).where(eq(issueAccessGrants.id,grant.id));
+    await expect(f.broker.inspect(f.subject,request)).rejects.toThrow("unavailable");
+    await db.insert(issueAccessGrants).values({issueId:issue.id,subjectType:"user",subjectId:f.operatorId,source:"explicit"});
     await db.update(companyMemberships).set({status:"inactive"}).where(and(eq(companyMemberships.companyId,f.company.id),eq(companyMemberships.principalId,f.operatorId)));
     await expect(f.broker.inspect(f.subject,request)).rejects.toThrow();
   });
