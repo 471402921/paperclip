@@ -386,17 +386,11 @@ describe("cli auth routes", () => {
       "pcp_cli_auth_secret",
       "user-1",
     );
-    expect(mockLogActivity).toHaveBeenCalledTimes(1);
-    expect(mockLogActivity).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        companyId: "company-1",
-        action: "board_api_key.created",
-      }),
-    );
+    expect(mockBoardAuthService.resolveBoardActivityCompanyIds).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
-  it("logs approve activity for instance admins without company memberships", async () => {
+  it("delegates instance-admin approval and atomic auditing to the service", async () => {
     mockBoardAuthService.approveCliAuthChallenge.mockResolvedValue({
       status: "approved",
       challenge: {
@@ -421,12 +415,11 @@ describe("cli auth routes", () => {
       .send({ token: "pcp_cli_auth_secret" });
 
     expect(res.status).toBe(200);
-    expect(mockBoardAuthService.resolveBoardActivityCompanyIds).toHaveBeenCalledWith({
-      userId: "admin-1",
-      requestedCompanyId: null,
-      boardApiKeyId: "board-key-2",
-    });
-    expect(mockLogActivity).toHaveBeenCalledTimes(2);
+    expect(mockBoardAuthService.approveCliAuthChallenge).toHaveBeenCalledWith(
+      "12345678-1234-4123-8123-123456789def", "pcp_cli_auth_secret", "admin-1",
+    );
+    expect(mockBoardAuthService.resolveBoardActivityCompanyIds).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
   it("logs revoke activity with resolved audit company ids", async () => {

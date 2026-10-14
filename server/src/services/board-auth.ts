@@ -10,6 +10,8 @@ import {
   instanceUserRoles,
 } from "@paperclipai/db";
 import { conflict, forbidden, notFound } from "../errors.js";
+import { logActivity, publishActivity, type ActivityPublication } from "./activity-log.js";
+import { logger } from "../middleware/logger.js";
 
 export const BOARD_API_KEY_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const CLI_AUTH_CHALLENGE_TTL_MS = 10 * 60 * 1000;
@@ -107,30 +109,27 @@ export function boardAuthService(db: Db) {
     };
   }
 
+  async function activityCompanyIdsForAccess(
+    access: Awaited<ReturnType<typeof resolveBoardAccess>>,
+    requestedCompanyId: string | null | undefined,
+    authorityDb: Pick<Db, "select"> = db,
+  ) {
+    const companyIds = new Set(access.companyIds);
+    const requested = requestedCompanyId?.trim();
+    if (requested && (access.isInstanceAdmin || access.companyIds.includes(requested))) companyIds.add(requested);
+    if (companyIds.size === 0 && access.isInstanceAdmin) {
+      const allCompanyIds = await authorityDb.select({ id: companies.id }).from(companies);
+      for (const company of allCompanyIds) companyIds.add(company.id);
+    }
+    return Array.from(companyIds);
+  }
+
   async function resolveBoardActivityCompanyIds(input: {
     userId: string;
     requestedCompanyId?: string | null;
     boardApiKeyId?: string | null;
   }) {
-    const access = await resolveBoardAccess(input.userId);
-    const companyIds = new Set(access.companyIds);
-
-    const requestedCompanyId = input.requestedCompanyId?.trim();
-    if (requestedCompanyId && (access.isInstanceAdmin || access.companyIds.includes(requestedCompanyId))) {
-      companyIds.add(requestedCompanyId);
-    }
-
-    if (companyIds.size === 0 && access.isInstanceAdmin) {
-      const allCompanyIds = await db
-        .select({ id: companies.id })
-        .from(companies)
-        .then((rows) => rows.map((row) => row.id));
-      for (const companyId of allCompanyIds) {
-        companyIds.add(companyId);
-      }
-    }
-
-    return Array.from(companyIds);
+    return activityCompanyIdsForAccess(await resolveBoardAccess(input.userId), input.requestedCompanyId);
   }
 
   async function findBoardApiKeyByToken(token: string) {
@@ -336,7 +335,8 @@ export function boardAuthService(db: Db) {
   }
 
   async function approveCliAuthChallenge(id: string, token: string, userId: string) {
-    return db.transaction(async (tx) => {
+    const publications: ActivityPublication[] = [];
+    const result = await db.transaction(async (tx) => {
       await tx.execute(
         sql`select ${cliAuthChallenges.id} from ${cliAuthChallenges} where ${cliAuthChallenges.id} = ${id} for update`,
       );
@@ -400,8 +400,26 @@ export function boardAuthService(db: Db) {
         .returning()
         .then((rows) => rows[0] ?? challenge);
 
+      const companyIds = await activityCompanyIdsForAccess(access, challenge.requestedCompanyId, tx);
+      for (const companyId of companyIds) {
+        await logActivity(tx as unknown as Db, {
+          companyId, actorType: "user", actorId: userId,
+          action: "board_api_key.created", entityType: "user", entityId: userId,
+          details: {
+            boardApiKeyId: updated.boardApiKeyId,
+            requestedAccess: updated.requestedAccess,
+            requestedCompanyId: updated.requestedCompanyId,
+            challengeId: updated.id,
+          },
+        }, publications);
+      }
       return { status: "approved" as const, challenge: updated, created: true };
     });
+    for (const publication of publications) {
+      try { publishActivity(publication); }
+      catch (err) { logger.warn({ err }, "Failed to publish committed CLI approval activity"); }
+    }
+    return result;
   }
 
   async function cancelCliAuthChallenge(id: string, token: string) {

@@ -4,6 +4,7 @@ import { eq, sql } from "drizzle-orm";
 import { activityLog, authUsers, boardApiKeys, cliAuthChallenges, companies, companyMemberships, createDb, getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "@paperclipai/db";
 import type { Db } from "@paperclipai/db";
 import { boardAuthService } from "./board-auth.js";
+import { subscribeCompanyLiveEvents } from "./live-events.js";
 
 describe("boardAuthService touchBoardApiKey", () => {
   it("retries the audit write after a transient failure", async () => {
@@ -171,6 +172,34 @@ databaseSuite("CLI challenge authority and transitions (real PostgreSQL)", () =>
     expect(await f.service.findBoardApiKeyByToken(f.pendingBoardToken)).toMatchObject({ userId: f.userId });
   });
 
+  it("publishes approval activity only after key, challenge and audit rows commit", async () => {
+    const f = await fixture();
+    const events: string[] = [];
+    const unsubscribe = subscribeCompanyLiveEvents(f.companyId, event => {
+      if (event.payload.action === "board_api_key.created") events.push(event.payload.actorId as string);
+    });
+    let release!: () => void, prepared!: () => void;
+    const ready = new Promise<void>(resolve => { prepared = resolve; });
+    const unlock = new Promise<void>(resolve => { release = resolve; });
+    const gated = Object.create(db) as Db;
+    gated.transaction = ((callback: Parameters<Db["transaction"]>[0]) => db.transaction(async tx => {
+      const result = await callback(tx); prepared(); await unlock; return result;
+    })) as Db["transaction"];
+    const service = boardAuthService(gated);
+    const approval = service.approveCliAuthChallenge(f.challenge.id, f.challengeSecret, f.userId);
+    try {
+      await ready;
+      expect(events).toEqual([]);
+      expect(await f.service.findBoardApiKeyByToken(f.pendingBoardToken)).toBeNull();
+      expect(await db.select().from(activityLog).where(eq(activityLog.actorId, f.userId))).toHaveLength(0);
+      release(); await approval;
+      expect(events).toEqual([f.userId]);
+      expect(await db.select().from(activityLog).where(eq(activityLog.actorId, f.userId))).toHaveLength(1);
+      await service.approveCliAuthChallenge(f.challenge.id, f.challengeSecret, f.userId);
+      expect(events).toEqual([f.userId]);
+    } finally { release(); await approval; unsubscribe(); }
+  });
+
   it("never grants a key after cancellation and keeps duplicate cancellation stable", async () => {
     const f = await fixture();
     const first = await f.service.cancelCliAuthChallenge(f.challenge.id, f.challengeSecret);
@@ -217,6 +246,9 @@ databaseSuite("CLI challenge authority and transitions (real PostgreSQL)", () =>
       .send({ command: "paperclipai auth login", requestedCompanyId: f.companyId });
     expect(created.status).toBe(201);
     const { id, token, boardApiToken } = created.body;
+    const secondCompanyId = randomUUID();
+    await db.insert(companies).values({ id: secondCompanyId, name: "Second CLI organization", issuePrefix: `S${secondCompanyId.slice(0, 7)}` });
+    await db.insert(companyMemberships).values({ companyId: secondCompanyId, principalType: "user", principalId: f.userId, status: "active", membershipRole: "owner" });
     expect((await request(app).get("/api/cli-auth/me").set("Authorization", `Bearer ${boardApiToken}`)).status).toBe(401);
     const anonymous = await request(app).get(`/api/cli-auth/challenges/${id}?token=${token}`);
     expect(anonymous.body).toMatchObject({ status: "pending", canApprove: false, requestedCompanyName: null, approvedByUser: null });
@@ -227,14 +259,37 @@ databaseSuite("CLI challenge authority and transitions (real PostgreSQL)", () =>
     expect(await db.select().from(activityLog).where(eq(activityLog.actorId, f.otherUserId))).toHaveLength(0);
     const browser = await request(app).get(`/api/cli-auth/challenges/${id}?token=${token}`).set("X-Test-Session", f.userId);
     expect(browser.body).toMatchObject({ canApprove: true, requestedCompanyName: "Private CLI organization" });
-    expect((await request(app).post(`/api/cli-auth/challenges/${id}/approve`).set("X-Test-Session", f.userId).send({ token })).status).toBe(200);
+    await db.execute(sql.raw(`alter table activity_log add constraint board_cli_audit_failure check (action != 'board_api_key.created' or company_id != '${secondCompanyId}')`));
+    try {
+      const failed = await request(app).post(`/api/cli-auth/challenges/${id}/approve`).set("X-Test-Session", f.userId).send({ token });
+      expect(failed.status).toBe(500);
+      expect(await f.service.findBoardApiKeyByToken(boardApiToken)).toBeNull();
+      const [pending] = await db.select().from(cliAuthChallenges).where(eq(cliAuthChallenges.id, id));
+      expect(pending.approvedAt).toBeNull();
+      expect(pending.boardApiKeyId).toBeNull();
+      expect(await db.select().from(activityLog).where(eq(activityLog.actorId, f.userId))).toHaveLength(0);
+    } finally { await db.execute(sql`alter table activity_log drop constraint board_cli_audit_failure`); }
+    const unsubscribeFailure = subscribeCompanyLiveEvents(f.companyId, event => {
+      if (event.payload.action === "board_api_key.created") throw new Error("Synthetic publication failure");
+    });
+    const secondPublications: string[] = [];
+    const unsubscribeSecond = subscribeCompanyLiveEvents(secondCompanyId, event => {
+      if (event.payload.action === "board_api_key.created") secondPublications.push(event.payload.actorId as string);
+    });
+    try {
+      expect((await request(app).post(`/api/cli-auth/challenges/${id}/approve`).set("X-Test-Session", f.userId).send({ token })).status).toBe(200);
+      expect(secondPublications).toEqual([f.userId]);
+    } finally { unsubscribeFailure(); unsubscribeSecond(); }
+
     expect((await request(app).post(`/api/cli-auth/challenges/${id}/approve`).set("X-Test-Session", f.userId).send({ token })).status).toBe(200);
     const audit = await db.select().from(activityLog).where(eq(activityLog.actorId, f.userId));
-    expect(audit.filter(row => row.action === "board_api_key.created")).toHaveLength(1);
+    expect(audit.filter(row => row.action === "board_api_key.created")).toHaveLength(2);
+    expect(new Set(audit.map(row => row.companyId))).toEqual(new Set([f.companyId, secondCompanyId]));
     expect(JSON.stringify(audit)).not.toContain(boardApiToken);
     expect(JSON.stringify(audit)).not.toContain(token);
     const identity = await request(app).get("/api/cli-auth/me").set("Authorization", `Bearer ${boardApiToken}`);
-    expect(identity.body).toMatchObject({ userId: f.userId, companyIds: [f.companyId], source: "board_key" });
+    expect(identity.body).toMatchObject({ userId: f.userId, source: "board_key" });
+    expect(new Set(identity.body.companyIds)).toEqual(new Set([f.companyId, secondCompanyId]));
     expect((await request(app).post("/api/cli-auth/revoke-current").set("Authorization", `Bearer ${boardApiToken}`)).status).toBe(200);
     expect((await request(app).get("/api/cli-auth/me").set("Authorization", `Bearer ${boardApiToken}`)).status).toBe(401);
   });
