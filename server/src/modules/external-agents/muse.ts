@@ -18,7 +18,7 @@ import { logActivity, publishActivity, type ActivityPublication } from "../../se
 import { issueService } from "../../services/issues.js";
 import { resolveCoreTrustPreset } from "../../services/trust-preset-resolver.js";
 import { normalizeIssueExecutionPolicy } from "../../services/issue-execution-policy.js";
-import { buildLowTrustSourceTrust, resolveActorSourceTrustForIssue } from "../../services/source-trust.js";
+import { buildLowTrustSourceTrust, isLowTrustQuarantined, resolveActorSourceTrustForIssue, sanitizeQuarantinedCommentForHigherTrust } from "../../services/source-trust.js";
 import { getNativeReviewAssignment, readNativeReviewAssignmentContext } from "../../services/native-runtime/native-review-participant.js";
 import { withExternalAdmissionGuard, assertNoExternalOverlap, type ExternalAdmissionTransaction } from "./admission.js";
 import { createNativeExternalBroker } from "./native-broker.js";
@@ -353,7 +353,11 @@ function createMuseBroker(db:Db, publicOrigin?:string) {
       if(q.query==="task.list"||q.query==="task.search")return listReadableIssues(s,q);
       const issue=await assertIssue(s,q.issueId);
       if(q.query==="task.read")return {task:issue};
-      if(q.query==="task.history")return {comments:await issueService(db).listComments(issue.id,{limit:100})};
+      if(q.query==="task.history") {
+        const readerSourceTrust=await resolveActorSourceTrustForIssue({db,issue,actor:{actorType:"agent",actorId:s.agentId,agentId:s.agentId,runId:null}});
+        const comments=await issueService(db).listComments(issue.id,{limit:100});
+        return {comments:isLowTrustQuarantined(readerSourceTrust)?comments:comments.map(sanitizeQuarantinedCommentForHigherTrust)};
+      }
       const [document]=await db.select({key:issueDocuments.key,title:documents.title,body:documents.latestBody,revision:documents.latestRevisionNumber}).from(issueDocuments).innerJoin(documents,and(eq(documents.id,issueDocuments.documentId),eq(documents.companyId,s.companyId))).where(and(eq(issueDocuments.companyId,s.companyId),eq(issueDocuments.issueId,issue.id),eq(issueDocuments.key,q.key)));
       if(!document)throw notFound("Document not found.");return {document};
     },

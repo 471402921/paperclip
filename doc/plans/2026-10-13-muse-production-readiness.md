@@ -406,3 +406,13 @@ fresh-conversation proactive activity must pass on the frozen release candidate
 before that campaign. The old experiment stays stopped. The provider remains
 experimental and disabled by default; no managed Cloud tenant or rollout is
 claimed qualified.
+
+### October 13 final review repairs and verification boundary
+
+The fixed upstream baseline remains `e0f30a4c7186498b71b2637f253b3399997dac7d`; the live fixture still serves `634da654bbb11ad5edeef4a726818bb17a81382d` with installed immutable client 7. The live research assignment reached native acceptance and submitted its structured question. It remains pending a canonical human audience choice; two ordinary UI submission attempts were rejected by automatic approval review, so no answer was inserted through another route. This pending human input is not a successful task, delivery failure, or unattended qualification sample.
+
+Fresh review repairs are additive: idle task history now applies the current named agent's trust policy; Muse question admission rejects unsupported request IDs and text validation before any stored native input or runtime request; immutable client 9 uses individually bounded input receipts and migrates bounded historical aggregates without changing prior consume identities or removing original evidence. Published clients 1–8 remain byte-identical. The changed Runner Rust source requires new native artifacts and Linux package qualification; prior binaries do not qualify this candidate.
+
+Cloud routing candidate `a05efb8ad0f88b6d6905b9e953492265a5d9ea0b` admits 48 exact method/path pairs with manifest `98b7acb058c2eb349c6be9ae4b5b48a2f9a4562ceb546d46bd22b05d05cf4f8d`. Normal typecheck, build:test, parity and targeted tenant/protocol tests pass. Complete normal npm test passes: 3,279 passed, zero failures, 92 skipped, 307.656 seconds including test compilation. This is source verification, not a deployed Cloud journey.
+
+A preliminary live-client-7 timestamp window observed 318 contacts / 317 intervals over approximately 30 minutes. Every interval was at most seven seconds (median 5,863 ms, p90 6,111 ms, maximum 6,934 ms); persisted evidence was complete. This supports the faster hook setting only. The new bounded 24-hour campaign has not started, and the previous stopped experiment stays stopped. The complete Core suite remains not started until final source assembly and targeted checks finish.

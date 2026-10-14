@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MUSE_ASSET_VERSION, MUSE_CLIENT_VERSION, MUSE_PUBLIC_ROUTES, museCommandSchema, musePairSchema, museQuerySchema } from "./muse-protocol.js";
+import { paperclipQuestionSetPayloadSchema } from "./validators/issue.js";
 
 const assignmentId = "00000000-0000-4000-8000-000000000001";
 const requestId = "00000000-0000-4000-8000-000000000002";
@@ -38,7 +39,7 @@ describe("Muse native request identity bounds", () => {
   });
 
   it.each(nativeRequestEnvelopes)("rejects identities Runner cannot accept for $name", ({ validate }) => {
-    for (const value of ["", "a".repeat(161), "request id", "request/1", "é", "回答", "request\n", "request\u0000"]) {
+    for (const value of ["", "a".repeat(161), "request id", "request/1", "é", "回答", "request\n", "request\u0000", ".question", "_question", ":question", "-question"]) {
       expect(validate(value).success, JSON.stringify(value)).toBe(false);
     }
   });
@@ -115,5 +116,33 @@ describe("Muse native question-set durable byte bound", () => {
     const count = Math.floor(budget / unit), padding = "a".repeat(budget % unit);
     expect(validate(body(character.repeat(count) + padding)).success).toBe(true);
     expect(validate(body(character.repeat(count) + padding + "a")).success).toBe(false);
+  });
+});
+
+describe("Muse bridge-supported question admission", () => {
+  const validate = (questionSet: unknown) => museCommandSchema.safeParse({
+    ...operation, command: "request_user_input", nativeRequestId: "1question._:-", questionSet,
+  });
+
+  it.each(["^[0-9]+$", "", "(a+)+$"])("rejects provider pattern %j while the generic canonical form remains valid", pattern => {
+    const payload = { ...questionSet, questions: [{ ...questionSet.questions[0], textValidation: { pattern } }] };
+    expect(paperclipQuestionSetPayloadSchema.safeParse(payload).success).toBe(true);
+    expect(validate(payload).success).toBe(false);
+  });
+
+  it.each([{ minLength: 2, maxLength: 1 }, { minimum: 2, maximum: 1 }])("rejects conflicting canonical bounds %j", textValidation => {
+    expect(validate({ ...questionSet, questions: [{ ...questionSet.questions[0], textValidation }] }).success).toBe(false);
+  });
+
+  it("preserves independent question and option identities plus supported text and choice forms", () => {
+    const payload = { ...questionSet, questions: [
+      { id: ".question", prompt: "Amount?", required: true, answerMode: "text", initialText: "2",
+        textValidation: { inputType: "integer", minLength: 0, maxLength: 3, minimum: 1, maximum: 10 } },
+      { id: "é choice", prompt: "Choose", required: false, answerMode: "single_select",
+        options: [{ id: "_option", label: "Test" }, { id: "option space", label: "Production" }], customAnswer: { enabled: true } },
+    ] };
+    const result = validate(payload);
+    expect(result.success).toBe(true);
+    if (result.success && result.data.command === "request_user_input") expect(result.data.questionSet).toEqual(payload);
   });
 });

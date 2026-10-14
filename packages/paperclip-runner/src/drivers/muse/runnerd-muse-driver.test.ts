@@ -151,6 +151,73 @@ it("uses the native request, exact question command ID and durable answer receip
   }
 }, 45000);
 
+it("rejects bridge-unsupported questions at native admission without a stored request or created event", async () => {
+  const root = await mkdtemp(join(tmpdir(), "muse-question-admission-"));
+  await writeFile(join(root, "AGENTS.md"), "Use only first-party tools.");
+  const input = execution(root);
+  let send: ((operation: ExternalProviderOperation) => Promise<void>) | undefined;
+  let spawned: { pid: number; processGroupId: number | null; startedAt: string } | undefined;
+  const options: RunnerdMuseDriverOptions = {
+    execution: input, stateDirectory: join(root, "state"), runnerBinary: resolve("runner/target/debug/paperclip-runnerd"),
+    identity: { runnerInstanceId: randomUUID(), environmentLeaseId: randomUUID(), runId: input.binding.runId,
+      normalizedSessionId: input.session.normalizedSessionId!, turnId: "turn-" + input.binding.runId, itemId: "item-" + input.binding.runId },
+    onSpawn: process => { spawned = process; },
+    port: { dispatch: async () => {}, settle: async () => {}, inputAvailable: async () => {},
+      attach: async callback => { send = callback; return async () => { send = undefined; }; } },
+  };
+  const operation = (args: Record<string, unknown>): ExternalProviderOperation => ({
+    requestId: randomUUID(), bindingId: input.provider.binding.bindingId, bindingGeneration: 1, runId: input.binding.runId,
+    normalizedSessionId: input.session.normalizedSessionId!, turnId: options.identity.turnId, assignmentRevision: 1,
+    action: "request_user_input", input: args, digest: externalOperationDigest("request_user_input", args),
+  });
+  const driver = new RunnerdMuseDriver(options);
+  const session = await driver.openSession({ runId: input.binding.runId, normalizedSessionId: input.session.normalizedSessionId! });
+  const events: PrpEvent[] = [];
+  let eventReadFailure: unknown;
+  const reading = (async () => { for await (const event of session.events()) events.push(event); })()
+    .catch(error => { eventReadFailure = error; });
+  try {
+    await session.startTurn({ message: { role: "user", text: "Ask a supported synthetic question." } });
+    const accept = operation({});
+    await send!({ ...accept, action: "accept", digest: externalOperationDigest("accept", {}) });
+    const valid = { schema: "paperclip.question_set.v1", questions: [{ id: ".question", prompt: "Amount?", required: true,
+      answerMode: "text", textValidation: { inputType: "integer", minimum: 1, maximum: 10 } }] };
+    const unsupported = [
+      { requestId: ".question", questionSet: valid },
+      { requestId: "_question", questionSet: valid },
+      { requestId: "q".repeat(161), questionSet: valid },
+      { requestId: "question-pattern", questionSet: { ...valid, questions: [{ ...valid.questions[0], textValidation: { pattern: "^[0-9]+$" } }] } },
+      { requestId: "question-bounds", questionSet: { ...valid, questions: [{ ...valid.questions[0], textValidation: { minimum: 10, maximum: 1 } }] } },
+    ];
+    await vi.waitFor(() => expect(events.some(event => event.eventType === "external_provider.operation_settled"
+      && event.payload.requestId === accept.requestId)).toBe(true), { timeout: 10000 });
+    for (const args of unsupported) {
+      const before = JSON.parse(await readFile(join(root, "state/runner/muse-provider-state.json"), "utf8"));
+      const ask = operation(args);
+      await expect(send!(ask)).rejects.toThrow("dot_runner_operation_rejected");
+      const after = JSON.parse(await readFile(join(root, "state/runner/muse-provider-state.json"), "utf8"));
+      expect(after).not.toHaveProperty("runtimeInputs");
+      expect(after.operations).toEqual(before.operations);
+      expect(await session.read!()).toMatchObject({ status: "running", pendingRuntimeRequests: [], unconsumedInputs: 0 });
+      expect(events.filter(event => event.eventType === "runtime_request.created")).toEqual([]);
+      expect(events.some(event => event.eventType === "external_provider.operation_settled"
+        && event.payload.requestId === ask.requestId)).toBe(false);
+      expect(eventReadFailure).toBeUndefined();
+    }
+    await send!(operation({ requestId: "1question._:-", questionSet: valid }));
+    await vi.waitFor(() => expect(session.pendingRuntimeRequests!()).toMatchObject([{ requestId: "1question._:-", input: valid }]), { timeout: 10000 });
+    const snapshot = await session.snapshot();
+    expect(snapshot.pendingRuntimeRequests).toHaveLength(1);
+    expect(events.filter(event => event.eventType === "runtime_request.created")).toHaveLength(1);
+    expect(eventReadFailure).toBeUndefined();
+  } finally {
+    await session.close({ reason: "Test cleanup", force: true }).catch(() => {});
+    await reading;
+    if (spawned) { try { process.kill(spawned.pid, "SIGTERM"); } catch {} }
+    await rm(root, { recursive: true, force: true });
+  }
+}, 45000);
+
 it("keeps the exact Muse question and assignment alive past the native live window, then settles a delayed answer", async () => {
   const root = await mkdtemp(join(tmpdir(), "muse-native-live-window-"));
   await writeFile(join(root, "AGENTS.md"), "Use only first-party tools.");
