@@ -416,6 +416,36 @@ function recordingFilesystemClient(
 describe("sandbox managed runtime", () => {
   const cleanupDirs: string[] = [];
 
+  it.each([
+    { isolation: undefined, detect: false },
+    { isolation: undefined, detect: true },
+    { isolation: "worker" as const, detect: false },
+    { isolation: "worker" as const, detect: true },
+  ])("keeps snapshot workers opt-in through command preparation: %j", async ({ isolation, detect }) => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "paperclip-snapshot-mode-"));
+    cleanupDirs.push(root);
+    const local = path.join(root, "local"), remote = path.join(root, "remote");
+    await mkdir(local);
+    await writeFile(path.join(local, "file.txt"), "before");
+    const capture = vi.spyOn(restoreMerge, "captureDirectorySnapshotOffThread");
+    try {
+      const prepared = await prepareCommandManagedRuntime({
+        runner: makeInlineSpawnRunner(),
+        spec: { remoteCwd: remote, timeoutMs: 30_000 },
+        adapterKey: "test",
+        workspaceLocalDir: local,
+        workspaceSnapshotIsolation: isolation,
+        workspaceCheckpoint: true,
+        ...(detect ? { installCommand: "exit 99", detectCommand: "sh" } : {}),
+      });
+      expect(capture.mock.calls.length > 0).toBe(isolation === "worker");
+      expect(await readFile(path.join(remote, "file.txt"), "utf8")).toBe("before");
+      await writeFile(path.join(remote, "file.txt"), "after");
+      await prepared.restoreWorkspace();
+      expect(await readFile(path.join(local, "file.txt"), "utf8")).toBe("after");
+    } finally { capture.mockRestore(); }
+  });
+
   it.each(["host_current", "adopt_remote", "durable_seed"] as const)("stages and restores both project repositories with independent Git histories (%s)", async (mode) => {
     const root = await mkdtemp(path.join(os.tmpdir(), "paperclip-multi-repo-"));
     cleanupDirs.push(root);

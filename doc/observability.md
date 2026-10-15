@@ -684,6 +684,14 @@ whether remote work may have been accepted.
   identifiers, untyped terminal failures, and timeouts after accepted work remain
   reportable. Stream/poll errors retain their existing retry and logging behavior.
 
+A Codex ACP model capacity failure also stays local. The Codex ACP classifier
+must match a typed `service` terminal failure that reports the model at capacity
+or the server overloaded. It records `codex_transient_upstream` with the
+`transient_upstream` family, and the bounded transient retry owns recovery. The
+report must come after setup and carry no signal. Other `service` failures,
+untyped capacity text, and Codex CLI transient upstream failures remain reportable.
+The run keeps its failed state and its terminal diagnostic.
+
 Expected pre-provider waits for a shared project workspace, a credential rotation
 lock, or an exhausted AI connection pool carry a server-owned expected
 cancellation receipt. They retain existing retry and lock behavior without a

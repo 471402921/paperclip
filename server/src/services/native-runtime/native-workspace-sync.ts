@@ -802,6 +802,7 @@ async function prepareRuntime(input: {
     workspaceLocalDir: input.workspaceLocalDir,
     workspaceRemoteDir: input.target.remoteCwd,
     workspaceInboundMode: input.mode,
+    workspaceSnapshotIsolation: "worker",
     workspaceDurableSeed: input.durableSeed,
     workspaceBaseline: input.baseline,
     workspaceGitSnapshot: input.gitSnapshot,
@@ -830,7 +831,7 @@ async function finalizePreparedRuntime(input: {
     await input.assertOwnership?.();
     const finalSnapshot =
       await import("@paperclipai/adapter-utils/workspace-restore-merge").then(
-        ({ captureDirectorySnapshot }) =>
+        ({ captureDirectorySnapshotOffThread: captureDirectorySnapshot }) =>
           captureDirectorySnapshot(input.descriptor.binding.localCwd, {
             exclude: input.runtime.workspaceSyncSnapshot?.baseline.exclude ?? [],
             ignoredPaths: input.runtime.workspaceSyncSnapshot?.baseline.ignoredPaths,

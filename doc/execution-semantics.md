@@ -535,6 +535,15 @@ Warm sandbox reuse must match the current host Git tip and branch as well as the
 file snapshot and saved stamp, including managed nested repositories. A history
 or branch mismatch restages the host before the next run begins.
 
+Disk-backed native sandbox workspace snapshots run in at most two worker threads per
+controller process. Each capture retains the same file hashes, modes, symlinks,
+exclusions and ignored-path manifest as an inline capture. A worker seals its
+private manifest before handing it to the controller; ordinary snapshot disposal
+removes that worker's temporary directory. A failed capture removes its temporary
+state before releasing its worker slot. This scheduling boundary does not replace
+source authorization, warm-stamp validation, Git identity checks or restore
+conflict detection. Legacy adapter snapshots remain inline.
+
 ### Remote Codex model compatibility
 
 Fresh remote Codex Runner runs check the selected image CLI before saving the
