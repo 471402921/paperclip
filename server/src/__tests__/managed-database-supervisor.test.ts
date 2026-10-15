@@ -7,8 +7,12 @@ import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, pluginMigrations, plugins } from "@paperclipai/db";
 import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
-import type { ManagedDatabaseConfig } from "@paperclipai/shared/managed-database";
-import { signManagedDatabasePayload } from "@paperclipai/shared/managed-database-server";
+import { canonicalJson, type ManagedDatabaseConfig, type ManagedDatabaseReceipt } from "@paperclipai/shared/managed-database";
+import {
+  sha256HexOf,
+  signManagedDatabasePayload,
+  verifyManagedDatabaseReceipt,
+} from "@paperclipai/shared/managed-database-server";
 import { derivePluginDatabaseNamespace, pluginDatabaseService } from "../services/plugin-database.js";
 import { and, eq } from "drizzle-orm";
 import {
@@ -384,5 +388,146 @@ describeEngine("managed embedded database: authenticated, lease-fenced commands"
     const conflict = await supervisor.handleCommand(reused, signManagedDatabasePayload(stack.controlKey, "command", reused));
     expect((conflict.body as { code: string }).code).toBe("command_id_conflict");
     await sendCommand(supervisor, stack, { kind: "lease.release", lease }, issued());
+  });
+});
+
+describeEngine("managed embedded database: receipt reconciliation after a lost response", () => {
+  if (!support.supported) return;
+  let stack: TestStack;
+  let supervisor: ManagedDatabaseSupervisor;
+  let clock = Date.now();
+
+  // The harness durably saved this command, sent it, and lost the response.
+  let lost: ReturnType<typeof buildCommand>;
+  let lostSignature: string;
+  let lostReceipt: ManagedDatabaseReceipt;
+
+  beforeAll(async () => {
+    stack = await createTestStack();
+    supervisor = await buildSupervisor(stack, support, { now: () => clock });
+    await supervisor.start();
+    lost = buildCommand(stack, { kind: "lease.acquire", args: { holder: "harness-a", ttlSeconds: 3600 } }, issued());
+    lostSignature = signManagedDatabasePayload(stack.controlKey, "command", lost);
+    const response = await supervisor.handleCommand(lost, lostSignature);
+    expect(response.status).toBe(200);
+    lostReceipt = response.body as ManagedDatabaseReceipt;
+  }, TIMEOUT);
+
+  afterAll(async () => {
+    await supervisor?.stop();
+    stack?.cleanup();
+  });
+
+  function issued() {
+    return { issuedAt: new Date(clock).toISOString() };
+  }
+
+  async function currentLease() {
+    const { receipt } = await sendCommand(supervisor, stack, { kind: "status" }, issued());
+    return receipt.details.lease as { id: string; epoch: number } | null;
+  }
+
+  function lookup(commandId: string, requestSha256: string, overrides: Record<string, unknown> = {}) {
+    return sendCommand(supervisor, stack, { kind: "receipt.get", args: { commandId, requestSha256 } }, { ...issued(), ...overrides });
+  }
+
+  const lostSha = () => sha256HexOf(canonicalJson(lost));
+  const leaseOf = (receipt: ManagedDatabaseReceipt) => receipt.details.lease as { id: string; epoch: number };
+
+  it("returns the stored receipt for an exact replay after the replay window, without executing again", async () => {
+    clock += 6 * 60_000; // the harness restarted for longer than the window
+    const replay = await supervisor.handleCommand(lost, lostSignature);
+    expect(replay.status).toBe(200);
+    expect(replay.body).toEqual(lostReceipt);
+    expect(verifyManagedDatabaseReceipt(stack.controlKey, replay.body)).not.toBeNull();
+    expect(lostReceipt).toMatchObject({ requestSha256: lostSha(), configGeneration: 1, stackId: stack.config.stackId });
+    expect(await currentLease()).toMatchObject(leaseOf(lostReceipt));
+
+    // Re-signing the same id with a fresh timestamp is a different request.
+    const refreshed = { ...lost, issuedAt: new Date(clock).toISOString() };
+    const conflict = await supervisor.handleCommand(refreshed, signManagedDatabasePayload(stack.controlKey, "command", refreshed));
+    expect(conflict.body).toMatchObject({ outcome: "rejected", code: "command_id_conflict" });
+
+    // An old command that was never recorded still cannot act.
+    // An id that shares the stored receipt's file name cannot act either.
+    const colliding = { ...lost, commandId: lost.commandId.replace("cmd_", "cmd:"), issuedAt: new Date(clock).toISOString() };
+    const collision = await supervisor.handleCommand(colliding, signManagedDatabasePayload(stack.controlKey, "command", colliding));
+    expect(collision.body).toMatchObject({ outcome: "rejected", code: "command_id_conflict" });
+
+    const unrecorded = { ...lost, commandId: `cmd_${randomUUID()}` };
+    const stale = await supervisor.handleCommand(unrecorded, signManagedDatabasePayload(stack.controlKey, "command", unrecorded));
+    expect(stale.body).toMatchObject({ outcome: "rejected", code: "clock_skew" });
+    expect(await currentLease()).toMatchObject(leaseOf(lostReceipt));
+  });
+
+  it("looks up the receipt by id and request hash", async () => {
+    const found = await lookup(lost.commandId, lostSha());
+    expect(found.status).toBe(200);
+    expect(found.receipt.details).toEqual({ state: "found", commandId: lost.commandId, receipt: lostReceipt, hold: null });
+
+    // Lookups are read-only answers, never recorded under their own id.
+    expect(existsSync(path.join(managedDatabaseLayout(stack.config).receiptsDir, `${found.receipt.commandId}.json`))).toBe(false);
+  });
+
+  it("answers unknown ids without authorizing anything", async () => {
+    const unknownId = `cmd_${randomUUID()}`;
+    const unknown = await lookup(unknownId, "0".repeat(64));
+    expect(unknown.status).toBe(200);
+    expect(unknown.receipt.details).toEqual({ state: "unknown", commandId: unknownId, receipt: null, hold: null });
+    expect(await currentLease()).toMatchObject(leaseOf(lostReceipt));
+  });
+
+  it("binds a lookup to the original request, this stack, and a fresh timestamp", async () => {
+    const mismatch = await lookup(lost.commandId, "f".repeat(64));
+    expect(mismatch).toMatchObject({ status: 409, receipt: { outcome: "rejected", code: "command_id_conflict" } });
+
+    const wrongStack = await lookup(lost.commandId, lostSha(), { stackId: "stk_other" });
+    expect(wrongStack).toMatchObject({ status: 403, receipt: { outcome: "rejected", code: "wrong_stack" } });
+
+    const foreignKey = buildCommand(stack, { kind: "receipt.get", args: { commandId: lost.commandId, requestSha256: lostSha() } }, issued());
+    const forged = await supervisor.handleCommand(foreignKey, signManagedDatabasePayload(Buffer.alloc(32, 9), "command", foreignKey));
+    expect(forged.status).toBe(401);
+    expect(forged.body).not.toHaveProperty("details");
+
+    const skewed = await lookup(lost.commandId, lostSha(), { issuedAt: new Date(clock - 10 * 60_000).toISOString() });
+    expect(skewed.receipt.code).toBe("clock_skew");
+  });
+
+  it("recovers the outcome across a configuration generation change", async () => {
+    await supervisor.stop();
+    stack.config = establishedConfig(stack.config, supervisor.readiness().systemIdentifier!);
+    supervisor = await buildSupervisor(stack, support, { now: () => clock });
+    await supervisor.start();
+    expect(stack.config.configGeneration).toBe(2);
+
+    const replay = await supervisor.handleCommand(lost, lostSignature);
+    expect(replay).toEqual({ status: 200, body: lostReceipt });
+
+    const found = await lookup(lost.commandId, lostSha());
+    expect(found.receipt).toMatchObject({ configGeneration: 2, details: { state: "found", receipt: { configGeneration: 1 } } });
+
+    const previousGeneration = await lookup(lost.commandId, lostSha(), { configGeneration: 1 });
+    expect(previousGeneration.receipt.code).toBe("stale_generation");
+
+    // A fresh command for the old generation that was never recorded cannot act.
+    const unrecorded = buildCommand(stack, { kind: "lease.acquire", args: { holder: "harness-b", ttlSeconds: 60 } }, { ...issued(), configGeneration: 1 });
+    const stale = await supervisor.handleCommand(unrecorded, signManagedDatabasePayload(stack.controlKey, "command", unrecorded));
+    expect(stale.body).toMatchObject({ outcome: "rejected", code: "stale_generation" });
+    expect(await currentLease()).toMatchObject(leaseOf(lostReceipt));
+  }, TIMEOUT);
+
+  it("never returns a stored receipt that fails verification", async () => {
+    const file = path.join(managedDatabaseLayout(stack.config).receiptsDir, `${lost.commandId}.json`);
+    const original = readFileSync(file, "utf8");
+    try {
+      writeFileSync(file, JSON.stringify({ ...JSON.parse(original), outcome: "failed" }));
+      const replay = await supervisor.handleCommand(lost, lostSignature);
+      expect(replay.body).toMatchObject({ outcome: "rejected", code: "precondition_failed" });
+      const found = await lookup(lost.commandId, lostSha());
+      expect(found.receipt.code).toBe("precondition_failed");
+    } finally {
+      writeFileSync(file, original);
+    }
+    expect(await currentLease()).toMatchObject(leaseOf(lostReceipt));
   });
 });

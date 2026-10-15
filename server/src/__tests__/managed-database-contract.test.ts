@@ -90,6 +90,13 @@ describe("managed database config contract", () => {
     expect(managedDatabaseCommandSchema.safeParse({ ...base, kind: "snapshot.create", args: {}, lease: { id: "lease_1", epoch: 1 } }).success).toBe(true);
     expect(managedDatabaseCommandSchema.safeParse({ ...base, kind: "shell", args: { cmd: "id" } }).success).toBe(false);
   });
+
+  it("binds a receipt lookup to a command id and request hash", () => {
+    const base = { v: 1, stackId: "stk_a", configGeneration: 1, commandId: "cmd_2", issuedAt: new Date().toISOString(), kind: "receipt.get" };
+    expect(managedDatabaseCommandSchema.safeParse({ ...base, args: { commandId: "cmd_1", requestSha256: "a".repeat(64) } }).success).toBe(true);
+    expect(managedDatabaseCommandSchema.safeParse({ ...base, args: { commandId: "cmd_1" } }).success).toBe(false);
+    expect(managedDatabaseCommandSchema.safeParse({ ...base, args: { commandId: "../x", requestSha256: "a".repeat(64) } }).success).toBe(false);
+  });
 });
 
 describe("managed database archive upload framing", () => {

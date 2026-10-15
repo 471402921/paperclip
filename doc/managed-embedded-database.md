@@ -130,11 +130,12 @@ signature header:
 `/api/health` while no app runs) returns `{ "status": "starting" | "maintenance" | "serving" | "recovery" }`.
 
 Every command carries `v, stackId, configGeneration, commandId, issuedAt, kind, args`;
-all but `status` and `lease.acquire` carry `lease: { id, epoch }`.
+all but `status`, `receipt.get`, and `lease.acquire` carry `lease: { id, epoch }`.
 
 | kind | Mode | Effect |
 | --- | --- | --- |
 | `status` | any | Signed readiness identity, lease, retained databases, local snapshots. |
+| `receipt.get` | any | `args: { commandId, requestSha256 }`. Read-only; never stored. Returns `details.state`: `found` with the original signed `receipt`, `running`, or `unknown`, plus the current `hold`. A hash that does not match the stored request is `command_id_conflict`. |
 | `lease.acquire` / `renew` / `release` | any | The epoch increases on every grant and survives restarts. No grant or release while a mutating command runs. |
 | `snapshot.create` | any | `pg_dump --format=custom` of the tenant database (`paperclip-pgdump-custom-v1`). Row counts and the journal fingerprint come from the same exported snapshot. `quiesced` in maintenance, `online` while serving. |
 | `snapshot.download` | any | Streams the archive with `x-paperclip-archive-sha256`. Store it off-volume. |
@@ -148,9 +149,30 @@ Rejections (`outcome: "rejected"`): `bad_signature`, `invalid_command`,
 `wrong_stack`, `stale_generation`, `clock_skew` (more than 5 minutes),
 `lease_stale`, `lease_conflict`, `busy`, `mode_forbidden`,
 `command_id_conflict`, `not_found`, `precondition_failed`, `recovery_hold`,
-`unsupported`. Replaying a `commandId` returns its stored receipt; reusing it for
-another request is `command_id_conflict`. Receipts are signed with purpose
-`receipt` and kept under `root/receipts/`.
+`unsupported`. Receipts are signed with purpose `receipt` and kept under
+`root/receipts/`. Each records the request hash (`requestSha256`, sha256 of
+the canonical command) and the generation it ran under.
+
+### Reconciling a lost response
+
+The harness must save a command durably before sending it. If the response is
+lost, it recovers the outcome instead of sending a new command:
+
+- Resend the exact saved command. A recorded receipt for the same `commandId`
+  and request hash is returned before the generation and replay-window checks,
+  so this works after a long harness restart or a generation change. Nothing
+  runs again. Reusing the `commandId` with any change, including a refreshed
+  `issuedAt`, is `command_id_conflict`.
+- Or send a fresh `receipt.get` for the current generation with the saved
+  command's `commandId` and request hash.
+
+A command with no recorded receipt is checked as new: it must carry the
+running generation, be inside the replay window, and pass the lease and busy
+checks. `unknown` therefore never authorizes resending a stale command. Treat
+it as "did not finish": the command was rejected before it ran, or the
+container stopped while it ran. In the second case `hold` names an
+interrupted migration or restore. Inspect `status` before choosing a new
+command under a fresh lease.
 
 ## Release capability
 

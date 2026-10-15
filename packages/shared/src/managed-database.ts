@@ -155,6 +155,20 @@ export const managedDatabaseCommandSchema = z.discriminatedUnion("kind", [
   z.object({ ...commandBase, kind: z.literal("status"), args: z.object({}).strict().default({}) }).strict(),
   z.object({
     ...commandBase,
+    /**
+     * Reconcile an earlier command whose response was lost. Read-only and
+     * never stored. Unlike replaying the original command, it works after the
+     * replay window has passed or the configuration generation has changed.
+     */
+    kind: z.literal("receipt.get"),
+    args: z.object({
+      commandId: identifier,
+      /** sha256 of canonicalJson(original command); binds the answer to that exact request. */
+      requestSha256: sha256Hex,
+    }).strict(),
+  }).strict(),
+  z.object({
+    ...commandBase,
     kind: z.literal("lease.acquire"),
     args: z.object({
       holder: z.string().min(1).max(200),
@@ -188,6 +202,18 @@ export const managedDatabaseCommandSchema = z.discriminatedUnion("kind", [
 ]);
 export type ManagedDatabaseCommand = z.infer<typeof managedDatabaseCommandSchema>;
 export type ManagedDatabaseCommandKind = ManagedDatabaseCommand["kind"];
+
+/**
+ * `details` of a succeeded `receipt.get` receipt.
+ * - `found`: `receipt` is the original command's signed receipt (succeeded or failed).
+ * - `running`: the command is executing now; look it up again later.
+ * - `unknown`: no receipt was recorded. The command was never accepted, or the
+ *   container stopped before it finished; `hold` names an interrupted migration
+ *   or restore. Never treat `unknown` as permission to resend a stale command.
+ */
+export type ManagedDatabaseReceiptLookup =
+  | { state: "found"; commandId: string; receipt: ManagedDatabaseReceipt; hold: ManagedDatabaseHold | null }
+  | { state: "running" | "unknown"; commandId: string; receipt: null; hold: ManagedDatabaseHold | null };
 
 /** Commands that change database, lease, or archive state. */
 export const MANAGED_DATABASE_MUTATING_KINDS: readonly ManagedDatabaseCommandKind[] = [

@@ -23,6 +23,7 @@ import {
   type ManagedDatabaseLeaseRef,
   type ManagedDatabaseReadiness,
   type ManagedDatabaseReceipt,
+  type ManagedDatabaseReceiptLookup,
   type ManagedDatabaseRejectionCode,
   type ManagedDatabaseRelease,
   type ManagedDatabaseSchemaState,
@@ -588,7 +589,8 @@ export class ManagedDatabaseSupervisor {
 
   // -------------------------------------------------------------- commands
 
-  private validate(body: unknown, signature: string | undefined): { command: ManagedDatabaseCommand; requestSha256: string } {
+  /** Signature, shape, and stack. Enough to answer an exact replay; not enough to execute. */
+  private authenticate(body: unknown, signature: string | undefined): { command: ManagedDatabaseCommand; requestSha256: string } {
     if (!verifyManagedDatabaseSignature(this.opts.controlKey, "command", body, signature)) {
       reject("bad_signature", 401, "command signature is invalid");
     }
@@ -596,13 +598,42 @@ export class ManagedDatabaseSupervisor {
     if (!parsed.success) reject("invalid_command", 400, parsed.error.issues.map((issue) => issue.message).join("; "));
     const command = parsed.data;
     if (command.stackId !== this.config.stackId) reject("wrong_stack", 403, "command is for another stack");
+    return { command, requestSha256: sha256HexOf(canonicalJson(body)) };
+  }
+
+  /** Generation and replay window. Every command that may act must pass this. */
+  private requireFresh(command: ManagedDatabaseCommand): void {
     if (command.configGeneration !== this.config.configGeneration) {
       reject("stale_generation", 409, `command generation ${command.configGeneration} ≠ running ${this.config.configGeneration}`);
     }
     if (Math.abs(this.now() - Date.parse(command.issuedAt)) > MANAGED_DATABASE_MAX_CLOCK_SKEW_MS) {
       reject("clock_skew", 401, "command issuedAt is outside the accepted window");
     }
-    return { command, requestSha256: sha256HexOf(canonicalJson(body)) };
+  }
+
+  /**
+   * The stored receipt for `commandId`, if it answers exactly this request.
+   * The receipt is signed and records the request hash and the generation it
+   * ran under, so it can be returned after the replay window or a generation
+   * change without executing anything. Returns null when nothing was stored.
+   */
+  private storedReceiptFor(commandId: string, requestSha256: string, configGeneration: number | null): ManagedDatabaseReceipt | null {
+    const stored = this.receipts.get(commandId);
+    if (!stored) return null;
+    // Receipt files are keyed by a sanitized id. A colliding id must not run
+    // and overwrite the recorded command's receipt.
+    if (stored.commandId !== commandId || stored.requestSha256 !== requestSha256) {
+      reject("command_id_conflict", 409, "commandId was used for a different request");
+    }
+    const verified = verifyManagedDatabaseReceipt(this.opts.controlKey, stored);
+    if (
+      !verified
+      || verified.stackId !== this.config.stackId
+      || (configGeneration !== null && verified.configGeneration !== configGeneration)
+    ) {
+      reject("precondition_failed", 409, "stored receipt does not verify for this stack and request");
+    }
+    return verified;
   }
 
   private gate(command: ManagedDatabaseCommand): void {
@@ -618,7 +649,9 @@ export class ManagedDatabaseSupervisor {
       || command.kind === "lease.acquire"
       || command.kind === "lease.release";
     if (mutating && this.busy) reject("busy", 409, `command ${this.busy} is still running`);
-    if (this.status === "starting" && command.kind !== "status") reject("busy", 409, "database is starting");
+    if (this.status === "starting" && command.kind !== "status" && command.kind !== "receipt.get") {
+      reject("busy", 409, "database is starting");
+    }
   }
 
   private sign(
@@ -673,12 +706,14 @@ export class ManagedDatabaseSupervisor {
     let command: ManagedDatabaseCommand;
     let requestSha256: string;
     try {
-      ({ command, requestSha256 } = this.validate(body, signature));
-      const stored = this.receipts.get(command.commandId);
-      if (stored) {
-        if (stored.requestSha256 !== requestSha256) reject("command_id_conflict", 409, "commandId was used for a different request");
-        return { status: stored.outcome === "succeeded" ? 200 : 500, body: stored };
-      }
+      ({ command, requestSha256 } = this.authenticate(body, signature));
+      // An exact replay returns its stored outcome before the freshness
+      // checks: a harness that lost the response must be able to recover it
+      // after a long restart or a generation change. Anything not already
+      // recorded must still be fresh before it can act.
+      const stored = this.storedReceiptFor(command.commandId, requestSha256, command.configGeneration);
+      if (stored) return { status: stored.outcome === "succeeded" ? 200 : 500, body: stored };
+      this.requireFresh(command);
       if (command.kind === "snapshot.download" || command.kind === "snapshot.upload") {
         reject("invalid_command", 400, `${command.kind} uses the archive endpoint`);
       }
@@ -693,7 +728,7 @@ export class ManagedDatabaseSupervisor {
     try {
       const details = await this.execute(command);
       const receipt = this.sign(receiptMeta(command), requestSha256, startedAt, "succeeded", details, null);
-      if (command.kind !== "status") this.receipts.put(receipt);
+      if (command.kind !== "status" && command.kind !== "receipt.get") this.receipts.put(receipt);
       return { status: 200, body: receipt };
     } catch (error) {
       if (error instanceof CommandRejection) return this.rejection(body, error, startedAt);
@@ -712,6 +747,8 @@ export class ManagedDatabaseSupervisor {
     switch (command.kind) {
       case "status":
         return this.statusDetails();
+      case "receipt.get":
+        return this.lookupReceipt(command.args.commandId, command.args.requestSha256);
       case "lease.acquire": {
         const granted = this.leases.acquire(command.args.holder, command.args.ttlSeconds);
         if (!granted.ok) reject("lease_conflict", 409, `lease held by ${granted.lease.holder} until ${granted.lease.expiresAt}`);
@@ -772,6 +809,14 @@ export class ManagedDatabaseSupervisor {
       snapshots: listSnapshots(this.layout),
       snapshotFormats: this.opts.pgTools ? [MANAGED_DATABASE_SNAPSHOT_FORMAT] : [],
     };
+  }
+
+  private lookupReceipt(commandId: string, requestSha256: string): ManagedDatabaseReceiptLookup {
+    const hold = this.holds.get();
+    // The original ran under whatever generation it carried; the request hash covers it.
+    const receipt = this.storedReceiptFor(commandId, requestSha256, null);
+    if (receipt) return { state: "found", commandId, receipt, hold };
+    return { state: this.busy === commandId ? "running" : "unknown", commandId, receipt: null, hold };
   }
 
   private requireTools(): PgClientTools {
@@ -878,10 +923,17 @@ export class ManagedDatabaseSupervisor {
   // -------------------------------------------------------------- archives
 
   private validateArchiveCommand(body: unknown, signature: string | undefined, kind: "snapshot.download" | "snapshot.upload") {
-    const validated = this.validate(body, signature);
+    const validated = this.authenticate(body, signature);
     if (validated.command.kind !== kind) reject("invalid_command", 400, `archive endpoint expects ${kind}`);
-    this.gate(validated.command);
-    return { ...validated, body };
+    // An upload that already landed answers with its receipt, like a command replay.
+    const stored = kind === "snapshot.upload"
+      ? this.storedReceiptFor(validated.command.commandId, validated.requestSha256, validated.command.configGeneration)
+      : null;
+    if (!stored) {
+      this.requireFresh(validated.command);
+      this.gate(validated.command);
+    }
+    return { ...validated, body, stored };
   }
 
   /** GET /archive: opens the archive to stream, or returns a rejection. The caller owns `fd`. */
@@ -924,12 +976,11 @@ export class ManagedDatabaseSupervisor {
       if (error instanceof CommandRejection) return this.rejection(null, error, startedAt);
       throw error;
     }
-    const { command, requestSha256, body } = validated;
+    const { command, requestSha256, body, stored } = validated;
     if (command.kind !== "snapshot.upload") throw new Error("unreachable");
-    const stored = this.receipts.get(command.commandId);
     if (stored) {
       discardUpload(stream);
-      return { status: stored.requestSha256 === requestSha256 ? 200 : 409, body: stored };
+      return { status: stored.outcome === "succeeded" ? 200 : 500, body: stored };
     }
     this.busy = command.commandId;
     let partial: string | null = null;

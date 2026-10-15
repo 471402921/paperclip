@@ -320,7 +320,8 @@ describeSnapshots("managed embedded database: off-volume archives and disaster r
       cluster: { state: "initialize", initializationId: `init_dr_${randomBytes(3).toString("hex")}` },
     });
     destination.controlKey = source.controlKey;
-    const destinationSupervisor = await serve(destination);
+    let destinationClockOffset = 0;
+    const destinationSupervisor = await serve(destination, { now: () => Date.now() + destinationClockOffset });
     const destinationSocket = destinationSupervisor.layout.controlSocket;
     const destLeaseReceipt = await command(destination, destinationSocket, buildCommand(destination, { kind: "lease.acquire", args: { holder: "dr", ttlSeconds: 600 } }));
     const destLease = destLeaseReceipt.receipt.details.lease as { id: string; epoch: number };
@@ -340,8 +341,23 @@ describeSnapshots("managed embedded database: off-volume archives and disaster r
     expect(JSON.parse(foreignUpload.body.toString()).code).toBe("precondition_failed");
     foreign.cleanup();
 
-    const upload = await uploadArchive(destinationSocket, signedUpload(destination.controlKey, buildCommand(destination, { kind: "snapshot.upload", args: { receipt: snapshotReceipt }, lease: destLeaseRef }), archive));
+    const uploadRequest = signedUpload(destination.controlKey, buildCommand(destination, { kind: "snapshot.upload", args: { receipt: snapshotReceipt }, lease: destLeaseRef }), archive);
+    const upload = await uploadArchive(destinationSocket, uploadRequest);
     expect(upload.status).toBe(200);
+
+    // The upload response was lost and the harness came back after the replay
+    // window: the exact upload returns its stored receipt, the lookup agrees.
+    destinationClockOffset = 6 * 60_000;
+    const replayedUpload = await uploadArchive(destinationSocket, uploadRequest);
+    expect(replayedUpload.status).toBe(200);
+    expect(JSON.parse(replayedUpload.body.toString())).toEqual(JSON.parse(upload.body.toString()));
+    const uploadReceipt = JSON.parse(upload.body.toString()) as ManagedDatabaseReceipt;
+    const uploadLookup = await command(destination, destinationSocket, buildCommand(destination, {
+      kind: "receipt.get",
+      args: { commandId: uploadReceipt.commandId, requestSha256: uploadReceipt.requestSha256 },
+    }, { issuedAt: new Date(Date.now() + destinationClockOffset).toISOString() }));
+    expect(uploadLookup.receipt.details).toMatchObject({ state: "found", receipt: uploadReceipt });
+    destinationClockOffset = 0;
 
     // A crash between the archive and its metadata: a retried upload repairs it.
     const uploadedMetadata = path.join(destinationSupervisor.layout.snapshotsDir, `${details.snapshotId}.json`);
