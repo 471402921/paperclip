@@ -7,7 +7,6 @@ import { runCaseShards } from '../../../scripts/run-vitest-case-shards.mjs';
 
 export const RUNNER_CASE_FILES = [
   'src/live/runnerd-codex-transport.test.ts',
-  'src/live/runnerd-codex-transport-settlement.test.ts',
   'src/live/runnerd-codex-transport-deadlines.test.ts',
   'src/drivers/opencode/opencode-server-driver.test.ts',
 ];

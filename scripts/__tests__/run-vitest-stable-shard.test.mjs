@@ -599,7 +599,9 @@ test("case-sharded Runner lanes exclude only the files the isolated case runner 
     const vitest = plan.plannedCommands.find(command => command.args[0] === "exec");
     assert.ok(!vitest.args.includes("--case-shards"));
     const exclusions = vitest.args.flatMap((arg, offset) => arg === "--exclude" ? [vitest.args[offset + 1]] : []);
-    assert.equal(exclusions.length, 4);
+    assert.equal(exclusions.length, 3);
+    assert.ok(!exclusions.includes("src/live/runnerd-codex-transport-settlement.test.ts"),
+      "real settlement timing cases stay together in their ordinary serial file");
     for (const file of exclusions) assert.ok(caseScript.includes(`'${file}'`), file);
     const distributed = plan.plannedCommands.filter(command => command.args[0].endsWith("run-pr-case-shard.mjs"));
     assert.equal(distributed.length, 1);

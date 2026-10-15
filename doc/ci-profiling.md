@@ -208,6 +208,12 @@ timers, or edit assertions. The receipt includes collection and process startup
 time. It does not measure CI setup, scheduling or the complete workflow.
 Run baseline and candidate without another benchmark competing for the same host.
 
+The CI case partition applies to transport, deadline, and OpenCode driver files.
+Settlement remains in the ordinary whole-file partition. Its release-binary
+qualification passed all 19 cases serially but exposed failures with both grouped
+and per-case parallel processes; neither grouping is accepted as a CI speedup.
+Keep the complete serial regression until a narrower change proves it safe.
+
 The `general-workspaces-b` lane overlaps at most two project invocations. Each
 keeps its own temporary home, configuration and instance identity. Their combined
 Vitest worker limit stays within the detected CPU capacity or the explicit
@@ -222,7 +228,28 @@ optimization, debug assertions, overflow checks and every test. Developer builds
 keep their normal defaults. Both cache readers and the writer use the same
 setting; the pinned Rust cache action hashes all `CARGO*` environment variables,
 so the first run uses a separate cache entry and builds normally on a miss.
-Release-profile daemon compilation is unchanged.
+Release-profile optimization and checks are unchanged. Both workflows also set
+`CARGO_INCREMENTAL=0`, matching the pinned Rust cache action before any restore.
+
+Build, Canary, and Typecheck first restore the small, exact-key Runner release
+artifact. A v2 entry includes a producer receipt written only after the canonical
+master Rust lane cleans and builds the workspace crate. The receipt binds the
+executable checksum to the compiler, checkout, all modeled inputs, compiler
+dep-info, and declared build-script environment dependencies. Changed inputs,
+custom Cargo/compiler configuration, unsupported build inputs, incomplete
+entries, or failed verification use normal dependency restoration and compilation.
+Failed verification removes only the restored workspace-crate artifacts so Cargo
+cannot accidentally retain the rejected executable.
+
+On a verified hit, the reader copies the executable into a private temporary
+snapshot. Each `build:binary` invocation rechecks its source/environment/compiler
+and checksum before using the usual atomic staging and macOS signing path. These
+three jobs can then omit the large mixed debug/release dependency cache: they
+only consume the self-contained executable. Rust and protocol test lanes retain
+their dependency caches, normal compilation, and every test. Readers never save
+an entry, use a prefix match, or accept a v1 entry under this stronger contract.
+The first canonical master run must populate v2. `record-artifact` and
+`prepare-artifact` expose their decisions in the job log; a miss is not a speedup.
 
 Serialized shards share one Vitest controller with `forks`, `isolate`, one
 worker, and file parallelism disabled. Each file gets a separate process and
