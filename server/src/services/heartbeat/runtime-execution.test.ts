@@ -5,6 +5,9 @@ import { join } from "node:path";
 import { agents, companies, createDb, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS, heartbeatRuns, issues, nativeRunFinalizations, runUsageReceipts, workspaceOperations, type Db } from "@paperclipai/db";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { trace } from "@opentelemetry/api";
+import { InMemorySpanExporter, SimpleSpanProcessor, TracerProvider } from "@opentelemetry/sdk-trace";
+import { measureRunPhase, measureWorkspaceSyncPhase, withRunExecutionTiming } from "../execution-preparation-timing.js";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "../../__tests__/helpers/embedded-postgres.js";
 import * as legacyRecovery from "../legacy-execution-recovery.js";
 import { createAgentIdentityRedactor } from "../agent-identity-redaction.js";
@@ -214,10 +217,17 @@ describe.skipIf(!support.supported)("heartbeat runtime execution boundary", () =
 
   it("records native restoration inside the workspace finalization operation", async () => {
     const { input, run } = await fixture(true);
+    const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+    vi.stubEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector.test");
+    const exporter = new InMemorySpanExporter();
+    const provider = new TracerProvider({ spanProcessors: [new SimpleSpanProcessor({ exporter })] });
+    expect(trace.setGlobalTracerProvider(provider)).toBe(true);
     const restore = vi.fn(async () => {
       expect(await finalizations()).toMatchObject([{
         status: "running", metadata: { owningService: "native_workspace_finalizer" },
       }]);
+      await measureWorkspaceSyncPhase("workspace.restore", async () => {});
+      await measureRunPhase("execution.workspace_commit", async () => {});
     });
     input.workspace.nativeWorkspaceSync = {
       mode: "host_current",
@@ -227,11 +237,26 @@ describe.skipIf(!support.supported)("heartbeat runtime execution boundary", () =
       restoreWorkspace: restore,
       cleanup: vi.fn(async () => {}),
     };
-    expect(await executeHeartbeatRuntime(db, input)).toMatchObject({ dispatched: true });
-    expect(restore).toHaveBeenCalledOnce();
-    expect(await finalizations()).toMatchObject([{
-      status: "succeeded", metadata: { owningService: "native_workspace_finalizer" },
-    }]);
+    try {
+      expect(await withRunExecutionTiming(run.id, () => executeHeartbeatRuntime(db, input))).toMatchObject({ dispatched: true });
+      expect(restore).toHaveBeenCalledOnce();
+      expect(await finalizations()).toMatchObject([{
+        status: "succeeded", metadata: { owningService: "native_workspace_finalizer" },
+      }]);
+      await provider.forceFlush();
+      const spans = exporter.getFinishedSpans();
+      const copyback = spans.filter(span => span.name === "execution.workspace_restore");
+      const commit = spans.filter(span => span.name === "execution.workspace_commit");
+      expect(copyback).toHaveLength(1);
+      expect(commit).toHaveLength(1);
+      const finalization = spans.find(span => span.name === "execution.workspace_finalize")!;
+      expect(finalization).toBeDefined();
+      for (const child of [...copyback, ...commit]) expect(child.parentSpanContext?.spanId).toBe(finalization.spanContext().spanId);
+    } finally {
+      vi.stubEnv("OTEL_EXPORTER_OTLP_ENDPOINT", endpoint);
+      trace.disable();
+      await provider.shutdown();
+    }
   });
 
   it("retains an unexported native source before provider-error teardown", async () => {
