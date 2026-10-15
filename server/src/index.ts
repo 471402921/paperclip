@@ -1,3 +1,4 @@
+import { reconcileVerifiedWorkspaceRepairs } from "./services/verified-workspace-repairs.js";
 import { timeStartupRecovery } from "./startup-recovery-timing.js";
 import { skillSourceSyncService } from "./services/skill-source-sync.js";
 import {
@@ -1616,6 +1617,8 @@ async function startServerWithDatabaseTeardown(
             "startup session-goal recovery resumed durable agent goals",
           );
         }
+        await timeStartupRecovery("verified_workspace_repairs", () => reconcileVerifiedWorkspaceRepairs(db))
+          .catch(err => logger.warn({ err }, "Verified workspace repair will retry during periodic recovery"));
         const reconciled = await heartbeat.reconcileStrandedAssignedIssues();
         if (
           promotion.promoted > 0 ||
@@ -1848,6 +1851,8 @@ async function startServerWithDatabaseTeardown(
             .reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000 })
             .then(() => heartbeat.promoteDueScheduledRetries())
             .then(async (promotion) => {
+              await reconcileVerifiedWorkspaceRepairs(db)
+                .catch(err => logger.warn({ err }, "Verified workspace repair will retry during periodic recovery"));
               await heartbeat.resumeQueuedRuns();
               const reconciled = await heartbeat.reconcileStrandedAssignedIssues();
               if (

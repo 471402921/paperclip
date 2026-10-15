@@ -121,3 +121,20 @@ A new message, Retry, or `/new` cannot clear this workspace repair hold. Ordinar
 local lock-timeout retries and runs without a required remote copy-back failure
 keep their existing policy. This change preserves future failures; it cannot
 recover files from an allocation that was already destroyed.
+
+## Automatic reconciliation of completed copy-back
+
+A later successful `workspace_finalize` record can prove that copy-back completed
+after the original shutdown incident. Startup and periodic reconciliation check
+that exact company, issue, run, workspace and retained lease identity, the latest
+finalization outcome, and every required provider stop receipt. Only ordinary
+conversational shutdown failures qualify. Unsafe archives, uncertain stop, live
+leases, missing proof, a later failed finalization, and non-conversational action
+outcomes retain their existing holds. A sweep observation timestamp does not
+replace the original incident timestamp.
+
+Verified repair clears only that source's file-recovery hold and records its
+proof in the run, recovery action and activity log. It preserves task status,
+assignee, human review, approvals, retained sandboxes and newer recovery incidents.
+It creates no provider calls or continuation and makes no claim about unknown
+external action outcomes. Normal admission and continuation rules still apply.

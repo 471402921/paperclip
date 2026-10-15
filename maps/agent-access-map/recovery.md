@@ -86,6 +86,14 @@ revised live agent authorization and callback delivery remain `not-run`.
 
 ## `source-action`
 
+Automatic verified file repair is internal server work. It adds no agent API
+or provider authority. The sweep requires a same-company task/run/workspace,
+a successful finalization after the incident, and stop receipts for every
+retained source. It preserves task ownership, human review, unknown action
+outcomes and newer incidents, and never requests continuation. The
+[database regressions](../../server/src/services/verified-workspace-repairs.test.ts)
+cover that contract; real provider execution is not claimed.
+
 The recovery-actions read API includes settled execution reconciliation holds
 with an automatic `replay: blocked` receipt, as well as retained workspace holds.
 The existing company and task-read checks remain in force. The board notice

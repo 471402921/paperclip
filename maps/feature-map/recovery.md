@@ -55,6 +55,14 @@ stopped-run recovery checks.
 
 ### `operator-retry`
 
+For an old conversational shutdown hold, startup and periodic recovery can
+clear the file obligation when a later successful finalization and exact stop
+receipts prove that copyback completed. The task status, owner, pending review
+and unknown external outcomes stay unchanged. This bounded database-only sweep
+starts no provider turn. The [verified repair regressions](../../server/src/services/verified-workspace-repairs.test.ts)
+cover valid proof, missing or mismatched sources, later failures, and pagination.
+Fixture coverage does not prove a live provider recovery.
+
 On an exhausted disposition or workspace recovery card, inspect the current
 reason and use the permitted retry/repair/reconcile action. Some repairs require
 confirmation; unavailable actions must explain the gate or remain absent.
