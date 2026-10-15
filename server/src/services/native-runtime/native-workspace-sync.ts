@@ -1,3 +1,4 @@
+import { measureRunPhase } from "../execution-preparation-timing.js";
 import type { WorkspaceCheckpointMetrics } from "@paperclipai/adapter-utils/workspace-checkpoint";
 import type { RuntimeSpanRunner } from "@paperclipai/adapter-utils/acpx-engine/startup-timing";
 import fs from "node:fs/promises";
@@ -825,38 +826,40 @@ async function finalizePreparedRuntime(input: {
 }): Promise<NativeWorkspaceSyncReference> {
   if (input.onPhase) await input.onPhase("workspace.restore", () => input.runtime.restoreWorkspace());
   else await input.runtime.restoreWorkspace();
-  await input.assertOwnership?.();
-  const finalSnapshot =
-    await import("@paperclipai/adapter-utils/workspace-restore-merge").then(
-      ({ captureDirectorySnapshot }) =>
-        captureDirectorySnapshot(input.descriptor.binding.localCwd, {
-          exclude: input.runtime.workspaceSyncSnapshot?.baseline.exclude ?? [],
-          ignoredPaths: input.runtime.workspaceSyncSnapshot?.baseline.ignoredPaths,
-          diskBacked: true,
-        }),
-    );
-  const finalHostSha256 = directorySnapshotSha256(finalSnapshot);
-  await disposeDirectorySnapshot(finalSnapshot);
-  const stamp = finalizedWorkspaceStamp({
-    descriptor: input.descriptor,
-    hostSha256: finalHostSha256,
+  return measureRunPhase("execution.workspace_commit", async () => {
+    await input.assertOwnership?.();
+    const finalSnapshot =
+      await import("@paperclipai/adapter-utils/workspace-restore-merge").then(
+        ({ captureDirectorySnapshot }) =>
+          captureDirectorySnapshot(input.descriptor.binding.localCwd, {
+            exclude: input.runtime.workspaceSyncSnapshot?.baseline.exclude ?? [],
+            ignoredPaths: input.runtime.workspaceSyncSnapshot?.baseline.ignoredPaths,
+            diskBacked: true,
+          }),
+      );
+    const finalHostSha256 = directorySnapshotSha256(finalSnapshot);
+    await disposeDirectorySnapshot(finalSnapshot);
+    const stamp = finalizedWorkspaceStamp({
+      descriptor: input.descriptor,
+      hostSha256: finalHostSha256,
+    });
+    await writeRemoteStamp({ target: input.target, stamp });
+    const finalizedDescriptor: NativeWorkspaceSyncDescriptor = {
+      ...input.descriptor,
+      state: "finalized",
+      finalizedAt: new Date().toISOString(),
+      finalHostSha256,
+    };
+    await input.assertOwnership?.();
+    const reference = await writeDescriptor(finalizedDescriptor);
+    await persistRunReference(input.db, input.runId, reference);
+    await persistLeaseStamp({
+      db: input.db,
+      leaseId: input.descriptor.binding.leaseId,
+      stamp,
+    });
+    return reference;
   });
-  await writeRemoteStamp({ target: input.target, stamp });
-  const finalizedDescriptor: NativeWorkspaceSyncDescriptor = {
-    ...input.descriptor,
-    state: "finalized",
-    finalizedAt: new Date().toISOString(),
-    finalHostSha256,
-  };
-  await input.assertOwnership?.();
-  const reference = await writeDescriptor(finalizedDescriptor);
-  await persistRunReference(input.db, input.runId, reference);
-  await persistLeaseStamp({
-    db: input.db,
-    leaseId: input.descriptor.binding.leaseId,
-    stamp,
-  });
-  return reference;
 }
 
 export async function prepareNativeWorkspaceSync(input: {

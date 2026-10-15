@@ -5,6 +5,20 @@ Run-log events write to the `heartbeat_run_events` table
 Paperclip Telemetry events, and they are not OpenTelemetry exports. A run-log
 event needs no operator endpoint.
 
+## Provider-pack preparation timing
+
+The existing `run.performance.span` event also records `provider_pack.select`,
+`provider_pack.discover`, `provider_pack.verify`, `provider_pack.verify_preinstalled`,
+`provider_pack.link_preinstalled`, `provider_pack.clear_stale`, `provider_pack.upload`,
+and `provider_pack.verify_uploaded`. Selection records `stateSource` as `staged`,
+`preinstalled`, or `uploaded`. Its closed reason is `verified_pack_reused` or
+`cached_packs_unverified`. A verification failure describes an unusable candidate;
+it does not identify a particular compatibility mismatch or a failed run.
+Harness startup also records `harness_state.inspect`, `harness_state.path_check`,
+and `harness_state.launch_material` for remote state inspection and fresh launch
+material. These events retain the existing schema and carry no paths or exception strings.
+They also become native Observability spans only with an operator OTLP endpoint.
+
 ## Native PRP Run-Log Events
 
 `native.recovery.execution_reclaimed` records an atomic same-run recovery claim

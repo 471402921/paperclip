@@ -1,3 +1,5 @@
+import { measureRunTransaction } from "./execution-transaction-timing.js";
+import { measureRunPhase } from "./execution-preparation-timing.js";
 import { createHash, randomUUID } from "node:crypto";
 import { execFile as execFileCallback } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
@@ -60,10 +62,10 @@ export function assertRepositoryRetryMatches(row: Pick<RepositoryRow, "repositor
 async function resolveRepositoryRootSources(tx: Db | DbTransaction, input: {
   companyId: string; cwd: string; sourceWorkspaceId?: string; inspectCurrentAliases?: boolean; preparingCopyProjectIds?: Set<string>;
 }) {
-  const canonicalCwd = await canonicalRepositoryRoot(input.cwd);
+  const canonicalCwd = await measureRunPhase("workspace.sources.canonicalize", () => canonicalRepositoryRoot(input.cwd));
   const rootKey = createHash("sha256").update(canonicalCwd).digest("hex");
-  const companyEntries = await tx.select().from(executionWorkspaceRepositoryAccess)
-    .where(eq(executionWorkspaceRepositoryAccess.companyId, input.companyId));
+  const companyEntries = await measureRunPhase("workspace.sources.inventory", async () => tx.select().from(executionWorkspaceRepositoryAccess)
+    .where(eq(executionWorkspaceRepositoryAccess.companyId, input.companyId)));
   const entries = companyEntries.filter(entry => entry.rootKey === rootKey);
   const overlappingEntries = companyEntries.filter(entry => repositoryRootsOverlap(entry.canonicalCwd, canonicalCwd));
   if (entries.some(entry => entry.canonicalCwd !== canonicalCwd)
@@ -89,22 +91,24 @@ async function resolveRepositoryRootSources(tx: Db | DbTransaction, input: {
   const isolatedSourceIds = new Set(overlappingEntries.filter(entry => entry.kind === "isolated_source").map(entry => entry.scopeId));
   const sourceIds = new Set([...sharedSourceIds, ...isolatedSourceIds]);
   if (input.sourceWorkspaceId) { sourceIds.add(input.sourceWorkspaceId); sharedSourceIds.add(input.sourceWorkspaceId); addSharedSource(input.sourceWorkspaceId, canonicalCwd); }
-  const workspaces = await tx.select({ id: executionWorkspaces.id, cwd: executionWorkspaces.cwd }).from(executionWorkspaces)
-    .where(eq(executionWorkspaces.companyId, input.companyId));
-  for (const workspace of workspaces) {
-    if (!workspace.cwd) continue;
-    const peerRoot = await canonicalRepositoryRoot(workspace.cwd).catch((error: NodeJS.ErrnoException) => {
-      if (["ENOTDIR", "EACCES", "EPERM", "ELOOP", "ENAMETOOLONG"].includes(error.code ?? "")) return null;
-      throw error;
-    });
-    if (peerRoot && repositoryRootsOverlap(peerRoot, canonicalCwd)) {
-      sourceIds.add(workspace.id); sharedSourceIds.add(workspace.id); addSharedSource(workspace.id, peerRoot);
+  const workspaces = await measureRunPhase("workspace.sources.inventory", async () => tx.select({ id: executionWorkspaces.id, cwd: executionWorkspaces.cwd }).from(executionWorkspaces)
+    .where(eq(executionWorkspaces.companyId, input.companyId)));
+  await measureRunPhase("workspace.sources.alias_scan", async () => {
+    for (const workspace of workspaces) {
+      if (!workspace.cwd) continue;
+      const peerRoot = await canonicalRepositoryRoot(workspace.cwd!).catch((error: NodeJS.ErrnoException) => {
+        if (["ENOTDIR", "EACCES", "EPERM", "ELOOP", "ENAMETOOLONG"].includes(error.code ?? "")) return null;
+        throw error;
+      });
+      if (peerRoot && repositoryRootsOverlap(peerRoot, canonicalCwd)) {
+        sourceIds.add(workspace.id); sharedSourceIds.add(workspace.id); addSharedSource(workspace.id, peerRoot);
+      }
     }
-  }
-  const inventory = await tx.select({ id: executionWorkspaceRepositories.id, workspaceId: executionWorkspaces.id, cwd: executionWorkspaces.cwd,
+  });
+  const inventory = await measureRunPhase("workspace.sources.inventory", async () => tx.select({ id: executionWorkspaceRepositories.id, workspaceId: executionWorkspaces.id, cwd: executionWorkspaces.cwd,
     identity: executionWorkspaceRepositories.repositoryIdentity }).from(executionWorkspaceRepositories)
     .innerJoin(executionWorkspaces, eq(executionWorkspaces.id, executionWorkspaceRepositories.executionWorkspaceId))
-    .where(and(eq(executionWorkspaceRepositories.companyId, input.companyId), eq(executionWorkspaces.companyId, input.companyId)));
+    .where(and(eq(executionWorkspaceRepositories.companyId, input.companyId), eq(executionWorkspaces.companyId, input.companyId))));
   const namespace = path.join(canonicalCwd, ".paperclip-repositories");
   const namespaceEntry = await fs.lstat(namespace).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") return null;
@@ -117,37 +121,39 @@ async function resolveRepositoryRootSources(tx: Db | DbTransaction, input: {
     }
     for (const name of await fs.readdir(namespace)) if (name.startsWith("task-repo-")) publishedNames.add(name);
   }
-  const repositoryOrigins = await tx.select({ id: executionWorkspaceRepositoryAccess.scopeId }).from(executionWorkspaceRepositoryAccess)
-    .where(and(eq(executionWorkspaceRepositoryAccess.companyId, input.companyId), eq(executionWorkspaceRepositoryAccess.kind, "repository")));
+  const repositoryOrigins = await measureRunPhase("workspace.sources.inventory", async () => tx.select({ id: executionWorkspaceRepositoryAccess.scopeId }).from(executionWorkspaceRepositoryAccess)
+    .where(and(eq(executionWorkspaceRepositoryAccess.companyId, input.companyId), eq(executionWorkspaceRepositoryAccess.kind, "repository"))));
   const knownOrigins = new Set(repositoryOrigins.map(origin => origin.id));
   const recognizedNames = new Set<string>();
-  for (const peer of inventory) {
-    const name = path.basename(taskRepositoryRelativePath(peer.identity));
-    const published = publishedNames.has(name);
-    const peerRoot = peer.cwd ? await fs.realpath(peer.cwd).catch((error: NodeJS.ErrnoException) => {
-      if (["ENOENT", "ENOTDIR", "EACCES", "EPERM", "ELOOP", "ENAMETOOLONG"].includes(error.code ?? "")) return null;
-      throw error;
-    }) : null;
-    const matches = sourceIds.has(peer.workspaceId) || (peerRoot !== null && repositoryRootsOverlap(peerRoot, canonicalCwd))
-      || (published && peerRoot === null && !knownOrigins.has(peer.id))
-      || (peerRoot === null && !entries.some(entry => entry.kind === "reader") && peer.cwd && await legacyRepositoryRootMayMatch(peer.cwd, canonicalCwd));
-    if (matches) {
-      sourceIds.add(peer.workspaceId);
-      if (!isolatedSourceIds.has(peer.workspaceId) || (peerRoot && repositoryRootsOverlap(peerRoot, canonicalCwd))) {
-        sharedSourceIds.add(peer.workspaceId); addSharedSource(peer.workspaceId, peerRoot ?? canonicalCwd);
+  await measureRunPhase("workspace.sources.repository_scan", async () => {
+    for (const peer of inventory) {
+      const name = path.basename(taskRepositoryRelativePath(peer.identity));
+      const published = publishedNames.has(name);
+      const peerRoot = peer.cwd ? await fs.realpath(peer.cwd).catch((error: NodeJS.ErrnoException) => {
+        if (["ENOENT", "ENOTDIR", "EACCES", "EPERM", "ELOOP", "ENAMETOOLONG"].includes(error.code ?? "")) return null;
+        throw error;
+      }) : null;
+      const matches = sourceIds.has(peer.workspaceId) || (peerRoot !== null && repositoryRootsOverlap(peerRoot, canonicalCwd))
+        || (published && peerRoot === null && !knownOrigins.has(peer.id))
+        || (peerRoot === null && !entries.some(entry => entry.kind === "reader") && peer.cwd && await legacyRepositoryRootMayMatch(peer.cwd, canonicalCwd));
+      if (matches) {
+        sourceIds.add(peer.workspaceId);
+        if (!isolatedSourceIds.has(peer.workspaceId) || (peerRoot && repositoryRootsOverlap(peerRoot, canonicalCwd))) {
+          sharedSourceIds.add(peer.workspaceId); addSharedSource(peer.workspaceId, peerRoot ?? canonicalCwd);
+        }
+        if (published) recognizedNames.add(name);
       }
-      if (published) recognizedNames.add(name);
     }
-  }
+  });
   if ([...publishedNames].some(name => !recognizedNames.has(name))) throw forbidden("Published repository has no retained workspace provenance");
-  const configured = await tx.select({ projectId: projectWorkspaces.projectId, cwd: projectWorkspaces.cwd, repoUrl: projectWorkspaces.repoUrl })
-    .from(projectWorkspaces).where(eq(projectWorkspaces.companyId, input.companyId));
+  const configured = await measureRunPhase("workspace.sources.inventory", async () => tx.select({ projectId: projectWorkspaces.projectId, cwd: projectWorkspaces.cwd, repoUrl: projectWorkspaces.repoUrl })
+    .from(projectWorkspaces).where(eq(projectWorkspaces.companyId, input.companyId)));
   const sourceProjectIds = new Set(overlappingEntries.filter(entry => (entry.kind === "project_source" || entry.kind === "isolated_project_source")).map(entry => entry.scopeId));
   const sharedProjectIds = new Set(overlappingEntries.filter(entry => entry.kind === "shared_project_source" && !isCopiedAncestor(entry.scopeId, entry.canonicalCwd)).map(entry => entry.scopeId));
   const isolatedProjectIds = new Set(overlappingEntries.filter(entry => entry.kind === "isolated_project_source").map(entry => entry.scopeId));
   if (sourceIds.size) {
-    const owners = await tx.select({ id: executionWorkspaces.id, projectId: executionWorkspaces.projectId, strategyType: executionWorkspaces.strategyType }).from(executionWorkspaces).where(and(
-      eq(executionWorkspaces.companyId, input.companyId), or(...[...sourceIds].map(id => eq(executionWorkspaces.id, id)))));
+    const owners = await measureRunPhase("workspace.sources.inventory", async () => tx.select({ id: executionWorkspaces.id, projectId: executionWorkspaces.projectId, strategyType: executionWorkspaces.strategyType }).from(executionWorkspaces).where(and(
+      eq(executionWorkspaces.companyId, input.companyId), or(...[...sourceIds].map(id => eq(executionWorkspaces.id, id))))));
     for (const owner of owners) if (owner.projectId) {
       sourceProjectIds.add(owner.projectId);
       if (owner.strategyType === "git_worktree" || !sharedSourceIds.has(owner.id)
@@ -155,13 +161,15 @@ async function resolveRepositoryRootSources(tx: Db | DbTransaction, input: {
       else sharedProjectIds.add(owner.projectId);
     }
   }
-  for (const source of configured) {
-    if (sharedProjectIds.has(source.projectId)) continue;
-    const sourceRoot = await configuredWorkspaceRoot(source, true);
-    if (!sourceRoot || !repositoryRootsOverlap(sourceRoot, canonicalCwd)) continue;
-    sourceProjectIds.add(source.projectId);
-    if (!isCopiedAncestor(source.projectId, sourceRoot)) sharedProjectIds.add(source.projectId);
-  }
+  await measureRunPhase("workspace.sources.project_scan", async () => {
+    for (const source of configured) {
+      if (sharedProjectIds.has(source.projectId)) continue;
+      const sourceRoot = await configuredWorkspaceRoot(source, true);
+      if (!sourceRoot || !repositoryRootsOverlap(sourceRoot, canonicalCwd)) continue;
+      sourceProjectIds.add(source.projectId);
+      if (!isCopiedAncestor(source.projectId, sourceRoot)) sharedProjectIds.add(source.projectId);
+    }
+  });
   for (const entry of overlappingEntries) if (entry.kind === "project_source" && !isolatedProjectIds.has(entry.scopeId)) {
     sharedProjectIds.add(entry.scopeId);
   }
@@ -181,9 +189,9 @@ async function assertRootProjectAccess(db: Db | DbTransaction, actor: Authorizat
 }
 
 async function retainedRootReader(tx: DbTransaction, companyId: string, reader: Pick<typeof executionWorkspaceRepositoryAccess.$inferSelect, "scopeId" | "issueId" | "agentId" | "responsibleUserId">) {
-  const [run] = await tx.select().from(heartbeatRuns).where(and(eq(heartbeatRuns.id, reader.scopeId), eq(heartbeatRuns.companyId, companyId)));
-  const [agent] = reader.agentId ? await tx.select({ id: agents.id }).from(agents).where(and(eq(agents.id, reader.agentId), eq(agents.companyId, companyId))) : [];
-  const [issue] = reader.issueId ? await tx.select().from(issues).where(and(eq(issues.id, reader.issueId), eq(issues.companyId, companyId))) : [];
+  const [run] = await measureRunPhase("workspace.sources.inventory", async () => tx.select().from(heartbeatRuns).where(and(eq(heartbeatRuns.id, reader.scopeId), eq(heartbeatRuns.companyId, companyId))));
+  const [agent] = reader.agentId ? await measureRunPhase("workspace.sources.inventory", async () => tx.select({ id: agents.id }).from(agents).where(and(eq(agents.id, reader.agentId!), eq(agents.companyId, companyId)))) : [];
+  const [issue] = reader.issueId ? await measureRunPhase("workspace.sources.inventory", async () => tx.select().from(issues).where(and(eq(issues.id, reader.issueId!), eq(issues.companyId, companyId)))) : [];
   if (!run || !agent || !issue || run.agentId !== reader.agentId || run.responsibleUserId !== reader.responsibleUserId
     || (run.nativeIssueId ?? run.contextSnapshot?.issueId ?? run.contextSnapshot?.taskId ?? run.issueId) !== reader.issueId) {
     throw forbidden("Repository root retains a reader whose identity is no longer available");
@@ -194,7 +202,7 @@ async function retainedRootReader(tx: DbTransaction, companyId: string, reader: 
 }
 
 export async function lockExecutionWorkspaceRootProvenance(tx: DbTransaction, companyId: string) {
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`task-repository-roots:${companyId}`}, 0))`);
+  await measureRunPhase("workspace.provenance_lock", () => tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`task-repository-roots:${companyId}`}, 0))`));
 }
 
 export async function preserveConfiguredProjectWorkspaceRootProvenance(tx: DbTransaction, input: {
@@ -203,12 +211,12 @@ export async function preserveConfiguredProjectWorkspaceRootProvenance(tx: DbTra
   const canonicalCwd = await configuredWorkspaceRoot(input, false);
   if (!canonicalCwd) return;
   const rootKey = createHash("sha256").update(canonicalCwd).digest("hex");
-  const entries = await tx.select().from(executionWorkspaceRepositoryAccess).where(and(
-    eq(executionWorkspaceRepositoryAccess.companyId, input.companyId), eq(executionWorkspaceRepositoryAccess.rootKey, rootKey)));
+  const entries = await measureRunPhase("workspace.sources.inventory", async () => tx.select().from(executionWorkspaceRepositoryAccess).where(and(
+    eq(executionWorkspaceRepositoryAccess.companyId, input.companyId), eq(executionWorkspaceRepositoryAccess.rootKey, rootKey))));
   if (entries.some(entry => entry.canonicalCwd !== canonicalCwd)) throw forbidden("Repository root identity conflicts with its retained access record");
   for (const kind of ["project_source", "shared_project_source"] as const) {
     if (!entries.some(entry => entry.kind === kind && entry.scopeId === input.projectId)) {
-      await tx.insert(executionWorkspaceRepositoryAccess).values({ companyId: input.companyId, canonicalCwd, rootKey, kind, scopeId: input.projectId });
+      await measureRunPhase("workspace.write", () => tx.insert(executionWorkspaceRepositoryAccess).values({ companyId: input.companyId, canonicalCwd, rootKey, kind, scopeId: input.projectId }));
     }
   }
 }
@@ -223,13 +231,13 @@ export async function preserveExecutionWorkspaceRootProvenance(tx: DbTransaction
   });
   if (!directory) return;
   if (!directory.isDirectory()) throw forbidden("Workspace files cannot be detached from unverifiable provenance");
-  const { canonicalCwd, rootKey, entries, sharedSourceIds, isolatedSourceIds, sourceProjectIds, sharedProjectIds, isolatedProjectIds } = await resolveRepositoryRootSources(tx, {
-    companyId: input.companyId, cwd: input.cwd, sourceWorkspaceId: input.workspaceId, inspectCurrentAliases: true,
-  });
+  const { canonicalCwd, rootKey, entries, sharedSourceIds, isolatedSourceIds, sourceProjectIds, sharedProjectIds, isolatedProjectIds } = await measureRunPhase("workspace.sources", () => resolveRepositoryRootSources(tx, {
+    companyId: input.companyId, cwd: input.cwd!, sourceWorkspaceId: input.workspaceId, inspectCurrentAliases: true,
+  }));
   for (const [kind, ids] of [["source", sharedSourceIds], ["isolated_source", isolatedSourceIds], ["project_source", sourceProjectIds], ["shared_project_source", sharedProjectIds], ["isolated_project_source", isolatedProjectIds]] as const) {
     for (const scopeId of ids) {
       if (!entries.some(entry => entry.kind === kind && entry.scopeId === scopeId)) {
-        await tx.insert(executionWorkspaceRepositoryAccess).values({ companyId: input.companyId, canonicalCwd, rootKey, kind, scopeId });
+        await measureRunPhase("workspace.write", () => tx.insert(executionWorkspaceRepositoryAccess).values({ companyId: input.companyId, canonicalCwd, rootKey, kind, scopeId }));
       }
     }
   }
@@ -238,9 +246,9 @@ export async function preserveExecutionWorkspaceRootProvenance(tx: DbTransaction
 export async function assertExecutionWorkspaceRootReadAccess(db: Db | DbTransaction, input: {
   companyId: string; cwd: string; actor: AuthorizationActor; sourceWorkspaceId?: string;
 }): Promise<void> {
-  const { sourceIds, sourceProjectIds } = await resolveRepositoryRootSources(db, { ...input, inspectCurrentAliases: true });
-  await assertTaskWorkspacesReadAccess(db, input.actor, input.companyId, sourceIds);
-  await assertRootProjectAccess(db, input.actor, input.companyId, sourceProjectIds);
+  const { sourceIds, sourceProjectIds } = await measureRunPhase("workspace.sources", () => resolveRepositoryRootSources(db, { ...input, inspectCurrentAliases: true }));
+  await measureRunPhase("workspace.readers.sources", () => assertTaskWorkspacesReadAccess(db, input.actor, input.companyId, sourceIds));
+  await measureRunPhase("workspace.readers.projects", () => assertRootProjectAccess(db, input.actor, input.companyId, sourceProjectIds));
 }
 
 export type IsolatedWorkspaceSourceAccess = {
@@ -253,20 +261,20 @@ export type IsolatedWorkspaceSourceAccess = {
 async function retainGitMetadataOwners(tx: DbTransaction, input: {
   companyId: string; commonRoot: string; workspaceIds: Set<string>; projectIds: Set<string>;
 }): Promise<void> {
-  const closure = await resolveRepositoryRootSources(tx, { companyId: input.companyId, cwd: input.commonRoot, inspectCurrentAliases: true });
+  const closure = await measureRunPhase("workspace.sources", () => resolveRepositoryRootSources(tx, { companyId: input.companyId, cwd: input.commonRoot, inspectCurrentAliases: true }));
   const workspaceIds = new Set([...closure.sourceIds, ...input.workspaceIds]);
   const projectIds = new Set([...closure.sourceProjectIds, ...input.projectIds]);
   const readerActors: AuthorizationActor[] = [];
   for (const reader of closure.overlappingEntries.filter(entry => entry.kind === "reader")) {
-    const { actor } = await retainedRootReader(tx, input.companyId, reader);
+    const { actor } = await measureRunPhase("workspace.readers.identity", () => retainedRootReader(tx, input.companyId, reader));
     readerActors.push(actor);
-    await assertRootProjectAccess(tx, actor, input.companyId, projectIds);
+    await measureRunPhase("workspace.readers.projects", () => assertRootProjectAccess(tx, actor, input.companyId, projectIds));
   }
-  await assertTaskWorkspacesReadAccessForActors(tx, readerActors, input.companyId, workspaceIds);
+  await measureRunPhase("workspace.readers.sources", () => assertTaskWorkspacesReadAccessForActors(tx, readerActors, input.companyId, workspaceIds));
   for (const [kind, ids] of [["source", workspaceIds], ["project_source", projectIds]] as const) {
     for (const scopeId of ids) if (!closure.entries.some(entry => entry.kind === kind && entry.scopeId === scopeId)) {
-      await tx.insert(executionWorkspaceRepositoryAccess).values({ companyId: input.companyId,
-        canonicalCwd: closure.canonicalCwd, rootKey: closure.rootKey, kind, scopeId });
+      await measureRunPhase("workspace.write", () => tx.insert(executionWorkspaceRepositoryAccess).values({ companyId: input.companyId,
+        canonicalCwd: closure.canonicalCwd, rootKey: closure.rootKey, kind, scopeId }));
     }
   }
 }
@@ -275,14 +283,14 @@ export async function assertIsolatedWorkspaceSourceReadAccess(db: Db, input: {
   companyId: string; sourceCwd: string; actor: AuthorizationActor; copyKind?: WorkspaceSourceCopyKind;
 }): Promise<IsolatedWorkspaceSourceAccess> {
   const { roots, commonRoot } = await isolatedWorkspaceSourceRoots(db, input.companyId, input.sourceCwd, input.copyKind);
-  return db.transaction(async tx => {
+  return measureRunTransaction(db, "workspace", async tx => {
     await lockExecutionWorkspaceRootProvenance(tx, input.companyId);
     const workspaceIds = new Set<string>(), projectIds = new Set<string>();
     for (const cwd of roots) {
-      const closure = await resolveRepositoryRootSources(tx, { companyId: input.companyId, cwd, inspectCurrentAliases: true });
-      await assertTaskWorkspacesReadAccess(tx, input.actor, input.companyId, closure.sourceIds);
+      const closure = await measureRunPhase("workspace.sources", () => resolveRepositoryRootSources(tx, { companyId: input.companyId, cwd, inspectCurrentAliases: true }));
+      await measureRunPhase("workspace.readers.sources", () => assertTaskWorkspacesReadAccess(tx, input.actor, input.companyId, closure.sourceIds));
       for (const id of closure.sourceIds) workspaceIds.add(id);
-      await assertRootProjectAccess(tx, input.actor, input.companyId, closure.sourceProjectIds);
+      await measureRunPhase("workspace.readers.projects", () => assertRootProjectAccess(tx, input.actor!, input.companyId, closure.sourceProjectIds));
       for (const id of closure.sourceProjectIds) projectIds.add(id);
     }
     await retainGitMetadataOwners(tx, { companyId: input.companyId, commonRoot, workspaceIds, projectIds });
@@ -299,31 +307,31 @@ export async function retainIsolatedWorkspaceSourceAccess(db: Db, input: {
   const roots = new Set(input.captured.roots);
   try { for (const cwd of (await isolatedWorkspaceSourceRoots(db, input.companyId, input.sourceCwd, input.copyKind)).roots) roots.add(cwd); }
   catch (error) { sourceFailure = error; }
-  const canonicalCwd = await canonicalRepositoryRoot(input.targetCwd);
+  const canonicalCwd = await measureRunPhase("workspace.sources.canonicalize", () => canonicalRepositoryRoot(input.targetCwd));
   const rootKey = createHash("sha256").update(canonicalCwd).digest("hex");
-  const denied = await db.transaction(async tx => {
+  const denied = await measureRunTransaction(db, "workspace", async tx => {
     await lockExecutionWorkspaceRootProvenance(tx, input.companyId);
-    const existing = await tx.select().from(executionWorkspaceRepositoryAccess).where(and(
-      eq(executionWorkspaceRepositoryAccess.companyId, input.companyId), eq(executionWorkspaceRepositoryAccess.rootKey, rootKey)));
+    const existing = await measureRunPhase("workspace.sources.inventory", async () => tx.select().from(executionWorkspaceRepositoryAccess).where(and(
+      eq(executionWorkspaceRepositoryAccess.companyId, input.companyId), eq(executionWorkspaceRepositoryAccess.rootKey, rootKey))));
     if (existing.some(entry => entry.canonicalCwd !== canonicalCwd)) throw forbidden("Repository root identity conflicts with its retained access record");
     const workspaceIds = new Set(input.captured.workspaceIds), projectIds = new Set(input.captured.projectIds);
     let failure = sourceFailure;
     for (const cwd of roots) {
       try {
-        const closure = await resolveRepositoryRootSources(tx, { companyId: input.companyId, cwd, inspectCurrentAliases: true });
+        const closure = await measureRunPhase("workspace.sources", () => resolveRepositoryRootSources(tx, { companyId: input.companyId, cwd, inspectCurrentAliases: true }));
         for (const id of closure.sourceIds) workspaceIds.add(id);
         for (const id of closure.sourceProjectIds) projectIds.add(id);
       } catch (error) { failure ??= error; }
     }
-    try { await assertTaskWorkspacesReadAccess(tx, input.actor, input.companyId, workspaceIds); }
+    try { await measureRunPhase("workspace.readers.sources", () => assertTaskWorkspacesReadAccess(tx, input.actor, input.companyId, workspaceIds)); }
     catch (error) { failure ??= error; }
     for (const id of projectIds) {
-      try { await assertRootProjectAccess(tx, input.actor, input.companyId, new Set([id])); }
+      try { await measureRunPhase("workspace.readers.projects", () => assertRootProjectAccess(tx, input.actor!, input.companyId, new Set([id]))); }
       catch (error) { failure ??= error; }
     }
     for (const [kind, ids] of [["isolated_source", workspaceIds], ["isolated_project_source", projectIds]] as const) {
       for (const scopeId of ids) if (!existing.some(entry => entry.kind === kind && entry.scopeId === scopeId)) {
-        await tx.insert(executionWorkspaceRepositoryAccess).values({ companyId: input.companyId, rootKey, canonicalCwd, kind, scopeId });
+        await measureRunPhase("workspace.write", () => tx.insert(executionWorkspaceRepositoryAccess).values({ companyId: input.companyId, rootKey, canonicalCwd, kind, scopeId }));
       }
     }
     const phase = input.phase ?? "preparing";
@@ -346,23 +354,23 @@ export async function retainIsolatedWorkspaceSourceAccess(db: Db, input: {
       }
     } catch (error) { failure ??= error; }
     try {
-      const target = await resolveRepositoryRootSources(tx, { companyId: input.companyId, cwd: canonicalCwd, preparingCopyProjectIds });
-      await assertRootProjectTrust(tx, { companyId: input.companyId, actor: input.actor, issueId: input.issueId, projectIds: target.sourceProjectIds });
-      await assertTaskWorkspacesReadAccess(tx, input.actor, input.companyId, target.sourceIds);
-      await assertRootProjectAccess(tx, input.actor, input.companyId, target.sourceProjectIds,
-        { sharedProjectIds: target.sharedProjectIds, issueId: input.issueId });
+      const target = await measureRunPhase("workspace.sources", () => resolveRepositoryRootSources(tx, { companyId: input.companyId, cwd: canonicalCwd, preparingCopyProjectIds }));
+      await measureRunPhase("workspace.readers.trust", () => assertRootProjectTrust(tx, { companyId: input.companyId, actor: input.actor, issueId: input.issueId, projectIds: target.sourceProjectIds }));
+      await measureRunPhase("workspace.readers.sources", () => assertTaskWorkspacesReadAccess(tx, input.actor, input.companyId, target.sourceIds));
+      await measureRunPhase("workspace.readers.projects", () => assertRootProjectAccess(tx, input.actor!, input.companyId, target.sourceProjectIds,
+        { sharedProjectIds: target.sharedProjectIds, issueId: input.issueId }));
       const readerActors: AuthorizationActor[] = [];
       for (const reader of target.overlappingEntries.filter(entry => entry.kind === "reader")) {
-        const { actor, issue } = await retainedRootReader(tx, input.companyId, reader);
+        const { actor, issue } = await measureRunPhase("workspace.readers.identity", () => retainedRootReader(tx, input.companyId, reader));
         readerActors.push(actor);
-        await assertRootProjectTrust(tx, { companyId: input.companyId, actor, issueId: issue.id, projectIds: target.sourceProjectIds });
-        await assertRootProjectAccess(tx, actor, input.companyId, target.sourceProjectIds);
+        await measureRunPhase("workspace.readers.trust", () => assertRootProjectTrust(tx, { companyId: input.companyId, actor, issueId: issue.id, projectIds: target.sourceProjectIds }));
+        await measureRunPhase("workspace.readers.projects", () => assertRootProjectAccess(tx, actor, input.companyId, target.sourceProjectIds));
       }
-      await assertTaskWorkspacesReadAccessForActors(tx, readerActors, input.companyId, target.sourceIds);
+      await measureRunPhase("workspace.readers.sources", () => assertTaskWorkspacesReadAccessForActors(tx, readerActors, input.companyId, target.sourceIds));
     } catch (error) { failure ??= error; }
     if (!failure && verifiedCopyProjectIds) {
       for (const scopeId of verifiedCopyProjectIds) if (!existing.some(entry => entry.kind === "isolated_copy" && entry.scopeId === scopeId)) {
-        await tx.insert(executionWorkspaceRepositoryAccess).values({ companyId: input.companyId, rootKey, canonicalCwd, kind: "isolated_copy", scopeId });
+        await measureRunPhase("workspace.write", () => tx.insert(executionWorkspaceRepositoryAccess).values({ companyId: input.companyId, rootKey, canonicalCwd, kind: "isolated_copy", scopeId }));
       }
     }
     return failure;
@@ -450,10 +458,10 @@ async function assertRootProjectTrust(db: Db | DbTransaction, input: {
 export async function assertExecutionWorkspaceRootWriteAccess(db: Db | DbTransaction, input: {
   companyId: string; cwd: string; actor: AuthorizationActor; sourceWorkspaceId?: string; taskCreation?: TaskWorkspaceCreationTrustContext;
 } & Omit<NonNullable<Parameters<typeof assertTaskWorkspaceSourceProjectAccess>[4]>, "write">): Promise<void> {
-  const { sourceIds, sourceProjectIds, sharedProjectIds } = await resolveRepositoryRootSources(db, { ...input, inspectCurrentAliases: true });
-  await assertTaskWorkspacesReadAccess(db, input.actor, input.companyId, sourceIds);
-  await assertRootProjectAccess(db, input.actor, input.companyId, sourceProjectIds, { ...input, sharedProjectIds });
-  await assertRootProjectTrust(db, { ...input, projectIds: sourceProjectIds });
+  const { sourceIds, sourceProjectIds, sharedProjectIds } = await measureRunPhase("workspace.sources", () => resolveRepositoryRootSources(db, { ...input, inspectCurrentAliases: true }));
+  await measureRunPhase("workspace.readers.sources", () => assertTaskWorkspacesReadAccess(db, input.actor, input.companyId, sourceIds));
+  await measureRunPhase("workspace.readers.projects", () => assertRootProjectAccess(db, input.actor, input.companyId, sourceProjectIds, { ...input, sharedProjectIds }));
+  await measureRunPhase("workspace.readers.trust", () => assertRootProjectTrust(db, { ...input, projectIds: sourceProjectIds }));
 }
 
 export function executionWorkspaceRepositoryService(db: Db) {
@@ -487,10 +495,10 @@ export function executionWorkspaceRepositoryService(db: Db) {
     if (await requiresAnonymousAcquisition(db, { issue, workspace, agentId: input.agentId, runId: input.runId })) throw forbidden(controllerAcquisitionMessage);
   }
   async function reserveRootPolicy(tx: DbTransaction, companyId: string, cwd: string, mode: "anonymous_only" | "managed") {
-    const canonicalCwd = await canonicalRepositoryRoot(cwd);
+    const canonicalCwd = await measureRunPhase("workspace.sources.canonicalize", () => canonicalRepositoryRoot(cwd));
     const rootKey = createHash("sha256").update(canonicalCwd).digest("hex");
-    const reservations = await tx.select().from(executionWorkspaceRepositoryRoots)
-      .where(eq(executionWorkspaceRepositoryRoots.companyId, companyId));
+    const reservations = await measureRunPhase("workspace.sources.inventory", async () => tx.select().from(executionWorkspaceRepositoryRoots)
+      .where(eq(executionWorkspaceRepositoryRoots.companyId, companyId)));
     const existing = reservations.find(entry => entry.rootKey === rootKey);
     const overlapping = reservations.filter(entry => repositoryRootsOverlap(entry.canonicalCwd, canonicalCwd));
     if ((existing && existing.canonicalCwd !== canonicalCwd)
@@ -498,10 +506,10 @@ export function executionWorkspaceRepositoryService(db: Db) {
       throw forbidden(lowTrustRepositoryMessage);
     }
     if (mode === "anonymous_only") {
-      const managed = await tx.select({ cwd: executionWorkspaces.cwd, repositoryIdentity: executionWorkspaceRepositories.repositoryIdentity }).from(executionWorkspaceRepositories)
+      const managed = await measureRunPhase("workspace.sources.inventory", async () => tx.select({ cwd: executionWorkspaces.cwd, repositoryIdentity: executionWorkspaceRepositories.repositoryIdentity }).from(executionWorkspaceRepositories)
         .innerJoin(executionWorkspaces, eq(executionWorkspaces.id, executionWorkspaceRepositories.executionWorkspaceId))
         .where(and(eq(executionWorkspaceRepositories.companyId, companyId), eq(executionWorkspaces.companyId, companyId),
-          isNotNull(executionWorkspaceRepositories.catalogRepositoryId)));
+          isNotNull(executionWorkspaceRepositories.catalogRepositoryId))));
       if (managed.length) {
         const namespace = path.join(canonicalCwd, ".paperclip-repositories");
         const namespaceEntry = await fs.lstat(namespace).catch((error: NodeJS.ErrnoException) => {
@@ -525,76 +533,80 @@ export function executionWorkspaceRepositoryService(db: Db) {
         if (peer.cwd && await legacyRepositoryRootMayMatch(peer.cwd, canonicalCwd)) throw forbidden(lowTrustRepositoryMessage);
       }
     }
-    if (!existing) await tx.insert(executionWorkspaceRepositoryRoots).values({ companyId, canonicalCwd, rootKey, mode });
+    if (!existing) await measureRunPhase("workspace.write", () => tx.insert(executionWorkspaceRepositoryRoots).values({ companyId, canonicalCwd, rootKey, mode }));
     return canonicalCwd;
   }
   type RootReader = { runId: string; issueId: string; agentId: string };
   async function authorizeRootAccess(tx: DbTransaction, input: {
     companyId: string; cwd: string; sourceWorkspaceId?: string; reader?: RootReader; actor?: AuthorizationActor; issueId?: string; preserveOwnAdmission?: boolean;
   }) {
-    const { canonicalCwd, rootKey, entries, overlappingEntries, sourceIds, sharedSourceIds, isolatedSourceIds, sourceProjectIds, sharedProjectIds, isolatedProjectIds } = await resolveRepositoryRootSources(tx, input);
+    const { canonicalCwd, rootKey, entries, overlappingEntries, sourceIds, sharedSourceIds, isolatedSourceIds, sourceProjectIds, sharedProjectIds, isolatedProjectIds } = await measureRunPhase("workspace.sources", () => resolveRepositoryRootSources(tx, input));
     const readers = overlappingEntries.filter(entry => entry.kind === "reader");
     if (input.reader && !entries.some(entry => entry.kind === "reader" && entry.scopeId === input.reader!.runId)) {
-      const [run] = await tx.select().from(heartbeatRuns).where(and(eq(heartbeatRuns.id, input.reader.runId), eq(heartbeatRuns.companyId, input.companyId)));
+      const [run] = await measureRunPhase("workspace.sources.inventory", async () => tx.select().from(heartbeatRuns).where(and(eq(heartbeatRuns.id, input.reader!.runId), eq(heartbeatRuns.companyId, input.companyId))));
       readers.push({ id: randomUUID(), companyId: input.companyId, rootKey, canonicalCwd, kind: "reader", scopeId: input.reader.runId,
         issueId: input.reader.issueId, agentId: input.reader.agentId, responsibleUserId: run?.responsibleUserId ?? null, createdAt: new Date(), updatedAt: new Date() });
     }
     const ownAdmissionOnly = input.preserveOwnAdmission && input.reader && input.sourceWorkspaceId
       && sourceIds.size === 1 && sourceIds.has(input.sourceWorkspaceId)
       && readers.every(reader => reader.issueId === input.reader!.issueId);
-    const sourceProjects = sourceIds.size ? await tx.selectDistinct({ projectId: executionWorkspaces.projectId }).from(executionWorkspaces).where(and(
-      eq(executionWorkspaces.companyId, input.companyId), inArray(executionWorkspaces.id, [...sourceIds]))) : [];
+    const sourceProjects = sourceIds.size ? await measureRunPhase("workspace.sources.inventory", async () => tx.selectDistinct({ projectId: executionWorkspaces.projectId }).from(executionWorkspaces).where(and(
+      eq(executionWorkspaces.companyId, input.companyId), inArray(executionWorkspaces.id, [...sourceIds])))) : [];
     const sourceActors: AuthorizationActor[] = [];
-    for (const reader of readers) {
-      const { actor, issue } = await retainedRootReader(tx, input.companyId, reader);
-      await assertRootProjectTrust(tx, { companyId: input.companyId, projectIds: sourceProjectIds, actor, issueId: issue.id,
-        sourceWorkspaceId: input.reader?.runId === reader.scopeId ? input.sourceWorkspaceId : undefined });
-      await assertRootProjectAccess(tx, actor, input.companyId, sourceProjectIds,
-        input.reader?.runId === reader.scopeId ? { sharedProjectIds, issueId: issue.id } : undefined);
-      if (ownAdmissionOnly) {
-        const [ownSource] = await tx.select({ id: executionWorkspaces.id }).from(executionWorkspaces).where(and(
-          eq(executionWorkspaces.companyId, input.companyId), eq(executionWorkspaces.id, input.sourceWorkspaceId!),
-          await executionWorkspaceReadSqlCondition(tx, { ...actor, onBehalfOfUserId: null }),
-          actor.onBehalfOfUserId ? await executionWorkspaceReadSqlCondition(tx, {
-            type: "board", userId: actor.onBehalfOfUserId, ignoreInstanceAdmin: true,
-          }) : undefined));
-        if (!ownSource) throw forbidden("Task workspace access is no longer available");
-      } else sourceActors.push(actor);
-      for (const sourceWorkspace of sourceProjects.length ? sourceProjects : [null]) {
-        if (await requiresAnonymousAcquisition(tx, { issue, workspace: sourceWorkspace, agentId: reader.agentId!, runId: reader.scopeId })) {
-          await reserveRootPolicy(tx, input.companyId, canonicalCwd, "anonymous_only");
+    await measureRunPhase("workspace.readers", async () => {
+      for (const reader of readers) {
+        const { actor, issue } = await measureRunPhase("workspace.readers.identity", () => retainedRootReader(tx, input.companyId, reader));
+        await measureRunPhase("workspace.readers.trust", () => assertRootProjectTrust(tx, { companyId: input.companyId, projectIds: sourceProjectIds, actor, issueId: issue.id,
+          sourceWorkspaceId: input.reader?.runId === reader.scopeId ? input.sourceWorkspaceId : undefined }));
+        await measureRunPhase("workspace.readers.projects", () => assertRootProjectAccess(tx, actor, input.companyId, sourceProjectIds,
+          input.reader?.runId === reader.scopeId ? { sharedProjectIds, issueId: issue.id } : undefined));
+        if (ownAdmissionOnly) {
+          const [ownSource] = await measureRunPhase("workspace.sources.inventory", async () => tx.select({ id: executionWorkspaces.id }).from(executionWorkspaces).where(and(
+            eq(executionWorkspaces.companyId, input.companyId), eq(executionWorkspaces.id, input.sourceWorkspaceId!),
+            await executionWorkspaceReadSqlCondition(tx, { ...actor, onBehalfOfUserId: null }),
+            actor.onBehalfOfUserId ? await executionWorkspaceReadSqlCondition(tx, {
+              type: "board", userId: actor.onBehalfOfUserId, ignoreInstanceAdmin: true,
+            }) : undefined)));
+          if (!ownSource) throw forbidden("Task workspace access is no longer available");
+        } else sourceActors.push(actor);
+        for (const sourceWorkspace of sourceProjects.length ? sourceProjects : [null]) {
+          if (await requiresAnonymousAcquisition(tx, { issue, workspace: sourceWorkspace, agentId: reader.agentId!, runId: reader.scopeId })) {
+            await reserveRootPolicy(tx, input.companyId, canonicalCwd, "anonymous_only");
+          }
         }
       }
-    }
+    });
     if (input.actor) {
       if (!input.issueId) throw forbidden("Workspace write authorization requires a task");
-      await assertRootProjectTrust(tx, { ...input, projectIds: sourceProjectIds, actor: input.actor });
-      await assertRootProjectAccess(tx, input.actor, input.companyId, sourceProjectIds, { sharedProjectIds, issueId: input.issueId });
+      await measureRunPhase("workspace.readers.trust", () => assertRootProjectTrust(tx, { ...input, projectIds: sourceProjectIds, actor: input.actor! }));
+      await measureRunPhase("workspace.readers.projects", () => assertRootProjectAccess(tx, input.actor!, input.companyId, sourceProjectIds, { sharedProjectIds, issueId: input.issueId }));
       sourceActors.push(input.actor);
     }
-    await assertTaskWorkspacesReadAccessForActors(tx, sourceActors, input.companyId, sourceIds);
+    await measureRunPhase("workspace.readers.sources", () => assertTaskWorkspacesReadAccessForActors(tx, sourceActors, input.companyId, sourceIds));
     for (const [kind, ids] of [["source", sharedSourceIds], ["isolated_source", isolatedSourceIds], ["project_source", sourceProjectIds],
       ["shared_project_source", sharedProjectIds], ["isolated_project_source", isolatedProjectIds]] as const) {
       for (const scopeId of ids) {
         if (!entries.some(entry => entry.kind === kind && entry.scopeId === scopeId)) {
-          await tx.insert(executionWorkspaceRepositoryAccess).values({ companyId: input.companyId, rootKey, canonicalCwd, kind, scopeId });
+          await measureRunPhase("workspace.write", () => tx.insert(executionWorkspaceRepositoryAccess).values({ companyId: input.companyId, rootKey, canonicalCwd, kind, scopeId }));
         }
       }
     }
-    for (const reader of readers) {
-      if (reader.rootKey === rootKey && !entries.some(entry => entry.kind === "reader" && entry.scopeId === reader.scopeId)) {
-        await tx.insert(executionWorkspaceRepositoryAccess).values(reader);
+    await measureRunPhase("workspace.readers", async () => {
+      for (const reader of readers) {
+        if (reader.rootKey === rootKey && !entries.some(entry => entry.kind === "reader" && entry.scopeId === reader.scopeId)) {
+          await measureRunPhase("workspace.write", () => tx.insert(executionWorkspaceRepositoryAccess).values(reader));
+        }
       }
-    }
+    });
   }
   async function reserveRootAccess(input: Parameters<typeof authorizeRootAccess>[1]) {
-    return db.transaction(async tx => {
+    return measureRunTransaction(db, "workspace", async tx => {
       await lockExecutionWorkspaceRootProvenance(tx, input.companyId);
       await authorizeRootAccess(tx, input);
     });
   }
   async function reserveAdmissionRoot(companyId: string, cwd: string, mode: "anonymous_only" | "managed") {
-    return db.transaction(async tx => {
+    return measureRunTransaction(db, "workspace", async tx => {
       await lockExecutionWorkspaceRootProvenance(tx, companyId);
       return reserveRootPolicy(tx, companyId, cwd, mode);
     });
@@ -620,16 +632,16 @@ export function executionWorkspaceRepositoryService(db: Db) {
     }
     const available = await catalog(input.companyId, userId, localTrusted);
     const requestedRef = parsed.ref ?? "HEAD";
-    const receipt = await db.transaction(async tx => {
+    const receipt = await measureRunTransaction(db, "workspace", async tx => {
       await lockExecutionWorkspaceRootProvenance(tx, input.companyId);
-      const [issue] = await tx.select().from(issues).where(and(eq(issues.id, input.issueId), eq(issues.companyId, input.companyId), await issueReadSqlCondition(tx, input.actor))).for("no key update");
+      const [issue] = await measureRunPhase("workspace.sources.inventory", async () => tx.select().from(issues).where(and(eq(issues.id, input.issueId), eq(issues.companyId, input.companyId), await issueReadSqlCondition(tx, input.actor))).for("no key update"));
       if (!issue) throw notFound("Task not found");
       const currentDecision = await authorizationService(tx).decide({ actor: input.actor, action: "issue:mutate", resource: issueResource(issue) });
       if (!currentDecision.allowed) throw forbidden("Task workspace modification is not allowed");
       if (input.actor.type === "agent" && !["standard", "skill_test"].includes(issue.workMode)) throw forbidden("Repository preparation is unavailable in Ask or Plan mode");
       if (!issue.executionWorkspaceId) throw conflict("The task has no admitted workspace yet. Start it once before preparing a repository.");
       if (!(await canActorReadExecutionWorkspace(db, input.actor, issue.executionWorkspaceId))) throw notFound("Execution workspace not found");
-      const [workspace] = await tx.select().from(executionWorkspaces).where(and(eq(executionWorkspaces.id, issue.executionWorkspaceId), eq(executionWorkspaces.companyId, input.companyId), taskWorkspaceSelectableCondition())).for("no key update");
+      const [workspace] = await measureRunPhase("workspace.sources.inventory", async () => tx.select().from(executionWorkspaces).where(and(eq(executionWorkspaces.id, issue.executionWorkspaceId!), eq(executionWorkspaces.companyId, input.companyId), taskWorkspaceSelectableCondition())).for("no key update"));
       if (!workspace) throw conflict("Execution workspace is unavailable");
       await assertTaskWorkspaceAccess(tx, input.actor, input.companyId, workspace.id, { write: true, issueId: input.issueId });
       const anonymousOnly = await requiresAnonymousAcquisition(tx, { issue, workspace,
@@ -642,7 +654,7 @@ export function executionWorkspaceRepositoryService(db: Db) {
       if (!workspace.cwd) throw conflict("The task workspace has no directory for repository preparation");
       await authorizeRootAccess(tx, { companyId: input.companyId, cwd: workspace.cwd, sourceWorkspaceId: workspace.id, actor: input.actor, issueId: input.issueId });
       if (anonymousOnly) throw forbidden(controllerAcquisitionMessage);
-      const existing = await tx.select().from(executionWorkspaceRepositories).where(and(eq(executionWorkspaceRepositories.executionWorkspaceId, workspace.id), or(eq(executionWorkspaceRepositories.repositoryIdentity, source.repositoryIdentity), sql`${executionWorkspaceRepositories.requestKeys} ? ${parsed.requestKey}`)));
+      const existing = await measureRunPhase("workspace.sources.inventory", async () => tx.select().from(executionWorkspaceRepositories).where(and(eq(executionWorkspaceRepositories.executionWorkspaceId, workspace.id), or(eq(executionWorkspaceRepositories.repositoryIdentity, source.repositoryIdentity), sql`${executionWorkspaceRepositories.requestKeys} ? ${parsed.requestKey}`))));
       for (const row of existing) {
         assertAcquisitionReceipt(row, anonymousOnly);
         assertRepositoryRetryMatches(row, source.repositoryIdentity, requestedRef);
@@ -655,11 +667,11 @@ export function executionWorkspaceRepositoryService(db: Db) {
         }
         return row;
       }
-      const [row] = await tx.insert(executionWorkspaceRepositories).values({ companyId: input.companyId, executionWorkspaceId: workspace.id, requestedByIssueId: input.issueId, ...source, relativePath: taskRepositoryRelativePath(source.repositoryIdentity), requestedRef, requestKey: parsed.requestKey, requestKeys: [parsed.requestKey] }).returning();
-      const canonicalCwd = await canonicalRepositoryRoot(workspace.cwd);
-      await tx.insert(executionWorkspaceRepositoryAccess).values({ companyId: input.companyId,
-        rootKey: createHash("sha256").update(canonicalCwd).digest("hex"), canonicalCwd, kind: "repository", scopeId: row.id });
-      await tx.insert(activityLog).values({ companyId: input.companyId, actorType: input.actor.type === "agent" ? "agent" : "user", actorId: input.actor.agentId ?? input.actor.userId ?? "local-board", action: "workspace.repository.requested", entityType: "execution_workspace", entityId: workspace.id, runId: input.actor.runId ?? null, responsibleUserId: userId, details: { repositoryId: row.id, issueId: input.issueId, applies: "next_normal_admission" } });
+      const [row] = await measureRunPhase("workspace.write", () => tx.insert(executionWorkspaceRepositories).values({ companyId: input.companyId, executionWorkspaceId: workspace.id, requestedByIssueId: input.issueId, ...source, relativePath: taskRepositoryRelativePath(source.repositoryIdentity), requestedRef, requestKey: parsed.requestKey, requestKeys: [parsed.requestKey] }).returning());
+      const canonicalCwd = await measureRunPhase("workspace.sources.canonicalize", () => canonicalRepositoryRoot(workspace.cwd!));
+      await measureRunPhase("workspace.write", () => tx.insert(executionWorkspaceRepositoryAccess).values({ companyId: input.companyId,
+        rootKey: createHash("sha256").update(canonicalCwd).digest("hex"), canonicalCwd, kind: "repository", scopeId: row.id }));
+      await measureRunPhase("workspace.write", () => tx.insert(activityLog).values({ companyId: input.companyId, actorType: input.actor.type === "agent" ? "agent" : "user", actorId: input.actor.agentId ?? input.actor.userId ?? "local-board", action: "workspace.repository.requested", entityType: "execution_workspace", entityId: workspace.id, runId: input.actor.runId ?? null, responsibleUserId: userId, details: { repositoryId: row.id, issueId: input.issueId, applies: "next_normal_admission" } }));
       return row;
     });
     return { kind: "requires_next_admission" as const, applies: "next_normal_admission" as const, operationId: receipt.id, repository: receipt, reason: "immutable_admitted_workspace" };
@@ -669,24 +681,24 @@ export function executionWorkspaceRepositoryService(db: Db) {
   }
   type PublicationInput = { companyId: string; issueId: string; workspaceId: string; cwd: string; agentId: string; runId: string };
   async function publicationBinding(tx: DbTransaction, input: PublicationInput) {
-    const [issue] = await tx.select().from(issues).where(and(eq(issues.id, input.issueId), eq(issues.companyId, input.companyId)));
-    const [workspace] = await tx.select().from(executionWorkspaces).where(and(eq(executionWorkspaces.id, input.workspaceId), eq(executionWorkspaces.companyId, input.companyId)));
+    const [issue] = await measureRunPhase("workspace.sources.inventory", async () => tx.select().from(issues).where(and(eq(issues.id, input.issueId), eq(issues.companyId, input.companyId))));
+    const [workspace] = await measureRunPhase("workspace.sources.inventory", async () => tx.select().from(executionWorkspaces).where(and(eq(executionWorkspaces.id, input.workspaceId), eq(executionWorkspaces.companyId, input.companyId))));
     if (!issue || !workspace || issue.executionWorkspaceId !== workspace.id || !workspace.cwd
-      || await canonicalRepositoryRoot(workspace.cwd) !== await canonicalRepositoryRoot(input.cwd)) {
+      || await measureRunPhase("workspace.sources.canonicalize", () => canonicalRepositoryRoot(workspace.cwd!)) !== await measureRunPhase("workspace.sources.canonicalize", () => canonicalRepositoryRoot(input.cwd))) {
       throw forbidden("Task repository publication binding is unavailable");
     }
     await requiresAnonymousAcquisition(tx, { issue, workspace, agentId: input.agentId, runId: input.runId });
-    const [run] = await tx.select().from(heartbeatRuns).where(and(eq(heartbeatRuns.id, input.runId), eq(heartbeatRuns.companyId, input.companyId)));
-    const { actor } = await retainedRootReader(tx, input.companyId, {
+    const [run] = await measureRunPhase("workspace.sources.inventory", async () => tx.select().from(heartbeatRuns).where(and(eq(heartbeatRuns.id, input.runId), eq(heartbeatRuns.companyId, input.companyId))));
+    const { actor } = await measureRunPhase("workspace.readers.identity", () => retainedRootReader(tx, input.companyId, {
       scopeId: input.runId, issueId: input.issueId, agentId: input.agentId, responsibleUserId: run?.responsibleUserId ?? null,
-    });
+    }));
     return { workspace, actor };
   }
   async function guardForPublication(input: PublicationInput) {
-    await db.transaction(async tx => {
+    await measureRunTransaction(db, "workspace", async tx => {
       await lockExecutionWorkspaceRootProvenance(tx, input.companyId);
       const { workspace } = await publicationBinding(tx, input);
-      await authorizeRootAccess(tx, { companyId: input.companyId, cwd: input.cwd, sourceWorkspaceId: workspace.id, reader: input });
+      await authorizeRootAccess(tx, { companyId: input.companyId, cwd: input.cwd!, sourceWorkspaceId: workspace.id, reader: input });
     });
   }
   async function prepareConfiguredRepositorySource(input: PublicationInput & { sourceCwd: string }): Promise<() => Promise<void>> {
@@ -700,35 +712,35 @@ export function executionWorkspaceRepositoryService(db: Db) {
         commonRoot = source.commonRoot;
         for (const cwd of source.roots) roots.add(cwd);
       } catch (error) { sourceFailure = error; }
-      const denied = await db.transaction(async tx => {
+      const denied = await measureRunTransaction(db, "workspace", async tx => {
         await lockExecutionWorkspaceRootProvenance(tx, input.companyId);
         const { workspace, actor } = await publicationBinding(tx, input);
-        const canonicalCwd = await canonicalRepositoryRoot(input.cwd);
+        const canonicalCwd = await measureRunPhase("workspace.sources.canonicalize", () => canonicalRepositoryRoot(input.cwd));
         const rootKey = createHash("sha256").update(canonicalCwd).digest("hex");
-        const existing = await tx.select().from(executionWorkspaceRepositoryAccess).where(and(
-          eq(executionWorkspaceRepositoryAccess.companyId, input.companyId), eq(executionWorkspaceRepositoryAccess.rootKey, rootKey)));
+        const existing = await measureRunPhase("workspace.sources.inventory", async () => tx.select().from(executionWorkspaceRepositoryAccess).where(and(
+          eq(executionWorkspaceRepositoryAccess.companyId, input.companyId), eq(executionWorkspaceRepositoryAccess.rootKey, rootKey))));
         if (existing.some(entry => entry.canonicalCwd !== canonicalCwd)) throw forbidden("Repository root identity conflicts with its retained access record");
         let failure = sourceFailure;
         for (const cwd of roots) {
           try {
-            const source = await resolveRepositoryRootSources(tx, { companyId: input.companyId, cwd });
+            const source = await measureRunPhase("workspace.sources", () => resolveRepositoryRootSources(tx, { companyId: input.companyId, cwd }));
             for (const id of source.sourceIds) workspaceIds.add(id);
             for (const id of source.sourceProjectIds) projectIds.add(id);
           } catch (error) { failure ??= error; }
         }
-        try { await assertTaskWorkspacesReadAccess(tx, actor, input.companyId, workspaceIds); }
+        try { await measureRunPhase("workspace.readers.sources", () => assertTaskWorkspacesReadAccess(tx, actor, input.companyId, workspaceIds)); }
         catch (error) { failure ??= error; }
         for (const id of projectIds) {
-          try { await assertRootProjectAccess(tx, actor, input.companyId, new Set([id])); }
+          try { await measureRunPhase("workspace.readers.projects", () => assertRootProjectAccess(tx, actor, input.companyId, new Set([id]))); }
           catch (error) { failure ??= error; }
         }
         for (const [kind, ids] of [["isolated_source", workspaceIds], ["isolated_project_source", projectIds]] as const) {
           for (const scopeId of ids) if (!existing.some(entry => entry.kind === kind && entry.scopeId === scopeId)) {
-            await tx.insert(executionWorkspaceRepositoryAccess).values({ companyId: input.companyId, rootKey, canonicalCwd, kind, scopeId });
+            await measureRunPhase("workspace.write", () => tx.insert(executionWorkspaceRepositoryAccess).values({ companyId: input.companyId, rootKey, canonicalCwd, kind, scopeId }));
           }
         }
         try {
-          await authorizeRootAccess(tx, { companyId: input.companyId, cwd: input.cwd, sourceWorkspaceId: workspace.id,
+          await authorizeRootAccess(tx, { companyId: input.companyId, cwd: input.cwd!, sourceWorkspaceId: workspace.id,
             actor, issueId: input.issueId });
         } catch (error) { failure ??= error; }
         if (!failure && commonRoot) {

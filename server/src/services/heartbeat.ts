@@ -1,3 +1,4 @@
+import { withRunExecutionTiming, measureRunPhase, measureWorkspaceSyncPhase } from "./execution-preparation-timing.js";
 import { createHeartbeatPreparationTiming } from "./heartbeat/preparation-timing.js";
 import { createHeartbeatInstructionCopyRelease, createHeartbeatInstructionWorkingCopy } from "./heartbeat/instruction-working-copy.js";
 import { prepareHeartbeatRuntimeServiceIntents, startHeartbeatRuntimeServices, recordHeartbeatAdapterRuntimeServices } from "./heartbeat/runtime-services.js";
@@ -1796,6 +1797,13 @@ export function heartbeatService(
       nativeRestartRecovery?: NativeRestartRecoveryClaim;
     } = {},
   ) {
+    return withRunExecutionTiming(runId, () => executeRunAttempt(runId, runOptions));
+  }
+
+  async function executeRunAttempt(
+    runId: string,
+    runOptions: { nativeLeaseOwner?: string; nativeRestartRecovery?: NativeRestartRecoveryClaim },
+  ) {
     const attemptStartedAtMs = Date.now();
     let attestedQuestionResponseAtMs: number | null = null;
     if ((await getSchedulingSuppression()).suppressed) {
@@ -3304,7 +3312,7 @@ export function heartbeatService(
             },
             onPhase: async (name, work) => {
               const started = Date.now();
-              try { return await work(); }
+              try { return await measureWorkspaceSyncPhase(name, work); }
               finally { await appendRunEvent(run, { eventType: "lifecycle", stream: "system", level: "info",
                 message: name, payload: { phase: name, durationMs: Date.now() - started } }); }
             },
@@ -3339,7 +3347,7 @@ export function heartbeatService(
         if (!runtimeSelection.selected) return;
         const { nativeExecution, nativeRunnerInstanceId, getNativeFreshSessionHandoff } = runtimeSelection;
         nativeWorkspaceSync = runtimeSelection.nativeWorkspaceSync;
-        const execution = await executeHeartbeatRuntime(db, {
+        const execution = await measureRunPhase("execution.runtime", () => executeHeartbeatRuntime(db, {
           run, agent, options,
           task: {
             issueRef,
@@ -3436,7 +3444,7 @@ export function heartbeatService(
             onProviderResourceDisposition: (value) => { providerResourceDispositionForRun = value; },
             onWorkspaceRestoreFailure: (evidence) => { requiredWorkspaceRestoreEvidence = evidence; },
           },
-        });
+        }));
         if (!execution.dispatched) return;
         const { adapterResult } = execution;
         // Reconcile the referenced-project set against the real remote staging outcome. A referenced
@@ -3479,7 +3487,7 @@ export function heartbeatService(
           run, agent, issueId, issueRef, executionWorkspace, context, issuesSvc, onLog,
           adapterResult, runtimeServices,
         });
-        await runCompletion.completeRun({
+        await measureRunPhase("completion.run", () => runCompletion.completeRun({
           run, agent, issueId, issueRef, signal: executionControl.controller.signal,
           output: runOutput,
           session: { runtimeForAdapter, previousSessionParams, taskKey, configuredModel, sessionConfigMetadata },
@@ -3489,7 +3497,7 @@ export function heartbeatService(
           providerTraceCapture: providerTraceCapture !== null,
           onProviderTraceFinalized: () => { providerTraceFinalized = true; },
           issueContext, onLog,
-        });
+        }));
       } catch (err) {
         await persistUsageCaptureFailure?.();
         if (err instanceof NativeControllerDetachedForRestartError) {

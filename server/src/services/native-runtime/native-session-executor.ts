@@ -11747,13 +11747,14 @@ async function createRunnerdBackendWithinSessionClaim(
       stagedRemoteProviderPackRoot
     ) {
       const packSource = await prepareVerifiedRemoteProviderPack({
+        trace: input.trace,
         verifyStaged: () => measureNativeRunnerSpan(
           input.trace,
           "provider_pack.verify",
           () => verifyRemoteProviderPack(stagedRemoteProviderPackRoot),
         ),
         usePreinstalled: async () => {
-          let preinstalledProviderPack = await discoverPreinstalledProviderPack();
+          let preinstalledProviderPack = await measureNativeRunnerSpan(input.trace, "provider_pack.discover", discoverPreinstalledProviderPack);
           if (preinstalledProviderPack) {
             try {
               await measureNativeRunnerSpan(
@@ -11772,7 +11773,7 @@ async function createRunnerdBackendWithinSessionClaim(
               const escapedParent = posix
                 .dirname(stagedRemoteProviderPackRoot)
                 .replaceAll("'", "'\\''");
-              const linked = await remoteCommandRunner.execute({
+              const linked = await measureNativeRunnerSpan(input.trace, "provider_pack.link_preinstalled", () => remoteCommandRunner.execute({
                 command: "sh",
                 args: [
                   "-c",
@@ -11781,7 +11782,7 @@ async function createRunnerdBackendWithinSessionClaim(
                 cwd: remoteTarget.remoteCwd,
                 bypassSession: true,
                 timeoutMs: 10_000,
-              });
+              }));
               if (linked.exitCode !== 0 || linked.timedOut) {
                 throw new Error(
                   "runner_remote_provider_artifact_incompatible: preinstalled provider pack could not be linked",
@@ -11811,26 +11812,26 @@ async function createRunnerdBackendWithinSessionClaim(
             "'",
             "'\\''",
           );
-          const cleared = await remoteCommandRunner.execute({
+          const cleared = await measureNativeRunnerSpan(input.trace, "provider_pack.clear_stale", () => remoteCommandRunner.execute({
             command: "sh",
             args: ["-c", `rm -rf '${escapedPackRoot}'`],
             cwd: remoteTarget.remoteCwd,
             bypassSession: true,
             timeoutMs: 10_000,
-          });
+          }));
           if (cleared.exitCode !== 0 || cleared.timedOut) {
             throw new Error(
               "runner_remote_provider_artifact_incompatible: stale provider pack could not be replaced",
             );
           }
-          await stageRemoteRunnerDirectory({
+          await measureNativeRunnerSpan(input.trace, "provider_pack.upload", () => stageRemoteRunnerDirectory({
             target: remoteTarget,
             runner: remoteCommandRunner,
             sourcePath: configuredProviderPackRoot,
             targetPath: stagedRemoteProviderPackRoot,
             mode: 0o700,
-          });
-          await measureNativeRunnerSpan(input.trace, "provider_pack.verify", () =>
+          }));
+          await measureNativeRunnerSpan(input.trace, "provider_pack.verify_uploaded", () =>
             verifyRemoteProviderPack(stagedRemoteProviderPackRoot),
           );
           activeRemoteProviderPackRoot = stagedRemoteProviderPackRoot;
@@ -12096,7 +12097,7 @@ async function createRunnerdBackendWithinSessionClaim(
         },
       },
     );
-    const restored = await inspectRemoteHarnessState();
+    const restored = await measureNativeRunnerSpan(input.trace, "harness_state.inspect", () => inspectRemoteHarnessState());
     if (
       !restored.complete ||
       !restored.runnerState ||
@@ -12283,7 +12284,7 @@ async function createRunnerdBackendWithinSessionClaim(
                     );
                   } else {
                     const reuseStartedAtMs = Date.now();
-                    const state = await inspectRemoteHarnessState();
+                    const state = await measureNativeRunnerSpan(input.trace, "harness_state.inspect", () => inspectRemoteHarnessState());
                     if (
                       state.complete &&
                       state.runnerState &&
@@ -12312,7 +12313,7 @@ async function createRunnerdBackendWithinSessionClaim(
                     if (
                       remoteDirectory &&
                       existsSync(localDirectory) &&
-                      !(await remoteRunnerPathExists({
+                      !(await measureNativeRunnerSpan(input.trace, "harness_state.path_check", () => remoteRunnerPathExists({
                         runner: remoteCommandRunner,
                         path:
                           directory.name === "runner"
@@ -12320,7 +12321,7 @@ async function createRunnerdBackendWithinSessionClaim(
                             : remoteDirectory,
                         kind:
                           directory.name === "runner" ? "file" : "directory",
-                      }))
+                      })))
                     ) {
                       await stageRemoteRunnerDirectory({
                         target: remoteTarget,
@@ -12352,7 +12353,7 @@ async function createRunnerdBackendWithinSessionClaim(
         // this invocation's isolated Codex auth/config. The later launch must
         // still stage those fresh files even when history was already restored.
         // Launch material is never recovered from a failover backup.
-        await materializeRemoteHarnessLaunchState();
+        await measureNativeRunnerSpan(input.trace, "harness_state.launch_material", () => materializeRemoteHarnessLaunchState());
         if (
           remoteTarget &&
           remoteCommandRunner &&
@@ -12440,14 +12441,14 @@ async function createRunnerdBackendWithinSessionClaim(
     // `runner_harness_state_mismatch`. Only checkpoint a harness that runnerd
     // has proved complete. A malformed or identity-conflicting state still
     // throws from inspectRemoteHarnessState and therefore fails closed.
-    let checkpointable = await inspectRemoteHarnessState();
+    let checkpointable = await measureNativeRunnerSpan(input.trace, "harness_state.inspect", () => inspectRemoteHarnessState());
     // The remote runner writes its suspended lifecycle and provider state
     // before the outer process-owner RPC necessarily observes completion.
     // Allow a very small bounded visibility window without ever accepting an
     // active, incomplete, malformed, or identity-conflicting checkpoint.
     for (let attempt = 1; !checkpointable.complete && attempt < 3; attempt++) {
       await new Promise<void>((resolve) => setTimeout(resolve, 100));
-      checkpointable = await inspectRemoteHarnessState();
+      checkpointable = await measureNativeRunnerSpan(input.trace, "harness_state.inspect", () => inspectRemoteHarnessState());
     }
     if (!checkpointable.complete) {
       const incompleteFailure = remoteCheckpointIncompleteFailure(
@@ -12477,7 +12478,7 @@ async function createRunnerdBackendWithinSessionClaim(
             input.trace,
             "harness_state.backup.persist",
             async () => {
-              const verified = await inspectRemoteHarnessState();
+              const verified = await measureNativeRunnerSpan(input.trace, "harness_state.inspect", () => inspectRemoteHarnessState());
               if (
                 !verified.complete ||
                 !verified.runnerState ||
