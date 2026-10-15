@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readdirSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import {
   MANAGED_DATABASE_ENV,
@@ -69,6 +69,38 @@ function assertTrustedEntry(target: string, kind: "directory" | "file", ownerUid
   if (ownerUid !== undefined && stat.uid !== ownerUid) fail("untrusted_path", `${target} is owned by uid ${stat.uid}, expected ${ownerUid}`);
 }
 
+/**
+ * Rename and unlink permission comes from the parent directory, so the
+ * supervisor's own modes protect nothing while another user can write a
+ * directory above it: the app could move the supervisor's directory aside and
+ * plant its own tree where the root supervisor writes. Every ancestor, through
+ * any symbolic link, must be owned by the supervisor or root and be writable
+ * by nobody else, or be sticky (others can then rename only their own entries).
+ */
+function assertProtectedAncestors(root: string, ownerUid: number | undefined): void {
+  if (ownerUid === undefined) return;
+  const chain = (start: string) => {
+    const dirs: string[] = [];
+    for (let dir = start; ; dir = path.dirname(dir)) {
+      dirs.push(dir);
+      if (dir === path.dirname(dir)) return dirs;
+    }
+  };
+  const literal = chain(path.dirname(root));
+  const nearest = literal.find((dir) => existsSync(dir));
+  const resolved = nearest ? chain(realpathSync(nearest)) : [];
+  for (const dir of new Set([...literal, ...resolved])) {
+    if (!existsSync(dir) && !isSymlink(dir)) continue;
+    const stat = lstatSync(dir);
+    if (stat.uid !== ownerUid && stat.uid !== 0) {
+      fail("untrusted_path", `${dir} is owned by uid ${stat.uid}, so it can rename ${root}`);
+    }
+    if (stat.isDirectory() && (stat.mode & 0o022) !== 0 && (stat.mode & 0o1000) === 0) {
+      fail("untrusted_path", `${dir} is writable by other users and not sticky, so they can rename ${root}`);
+    }
+  }
+}
+
 function isSymlink(target: string): boolean {
   try {
     return lstatSync(target).isSymbolicLink();
@@ -127,6 +159,7 @@ export function runManagedDatabasePreflight(input: PreflightInput): PreflightPla
   assertTrustedEntry(layout.volumeIdentityFile, "file", ownerUid);
   assertTrustedEntry(layout.markerFile, "file", ownerUid);
   assertTrustedEntry(layout.secretsDir, "directory", ownerUid);
+  assertProtectedAncestors(layout.root, ownerUid);
   const identity = readJsonIfExists<VolumeIdentity>(layout.volumeIdentityFile);
   if (identity && (identity.stackId !== config.stackId || identity.volumeId !== config.volume.id)) {
     fail("volume_mismatch", `volume belongs to stack ${identity.stackId} volume ${identity.volumeId}`);

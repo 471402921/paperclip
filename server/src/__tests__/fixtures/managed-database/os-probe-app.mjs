@@ -1,6 +1,7 @@
 // Tenant-app stand-in for the root OS-isolation test. It runs as the app OS
 // user under the real supervisor and records what that user can reach.
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import postgres from "postgres";
 
 const root = process.env.PROBE_MANAGED_ROOT;
@@ -49,6 +50,9 @@ const results = {
     listSnapshots: attempt(() => readdirSync(`${root}/snapshots`)),
     readReadiness: attempt(() => readFileSync(`${root}/public/readiness.json`)),
     writeReadiness: attempt(() => writeFileSync(`${root}/public/readiness.json`, "{}")),
+    // If the rename succeeds (a defect), move it straight back for the later tests.
+    renameManagedRoot: attempt(() => { renameSync(root, `${root}.moved`); renameSync(`${root}.moved`, root); }),
+    createInVolumeRoot: attempt(() => { writeFileSync(`${path.dirname(root)}/app-file`, "x"); rmSync(`${path.dirname(root)}/app-file`); }),
     readSupervisorEnviron: attempt(() => readFileSync(`/proc/${process.ppid}/environ`)),
   },
   sql: {

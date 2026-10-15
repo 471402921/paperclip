@@ -63,10 +63,21 @@ entrypoint refuses to start if any file in it is not owned by root or is
 writable by group or others. The bundle refuses to start if `release.json`
 does not describe its own migrations.
 
-The ownership pass does not trust the supervisor path alone, because the app
-owns its parent directories and could rename it. The pass also skips every
-directory that holds a root-owned `volume.json`, and everything the database
-user owns.
+Rename permission comes from the parent directory, so the root-only modes
+inside `root` would protect nothing if the app could write a directory above
+it. After the ownership pass, the entrypoint makes every directory from the
+parent of `root` up to `volume.mountPath` `root:node 1775`. The app still
+creates and replaces its own entries in its home (`/paperclip`), but the sticky
+bit stops it from renaming or replacing `root`. The entrypoint refuses a `root`
+that is not a normalized path inside a mount other than `/`, and a symbolic link
+among those directories. The supervisor refuses to start if any ancestor of
+`root` is owned by another user, or is writable by other users without the
+sticky bit.
+
+The ownership pass does not trust the supervisor path alone, because a volume
+written before those parents were protected can hold it under another name. The
+pass also skips every directory that holds a root-owned `volume.json`, and
+everything the database user owns.
 
 | Identity | Runs | Can reach |
 | --- | --- | --- |
@@ -98,7 +109,7 @@ does not report a current schema in serving mode. It never applies migrations.
 1. Config parses; no conflicting external settings.
 2. The image's bundled engine major equals `engineMajor`, and the major is supported.
 3. `volume.mountPath` is a separate filesystem from `/`; `idEnvVar` (if set) equals `volume.id`.
-4. Supervisor state (`root`, `marker.json`, `volume.json`, `secrets/`) is real, not symlinked, and owned by the supervisor.
+4. Supervisor state (`root`, `marker.json`, `volume.json`, `secrets/`) is real, not symlinked, and owned by the supervisor. Every ancestor of `root` is owned by the supervisor or root and is not writable by other users unless it is sticky.
 5. `volume.json` and `marker.json` match the stack, volume, initialization, engine major, and (for `existing`) system identifier.
 6. `data/PG_VERSION` equals `engineMajor`.
 7. After start: `server_version_num` and `pg_control_system().system_identifier` match the marker.

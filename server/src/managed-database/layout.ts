@@ -5,6 +5,9 @@ import type { ManagedDatabaseConfig } from "@paperclipai/shared/managed-database
 /**
  * On-volume layout owned by the managed database supervisor.
  *
+ *   <mount>/           root:node 1775   app home; sticky, so the app cannot
+ *                                       rename <root> (and every directory
+ *                                       between <mount> and <root> likewise)
  *   <root>/            root 0711   traversable, not listable
  *     data/            db   0700   PGDATA
  *     pg-socket/       db   0700   PostgreSQL Unix socket (privileged roles)

@@ -94,10 +94,11 @@ if [ -n "$managed_db_root" ]; then
     # The tiered probe below repairs with an unpruned chown -R, so managed
     # stacks keep this pruned full walk and never record the marker.
     #
-    # The app owns the parents of that directory and can rename it, so the
-    # walk does not trust its path alone. It also skips every directory that
-    # holds a root-owned volume.json (the supervisor's identity file, which
-    # the app cannot create) and everything the database user owns.
+    # A volume written before its parents were protected (below) may hold the
+    # supervisor's directory under another name, so the walk does not trust
+    # its path alone. It also skips every directory that holds a root-owned
+    # volume.json (the supervisor's identity file, which the app cannot
+    # create) and everything the database user owns.
     if [ -d "$home_dir" ]; then
         find "$home_dir" \( -path "$managed_db_root" \
                 -o \( -type d -user "$managed_db_user" \) \
@@ -105,6 +106,40 @@ if [ -n "$managed_db_root" ]; then
             \) -prune \
             -o ! -user "$managed_db_user" \( ! -user node -o ! -group node \) -exec chown -h node:node {} +
     fi
+    # Rename permission comes from the parent directory, so the supervisor's
+    # root-only modes protect nothing while the app can write a directory
+    # above it. Every directory from its parent up to the volume mount becomes
+    # root-owned and sticky: the app (group node) still creates and replaces
+    # its own entries in its home, but cannot rename the supervisor's
+    # directory. The supervisor refuses to start without this.
+    managed_db_mount="$(printf '%s' "$PAPERCLIP_MANAGED_DATABASE" | jq -er '.volume.mountPath')" || {
+        echo "docker-entrypoint.sh: PAPERCLIP_MANAGED_DATABASE has no volume.mountPath" >&2
+        exit 1
+    }
+    # Only a normalized root strictly inside a mount other than / is walked,
+    # so the loop never reaches a directory outside the volume.
+    case "$managed_db_root" in
+        [!/]*|*//*|*/./*|*/../*|*/.|*/..) managed_db_root_inside=0 ;;
+        "$managed_db_mount"/?*) managed_db_root_inside=1 ;;
+        *) managed_db_root_inside=0 ;;
+    esac
+    if [ -z "$managed_db_mount" ] || [ "$managed_db_mount" = / ] || [ "$managed_db_root_inside" -ne 1 ]; then
+        echo "docker-entrypoint.sh: managed database root must be a normalized path inside a volume mount other than /" >&2
+        exit 1
+    fi
+    dir="$(dirname "$managed_db_root")"
+    while :; do
+        if [ -L "$dir" ]; then
+            echo "docker-entrypoint.sh: $dir is a symbolic link; refusing to protect the managed database root" >&2
+            exit 1
+        fi
+        if [ -d "$dir" ]; then
+            chown root:node "$dir"
+            chmod 1775 "$dir"
+        fi
+        [ "$dir" != "$managed_db_mount" ] || break
+        dir="$(dirname "$dir")"
+    done
     log "starting managed database supervisor"
     exec node "$managed_db_supervisor/main.mjs" run -- "$@"
 fi

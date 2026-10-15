@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { chmodSync, chownSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,6 +62,7 @@ describeOs("managed embedded database: OS identity isolation (root)", () => {
     }
     mountPath = mkdtempSync(path.join(os.tmpdir(), "paperclip-mdb-os-vol-"));
     run("mount", ["-t", "tmpfs", "-o", "size=1g,mode=0755", "tmpfs", mountPath]);
+    protectVolumeRoot();
     resultsDir = mkdtempSync(path.join(os.tmpdir(), "paperclip-mdb-os-results-"));
     chmodSync(resultsDir, 0o777);
     pgPort = await freePort();
@@ -144,7 +145,29 @@ describeOs("managed embedded database: OS identity isolation (root)", () => {
     }
   }
 
+  /** The volume root as docker-entrypoint.sh leaves it: the app's home, sticky. */
+  function protectVolumeRoot() {
+    chownSync(mountPath, 0, lookupOsUser(APP_USER).gid);
+    chmodSync(mountPath, 0o1775);
+  }
+
   let systemIdentifier = "";
+
+  it("refuses to start when the app owns the managed root's parent", async () => {
+    // Rename permission comes from the parent, so the root-only modes below
+    // it would not stop the app from moving the supervisor's directory.
+    const app = lookupOsUser(APP_USER);
+    chownSync(mountPath, app.uid, app.gid);
+    chmodSync(mountPath, 0o755);
+    try {
+      const child = startSupervisor();
+      expect(await exitOf(child)).toBe(1);
+      expect(output).toMatch(/untrusted_path.*can rename/);
+      expect(existsSync(config.root)).toBe(false);
+    } finally {
+      protectVolumeRoot();
+    }
+  }, TIMEOUT);
 
   it("initializes as root, runs PostgreSQL as the database user, and serves the maintenance surface", async () => {
     const child = startSupervisor();
@@ -199,8 +222,11 @@ describeOs("managed embedded database: OS identity isolation (root)", () => {
       listSnapshots: "EACCES",
       readReadiness: "allowed",
       writeReadiness: "EACCES",
+      renameManagedRoot: "EPERM",
       readSupervisorEnviron: "EACCES",
     });
+    // The app still owns its home: it creates entries beside the root.
+    expect(results.files.createInVolumeRoot).toBe("allowed");
     expect(results.sql.appSelect).toBe("allowed");
     expect(results.sql.appDdl).toBe("42501");
     expect(results.sql.appReadServerFile).toBe("42501");

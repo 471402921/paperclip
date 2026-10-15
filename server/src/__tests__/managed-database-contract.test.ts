@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -258,6 +258,40 @@ describe("managed database preflight (fail closed before writes)", () => {
     rmSync(layout.markerFile);
     symlinkSync(path.join(elsewhere, "marker.json"), layout.markerFile);
     expect(() => run(cfg)).toThrow(/untrusted_path/);
+  });
+
+  // Rename permission comes from the parent: the image's volume root was
+  // node:node 0755, so the app could move the root-only directory aside.
+  it.skipIf(process.getuid?.() === 0)("refuses a root whose parent another user owns", () => {
+    const { cfg, layout } = setup();
+    const appUid = process.getuid!() + 1;
+    expect(() => runManagedDatabasePreflight({ config: cfg, layout, env: {}, engineMajor: 18, deviceOf: mounted, ownerUid: appUid }))
+      .toThrow(/untrusted_path.*can rename/);
+  });
+
+  it("refuses a root below a directory others can write without the sticky bit", () => {
+    const { volume, cfg } = setup();
+    chmodSync(volume, 0o775);
+    expect(() => run(cfg)).toThrow(/untrusted_path.*writable by other users/);
+
+    const nested = { ...cfg, root: path.join(volume, "system", ".managed-database") };
+    chmodSync(volume, 0o755);
+    mkdirSync(path.join(volume, "system"), { mode: 0o777 });
+    chmodSync(path.join(volume, "system"), 0o777);
+    expect(() => run(nested)).toThrow(/untrusted_path.*system is writable/);
+
+    // A symbolic link is followed: its target's ancestors count too.
+    const elsewhere = tempVolume();
+    chmodSync(elsewhere, 0o777);
+    rmSync(path.join(volume, "system"), { recursive: true });
+    symlinkSync(elsewhere, path.join(volume, "system"));
+    expect(() => run(nested)).toThrow(/untrusted_path/);
+  });
+
+  it("accepts a root below the sticky, group-writable volume root the entrypoint prepares", () => {
+    const { volume, cfg } = setup();
+    chmodSync(volume, 0o1775);
+    expect(run(cfg)).toEqual({ action: "initialize" });
   });
 
   it("refuses a missing volume identity beside a marker", () => {
