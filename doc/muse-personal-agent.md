@@ -33,6 +33,27 @@ Stop revokes run authority immediately. Remote stopping is best effort, and unkn
 
 ## Reproducible verification
 
+### OAuth exchange diagnostics
+
+The agent's scoped Audit view records static `muse.oauth_code_exchange_rejected_*`
+actions for a rejected exchange attributable to a persisted Muse code, grant and
+binding. Each category is recorded once per binding generation, with the first
+recorded attempt's handler-entry, decision, authorization and code-deadline times.
+The `failedChecks` list contains observed failed predicates; overlapping checks
+do not establish one exclusive cause. Public OAuth errors remain generic. A
+successful exchange records `muse.oauth_code_exchange_succeeded` atomically with
+code consumption and credential issuance.
+
+Pairing precedes token issuance. An expired credential status without an observed
+refresh deadline does not by itself prove revocation. Authorization codes expire
+after one minute, including callback handling and admission-lock wait; the setup
+ticket's ten-minute deadline is separate. Unknown codes, including expired rows
+already pruned during registration, and missing historical binding linkage cannot
+safely produce company activity.
+Diagnostic storage failure also leaves no record. Absence of an event therefore
+does not prove that no token request arrived. Activity contains no OAuth code,
+verifier, token, request/client identifier, callback URL, header or secret hash.
+
 Run the targeted protocol, Runner and UI tests before repository-wide checks. The receiver/client must remain behind the experimental feature until these real journeys are measured:
 
 1. Pair from a current personal Muse chat, approve the hostname, then wait for an independent background reply.
