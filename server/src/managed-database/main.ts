@@ -1,18 +1,20 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import type { Server } from "node:http";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
+  canonicalJson,
   MANAGED_DATABASE_ENV,
   MANAGED_DATABASE_SNAPSHOT_FORMAT,
   MANAGED_DATABASE_SUPPORTED_CONTRACT_VERSIONS,
   MANAGED_DATABASE_SUPPORTED_ENGINE_MAJORS,
+  managedDatabaseReleaseSchema,
   parseManagedDatabaseConfig,
   type ManagedDatabaseCapability,
   type ManagedDatabaseRelease,
 } from "@paperclipai/shared/managed-database";
 import { parseManagedDatabaseControlKey } from "@paperclipai/shared/managed-database-server";
 import { readBundledMigrationRelease } from "@paperclipai/db/migration-release";
-import { readBuildCommit } from "../build-commit.js";
-import { serverVersion } from "../version.js";
 import { closeServer, createControlServer, listenTcp, listenUnix } from "./control-server.js";
 import { resolveEngineBinaries, type ProcessIdentity } from "./engine.js";
 import { resolvePgClientTools } from "./snapshots.js";
@@ -22,13 +24,44 @@ export const DEFAULT_DB_OS_USER = "paperclip-db";
 export const DEFAULT_APP_OS_USER = "node";
 export const DEFAULT_PG_PORT = 54329;
 
+/**
+ * In the image, the supervisor runs from a root-owned bundle
+ * (scripts/build-managed-database-supervisor.mjs) because it starts as root
+ * and the app user owns /app. The bundle carries its own engine, migrations,
+ * and pinned release identity beside main.mjs; a source checkout has none.
+ */
+function bundleAsset(name: string): string | null {
+  const target = fileURLToPath(new URL(`./${name}`, import.meta.url));
+  return existsSync(target) ? target : null;
+}
+
+function bundledEngineDirs(): { binDir: string; libDir: string } | undefined {
+  const engine = bundleAsset("engine");
+  if (!engine || !existsSync(path.join(engine, "bin", "postgres"))) return undefined;
+  return { binDir: path.join(engine, "bin"), libDir: path.join(engine, "lib") };
+}
+
 export async function readRelease(): Promise<ManagedDatabaseRelease> {
   const bundled = await readBundledMigrationRelease();
+  const pinnedFile = bundleAsset("release.json");
+  if (pinnedFile) {
+    // Written at image build from the app's own tree; the bundle's migration
+    // copy must be the same set, or the image is inconsistent.
+    const pinned = managedDatabaseReleaseSchema.parse(JSON.parse(readFileSync(pinnedFile, "utf8")));
+    const { migrationsDigest, latestMigration, migrationCount } = pinned;
+    if (canonicalJson({ migrationsDigest, latestMigration, migrationCount }) !== canonicalJson(bundled)) {
+      throw new Error(`${pinnedFile} does not describe the bundled migrations`);
+    }
+    return pinned;
+  }
+  // Loaded lazily: these resolve files relative to the server package, which
+  // a bundle does not have.
+  const [{ serverVersion }, { readBuildCommit }] = await Promise.all([import("../version.js"), import("../build-commit.js")]);
   return { ...bundled, version: serverVersion, commit: readBuildCommit() };
 }
 
 export async function readCapability(env: NodeJS.ProcessEnv = process.env): Promise<ManagedDatabaseCapability> {
-  const engine = await resolveEngineBinaries();
+  const engine = await resolveEngineBinaries(bundledEngineDirs());
   const tools = await resolvePgClientTools(engine.major, env);
   return {
     contractVersions: [...MANAGED_DATABASE_SUPPORTED_CONTRACT_VERSIONS],
@@ -85,7 +118,7 @@ async function run(argv: string[]): Promise<void> {
   delete process.env[MANAGED_DATABASE_ENV.controlKey];
 
   const identities = resolveProductionIdentities(env);
-  const engine = await resolveEngineBinaries();
+  const engine = await resolveEngineBinaries(bundledEngineDirs());
   const pgTools = await resolvePgClientTools(engine.major, env);
   const separator = argv.indexOf("--");
   const appCommand = separator >= 0 ? argv.slice(separator + 1) : [];
@@ -141,17 +174,24 @@ async function main(): Promise<void> {
     process.stdout.write(`${JSON.stringify(await readCapability(), null, 2)}\n`);
     return;
   }
+  if (command === "release") {
+    process.stdout.write(`${JSON.stringify(await readRelease(), null, 2)}\n`);
+    return;
+  }
   if (command === "run") {
     await run(rest);
     return;
   }
-  throw new Error(`unknown command ${command}; expected "run" or "capability"`);
+  throw new Error(`unknown command ${command}; expected "run", "capability", or "release"`);
 }
 
-const invokedDirectly = process.argv[1] && /managed-database[\\/]main\.(?:js|ts)$/.test(process.argv[1]);
-if (invokedDirectly) {
+/** Process entry: the image bundle calls this; a source checkout runs main.ts. */
+export function runCli(): void {
   main().catch((error) => {
     process.stderr.write(`${JSON.stringify({ level: "fatal", component: "managed-database", msg: error instanceof Error ? error.message : String(error) })}\n`);
     process.exit(1);
   });
 }
+
+const invokedDirectly = process.argv[1] && /managed-database[\\/]main\.(?:js|ts)$/.test(process.argv[1]);
+if (invokedDirectly) runCli();

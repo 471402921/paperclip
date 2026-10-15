@@ -26,6 +26,19 @@ if [ -n "${PAPERCLIP_MANAGED_DATABASE+x}" ]; then
         echo "docker-entrypoint.sh: PAPERCLIP_MANAGED_DATABASE is not valid JSON with a root" >&2
         exit 1
     }
+    managed_db_user="${PAPERCLIP_MANAGED_DATABASE_DB_USER:-paperclip-db}"
+    # The supervisor runs as root, so it must come from the root-owned bundle
+    # (the cloud image target), never from /app, which the app user owns.
+    managed_db_supervisor=/opt/paperclip-managed-database
+    if [ ! -f "$managed_db_supervisor/main.mjs" ] || [ ! -f "$managed_db_supervisor/release.json" ]; then
+        echo "docker-entrypoint.sh: this image has no managed database supervisor; build the cloud target" >&2
+        exit 1
+    fi
+    # Symbolic links (the engine's library aliases) always report mode 0777.
+    if [ -n "$(find "$managed_db_supervisor" \( ! -user root -o \( ! -type l -perm /022 \) \) -print -quit)" ]; then
+        echo "docker-entrypoint.sh: $managed_db_supervisor must be root-owned and unwritable by other users" >&2
+        exit 1
+    fi
 fi
 
 # Without root we can neither remap the node user (usermod/groupmod/chown)
@@ -80,12 +93,20 @@ if [ -n "$managed_db_root" ]; then
     # handing it to node would give the app the database files and secrets.
     # The tiered probe below repairs with an unpruned chown -R, so managed
     # stacks keep this pruned full walk and never record the marker.
+    #
+    # The app owns the parents of that directory and can rename it, so the
+    # walk does not trust its path alone. It also skips every directory that
+    # holds a root-owned volume.json (the supervisor's identity file, which
+    # the app cannot create) and everything the database user owns.
     if [ -d "$home_dir" ]; then
-        find "$home_dir" -path "$managed_db_root" -prune \
-            -o \( ! -user node -o ! -group node \) -exec chown -h node:node {} +
+        find "$home_dir" \( -path "$managed_db_root" \
+                -o \( -type d -user "$managed_db_user" \) \
+                -o \( -type d -user root -exec test -f {}/volume.json \; -exec test -O {}/volume.json \; \) \
+            \) -prune \
+            -o ! -user "$managed_db_user" \( ! -user node -o ! -group node \) -exec chown -h node:node {} +
     fi
     log "starting managed database supervisor"
-    exec node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/managed-database/main.js run -- "$@"
+    exec node "$managed_db_supervisor/main.mjs" run -- "$@"
 fi
 ownership_marker="$home_dir/.paperclip-ownership-verified"
 ownership_shallow_depth=3

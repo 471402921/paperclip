@@ -321,6 +321,14 @@ RUN set -eu; \
   test -n "$specifiers" || { echo "ERROR: CLOUD_BUNDLED_SERVER_DEPS names no package" >&2; exit 1; }; \
   pnpm add --ignore-workspace --no-lockfile $specifiers
 
+# Managed embedded PostgreSQL supervisor (PAPERCLIP_MANAGED_DATABASE). It starts
+# as root and the `node` app user owns /app, so it must not run from /app: a
+# compromised app could replace that code and gain root on the next start.
+# This stage bundles it with its migrations and engine into one tree that the
+# cloud target installs root-owned.
+FROM build AS managed-database-supervisor
+RUN node scripts/build-managed-database-supervisor.mjs /opt/paperclip-managed-database
+
 FROM production AS cloud
 COPY --chown=node:node --from=cloud-plugins /app/packages/plugins/sandbox-providers /app/packages/plugins/sandbox-providers
 # Land the isolated install inside the server's own `node_modules`, the
@@ -334,7 +342,12 @@ COPY --chown=node:node --from=cloud-server-deps /app/.cloud-server-deps/node_mod
 # takes database-only snapshots with pg_dump/pg_restore of the SAME major as
 # the engine. Debian ships only 17, so the client comes from PGDG, pinned to
 # the engine major; the capability file below refuses a mismatched pair.
+# Everything the supervisor runs stays root-owned and unwritable by `node`;
+# docker-entrypoint.sh refuses to start it otherwise. release.json pins the
+# release identity from the app tree, and the bundle refuses to start when
+# its own migrations differ from it.
 ARG MANAGED_DATABASE_ENGINE_MAJOR=18
+COPY --from=managed-database-supervisor /opt/paperclip-managed-database /opt/paperclip-managed-database
 RUN set -eu; \
   install -d /usr/share/postgresql-common/pgdg; \
   curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc; \
@@ -343,10 +356,13 @@ RUN set -eu; \
   apt-get update; \
   apt-get install -y --no-install-recommends "postgresql-client-${MANAGED_DATABASE_ENGINE_MAJOR}"; \
   rm -rf /var/lib/apt/lists/*; \
-  useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin paperclip-db
+  useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin paperclip-db; \
+  node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/managed-database/main.js release > /opt/paperclip-managed-database/release.json; \
+  chown -R root:root /opt/paperclip-managed-database; \
+  chmod -R u+rwX,go+rX,go-w /opt/paperclip-managed-database
 # Release capability metadata for the Cloud harness: contract versions, the
 # bundled engine version, snapshot formats, and the migration-set digest. An
 # image without this file (or without the stack's engine major) is not an
 # eligible target for an embedded stack.
-RUN node --import ./server/node_modules/tsx/dist/loader.mjs server/dist/managed-database/main.js capability > /app/managed-database-capability.json \
+RUN node /opt/paperclip-managed-database/main.mjs capability > /app/managed-database-capability.json \
   && node -e 'const c=require("/app/managed-database-capability.json"); const m=Number(process.argv[1]); if(!c.engineMajors.includes(m)||!c.snapshotFormats.length){console.error("managed database capability check failed",c);process.exit(1)}' "${MANAGED_DATABASE_ENGINE_MAJOR}"
