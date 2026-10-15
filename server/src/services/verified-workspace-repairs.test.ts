@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { agents, companies, heartbeatRuns, environmentLeases, executionWorkspaces, issueRecoveryActions, issues, projects, workspaceOperations,
   createDb, ensurePostgresDatabase, applyPendingMigrations } from "@paperclipai/db";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "../__tests__/helpers/embedded-postgres.js";
-import { reconcileVerifiedWorkspaceRepairs } from "./verified-workspace-repairs.js";
+import { reconcileVerifiedWorkspaceRepairs, verifiedWorkspaceRepairCandidates } from "./verified-workspace-repairs.js";
 import { remoteTerminationReceipt } from "./remote-execution-termination.js";
 import { getExecutionBlocker } from "./execution-blocker.js";
 
@@ -28,14 +28,15 @@ const support = external ? { supported: true } : await getEmbeddedPostgresTestSu
     const [workspace] = await db.insert(executionWorkspaces).values({ companyId: company.id, projectId: project.id,
       sourceIssueId: issue.id, name: "Retained source", mode: "isolated", strategyType: "git_worktree" }).returning();
     const runId = randomUUID(), leaseId = randomUUID(), providerLeaseId = randomUUID();
+    const incidentAt = new Date(Date.now() - 5000);
     const recovery = { schema: "paperclip.workspace-restore-recovery.v1", leaseIds: [leaseId] };
     const [run] = await db.insert(heartbeatRuns).values({ id: runId, companyId: company.id, agentId: agent.id, issueId: issue.id,
-      contextSnapshot: { issueId: issue.id }, status: "interrupted", runtimeMode: "legacy", errorCode: "server_shutdown_interrupted",
+      contextSnapshot: { issueId: issue.id }, status: "interrupted", finishedAt: incidentAt, runtimeMode: "legacy", errorCode: "server_shutdown_interrupted",
       resultJson: { conversationContinuation: "continue_conversation_v1", workspaceRestoreFailure: "restore_failed", workspaceRestoreRecovery: recovery } }).returning();
     const identity = { id: leaseId, companyId: company.id, heartbeatRunId: runId, provider: "daytona", providerLeaseId };
     const [lease] = await db.insert(environmentLeases).values({ ...identity, issueId: issue.id, executionWorkspaceId: workspace.id, status: "released", leasePolicy: "retain_on_failure",
       cleanupStatus: "success", releasedAt: new Date(), metadata: { remoteExecutionTermination: remoteTerminationReceipt(identity, { providerLeaseId, state: "stopped" }) } }).returning();
-    const recordedAt = new Date(Date.now() - 5000);
+    const recordedAt = incidentAt;
     const [action] = await db.insert(issueRecoveryActions).values({ companyId: company.id, sourceIssueId: issue.id,
       kind: "active_run_watchdog", cause: "legacy_execution_requires_reconciliation", ownerType: "board", status: "resolved", outcome: "blocked",
       fingerprint: run.id, nextAction: "Recover files", createdAt: recordedAt,
@@ -83,6 +84,30 @@ const support = external ? { supported: true } : await getEmbeddedPostgresTestSu
     if (scenario === "wrong_workspace") await db.update(environmentLeases).set({ executionWorkspaceId: null }).where(eq(environmentLeases.id, f.lease.id));
     expect((await reconcileVerifiedWorkspaceRepairs(db)).repaired).toBe(0);
     expect((await db.select().from(issueRecoveryActions).where(eq(issueRecoveryActions.id, f.action.id)))[0].evidence.automaticRecovery).toMatchObject({ replay: "blocked" });
+  });
+  it("uses the original shutdown time when restart creates the first hold after copyback", async () => {
+    const f = await fixture();
+    await db.update(issueRecoveryActions).set({ createdAt: new Date(f.barrier.finishedAt!.getTime() + 1000) })
+      .where(eq(issueRecoveryActions.id, f.action.id));
+    // Earlier invalid candidates can occupy the first bounded page.
+    let repaired = 0;
+    for (let sweep = 0; sweep < 2; sweep++) repaired += (await reconcileVerifiedWorkspaceRepairs(db)).repaired;
+    expect(repaired).toBe(1);
+    expect((await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, f.run.id)))[0].resultJson?.workspaceRestoreFailure).toBeUndefined();
+  });
+  it("uses the partial sweep index with a representative resolved history", async () => {
+    const f = await fixture();
+    await db.insert(issueRecoveryActions).values(Array.from({ length: 3000 }, () => ({ companyId: f.company.id,
+      sourceIssueId: f.issue.id, kind: "active_run_watchdog", cause: "unrelated_history", ownerType: "board",
+      status: "resolved", outcome: "restored", fingerprint: randomUUID(), nextAction: "Complete", evidence: {} })));
+    await db.execute('analyze issue_recovery_actions');
+    const query = verifiedWorkspaceRepairCandidates(db).toSQL();
+    const rows = await db.$client.unsafe('explain (analyze, buffers, format json) ' + query.sql, query.params as (string | number)[]);
+    const plan = JSON.stringify(rows);
+    expect(plan).toContain("issue_recovery_actions_workspace_repair_sweep_idx");
+    expect(query.sql).not.toContain('heartbeat_run_id"::text');
+    // Do not leave another repairable candidate for the pagination fixture.
+    for (let sweep = 0; sweep < 2; sweep++) await reconcileVerifiedWorkspaceRepairs(db);
   });
   it("pages past a full batch of unverified sources to reach later repairable work", async () => {
     const blocked = [];

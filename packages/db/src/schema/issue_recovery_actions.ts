@@ -44,6 +44,12 @@ export const issueRecoveryActions = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
+    workspaceRepairSweepIdx: index("issue_recovery_actions_workspace_repair_sweep_idx")
+      .on(table.updatedAt, table.id)
+      .where(sql`${table.cause} = 'legacy_execution_requires_reconciliation'
+        and ${table.ownerType} = 'board' and ${table.status} = 'resolved'
+        and ${table.evidence}->'automaticRecovery'->>'replay' = 'blocked'
+        and ${table.evidence}->'workspaceRestoreRecovery'->>'schema' = 'paperclip.workspace-restore-recovery.v1'`),
     companySourceStatusIdx: index("issue_recovery_actions_company_source_status_idx").on(
       table.companyId,
       table.sourceIssueId,

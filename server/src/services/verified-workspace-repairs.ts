@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { environmentLeases, heartbeatRuns, issueRecoveryActions, issues, workspaceOperations, type Db } from "@paperclipai/db";
 import { hasRemoteTerminationReceipt } from "./remote-execution-termination.js";
-import { hasRequiredWorkspaceRecovery, LEGACY_WORKSPACE_RECOVERY_SCHEMA } from "./workspace-restore-recovery-state.js";
+import { hasRequiredWorkspaceRecovery } from "./workspace-restore-recovery-state.js";
 import { persistActivity, publishActivity } from "./activity-log.js";
 import { logger } from "../middleware/logger.js";
 
@@ -11,24 +11,7 @@ const cursors = new WeakMap<Db, SweepCursor>();
 /** A late successful copy-back can settle a shutdown retention hold without a
  * provider call, model turn, or invented claim about earlier external actions. */
 export async function reconcileVerifiedWorkspaceRepairs(db: Db) {
-  const selectCandidates = (connection: Db, cursor?: SweepCursor) => connection.select({ id: issueRecoveryActions.id, companyId: issueRecoveryActions.companyId,
-    cursorTime: sql<string>`${issueRecoveryActions.updatedAt}::text`,
-    issueId: issueRecoveryActions.sourceIssueId }).from(issueRecoveryActions).where(and(
-    eq(issueRecoveryActions.cause, "legacy_execution_requires_reconciliation"),
-    eq(issueRecoveryActions.ownerType, "board"),
-    eq(issueRecoveryActions.status, "resolved"),
-    sql`${issueRecoveryActions.evidence}->'automaticRecovery'->>'replay' = 'blocked'`,
-    sql`${issueRecoveryActions.evidence}->'workspaceRestoreRecovery'->>'schema' = ${LEGACY_WORKSPACE_RECOVERY_SCHEMA}`,
-    // Keep PostgreSQL's timestamp precision; a JS Date loses microseconds and
-    // would repeatedly select the final row instead of wrapping the scan.
-    cursor ? sql`(${issueRecoveryActions.updatedAt}, ${issueRecoveryActions.id})
-      > (${cursor.updatedAt}::timestamptz, ${cursor.id}::uuid)` : undefined,
-    sql`exists (select 1 from ${workspaceOperations} where ${workspaceOperations.companyId} = ${issueRecoveryActions.companyId}
-      and ${workspaceOperations.issueId} = ${issueRecoveryActions.sourceIssueId}
-      and ${workspaceOperations.heartbeatRunId}::text = ${issueRecoveryActions.evidence}->>'runId'
-      and ${workspaceOperations.phase} = 'workspace_finalize' and ${workspaceOperations.status} = 'succeeded'
-      and ${workspaceOperations.finishedAt} >= ${issueRecoveryActions.createdAt})`,
-  )).orderBy(asc(issueRecoveryActions.updatedAt), issueRecoveryActions.id).limit(25);
+  const selectCandidates = (connection: Db, cursor?: SweepCursor) => verifiedWorkspaceRepairCandidates(connection, cursor);
   const candidates = await db.transaction(async tx => {
     await tx.execute(sql`select set_config('statement_timeout', '5000', true), set_config('lock_timeout', '1000', true)`);
     let rows = await selectCandidates(tx as unknown as Db, cursors.get(db));
@@ -38,6 +21,30 @@ export async function reconcileVerifiedWorkspaceRepairs(db: Db) {
     }
     return rows;
   });
+  return reconcileCandidates(db, candidates);
+}
+
+/** Keep these literal predicates aligned with the partial sweep index. Do not
+ * filter on finalization here: the limit must bound candidate work, even when
+ * many old holds have no repair proof. Exact run/finalization checks use their
+ * existing UUID indexes inside each bounded candidate transaction. */
+export function verifiedWorkspaceRepairCandidates(connection: Db, cursor?: SweepCursor) {
+  return connection.select({ id: issueRecoveryActions.id, companyId: issueRecoveryActions.companyId,
+    cursorTime: sql<string>`${issueRecoveryActions.updatedAt}::text`,
+    issueId: issueRecoveryActions.sourceIssueId }).from(issueRecoveryActions).where(and(
+    sql`${issueRecoveryActions.cause} = 'legacy_execution_requires_reconciliation'`,
+    sql`${issueRecoveryActions.ownerType} = 'board'`,
+    sql`${issueRecoveryActions.status} = 'resolved'`,
+    sql`${issueRecoveryActions.evidence}->'automaticRecovery'->>'replay' = 'blocked'`,
+    sql`${issueRecoveryActions.evidence}->'workspaceRestoreRecovery'->>'schema' = 'paperclip.workspace-restore-recovery.v1'`,
+    // Keep PostgreSQL's timestamp precision; a JS Date loses microseconds and
+    // would repeatedly select the final row instead of wrapping the scan.
+    cursor ? sql`(${issueRecoveryActions.updatedAt}, ${issueRecoveryActions.id})
+      > (${cursor.updatedAt}::timestamptz, ${cursor.id}::uuid)` : undefined,
+  )).orderBy(asc(issueRecoveryActions.updatedAt), issueRecoveryActions.id).limit(25);
+}
+
+async function reconcileCandidates(db: Db, candidates: Awaited<ReturnType<typeof verifiedWorkspaceRepairCandidates>>) {
   // Ineligible evidence must not permanently hide later repairable incidents.
   // A process restart can safely restart this idempotent scan from the beginning.
   const last = candidates.at(-1);
@@ -64,9 +71,11 @@ export async function reconcileVerifiedWorkspaceRepairs(db: Db) {
         const [barrier] = await tx.select().from(workspaceOperations).where(and(eq(workspaceOperations.companyId, candidate.companyId),
           eq(workspaceOperations.issueId, issue.id), eq(workspaceOperations.heartbeatRunId, run.id),
           eq(workspaceOperations.phase, "workspace_finalize"))).orderBy(desc(workspaceOperations.createdAt), desc(workspaceOperations.id)).limit(1);
-        const failureRecordedAt = action.createdAt.getTime();
+        // A restart can create the first hold after copyback succeeded. The
+        // original shutdown CAS owns the incident time, not a later hold row.
+        const failureRecordedAt = run.finishedAt?.getTime();
         if (!barrier || !barrier.executionWorkspaceId || barrier.status !== "succeeded" || !barrier.finishedAt || !barrier.startedAt || barrier.finishedAt < barrier.startedAt
-          || !Number.isFinite(failureRecordedAt) || barrier.finishedAt.getTime() < failureRecordedAt || barrier.metadata?.workspaceRestoreFailure) return null;
+          || failureRecordedAt === undefined || !Number.isFinite(failureRecordedAt) || barrier.finishedAt.getTime() < failureRecordedAt || barrier.metadata?.workspaceRestoreFailure) return null;
         const leases = await tx.select().from(environmentLeases).where(and(eq(environmentLeases.companyId, candidate.companyId), eq(environmentLeases.heartbeatRunId, run.id))).for("update");
         const recovery = run.resultJson!.workspaceRestoreRecovery as { leaseIds?: unknown };
         if (!Array.isArray(recovery.leaseIds) || !recovery.leaseIds.length || !leases.length
