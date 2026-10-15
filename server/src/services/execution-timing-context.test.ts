@@ -156,3 +156,34 @@ it("exports only the declared count attributes and rejects unsafe numbers or ext
   const verify = spans.find(span => span.name === "runtime_context.asset_verify")!;
   expect(Object.keys(verify.attributes)).toEqual(["paperclip.task.run.run_id"]);
 });
+
+it("does not inherit another run when a new attempt's tracer lookup fails", async () => {
+  await withRunExecutionTiming("outer", async () => {
+    const lookup = vi.spyOn(trace, "getTracer").mockImplementationOnce(() => { throw new Error("tracer unavailable"); });
+    try {
+      await withRunExecutionTiming("inner", () => measureRunPhase("workspace.sources", () => 42));
+    } finally { lookup.mockRestore(); }
+  });
+  const spans = exporter.getFinishedSpans();
+  const outer = spans.find(span => span.name === "task.execution_attempt")!;
+  const inner = spans.find(span => span.name === "workspace.sources")!;
+  expect(inner.parentSpanContext).toBeUndefined();
+  expect(inner.spanContext().traceId).not.toBe(outer.spanContext().traceId);
+  expect(inner.attributes["paperclip.task.run.run_id"]).toBe(createHash("sha256").update("inner").digest("hex").slice(0, 12));
+});
+
+it("does not attach native children to an ambient run when native context construction fails", async () => {
+  await withRunExecutionTiming("ambient", async () => {
+    const native = createNativeRunTrace({ runId: "native-context-failure", traceContext: {
+      tracer: getStartupTracer("broken-native-context"),
+      contextWithSpan() { throw new Error("context unavailable"); },
+    } });
+    await native.measure("agent.turn", async () => undefined);
+    await native.finish("ok");
+  });
+  const spans = exporter.getFinishedSpans();
+  const ambient = spans.find(span => span.name === "task.execution_attempt")!;
+  const child = spans.find(span => span.name === "agent.turn")!;
+  expect(child.parentSpanContext).toBeUndefined();
+  expect(child.spanContext().traceId).not.toBe(ambient.spanContext().traceId);
+});

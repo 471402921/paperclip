@@ -345,7 +345,7 @@ export function createNativeRunTrace(input: {
             ),
           },
         },
-        parent.context,
+        parent.context ?? ROOT_CONTEXT,
       );
     } catch {
       span = NOOP_SPAN;

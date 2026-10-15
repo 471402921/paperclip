@@ -51,7 +51,7 @@ export type ExecutionPhase =
   | "response.transaction" | "response.transaction.entry" | "response.transaction.commit" | "response.transaction.rollback" | "response.row_lock" | "response.write"
   | "response.resolve" | "response.authorize" | "response.add_comment" | "response.activity" | "response.publish";
 
-type RunScope = { runId: string; parent: Context; ended: boolean; details: Map<string, number> };
+type RunScope = { runId: string; parent?: Context; ended: boolean; details: Map<string, number> };
 const ownership = new AsyncLocalStorage<RunScope>();
 const endpointEnabled = () => Boolean(process.env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim());
 
@@ -65,19 +65,20 @@ function measure<T>(runId: string, name: string, work: () => T | Promise<T>, ind
   const run = (span?: { setStatus(status: { code: number }): void; end(): void }, parent?: Context) => {
     if (operation) return operation;
     const previous = ownership.getStore();
-    const owned = parent ? { runId, parent, ended: false,
+    const owned: RunScope = { runId,
+      parent: parent ?? (!independent && previous?.runId === runId && !previous.ended ? previous.parent : undefined),
+      ended: false,
       details: !independent && previous?.runId === runId ? previous.details : new Map<string, number>(),
-    } : undefined;
-    operation = Promise.resolve().then(() => owned
-      ? ownership.run(owned, () => runWithRuntimeParent(parent, work))
-      : work()).then(value => {
+    };
+    operation = Promise.resolve().then(() =>
+      ownership.run(owned, () => runWithRuntimeParent(owned.parent, work))).then(value => {
         try { span?.end(); } catch {}
-        if (owned) owned.ended = true;
+        owned.ended = true;
         return value;
       }, error => {
         try { span?.setStatus({ code: SpanStatusCode.ERROR }); } catch {}
         try { span?.end(); } catch {}
-        if (owned) owned.ended = true;
+        owned.ended = true;
         throw error;
       });
     return operation;
@@ -119,7 +120,7 @@ export async function measureRunPhase<T>(phase: ExecutionPhase, work: () => T | 
 
 export function beginRunPhase(phase: ExecutionPhase): (failed?: boolean) => void {
   const owned = ownership.getStore();
-  if (!endpointEnabled() || !owned || owned.ended) return () => {};
+  if (!endpointEnabled() || !owned?.parent || owned.ended) return () => {};
   try {
     const span = trace.getTracer("paperclip.execution").startSpan(phase, {}, owned.parent);
     let ended = false;
