@@ -150,4 +150,24 @@ describe("useUpdateIssueMutation", () => {
     expect(mockUpdate).toHaveBeenCalledWith("PAP-1", { priority: "high" });
     expect(mockPushToast).not.toHaveBeenCalled();
   });
+
+  it("sends a newer update only after an older one still retrying settles", async () => {
+    let finishFirst!: (value: unknown) => void;
+    mockUpdate
+      .mockReturnValueOnce(new Promise((done) => { finishFirst = done; }))
+      .mockResolvedValue({ ...issue({ status: "done" }), changes: {} });
+    render();
+    act(() => current.mutate({ id: "PAP-1", data: { status: "in_progress" } }));
+    act(() => current.mutate({ id: "PAP-1", data: { status: "done" } }));
+    await act(async () => {});
+    // The newer change shows right away but waits to be sent.
+    expect(statusIn(queryKeys.issues.detail("PAP-1"))).toBe("done");
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finishFirst({ ...issue({ status: "in_progress" }), changes: {} });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(mockUpdate).toHaveBeenCalledTimes(2);
+    expect(mockUpdate.mock.calls.map((call) => call[1])).toEqual([{ status: "in_progress" }, { status: "done" }]);
+  });
 });

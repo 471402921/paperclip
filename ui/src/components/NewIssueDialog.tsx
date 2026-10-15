@@ -45,6 +45,7 @@ import { useSidebar } from "../context/SidebarContext";
 import { InlineBanner } from "./InlineBanner";
 import { PendingSendNotice } from "./PendingSendNotice";
 import { useDurableSubmit } from "../hooks/useDurableSubmit";
+import type { ErrorDescription } from "../api/errors";
 import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
 import { getTrustPreset } from "../lib/trust-policy-ui";
 
@@ -52,8 +53,11 @@ const DRAFT_KEY = "paperclip:issue-draft";
 /** A create that is waiting to resend: its request body and idempotency key. */
 const PENDING_CREATE_KEY = "paperclip:issue-draft:pending-create";
 
-/** The create request without staged files (files cannot be stored; they ride in memory). */
-type PendingCreate = { fingerprint: string; data: Record<string, unknown> };
+/**
+ * The create request. Staged files cannot be stored, so they ride in memory and
+ * only their names are saved: a create restored after reload knows it needs them.
+ */
+type PendingCreate = { fingerprint: string; data: Record<string, unknown>; stagedFileNames?: string[] };
 
 function isPendingCreate(value: unknown): value is PendingCreate {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -61,8 +65,25 @@ function isPendingCreate(value: unknown): value is PendingCreate {
   return (
     typeof row.fingerprint === "string" &&
     !!row.data && typeof row.data === "object" && !Array.isArray(row.data) &&
-    typeof (row.data as Record<string, unknown>).companyId === "string"
+    typeof (row.data as Record<string, unknown>).companyId === "string" &&
+    (row.stagedFileNames === undefined ||
+      (Array.isArray(row.stagedFileNames) && row.stagedFileNames.every((name) => typeof name === "string")))
   );
+}
+
+/** Thrown before sending a restored create whose staged files are gone from memory. */
+class StagedFilesMissingError extends Error {
+  constructor(names: string[]) {
+    super(
+      `This page no longer has ${names.length === 1 ? "the file" : `the ${names.length} files`} staged for this task (${names.join(", ")}). Attach ${names.length === 1 ? "it" : "them"} again, then create the task.`,
+    );
+    this.name = "StagedFilesMissingError";
+  }
+}
+
+/** Identifies a staged file across reselection from disk, unlike its per-staging `id`. */
+function stagedFileIdentity(file: StagedIssueFile): string {
+  return [file.kind, file.documentKey ?? "", file.file.name, file.file.size, file.file.lastModified].join(":");
 }
 const DEBOUNCE_MS = 800;
 
@@ -513,21 +534,47 @@ export function NewIssueDialog() {
   // Issue create is keyed: the server replays the original issue for a known
   // idempotency key, so an outage or a lost response resends safely.
   const stagedFilesByKey = useRef(new Map<string, StagedIssueFile[]>());
+  // The composer shows a rejection of the first attempt; later (automatic or
+  // Resend now) rejections show here.
+  const firstAttemptKey = useRef<string | null>(null);
+  const [resendError, setResendError] = useState<ErrorDescription | null>(null);
   const durableCreate = useDurableSubmit<PendingCreate, unknown>({
     sourceId: "new-issue-dialog",
     storageKey: PENDING_CREATE_KEY,
     isPayload: isPendingCreate,
     action: "create the task",
     send: async (payload, idempotencyKey) => {
+      const stagedFiles = stagedFilesByKey.current.get(idempotencyKey);
+      // Never create a restored task without the files it was submitted with.
+      if (!stagedFiles && payload.stagedFileNames?.length) {
+        throw new StagedFilesMissingError(payload.stagedFileNames);
+      }
       const result = await createIssue.mutateAsync({
         ...(payload.data as { companyId: string }),
-        stagedFiles: stagedFilesByKey.current.get(idempotencyKey) ?? [],
+        stagedFiles: stagedFiles ?? [],
         idempotencyKey,
       });
       stagedFilesByKey.current.delete(idempotencyKey);
       return result;
     },
+    onRejected: (error, description, pending) => {
+      if (error instanceof StagedFilesMissingError) {
+        // Reattaching the same files resubmits under the original key, so a
+        // create that already reached the server is replayed, not duplicated.
+        createRequestRef.current = { fingerprint: pending.payload.fingerprint, idempotencyKey: pending.idempotencyKey };
+      }
+      if (pending.idempotencyKey !== firstAttemptKey.current) setResendError(description);
+    },
   });
+  // A create restored after reload without its files cannot be sent; say so
+  // now rather than after the first resend delay. Nothing reaches the network.
+  const pendingCreate = durableCreate.pending;
+  const { resendNow: resendCreateNow } = durableCreate;
+  useEffect(() => {
+    if (pendingCreate?.payload.stagedFileNames?.length && !stagedFilesByKey.current.has(pendingCreate.idempotencyKey)) {
+      resendCreateNow();
+    }
+  }, [pendingCreate, resendCreateNow]);
 
   // Debounced draft saving
   const scheduleSave = useCallback((draft: IssueDraft) => {
@@ -900,23 +947,31 @@ export function NewIssueDialog() {
     };
     // An explicit board create is a new task even when its title already exists.
     // Reuse the request key only for retries of the same submitted draft.
-    const fingerprint = JSON.stringify({ ...createData, stagedFiles: stagedFiles.map((file) => file.id) });
+    const fingerprint = JSON.stringify({ ...createData, stagedFiles: stagedFiles.map(stagedFileIdentity) });
     if (createRequestRef.current?.fingerprint !== fingerprint) {
       createRequestRef.current = { fingerprint, idempotencyKey: createUuid() };
     }
     const { idempotencyKey } = createRequestRef.current;
     stagedFilesByKey.current.set(idempotencyKey, stagedFiles);
-    const result = await durableCreate.submit(
-      {
-        fingerprint,
-        data: {
-          ...createData,
-          allowDuplicate: true,
-          navigateOnCreate: newIssueDefaults.navigateOnCreate === true,
+    firstAttemptKey.current = idempotencyKey;
+    setResendError(null);
+    let result;
+    try {
+      result = await durableCreate.submit(
+        {
+          fingerprint,
+          data: {
+            ...createData,
+            allowDuplicate: true,
+            navigateOnCreate: newIssueDefaults.navigateOnCreate === true,
+          },
+          ...(stagedFiles.length > 0 ? { stagedFileNames: stagedFiles.map((file) => file.file.name) } : {}),
         },
-      },
-      { idempotencyKey },
-    );
+        { idempotencyKey },
+      );
+    } finally {
+      firstAttemptKey.current = null;
+    }
     // A transient failure keeps the request and shows the pending notice; a
     // rejection goes back to the composer with readable copy.
     if (result.kind === "rejected") throw result.error;
@@ -931,7 +986,7 @@ export function NewIssueDialog() {
   }
 
   function stageFiles(files: File[]) {
-    if (files.length === 0 || createIssue.isPending) return;
+    if (files.length === 0 || createIssue.isPending || durableCreate.pending) return;
     setStagedFiles((current) => {
       const next = [...current];
       for (const file of files) {
@@ -1246,7 +1301,7 @@ export function NewIssueDialog() {
                 runSettings: composerSettings,
                 onRunSettingsChange: setComposerSettings,
                 header:
-                  hasTitle || isSubIssueMode || durableCreate.pending ? (
+                  hasTitle || isSubIssueMode || durableCreate.pending || resendError ? (
                     <div className="mb-3 flex flex-col gap-2 text-xs">
                       {durableCreate.pending && durableCreate.status !== "sending" ? (
                         <PendingSendNotice
@@ -1261,11 +1316,17 @@ export function NewIssueDialog() {
                           }}
                         />
                       ) : null}
+                      {resendError && !durableCreate.pending ? (
+                        <p role="alert" className="text-sm text-destructive">
+                          {resendError.title}. {resendError.body}
+                        </p>
+                      ) : null}
                       {hasTitle ? (
                         <input
                           aria-label="Task title"
                           value={title}
-                          disabled={createIssue.isPending}
+                          // The waiting request is what gets created; later edits would be lost.
+                          disabled={createIssue.isPending || Boolean(durableCreate.pending)}
                           className="w-full bg-transparent text-sm text-foreground outline-none"
                           onChange={(event) => {
                             titleRef.current = event.target.value;
@@ -1438,6 +1499,7 @@ export function NewIssueDialog() {
                   </>
                 ),
                 submitDisabled: worktreeSelectionIncomplete || parentPrivacyUnresolved || Boolean(durableCreate.pending),
+                readOnly: Boolean(durableCreate.pending),
                 contextBar: (
                   <>
                     <InlineEntitySelector

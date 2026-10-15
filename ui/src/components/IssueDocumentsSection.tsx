@@ -14,6 +14,7 @@ import { isSystemIssueDocumentKey } from "@paperclipai/shared";
 import { useLocation } from "@/lib/router";
 import { ApiError } from "../api/client";
 import { issuesApi } from "../api/issues";
+import { authApi } from "../api/auth";
 import { useDurableAutosave } from "../hooks/useDurableAutosave";
 import { describeError } from "../api/errors";
 import { loadStructuredDraft, saveStructuredDraft } from "../lib/composer-draft";
@@ -136,13 +137,19 @@ function isLockedDocumentError(error: unknown) {
   return error instanceof ApiError && error.status === 409 && error.message === "Document is locked";
 }
 
-/** Unsaved document edits live here until the server confirms them. */
-function documentDraftStorageKey(subjectId: string, key: string) {
-  return `paperclip:document-draft:v1:${subjectId}:${key}`;
+/**
+ * Unsaved document edits live here until the server confirms them. The scope
+ * names the signed-in user as well as the document, so another account in the
+ * same browser never restores (or autosaves) someone else's unpublished text.
+ * A null scope (the session is still loading) stores and restores nothing.
+ */
+function documentDraftStorageKey(scope: string, key: string) {
+  return `paperclip:document-draft:v2:${scope}:${key}`;
 }
 
-function loadStoredDocumentDraft(subjectId: string, key: string): DraftState | null {
-  const stored = loadStructuredDraft<Partial<DraftState> | null>(documentDraftStorageKey(subjectId, key), null);
+function loadStoredDocumentDraft(scope: string | null, key: string): DraftState | null {
+  if (!scope) return null;
+  const stored = loadStructuredDraft<Partial<DraftState> | null>(documentDraftStorageKey(scope, key), null);
   if (
     !stored ||
     stored.key !== key ||
@@ -153,9 +160,10 @@ function loadStoredDocumentDraft(subjectId: string, key: string): DraftState | n
   return { key, title: stored.title, body: stored.body, baseRevisionId: stored.baseRevisionId ?? null, isNew: false };
 }
 
-function clearStoredDocumentDraft(subjectId: string, key: string) {
+function clearStoredDocumentDraft(scope: string | null, key: string) {
+  if (!scope) return;
   try {
-    localStorage.removeItem(documentDraftStorageKey(subjectId, key));
+    localStorage.removeItem(documentDraftStorageKey(scope, key));
   } catch {
     // Unavailable storage holds nothing to clear.
   }
@@ -335,6 +343,12 @@ export function IssueDocumentsSection({
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftState | null>(null);
   const [documentConflict, setDocumentConflict] = useState<DocumentConflictState | null>(null);
+  const { data: session, isSuccess: sessionLoaded } = useQuery({
+    queryKey: queryKeys.auth.session,
+    queryFn: () => authApi.getSession(),
+  });
+  const draftOwnerId = session?.user?.id ?? session?.session?.userId ?? null;
+  const draftScope = sessionLoaded ? `${draftOwnerId ?? "signed-out"}:${documentSubject.id}` : null;
   const [foldedDocumentKeys, setFoldedDocumentKeys] = useState<string[]>(() => loadFoldedDocumentKeys(documentSubject.id));
   const [annotationPanelOpenKeys, setAnnotationPanelOpenKeys] = useState<string[]>(
     () => (defaultAnnotationPanelOpenKeys ?? []),
@@ -515,7 +529,7 @@ export function IssueDocumentsSection({
   const beginEdit = (key: string) => {
     const doc = sortedDocuments.find((entry) => entry.key === key);
     if (!doc) return;
-    const storedDraft = loadStoredDocumentDraft(documentSubject.id, key);
+    const storedDraft = loadStoredDocumentDraft(draftScope, key);
     const conflictedDraft = documentConflict?.key === key
       ? documentConflict.localDraft
       : storedDraft && (storedDraft.body !== doc.body || storedDraft.title !== (doc.title ?? ""))
@@ -549,7 +563,7 @@ export function IssueDocumentsSection({
     if (autosaveDebounceRef.current) {
       clearTimeout(autosaveDebounceRef.current);
     }
-    if (draft && !draft.isNew) clearStoredDocumentDraft(documentSubject.id, draft.key);
+    if (draft && !draft.isNew) clearStoredDocumentDraft(draftScope, draft.key);
     resetAutosaveState();
     setDocumentConflict(null);
     setDraft(null);
@@ -619,7 +633,7 @@ export function IssueDocumentsSection({
         : currentDraft.baseRevisionId,
     };
     const applySaved = (saved: IssueDocument) => {
-      clearStoredDocumentDraft(documentSubject.id, normalizedKey);
+      clearStoredDocumentDraft(draftScope, normalizedKey);
       setError(null);
       setDocumentConflict((current) => current?.key === normalizedKey ? null : current);
       setDraft((value) => {
@@ -689,12 +703,12 @@ export function IssueDocumentsSection({
     }
     setError(describeError(err, { action: "save the document" }).body);
     return false;
-  }, [documentConflict, documentSubject, invalidateIssueDocuments, resetAutosaveState, runAutosave, sortedDocuments, syncDocumentCaches, upsertDocument]);
+  }, [documentConflict, documentSubject, draftScope, invalidateIssueDocuments, resetAutosaveState, runAutosave, sortedDocuments, syncDocumentCaches, upsertDocument]);
 
   const reloadDocumentFromServer = useCallback((key: string) => {
     if (documentConflict?.key !== key) return;
     const serverDocument = documentConflict.serverDocument;
-    clearStoredDocumentDraft(documentSubject.id, key);
+    clearStoredDocumentDraft(draftScope, key);
     setDraft({
       key: serverDocument.key,
       title: serverDocument.title ?? "",
@@ -705,7 +719,7 @@ export function IssueDocumentsSection({
     setDocumentConflict(null);
     resetAutosaveState();
     setError(null);
-  }, [documentConflict, documentSubject.id, resetAutosaveState]);
+  }, [documentConflict, draftScope, resetAutosaveState]);
 
   const overwriteDocumentFromDraft = useCallback(async (key: string) => {
     if (documentConflict?.key !== key) return;
@@ -884,31 +898,32 @@ export function IssueDocumentsSection({
     const existing = sortedDocuments.find((doc) => doc.key === draft.key);
     if (!existing) return;
     if (existing.body === draft.body && (existing.title ?? "") === draft.title) {
-      clearStoredDocumentDraft(documentSubject.id, draft.key);
-    } else {
-      saveStructuredDraft(documentDraftStorageKey(documentSubject.id, draft.key), draft);
+      clearStoredDocumentDraft(draftScope, draft.key);
+    } else if (draftScope) {
+      saveStructuredDraft(documentDraftStorageKey(draftScope, draft.key), draft);
     }
-  }, [documentSubject.id, draft, sortedDocuments]);
+  }, [draftScope, draft, sortedDocuments]);
 
   // After a reload, reopen the first document with an unsaved edit; the
   // autosave below then saves it.
   const restoredStoredDraftRef = useRef(false);
   useEffect(() => {
-    if (restoredStoredDraftRef.current || !documents) return;
+    // Wait for the session: the stored draft belongs to one user.
+    if (restoredStoredDraftRef.current || !documents || !draftScope) return;
     restoredStoredDraftRef.current = true;
     if (draft) return;
     for (const doc of sortedDocuments) {
-      const stored = loadStoredDocumentDraft(documentSubject.id, doc.key);
+      const stored = loadStoredDocumentDraft(draftScope, doc.key);
       if (!stored) continue;
       if (stored.body === doc.body && stored.title === (doc.title ?? "")) {
-        clearStoredDocumentDraft(documentSubject.id, doc.key);
+        clearStoredDocumentDraft(draftScope, doc.key);
         continue;
       }
       beginEdit(doc.key);
       return;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [documents]);
+  }, [documents, draftScope]);
 
   useEffect(() => {
     if (!draft || draft.isNew) return;

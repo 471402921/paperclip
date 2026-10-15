@@ -57,6 +57,8 @@ export function useAutoResend({ sourceId, active, resend, auto = true }: AutoRes
   }, []);
 
   const inFlight = useRef(false);
+  /** A resend just failed; the caller has not reported it as waiting again yet. */
+  const settling = useRef(false);
   const attempts = useRef(0);
   const wasOnline = useRef(online);
   const [resending, setResending] = useState(false);
@@ -79,6 +81,7 @@ export function useAutoResend({ sourceId, active, resend, auto = true }: AutoRes
     }
     if (!mounted.current) return;
     if (outcome === "pending") {
+      settling.current = true;
       attempts.current += 1;
       setRound((value) => value + 1);
     } else {
@@ -87,11 +90,19 @@ export function useAutoResend({ sourceId, active, resend, auto = true }: AutoRes
     }
   }, []);
 
+  // The budget resets once nothing waits. A caller's `active` can drop during
+  // its own resend (its mutation is pending again) and stay down for a render
+  // after the resend failed; that is not a settled send, and resetting then
+  // would let a failing route retry forever.
   useEffect(() => {
-    if (active) return;
+    if (active) {
+      settling.current = false;
+      return;
+    }
+    if (inFlight.current || settling.current) return;
     attempts.current = 0;
     setStalled(false);
-  }, [active]);
+  }, [active, resending]);
 
   useEffect(() => {
     const recovered = online && !wasOnline.current;

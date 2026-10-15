@@ -391,14 +391,17 @@ Writes keep the user's text through an outage:
   (`ui/src/lib/pending-send.ts`, `ui/src/hooks/useDurableSubmit.ts`). After a
   transient failure or a lost response, the composer shows **Sending when
   reconnected…** with **Resend now** and **Cancel**, and resends with the same
-  key on recovery. The server dedupes by that key.
+  key on recovery. The server dedupes by that key. A send restored after a
+  reload waits for an explicit retry. A new task restored without its staged
+  files is not sent; the dialog asks for the files again.
 - Document and inline-editor autosave (`ui/src/hooks/useDurableAutosave.ts`)
   keeps unsaved edits in browser storage, shows **Will save when reconnected**,
   and saves the newest draft on recovery. A `409` whose server copy equals the
-  draft counts as saved.
+  draft counts as saved. Stored document drafts belong to the signed-in user.
 - Issue field updates go through `useUpdateIssueMutation`: optimistic, rolled
   back with readable copy on failure, and replayed on reconnect for absolute
-  fields.
+  fields. Updates run in order, so an older update that retries cannot
+  overwrite a newer one.
 - Uploads and other non-idempotent requests never resend on their own; they
   keep the input and offer **Retry**.
 

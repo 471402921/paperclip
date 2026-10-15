@@ -116,6 +116,8 @@ interface TaskChatComposerProps {
     details?: ReactNode;
     contextBar?: ReactNode;
     submitDisabled?: boolean;
+    /** Lock the editor, e.g. while a submitted create waits to resend. */
+    readOnly?: boolean;
     privacy?: { private: boolean; inherited?: string; onChange: (value: boolean) => void };
     onSelectFiles: (files: File[]) => void;
     runSettings: ComposerRunSettings | null;
@@ -1384,7 +1386,7 @@ export function TaskChatComposer({
                   ? (disabledReason ?? "Composer disabled")
                   : effectivePlaceholder
               }
-              readOnly={disabled || !!uncertainSubmission || Boolean(creation && submitting)}
+              readOnly={disabled || !!uncertainSubmission || Boolean(creation && (submitting || creation.readOnly))}
               mentions={mentions}
               actionCommands={creation ? [] : conversationMode ? [{
                 id: "action:new", kind: "action", command: "new", name: "New session",

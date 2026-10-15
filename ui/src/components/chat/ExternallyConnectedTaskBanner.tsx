@@ -740,19 +740,20 @@ function ConnectedTaskComposer({
           )}
           {!rejection &&
             (publish.isError || unconfirmedRequest) &&
-            !publish.isPending &&
+            // An automatic resend keeps the waiting notice up while it runs.
+            (!publish.isPending || autoResend.resending) &&
             !publication && (
               <div
                 role="alert"
                 className="space-y-1 rounded-md border border-border bg-background p-3 text-xs"
               >
                 <p className="font-medium">
-                  {resendWaiting
+                  {resendWaiting || autoResend.resending
                     ? "Sending when reconnected…"
                     : "Delivery result not confirmed"}
                 </p>
                 <p className="text-muted-foreground">
-                  {resendWaiting
+                  {resendWaiting || autoResend.resending
                     ? "Your exact draft and request identity are kept. It resends on its own without creating a duplicate."
                     : "Your exact draft and request identity are kept. Retry safely to learn the authoritative publication state without creating a duplicate."}
                 </p>
@@ -888,6 +889,11 @@ function ConnectedTaskComposer({
                   retainedScopeKey.current !== storageKey
                 )
                   return;
+                if (resendWaiting) {
+                  // Same saved request; also restarts the automatic resends.
+                  autoResend.resendNow();
+                  return;
+                }
                 idempotencyKey.current ??= crypto.randomUUID();
                 const input = retainedSend.current ?? {
                   attachmentIds: selectedAttachmentIds,

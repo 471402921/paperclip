@@ -162,9 +162,12 @@ export function useUpdateIssueMutation(options: UseUpdateIssueMutationOptions): 
     },
   };
   // Two observers, because `meta` is fixed per mutation: absolute updates may
-  // replay across an outage, anything else fails fast.
-  const replayable = useMutation({ ...mutationOptions, meta: { replay: "idempotent" } });
-  const direct = useMutation(mutationOptions);
+  // replay across an outage, anything else fails fast. Both share one scope,
+  // so issue updates run in the order they were made: a change still retrying
+  // through an outage cannot land after, and overwrite, a newer one.
+  const scope = { id: `issue-update:${companyId ?? "none"}` };
+  const replayable = useMutation({ ...mutationOptions, scope, meta: { replay: "idempotent" } });
+  const direct = useMutation({ ...mutationOptions, scope });
 
   // Stable callbacks: callers list `mutate` in effect and callback deps.
   const replayableRef = useRef(replayable);

@@ -1534,10 +1534,56 @@ describe("NewIssueDialog", () => {
       mockIssuesApi.create.mock.calls[0][1].idempotencyKey,
     );
 
+    // The waiting request is what gets created, so later edits are locked out.
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Task title"]')?.disabled).toBe(true);
+
     act(() => button("Resend now").click());
     await waitForAssertion(() => expect(mockIssuesApi.create).toHaveBeenCalledTimes(2));
     expect(mockIssuesApi.create.mock.calls[1][1].idempotencyKey).toBe(mockIssuesApi.create.mock.calls[0][1].idempotencyKey);
     await waitForAssertion(() => expect(dialogState.closeNewIssue).toHaveBeenCalled());
+    expect(localStorage.getItem("paperclip:issue-draft:pending-create")).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it("shows why a resent create was rejected", async () => {
+    const { ApiError } = await import("../api/client");
+    dialogState.newIssueDefaults = { title: "Rejected on resend" };
+    mockIssuesApi.create
+      .mockRejectedValueOnce(new ApiError("Unavailable", 503, { error: "tenant_app_unavailable" }))
+      .mockRejectedValueOnce(new ApiError("Project is archived", 422, { error: "Project is archived" }));
+    const { root } = renderDialog(container);
+    await flush();
+    const button = (label: string) => Array.from(container.querySelectorAll("button"))
+      .find((item) => item.getAttribute("aria-label") === label || item.textContent === label)!;
+
+    act(() => button("Create task").click());
+    await waitForAssertion(() => expect(container.textContent).toContain("Sending when reconnected…"));
+    act(() => button("Resend now").click());
+    await waitForAssertion(() => expect(container.querySelector('[role="alert"]')?.textContent).toContain("Project is archived"));
+    expect(container.textContent).not.toContain("Sending when reconnected…");
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Task title"]')?.disabled).toBe(false);
+    act(() => root.unmount());
+  });
+
+  it("never creates a restored task without the files it was submitted with", async () => {
+    dialogState.newIssueDefaults = { title: "Has files" };
+    localStorage.setItem("paperclip:issue-draft:pending-create", JSON.stringify({
+      version: 1,
+      key: "paperclip:issue-draft:pending-create",
+      idempotencyKey: "create-key-123",
+      createdAt: Date.now(),
+      payload: {
+        fingerprint: "{}",
+        data: { companyId: "company-1", title: "Has files" },
+        stagedFileNames: ["spec.pdf"],
+      },
+    }));
+    const { root } = renderDialog(container);
+    await flush();
+
+    await waitForAssertion(() => expect(container.querySelector('[role="alert"]')?.textContent).toContain("spec.pdf"));
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Attach it again");
+    expect(mockIssuesApi.create).not.toHaveBeenCalled();
     expect(localStorage.getItem("paperclip:issue-draft:pending-create")).toBeNull();
     act(() => root.unmount());
   });

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, type ReactNode } from "react";
+import { act, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/api/client";
@@ -12,7 +12,7 @@ import {
   type ProbeResult,
 } from "@/lib/connectivity";
 import { MAX_ONLINE_RESENDS, readPendingSend, writePendingSend } from "@/lib/pending-send";
-import { useDurableSubmit, type DurableSubmit, type DurableSubmitOptions } from "./useDurableSubmit";
+import { useAutoResend, useDurableSubmit, type AutoResendState, type DurableSubmit, type DurableSubmitOptions } from "./useDurableSubmit";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -241,5 +241,33 @@ describe("useDurableSubmit", () => {
     });
     expect(send).toHaveBeenCalledTimes(2);
     expect(current.status).toBe("idle");
+  });
+
+  it("keeps its resend budget when the caller stops waiting during each resend", async () => {
+    // Like a mutation-backed caller: `active` drops while its own resend is
+    // pending and only comes back a tick after the resend failed.
+    let auto!: AutoResendState;
+    const resend = vi.fn();
+    function FlappingCaller() {
+      const [waiting, setWaiting] = useState(true);
+      auto = useAutoResend({
+        sourceId: "flapping",
+        active: waiting,
+        resend: async () => {
+          resend();
+          setWaiting(false);
+          await Promise.resolve();
+          setTimeout(() => setWaiting(true), 0);
+          return "pending";
+        },
+      });
+      return null;
+    }
+    act(() => {
+      root.render(<ConnectivityProvider store={store}><FlappingCaller /></ConnectivityProvider>);
+    });
+    for (let step = 0; step < 3 * MAX_ONLINE_RESENDS; step += 1) await advance(30_000);
+    expect(resend).toHaveBeenCalledTimes(MAX_ONLINE_RESENDS);
+    expect(auto.stalled).toBe(true);
   });
 });
