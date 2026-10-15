@@ -174,8 +174,15 @@ populate master's caches. Normal PR lanes restore only; the exact canonical
 master push in release verification is the normal cache writer.
 
 Materialized dependency keys include every tracked package manifest, lockfile,
-workspace configuration, patches, repository scripts, Node version/ABI, platform,
+workspace configuration, patches, the cache planner and audited root installer, Node version/ABI, platform,
 architecture, libc, pnpm version, store location, and physical checkout path.
+The current root installer only links the excluded plugins to the workspace SDK.
+Its exact reviewed source hash permits unrelated repository scripts to change
+without discarding installed dependencies. A changed or missing installer
+restores the conservative key that includes every repository script. Review its
+complete inputs before updating that source hash. A new workspace lifecycle hook
+still disables reuse. The v2 dependency key requires a new canonical master entry;
+an older v1 entry is never restored under the narrower contract.
 There are no prefix restores. An input change takes the normal install path.
 A stale lockfile uses the existing resolution fallback but cannot publish an
 entry. An additional workspace install/prepare hook disables materialized reuse
@@ -183,6 +190,30 @@ until its inputs are modeled. Shared/SDK build outputs have a separate key that 
 packages' source/configuration and the build verifier. The existing verifier
 checks source and output fingerprints and rebuilds incomplete or changed output.
 Tests and their results are never cached or omitted by this mechanism.
+
+For a local experiment with an oversized Runner test file, first run the unchanged
+file with Vitest's JSON reporter. Then, from `packages/paperclip-runner`, run:
+
+```sh
+node ../../scripts/run-vitest-case-shards.mjs src/live/runnerd-codex-transport-settlement.test.ts 4 /tmp/runner-settlement-profile
+```
+
+The launcher dynamically collects the expanded parameterized cases, distributes
+literal full names across isolated Vitest processes, and retains each log and
+JSON report. Cases within each process remain serial. Duplicate titles stay
+together. Every assigned case must actually pass; missing, extra or skipped
+cases fail qualification. This is only suitable for files whose cases already
+own their fixtures and clean up their state. It does not change timeouts, use fake
+timers, or edit assertions. The receipt includes collection and process startup
+time. It does not measure CI setup, scheduling or the complete workflow.
+Run baseline and candidate without another benchmark competing for the same host.
+
+The `general-workspaces-b` lane overlaps at most two project invocations. Each
+keeps its own temporary home, configuration and instance identity. Their combined
+Vitest worker limit stays within the detected CPU capacity or the explicit
+`VITEST_MAX_WORKERS` budget. A configured shared test database or a single worker
+keeps project execution serial. All projects finish before a failure is returned.
+The UI/CLI and database lanes retain their existing scheduling.
 
 Serialized shards share one Vitest controller with `forks`, `isolate`, one
 worker, and file parallelism disabled. Each file gets a separate process and
