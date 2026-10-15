@@ -129,6 +129,14 @@ export function buildConfigurationIncompleteRecoveryNoticeSeed(
       tone: "danger",
     };
   }
+  if (readNonEmptyStringField(configurationIncomplete, "reason") === "shared_realization_unsupported") {
+    return {
+      title: "Shared workspace concurrency unsupported",
+      body: "Paperclip stopped before the agent started because this task's workspace policy allows concurrent agents in one shared folder, but the selected execution environment cannot place them in the same physical folder while another run holds it.",
+      nextAction: "Change the task or project shared-workspace concurrency to auto or serialize, select an isolated task workspace, or run in a local or SSH environment, then retry the task.",
+      tone: "danger",
+    };
+  }
   if (readNonEmptyStringField(configurationIncomplete, "reason") === SANDBOX_PROVIDER_PLUGIN_NOT_READY_REASON) {
     const pluginKey = readNonEmptyStringField(configurationIncomplete, "pluginKey") ?? "the sandbox provider plugin";
     const pluginStatus = readNonEmptyStringField(configurationIncomplete, "pluginStatus") ?? "not ready";

@@ -13,6 +13,8 @@ import { instanceSettingsService } from "../instance-settings.js";
 import { buildNativeExecutionInput } from "../native-runtime/native-execution-input.js";
 import { nativeRuntimeContextFixture } from "../native-runtime/runtime-context.test-fixture.js";
 import { selectHeartbeatEnvironment, type HeartbeatEnvironmentSelectionInput } from "./environment-selection.js";
+import { WORKSPACE_BUSY_ERROR_CODE, WORKSPACE_BUSY_HOLDER_STALE_AFTER_MS, WorkspaceBusyDeferral } from "./retries.js";
+import { ConfigurationIncompleteFailure } from "./run-preparation.js";
 
 const support = await getEmbeddedPostgresTestSupport();
 describe.skipIf(!support.supported)("heartbeat environment selection boundary", () => {
@@ -128,6 +130,51 @@ describe.skipIf(!support.supported)("heartbeat environment selection boundary", 
     expect(result.requestedShouldReuseExisting).toBe(true);
     expect(result.reusableExistingExecutionWorkspace).toBeNull();
     expect(result.requestedReusableExecutionWorkspaceConfig).toBeNull();
+  });
+
+  async function remoteSharedExecutionWorkspace(holderActivityAt = new Date()) {
+    const context = await fixture();
+    const { input, issue, project, workspace } = context;
+    const saved = await workspace();
+    const [sandbox] = await db.insert(environments).values({ name: `Shared sandbox ${randomUUID()}`, driver: "sandbox", status: "active", config: { provider: "fake" } }).returning();
+    input.agent.defaultEnvironmentId = sandbox.id;
+    await db.update(issues).set({ executionWorkspaceId: saved.id, executionWorkspacePreference: "reuse_existing" }).where(eq(issues.id, issue.id));
+    input.task.issueRef!.executionWorkspaceId = saved.id;
+    input.task.issueRef!.executionWorkspacePreference = "reuse_existing";
+    const [holderIssue] = await db.insert(issues).values({ companyId: input.agent.companyId, projectId: project.id, title: "Parent holding the workspace",
+      assigneeAgentId: input.agent.id, executionWorkspaceId: saved.id, executionWorkspacePreference: "reuse_existing" }).returning();
+    const [holderRun] = await db.insert(heartbeatRuns).values({ companyId: input.agent.companyId, agentId: input.agent.id, status: "running", runtimeMode: "legacy",
+      contextSnapshot: { issueId: holderIssue.id }, startedAt: holderActivityAt, lastOutputAt: holderActivityAt, createdAt: holderActivityAt }).returning();
+    return { ...context, saved, holderIssue, holderRun };
+  }
+
+  it("defers instead of failing while a live run holds a shared execution workspace in a sandbox", async () => {
+    const { input, saved, holderIssue, holderRun } = await remoteSharedExecutionWorkspace();
+    const error = await selectHeartbeatEnvironment(db, input).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(WorkspaceBusyDeferral);
+    expect(error).toMatchObject({
+      code: WORKSPACE_BUSY_ERROR_CODE,
+      executionWorkspaceId: saved.id,
+      projectWorkspaceId: null,
+      deferralAttempt: 0,
+      wasIssueAssignee: true,
+      holder: { runId: holderRun.id, agentId: input.agent.id, issueId: holderIssue.id },
+    });
+  });
+
+  it("still rejects an explicit allow policy that a sandbox cannot realize concurrently", async () => {
+    const { input } = await remoteSharedExecutionWorkspace();
+    input.policy.issueExecutionWorkspaceSettings = { sharedWorkspaceConcurrency: "allow" };
+    const error = await selectHeartbeatEnvironment(db, input).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(ConfigurationIncompleteFailure);
+    expect(error).toMatchObject({ resultJson: { configurationIncomplete: { reason: "shared_realization_unsupported" } } });
+  });
+
+  it("does not wait on a stale shared execution workspace holder", async () => {
+    const { input, saved } = await remoteSharedExecutionWorkspace(new Date(Date.now() - WORKSPACE_BUSY_HOLDER_STALE_AFTER_MS - 60_000));
+    const result = await selectHeartbeatEnvironment(db, input);
+    expect(result.reusableExistingExecutionWorkspace?.id).toBe(saved.id);
+    expect(result.selectedEnvironmentForConfig?.driver).toBe("sandbox");
   });
 
   it("uses the low-trust task sandbox even when workspace feature gates hide issue settings", async () => {

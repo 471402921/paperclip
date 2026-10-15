@@ -174,30 +174,33 @@ export interface SharedWorkspaceHolder {
 }
 
 // Pre-dispatch gate outcome: another running run currently holds the issue's
-// shared project workspace. Not a failure — the run is parked as a bounded
-// scheduled retry and re-attempted once the holder finishes, so two agents
-// never mutate the same working tree concurrently.
+// shared project or execution workspace. Not a failure — the run is parked as
+// a bounded scheduled retry and re-attempted once the holder finishes, so two
+// agents never mutate the same working tree concurrently.
 export class WorkspaceBusyDeferral extends Error {
   code = WORKSPACE_BUSY_ERROR_CODE;
   holder: SharedWorkspaceHolder;
-  projectWorkspaceId: string;
+  projectWorkspaceId: string | null;
+  executionWorkspaceId: string | null;
   deferralAttempt: number;
   wasIssueAssignee: boolean;
 
   constructor(input: {
     holder: SharedWorkspaceHolder;
-    projectWorkspaceId: string;
+    projectWorkspaceId: string | null;
+    executionWorkspaceId: string | null;
     deferralAttempt: number;
     wasIssueAssignee: boolean;
   }) {
     super(
-      `Shared project workspace is busy: run ${input.holder.runId} (issue ${
+      `Shared ${input.executionWorkspaceId ? "execution" : "project"} workspace is busy: run ${input.holder.runId} (issue ${
         input.holder.issueIdentifier ?? input.holder.issueId
       }) is still running`,
     );
     this.name = "WorkspaceBusyDeferral";
     this.holder = input.holder;
     this.projectWorkspaceId = input.projectWorkspaceId;
+    this.executionWorkspaceId = input.executionWorkspaceId;
     this.deferralAttempt = input.deferralAttempt;
     this.wasIssueAssignee = input.wasIssueAssignee;
   }
@@ -1446,11 +1449,12 @@ export function createHeartbeatRetries(db: Db, dependencies: HeartbeatRetryDepen
           source: "control_plane",
           expected: true,
           initiator: { type: "system" },
-          reason: "Waiting for the shared project workspace",
+          reason: `Waiting for the shared ${deferral.executionWorkspaceId ? "execution" : "project"} workspace`,
           recordedAt: now.toISOString(),
         },
         workspaceBusy: {
           projectWorkspaceId: deferral.projectWorkspaceId,
+          ...(deferral.executionWorkspaceId ? { executionWorkspaceId: deferral.executionWorkspaceId } : {}),
           holderRunId: deferral.holder.runId,
           holderIssueId: deferral.holder.issueId,
           deferralAttempt: deferral.deferralAttempt,
@@ -1514,6 +1518,7 @@ export function createHeartbeatRetries(db: Db, dependencies: HeartbeatRetryDepen
             : `Deferred: ${deferral.message}. No retry could be scheduled; releasing the issue for other runs.`,
         payload: {
           projectWorkspaceId: deferral.projectWorkspaceId,
+          ...(deferral.executionWorkspaceId ? { executionWorkspaceId: deferral.executionWorkspaceId } : {}),
           holderRunId: deferral.holder.runId,
           holderIssueId: deferral.holder.issueId,
           deferralAttempt: deferral.deferralAttempt,

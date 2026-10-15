@@ -34,7 +34,9 @@ Projects and individual issues can set `sharedWorkspaceConcurrency` in their exe
 
 - `auto` (the default when absent): allow concurrent shared-workspace runs on `local` and `ssh` environments, and serialize runs on `sandbox` and `plugin` environments. An instance forced to Kubernetes always serializes in `auto` mode.
 - `serialize`: on `sandbox` and `plugin` environments, defer a run while another live run holds the same project workspace, using the `workspace_busy` retry path. Local and SSH folders remain concurrent, even when an existing project or issue policy requests serialization.
-- `allow`: dispatch alongside a live holder on every environment.
+- `allow`: dispatch alongside a live holder on every environment. On `sandbox` and `plugin` environments, a reused shared execution workspace cannot be realized concurrently; a live holder there fails the run with `shared_realization_unsupported` before dispatch.
+
+`auto` and `serialize` apply the same `workspace_busy` wait when another live run holds the same reused shared execution workspace on a `sandbox` or `plugin` environment, such as a child task that inherited its parent's workspace.
 
 Issue settings override the project policy, which overrides the default `auto`. The final execution environment determines whether workspace serialization applies; an instance forced to Kubernetes is a sandbox even if the agent normally runs locally. Local and SSH folder runs never wait for exclusive workspace ownership. Task checkout and per-agent concurrency limits still apply. When concurrency is allowed and a live holder exists, Paperclip adds the holder run and issue to the dispatched task context so agents can coordinate concurrent mutations through commits. The setting is optional JSON policy data, so existing databases require no migration.
 

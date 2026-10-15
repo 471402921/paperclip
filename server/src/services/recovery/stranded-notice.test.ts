@@ -60,6 +60,15 @@ describe("stranded recovery notice seeds", () => {
     expect(disabled.body).toContain("an operator disabled it");
   });
 
+  it("explains an unsupported shared-workspace allow policy instead of secret bindings", () => {
+    const seed = buildConfigurationIncompleteRecoveryNoticeSeed({ reason: "shared_realization_unsupported", issueId: "issue-1" });
+    expect(seed.title).toBe("Shared workspace concurrency unsupported");
+    expect(seed.tone).toBe("danger");
+    expect(seed.body).toContain("cannot place them in the same physical folder");
+    expect(seed.nextAction).toContain("auto or serialize");
+    expect(seed.body).not.toContain("secret/env bindings");
+  });
+
   it("keeps the secret-binding copy for other configuration gaps", () => {
     expect(buildConfigurationIncompleteRecoveryNoticeSeed({ reason: "secret_binding_missing" }).body).toContain(
       "secret/env bindings",

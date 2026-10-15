@@ -1,5 +1,5 @@
 import { heartbeatRuns, issues, type Db, type agents } from "@paperclipai/db";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, asc, eq, ne, sql } from "drizzle-orm";
 import type { ExecutionWorkspace, IssueExecutionWorkspaceSettings, ProjectExecutionWorkspacePolicy } from "@paperclipai/shared";
 import { parseObject } from "../../adapters/utils.js";
 import { logger } from "../../middleware/logger.js";
@@ -27,7 +27,7 @@ import type { executionWorkspaceService } from "../execution-workspaces.js";
 import type { instanceSettingsService } from "../instance-settings.js";
 import type { TrustPresetResolution } from "../trust-preset-resolver.js";
 import { WORKSPACE_BUSY_RETRY_REASON } from "../../modules/run-dispatch/index.js";
-import { WorkspaceBusyDeferral, type createHeartbeatRetries } from "./retries.js";
+import { WORKSPACE_BUSY_HOLDER_STALE_AFTER_MS, WorkspaceBusyDeferral, type createHeartbeatRetries } from "./retries.js";
 import { ConfigurationIncompleteFailure } from "./run-preparation.js";
 import { resolveNativeRecoveryExecutionWorkspaceBinding, resolveExecutionWorkspaceReuseRequestForIssue } from "./workspaces.js";
 
@@ -307,23 +307,48 @@ export async function selectHeartbeatEnvironment(db: Db, input: HeartbeatEnviron
       },
     );
   }
-  if (!nativeRecoveryExecutionWorkspaceId && reusableExistingExecutionWorkspace &&
-      effectiveExecutionWorkspaceMode === "shared_workspace" &&
-      selectedEnvironmentForConfig?.driver !== "local" && selectedEnvironmentForConfig?.driver !== "ssh") {
-    const [remoteSharedHolder] = await db.select({ id: heartbeatRuns.id }).from(heartbeatRuns).where(and(
-      eq(heartbeatRuns.companyId, agent.companyId), ne(heartbeatRuns.id, run.id), eq(heartbeatRuns.status, "running"),
-      sql`exists (select 1 from ${issues} where ${issues.companyId} = ${agent.companyId}
-        and ${issues.executionWorkspaceId} = ${reusableExistingExecutionWorkspace.id}
-        and (${issues.executionRunId} = ${heartbeatRuns.id} or ${issues.id}::text = coalesce(${heartbeatRuns.contextSnapshot}->>'issueId', ${heartbeatRuns.contextSnapshot}->>'taskId')))`,
-    )).limit(1);
-    if (remoteSharedHolder) throw new ConfigurationIncompleteFailure("This environment cannot place concurrent agents in one physical shared folder. Use local/SSH sharing or isolated task workspaces.", {
-      configurationIncomplete: { reason: "shared_realization_unsupported", issueId },
-    });
-  }
   const sharedWorkspaceConcurrency = resolveSharedWorkspaceConcurrency({
     projectPolicy: projectExecutionWorkspacePolicy,
     issueSettings: issueExecutionWorkspaceSettings,
   });
+  if (!nativeRecoveryExecutionWorkspaceId && reusableExistingExecutionWorkspace &&
+      effectiveExecutionWorkspaceMode === "shared_workspace" &&
+      selectedEnvironmentForConfig?.driver !== "local" && selectedEnvironmentForConfig?.driver !== "ssh") {
+    const [remoteSharedHolder] = await db.select({
+      runId: heartbeatRuns.id,
+      agentId: heartbeatRuns.agentId,
+      issueId: sql<string>`${issues.id}::text`,
+      issueIdentifier: issues.identifier,
+      lastActivityAt: sql<Date>`coalesce(${heartbeatRuns.lastOutputAt}, ${heartbeatRuns.startedAt}, ${heartbeatRuns.createdAt})`,
+    }).from(heartbeatRuns).innerJoin(issues, and(
+      eq(issues.companyId, heartbeatRuns.companyId),
+      eq(issues.executionWorkspaceId, reusableExistingExecutionWorkspace.id),
+      sql`(${issues.executionRunId} = ${heartbeatRuns.id} or ${issues.id}::text = coalesce(${heartbeatRuns.contextSnapshot}->>'issueId', ${heartbeatRuns.contextSnapshot}->>'taskId'))`,
+    )).where(and(
+      eq(heartbeatRuns.companyId, agent.companyId), ne(heartbeatRuns.id, run.id), eq(heartbeatRuns.status, "running"),
+    )).orderBy(asc(heartbeatRuns.createdAt), asc(heartbeatRuns.id)).limit(1);
+    if (remoteSharedHolder && sharedWorkspaceConcurrency === "allow") {
+      throw new ConfigurationIncompleteFailure("This environment cannot place concurrent agents in one physical shared folder. Use local/SSH sharing or isolated task workspaces.", {
+        configurationIncomplete: { reason: "shared_realization_unsupported", issueId },
+      });
+    }
+    // Auto/serialize policy waits for a live holder, as for a shared project workspace.
+    if (remoteSharedHolder &&
+        new Date(remoteSharedHolder.lastActivityAt).getTime() >= Date.now() - WORKSPACE_BUSY_HOLDER_STALE_AFTER_MS) {
+      throw new WorkspaceBusyDeferral({
+        holder: {
+          runId: remoteSharedHolder.runId,
+          agentId: remoteSharedHolder.agentId,
+          issueId: remoteSharedHolder.issueId,
+          issueIdentifier: remoteSharedHolder.issueIdentifier,
+        },
+        projectWorkspaceId: null,
+        executionWorkspaceId: reusableExistingExecutionWorkspace.id,
+        deferralAttempt: run.scheduledRetryReason === WORKSPACE_BUSY_RETRY_REASON ? (run.scheduledRetryAttempt ?? 0) : 0,
+        wasIssueAssignee: issueContext?.assigneeAgentId === agent.id,
+      });
+    }
+  }
   // A live holder is always consulted for shared workspaces. Depending on policy and the final
   // execution target it either remains the existing deferral gate or becomes dispatch context.
   // Local/SSH folders never take an exclusive workspace lock, including when older
@@ -358,6 +383,7 @@ export async function selectHeartbeatEnvironment(db: Db, input: HeartbeatEnviron
         throw new WorkspaceBusyDeferral({
           holder: workspaceHolder,
           projectWorkspaceId: issueRef.projectWorkspaceId,
+          executionWorkspaceId: null,
           deferralAttempt:
             run.scheduledRetryReason === WORKSPACE_BUSY_RETRY_REASON
               ? (run.scheduledRetryAttempt ?? 0)
