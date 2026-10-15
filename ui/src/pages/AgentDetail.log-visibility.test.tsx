@@ -49,12 +49,12 @@ it.each([LogViewer, ProductionLogViewer])("retains legacy history and reads only
       document.dispatchEvent(new Event("visibilitychange"));
     });
     expect(container.textContent).toContain("retained history");
-    expect(log).toHaveBeenLastCalledWith("run-1", first.length, expect.any(Number));
+    expect(log).toHaveBeenLastCalledWith("run-1", first.length, expect.any(Number), expect.objectContaining({ signal: expect.any(AbortSignal) }));
     await act(async () => complete({ content: second, nextOffset: first.length + second.length }));
     expect(container.textContent).toContain("retained history new output");
     log.mockResolvedValueOnce({ content: first, nextOffset: first.length });
     await act(async () => root.render(<Viewer run={{ ...run, id: "run-2" }} adapterType="codex_local" />));
-    expect(log).toHaveBeenLastCalledWith("run-2", 0, expect.any(Number));
+    expect(log).toHaveBeenLastCalledWith("run-2", 0, expect.any(Number), expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(container.textContent).not.toContain("new output");
   } finally {
     await act(async () => root.unmount());
