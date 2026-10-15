@@ -8,7 +8,7 @@ import {
   type ManagedDatabaseSnapshotReceiptDetails,
 } from "@paperclipai/shared/managed-database";
 import { SUPERVISOR_ROLE, supervisorSql } from "./engine.js";
-import { fsyncDirectory, readJsonIfExists, writeJsonAtomic, type ManagedDatabaseLayout } from "./layout.js";
+import { fsyncDirectory, fsyncFile, readJsonIfExists, writeJsonAtomic, type ManagedDatabaseLayout } from "./layout.js";
 
 export type ClusterAccess = {
   socketDir: string;
@@ -129,6 +129,23 @@ export function snapshotPaths(layout: ManagedDatabaseLayout, snapshotId: string)
   return { archive: `${base}.dump`, metadata: `${base}.json`, partial: `${base}.dump.partial` };
 }
 
+/**
+ * Make a durable archive visible: metadata first, then the archive rename.
+ * A snapshot exists only once its archive is in place, so a crash in between
+ * leaves stray metadata that boot cleanup removes, never an archive without
+ * its details.
+ */
+export function publishSnapshot(
+  layout: ManagedDatabaseLayout,
+  paths: ReturnType<typeof snapshotPaths>,
+  details: ManagedDatabaseSnapshotReceiptDetails,
+  durableFile: string,
+): void {
+  writeJsonAtomic(paths.metadata, details);
+  renameSync(durableFile, paths.archive);
+  fsyncDirectory(layout.snapshotsDir);
+}
+
 export function readSnapshotDetails(layout: ManagedDatabaseLayout, snapshotId: string): ManagedDatabaseSnapshotReceiptDetails | null {
   const paths = snapshotPaths(layout, snapshotId);
   if (!existsSync(paths.archive)) return null;
@@ -179,10 +196,9 @@ export async function createSnapshot(opts: {
     ], libpqEnv(opts.access));
     await conn.unsafe("commit");
 
+    fsyncFile(paths.partial);
     const sha256 = await sha256File(paths.partial);
     const sizeBytes = statSync(paths.partial).size;
-    renameSync(paths.partial, paths.archive);
-    fsyncDirectory(opts.layout.snapshotsDir);
     const details: ManagedDatabaseSnapshotReceiptDetails = {
       snapshotId: opts.snapshotId,
       format: MANAGED_DATABASE_SNAPSHOT_FORMAT,
@@ -195,7 +211,7 @@ export async function createSnapshot(opts: {
       tableRowCounts,
       createdAt: new Date().toISOString(),
     };
-    writeJsonAtomic(paths.metadata, details);
+    publishSnapshot(opts.layout, paths, details, paths.partial);
     return details;
   } catch (error) {
     await conn.unsafe("rollback").catch(() => {});
@@ -312,7 +328,9 @@ export async function listDatabases(admin: Sql): Promise<string[]> {
 
 /**
  * Boot-time reconciliation of an interrupted restore. Returns a description
- * of what was resolved, or null when there was nothing to do.
+ * of what was resolved, or null when there was nothing to do. The intent file
+ * stays in place: the caller removes it after its own bookkeeping (grants and
+ * the recovery hold), and running this again reaches the same outcome.
  */
 export async function reconcileRestoreIntent(opts: {
   access: ClusterAccess;
@@ -342,7 +360,6 @@ export async function reconcileRestoreIntent(opts: {
       if (has(intent.staging)) await admin.unsafe(`drop database if exists ${intent.staging}`);
       outcome = "rolled_back";
     }
-    rmSync(opts.layout.restoreIntentFile, { force: true });
     return { outcome, intent };
   } finally {
     await admin.end({ timeout: 2 });

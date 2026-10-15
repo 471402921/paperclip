@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, chownSync, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { chmodSync, chownSync, createWriteStream, existsSync, fstatSync, mkdirSync, openSync, readdirSync, rmSync } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { createHash } from "node:crypto";
 import type { Readable } from "node:stream";
@@ -42,7 +42,7 @@ import {
   type ProcessIdentity,
   type RunningEngine,
 } from "./engine.js";
-import { managedDatabaseLayout, readJsonIfExists, writeJsonAtomic, type ManagedDatabaseLayout } from "./layout.js";
+import { fsyncFile, managedDatabaseLayout, readJsonIfExists, writeJsonAtomic, type ManagedDatabaseLayout } from "./layout.js";
 import { runManagedDatabasePreflight, type InitializationMarker, type VolumeIdentity } from "./preflight.js";
 import {
   APP_ROLE,
@@ -60,6 +60,7 @@ import {
   createSnapshot,
   listDatabases,
   listSnapshots,
+  publishSnapshot,
   readJournalFingerprint,
   readSnapshotDetails,
   reconcileRestoreIntent,
@@ -217,14 +218,19 @@ export class ManagedDatabaseSupervisor {
     }
 
     const reconciled = await reconcileRestoreIntent({ access: this.access, layout: this.layout, database: TENANT_DATABASE });
-    if (reconciled) {
-      logger.warn({ ...reconciled }, "reconciled an interrupted restore");
-      if (reconciled.outcome === "rolled_back") {
-        this.holds.set({ reason: "restore_interrupted", commandId: reconciled.intent.commandId, detail: "restore was interrupted before its swap; the previous database is active" });
-      }
+    if (reconciled) logger.warn({ ...reconciled }, "reconciled an interrupted restore");
+    if (reconciled?.outcome === "rolled_back") {
+      this.holds.set({ reason: "restore_interrupted", commandId: reconciled.intent.commandId, detail: "restore was interrupted before its swap; the previous database is active" });
+      rmSync(this.layout.restoreIntentFile, { force: true });
     }
 
     await this.applyGrants();
+    if (reconciled?.outcome === "completed") {
+      // Same bookkeeping as an uninterrupted restore: the restored database
+      // replaces whatever state the hold described.
+      this.holds.clear();
+      rmSync(this.layout.restoreIntentFile, { force: true });
+    }
     const admin = supervisorSql(this.access, "postgres");
     try {
       this.appPasswords = await rotateTenantPasswords(admin);
@@ -597,7 +603,10 @@ export class ManagedDatabaseSupervisor {
       const checked = this.leases.check(command.lease);
       if (!checked.ok) reject("lease_stale", 409, "lease is stale, expired, or superseded");
     }
-    const mutating = MANAGED_DATABASE_MUTATING_KINDS.includes(command.kind) || command.kind === "lease.acquire";
+    // A lease cannot change hands while a command is still acting under it.
+    const mutating = MANAGED_DATABASE_MUTATING_KINDS.includes(command.kind)
+      || command.kind === "lease.acquire"
+      || command.kind === "lease.release";
     if (mutating && this.busy) reject("busy", 409, `command ${this.busy} is still running`);
     if (this.status === "starting" && command.kind !== "status") reject("busy", 409, "database is starting");
   }
@@ -802,8 +811,10 @@ export class ManagedDatabaseSupervisor {
       },
     });
     await this.applyGrants();
-    rmSync(this.layout.restoreIntentFile, { force: true });
+    // Clear the hold before the intent: a crash in between reconciles the
+    // restore again at boot, never leaving a hold without its cause.
     this.holds.clear();
+    rmSync(this.layout.restoreIntentFile, { force: true });
     await this.refreshSchemaState();
     return { snapshotId: details.snapshotId, retainedDatabase: result.retained, verifiedTables: result.verifiedTables, schema: this.schema };
   }
@@ -832,6 +843,8 @@ export class ManagedDatabaseSupervisor {
     if (this.schema.state === "current") return { alreadyCurrent: true, schema: this.schema };
     if (this.schema.state === "ahead") reject("precondition_failed", 409, "database schema is ahead of this image");
 
+    // The checks above awaited; the lease may have expired since the gate.
+    if (!this.leases.check(command.lease).ok) reject("lease_stale", 409, "lease expired before the migration started; nothing was changed");
     const before = this.schema;
     this.holds.set({ reason: "migration_interrupted", commandId: command.commandId, detail: null });
     try {
@@ -854,43 +867,48 @@ export class ManagedDatabaseSupervisor {
 
   // -------------------------------------------------------------- archives
 
-  private validateArchiveCommand(headerValue: string | undefined, signature: string | undefined, kind: "snapshot.download" | "snapshot.upload") {
-    let body: unknown;
-    try {
-      body = JSON.parse(Buffer.from(headerValue ?? "", "base64url").toString("utf8"));
-    } catch {
-      reject("invalid_command", 400, "command header is not base64url JSON");
-    }
+  private validateArchiveCommand(body: unknown, signature: string | undefined, kind: "snapshot.download" | "snapshot.upload") {
     const validated = this.validate(body, signature);
     if (validated.command.kind !== kind) reject("invalid_command", 400, `archive endpoint expects ${kind}`);
     this.gate(validated.command);
     return { ...validated, body };
   }
 
-  /** GET /archive: resolves the file to stream, or a rejection. */
+  /** GET /archive: opens the archive to stream, or returns a rejection. The caller owns `fd`. */
   openArchiveDownload(headerValue: string | undefined, signature: string | undefined):
-    | { ok: true; file: string; sha256: string; sizeBytes: number }
+    | { ok: true; fd: number; sha256: string; sizeBytes: number }
     | { ok: false; response: CommandResponse } {
     const startedAt = new Date(this.now()).toISOString();
     try {
-      const { command } = this.validateArchiveCommand(headerValue, signature, "snapshot.download");
+      let body: unknown;
+      try {
+        body = JSON.parse(Buffer.from(headerValue ?? "", "base64url").toString("utf8"));
+      } catch {
+        reject("invalid_command", 400, "command header is not base64url JSON");
+      }
+      const { command } = this.validateArchiveCommand(body, signature, "snapshot.download");
       if (command.kind !== "snapshot.download") throw new Error("unreachable");
       const details = readSnapshotDetails(this.layout, command.args.snapshotId);
       if (!details) reject("not_found", 404, "snapshot not found");
-      const paths = snapshotPaths(this.layout, command.args.snapshotId);
-      return { ok: true, file: paths.archive, sha256: details.sha256, sizeBytes: statSync(paths.archive).size };
+      let fd: number;
+      try {
+        fd = openSync(snapshotPaths(this.layout, command.args.snapshotId).archive, "r");
+      } catch {
+        reject("not_found", 404, "snapshot not found");
+      }
+      return { ok: true, fd, sha256: details.sha256, sizeBytes: fstatSync(fd).size };
     } catch (error) {
       if (error instanceof CommandRejection) return { ok: false, response: this.rejection(null, error, startedAt) };
       throw error;
     }
   }
 
-  /** PUT /archive: stores an archive whose receipt this stack's key signed. */
-  async handleArchiveUpload(headerValue: string | undefined, signature: string | undefined, stream: Readable): Promise<CommandResponse> {
+  /** PUT /archive: stores an archive whose receipt this stack's key signed. `commandBody` is the parsed preamble. */
+  async handleArchiveUpload(commandBody: unknown, signature: string | undefined, stream: Readable): Promise<CommandResponse> {
     const startedAt = new Date(this.now()).toISOString();
     let validated: ReturnType<ManagedDatabaseSupervisor["validateArchiveCommand"]>;
     try {
-      validated = this.validateArchiveCommand(headerValue, signature, "snapshot.upload");
+      validated = this.validateArchiveCommand(commandBody, signature, "snapshot.upload");
     } catch (error) {
       stream.resume();
       if (error instanceof CommandRejection) return this.rejection(null, error, startedAt);
@@ -921,6 +939,8 @@ export class ManagedDatabaseSupervisor {
       if (existsSync(paths.archive)) {
         stream.resume();
         if ((await sha256File(paths.archive)) !== details.sha256) reject("precondition_failed", 409, "a different archive with this id exists");
+        // The signed receipt is authoritative; restore missing metadata.
+        if (!readSnapshotDetails(this.layout, details.snapshotId)) writeJsonAtomic(paths.metadata, details);
       } else {
         partial = `${paths.archive}.upload-${randomBytes(4).toString("hex")}`;
         const hash = createHash("sha256");
@@ -928,9 +948,9 @@ export class ManagedDatabaseSupervisor {
         await pipeline(stream, createWriteStream(partial, { mode: 0o600 }));
         const actual = hash.digest("hex");
         if (actual !== details.sha256) reject("precondition_failed", 409, `uploaded archive sha256 ${actual} does not match receipt`);
-        renameSync(partial, paths.archive);
+        fsyncFile(partial);
+        publishSnapshot(this.layout, paths, details, partial);
         partial = null;
-        writeJsonAtomic(paths.metadata, details);
       }
       const response = this.sign(receiptMeta(command), requestSha256, startedAt, "succeeded", { snapshotId: details.snapshotId, sha256: details.sha256 }, null);
       this.receipts.put(response);
@@ -951,11 +971,14 @@ export class ManagedDatabaseSupervisor {
   }
 }
 
-/** Remove stale snapshot partials left by a crash. */
+/** Remove stale snapshot partials, and metadata whose archive never landed. */
 export function cleanupPartialSnapshots(layout: ManagedDatabaseLayout): void {
   if (!existsSync(layout.snapshotsDir)) return;
-  for (const name of readdirSync(layout.snapshotsDir)) {
-    if (name.includes(".partial") || name.includes(".upload-")) rmSync(`${layout.snapshotsDir}/${name}`, { force: true });
+  const names = readdirSync(layout.snapshotsDir);
+  for (const name of names) {
+    const orphanMetadata = name.endsWith(".json") && !names.includes(`${name.slice(0, -5)}.dump`);
+    const leftover = name.includes(".partial") || name.includes(".upload-") || name.endsWith(".tmp");
+    if (leftover || orphanMetadata) rmSync(`${layout.snapshotsDir}/${name}`, { force: true });
   }
 }
 

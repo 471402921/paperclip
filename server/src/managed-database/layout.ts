@@ -46,10 +46,15 @@ export function managedDatabaseLayout(config: Pick<ManagedDatabaseConfig, "root"
 export function writeJsonAtomic(file: string, value: unknown, mode = 0o600): void {
   const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, { mode });
-  const fd = openSync(tmp, "r");
-  try { fsyncSync(fd); } finally { closeSync(fd); }
+  fsyncFile(tmp);
   renameSync(tmp, file);
   fsyncDirectory(path.dirname(file));
+}
+
+/** Flush a finished file's contents before it is renamed into place. */
+export function fsyncFile(file: string): void {
+  const fd = openSync(file, "r");
+  try { fsyncSync(fd); } finally { closeSync(fd); }
 }
 
 export function fsyncDirectory(dir: string): void {

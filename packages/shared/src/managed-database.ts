@@ -44,9 +44,22 @@ export const MANAGED_DATABASE_HTTP = {
   archive: "/__paperclip/managed-database/v1/archive",
   health: "/__paperclip/managed-database/v1/health",
   signatureHeader: "x-paperclip-managed-database-signature",
+  /** GET archive only: the signed `snapshot.download` command, base64url JSON. */
   commandHeader: "x-paperclip-managed-database-command",
   archiveSha256Header: "x-paperclip-archive-sha256",
 } as const;
+
+/** Largest accepted command: a POST body or an upload preamble. */
+export const MANAGED_DATABASE_MAX_COMMAND_BYTES = 256 * 1024;
+
+/**
+ * Start of a PUT archive body. The signed `snapshot.upload` command is one
+ * line of JSON, then the archive bytes follow. It is not a header because its
+ * receipt lists every table, which can exceed HTTP header limits.
+ */
+export function managedDatabaseUploadPreamble(command: unknown): string {
+  return `${JSON.stringify(command)}\n`;
+}
 
 /** Maximum |now - issuedAt| accepted for a command. */
 export const MANAGED_DATABASE_MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;

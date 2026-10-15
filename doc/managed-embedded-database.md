@@ -51,8 +51,22 @@ authenticated public app with no `DATABASE_URL` refuses to start.
 
 The image entrypoint (`scripts/docker-entrypoint.sh`) sees
 `PAPERCLIP_MANAGED_DATABASE`, refuses to continue unless it is root, keeps the
-supervisor root out of the usual `chown node` pass, and execs
-`server/dist/managed-database/main.js run -- <app command>` as root.
+supervisor's files out of the usual `chown node` pass, and execs
+`/opt/paperclip-managed-database/main.mjs run -- <app command>` as root.
+
+The supervisor never runs from `/app`, because the `node` user owns that tree.
+The `cloud` target builds a self-contained bundle
+(`scripts/build-managed-database-supervisor.mjs`): `main.mjs`, its
+`migrations/`, the PostgreSQL `engine/`, and `release.json`, the release
+identity taken from the app tree at image build. The bundle is root-owned. The
+entrypoint refuses to start if any file in it is not owned by root or is
+writable by group or others. The bundle refuses to start if `release.json`
+does not describe its own migrations.
+
+The ownership pass does not trust the supervisor path alone, because the app
+owns its parent directories and could rename it. The pass also skips every
+directory that holds a root-owned `volume.json`, and everything the database
+user owns.
 
 | Identity | Runs | Can reach |
 | --- | --- | --- |
@@ -103,9 +117,16 @@ In maintenance mode the supervisor serves this on `$PORT`. In serving mode the
 app relays the bytes to `root/public/control.sock`; the app has no key, so it
 can forward but not forge.
 
-Archives use `GET|PUT /__paperclip/managed-database/v1/archive` with the command
-in `x-paperclip-managed-database-command` (base64url JSON) plus the same
-signature header. `GET /__paperclip/managed-database/v1/health` (and
+Archives use `/__paperclip/managed-database/v1/archive` with the same
+signature header:
+
+- `GET` (download): the command goes in `x-paperclip-managed-database-command`
+  as base64url JSON.
+- `PUT` (upload): the body starts with the command as one line of JSON ending
+  in `\n`, at most 256 KiB (`managedDatabaseUploadPreamble`). The archive bytes
+  follow. The command is not a header because its receipt lists every table,
+  which can exceed HTTP header limits.
+ `GET /__paperclip/managed-database/v1/health` (and
 `/api/health` while no app runs) returns `{ "status": "starting" | "maintenance" | "serving" | "recovery" }`.
 
 Every command carries `v, stackId, configGeneration, commandId, issuedAt, kind, args`;
@@ -114,14 +135,14 @@ all but `status` and `lease.acquire` carry `lease: { id, epoch }`.
 | kind | Mode | Effect |
 | --- | --- | --- |
 | `status` | any | Signed readiness identity, lease, retained databases, local snapshots. |
-| `lease.acquire` / `renew` / `release` | any | The epoch increases on every grant and survives restarts. No grant while a mutating command runs. |
+| `lease.acquire` / `renew` / `release` | any | The epoch increases on every grant and survives restarts. No grant or release while a mutating command runs. |
 | `snapshot.create` | any | `pg_dump --format=custom` of the tenant database (`paperclip-pgdump-custom-v1`). Row counts and the journal fingerprint come from the same exported snapshot. `quiesced` in maintenance, `online` while serving. |
 | `snapshot.download` | any | Streams the archive with `x-paperclip-archive-sha256`. Store it off-volume. |
-| `snapshot.upload` | maintenance | Body = archive; `args.receipt` = a signed `snapshot.create` receipt from this stack. Rejects other stacks, other engine majors, and sha256 mismatches. |
+| `snapshot.upload` | maintenance | Body = command line, then the archive; `args.receipt` = a signed `snapshot.create` receipt from this stack. Rejects other stacks, other engine majors, and sha256 mismatches. A retry of an archive already on the volume restores missing metadata. |
 | `snapshot.delete` | any | Removes a local archive. |
 | `snapshot.restore` | maintenance | `pg_restore --single-transaction` into a staging database, verify row counts and journal against the receipt, re-check the lease, swap by rename, retain the old database as `paperclip_pre_restore_<id>`. Clears a recovery hold. |
 | `restore.discard` | maintenance | Drops a retained `paperclip_pre_restore_*` database. |
-| `schema.migrate` | maintenance | Requires a quiesced snapshot at the current journal on this cluster, and `args.release` equal to this image's bundled migrator. Runs it as `paperclip_owner`. A failure or interrupt leaves a recovery hold that only a restore clears. |
+| `schema.migrate` | maintenance | Requires a quiesced snapshot at the current journal on this cluster, and `args.release` equal to this image's bundled migrator. Re-checks the lease immediately before it starts. Runs it as `paperclip_owner`. A failure or interrupt leaves a recovery hold that only a restore clears. |
 
 Rejections (`outcome: "rejected"`): `bad_signature`, `invalid_command`,
 `wrong_stack`, `stale_generation`, `clock_skew` (more than 5 minutes),
@@ -133,7 +154,7 @@ another request is `command_id_conflict`. Receipts are signed with purpose
 
 ## Release capability
 
-`main.js capability` prints `ManagedDatabaseCapability`: contract versions,
+`main.mjs capability` prints `ManagedDatabaseCapability`: contract versions,
 engine majors, bundled engine version, snapshot formats, and the release
 (`migrationsDigest`, `latestMigration`, `migrationCount`, `version`, `commit`).
 The `cloud` Docker target writes it to `/app/managed-database-capability.json`
@@ -164,7 +185,11 @@ remains valid, so the same executor resumes with it and another executor gets
 - Interrupted migration: the hold (`migration_interrupted`) persists; the app
   stays stopped until a restore.
 - Interrupted restore: at start the supervisor finishes a verified swap or rolls
-  back an unverified one and holds the stack (`restore_interrupted`).
+  back an unverified one and holds the stack (`restore_interrupted`). A
+  finished swap clears any earlier hold, as an uninterrupted restore does.
+- Archives are flushed to disk before their metadata is written and before
+  they are renamed into place. A snapshot exists only once its archive is in
+  place; startup removes partial files and metadata without an archive.
 
 ## Testing
 
@@ -174,6 +199,9 @@ remains valid, so the same executor resumes with it and another executor gets
   real embedded PostgreSQL. Snapshot tests need `pg_dump`/`pg_restore` 18
   (`postgresql-client-18`, or `PAPERCLIP_MANAGED_DATABASE_PG_CLIENT_BIN_DIR`) and
   skip with a message otherwise.
+- `managed-database-bundle.test.ts`: builds the image bundle and checks that it
+  reports the same capability as the source tree, that its engine can run
+  `initdb`, and that it refuses a mismatched `release.json`.
 - `managed-database-os-isolation.test.ts`: opt-in, root only. It creates two
   system users and mounts tmpfs volumes:
   `sudo -E env PATH="$PATH:/usr/sbin:/sbin" PAPERCLIP_MANAGED_DATABASE_OS_TESTS=1 ./node_modules/.bin/vitest run src/__tests__/managed-database-os-isolation.test.ts`

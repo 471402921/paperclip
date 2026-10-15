@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import postgres from "postgres";
-import { MANAGED_DATABASE_HTTP } from "@paperclipai/shared/managed-database";
+import { MANAGED_DATABASE_HTTP, managedDatabaseUploadPreamble } from "@paperclipai/shared/managed-database";
 import type {
   ManagedDatabaseCommand,
   ManagedDatabaseConfig,
@@ -205,6 +205,21 @@ export async function socketRequest(
     if (body !== undefined) req.write(body);
     req.end();
   });
+}
+
+/** PUT archive request: the signature header, and a body of command line + archive. */
+export function signedUpload(key: Buffer, command: Record<string, unknown>, archive: Buffer): { headers: Record<string, string>; body: Buffer } {
+  return {
+    headers: {
+      "content-type": "application/octet-stream",
+      [MANAGED_DATABASE_HTTP.signatureHeader]: signManagedDatabasePayload(key, "command", command),
+    },
+    body: Buffer.concat([Buffer.from(managedDatabaseUploadPreamble(command)), archive]),
+  };
+}
+
+export async function uploadArchive(socketPath: string, upload: { headers: Record<string, string>; body: Buffer }): Promise<SocketResponse> {
+  return await socketRequest(socketPath, "PUT", MANAGED_DATABASE_HTTP.archive, upload.headers, upload.body);
 }
 
 export function signedArchiveHeaders(key: Buffer, body: Record<string, unknown>): Record<string, string> {

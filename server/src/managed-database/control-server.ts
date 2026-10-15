@@ -1,9 +1,11 @@
 import { createReadStream, chmodSync, existsSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { MANAGED_DATABASE_HTTP } from "@paperclipai/shared/managed-database";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { MANAGED_DATABASE_HTTP, MANAGED_DATABASE_MAX_COMMAND_BYTES } from "@paperclipai/shared/managed-database";
 import type { CommandResponse, ManagedDatabaseSupervisor } from "./supervisor.js";
 
-const MAX_COMMAND_BYTES = 256 * 1024;
+const MAX_COMMAND_BYTES = MANAGED_DATABASE_MAX_COMMAND_BYTES;
 
 function send(res: ServerResponse, response: CommandResponse): void {
   const payload = JSON.stringify(response.body);
@@ -20,6 +22,35 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
     chunks.push(chunk as Buffer);
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+/**
+ * Split a PUT archive body into its command preamble (one line of JSON) and
+ * the archive stream that follows it.
+ */
+export async function readUploadPreamble(body: Readable): Promise<{ command: unknown; archive: Readable }> {
+  const chunks = body[Symbol.asyncIterator]();
+  let head = Buffer.alloc(0);
+  let newline = -1;
+  while (newline < 0) {
+    const next = await chunks.next();
+    if (next.done) throw new Error("upload body ended before its command line");
+    head = Buffer.concat([head, next.value as Buffer]);
+    newline = head.indexOf(0x0a);
+    if (newline < 0 && head.length > MAX_COMMAND_BYTES) throw new Error("upload command line too large");
+  }
+  if (newline > MAX_COMMAND_BYTES) throw new Error("upload command line too large");
+  const command: unknown = JSON.parse(head.subarray(0, newline).toString("utf8"));
+  const rest = head.subarray(newline + 1);
+  const archive = Readable.from((async function* () {
+    if (rest.length > 0) yield rest;
+    for (;;) {
+      const next = await chunks.next();
+      if (next.done) return;
+      yield next.value as Buffer;
+    }
+  })());
+  return { command, archive };
 }
 
 function header(req: IncomingMessage, name: string): string | undefined {
@@ -53,13 +84,20 @@ export function createControlHandler(supervisor: ManagedDatabaseSupervisor, main
         return;
       }
       if (url.pathname === MANAGED_DATABASE_HTTP.archive && (req.method === "GET" || req.method === "PUT")) {
-        const commandHeader = header(req, MANAGED_DATABASE_HTTP.commandHeader);
         const signature = header(req, MANAGED_DATABASE_HTTP.signatureHeader);
         if (req.method === "PUT") {
-          send(res, await supervisor.handleArchiveUpload(commandHeader, signature, req));
+          let upload: Awaited<ReturnType<typeof readUploadPreamble>>;
+          try {
+            upload = await readUploadPreamble(req);
+          } catch {
+            req.resume();
+            send(res, { status: 400, body: { outcome: "rejected", code: "invalid_command", error: "upload body must start with one line of command JSON" } });
+            return;
+          }
+          send(res, await supervisor.handleArchiveUpload(upload.command, signature, upload.archive));
           return;
         }
-        const opened = supervisor.openArchiveDownload(commandHeader, signature);
+        const opened = supervisor.openArchiveDownload(header(req, MANAGED_DATABASE_HTTP.commandHeader), signature);
         if (!opened.ok) {
           send(res, opened.response);
           return;
@@ -70,7 +108,9 @@ export function createControlHandler(supervisor: ManagedDatabaseSupervisor, main
           [MANAGED_DATABASE_HTTP.archiveSha256Header]: opened.sha256,
           "cache-control": "no-store",
         });
-        createReadStream(opened.file).pipe(res);
+        // The descriptor was opened before the headers, so a concurrent
+        // delete cannot fail the stream; a read error only ends this response.
+        await pipeline(createReadStream("", { fd: opened.fd }), res).catch(() => res.destroy());
         return;
       }
       if (maintenanceSurface()) {

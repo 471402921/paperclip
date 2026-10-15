@@ -1,7 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import os from "node:os";
+import { closeSync, existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -20,9 +19,11 @@ import {
   getManagedDatabaseTestSupport,
   sendCommand,
   signedArchiveHeaders,
+  signedUpload,
   socketRequest,
   superuserSql,
   type TestStack,
+  uploadArchive,
 } from "./helpers/managed-database.js";
 
 const support = await getManagedDatabaseTestSupport();
@@ -193,6 +194,40 @@ describeSnapshots("managed embedded database: release migration and verified res
     await su.end();
     expect(leftovers).toEqual([]);
   }, TIMEOUT);
+
+  it("rechecks the lease before migrating and keeps it while a command runs", async () => {
+    // Past the previous test's simulated lease expiry.
+    let clock = Date.now() + 60_000;
+    let su = superuserSql(stack);
+    await su`delete from drizzle.__drizzle_migrations where id = (select max(id) from drizzle.__drizzle_migrations)`;
+    const [{ n: journalBefore }] = await su<{ n: number }[]>`select count(*)::int as n from drizzle.__drizzle_migrations`;
+    await su.end();
+    supervisor = await restart(stack, supervisor, {}, { now: () => clock });
+    expect(supervisor.readiness().schema.state).toBe("pending");
+    const issuedAt = () => new Date(clock).toISOString();
+    const granted = (await sendCommand(supervisor, stack, { kind: "lease.acquire", args: { holder: "test", ttlSeconds: 10 } }, { issuedAt: issuedAt() })).receipt.details.lease as { id: string; epoch: number };
+    const lease = { id: granted.id, epoch: granted.epoch };
+
+    // The holder cannot release the lease while a command acts under it.
+    const snapBody = buildCommand(stack, { kind: "snapshot.create", lease }, { issuedAt: issuedAt() });
+    const snapping = supervisor.handleCommand(snapBody, signManagedDatabasePayload(stack.controlKey, "command", snapBody));
+    const early = await sendCommand(supervisor, stack, { kind: "lease.release", lease }, { issuedAt: issuedAt() });
+    expect(early.receipt.code).toBe("busy");
+    const snapshotId = ((await snapping).body as ManagedDatabaseReceipt & { details: { snapshot: { snapshotId: string } } }).details.snapshot.snapshotId;
+
+    // The lease expires after the gate, while the journal is being read.
+    const release = supervisor.readiness().release;
+    const body = buildCommand(stack, { kind: "schema.migrate", args: { snapshotId, release }, lease }, { issuedAt: issuedAt() });
+    const pending = supervisor.handleCommand(body, signManagedDatabasePayload(stack.controlKey, "command", body));
+    clock += 11_000;
+    const response = (await pending).body as ManagedDatabaseReceipt;
+    expect(response).toMatchObject({ outcome: "rejected", code: "lease_stale" });
+    expect(supervisor.readiness()).toMatchObject({ hold: null, schema: { state: "pending" } });
+    su = superuserSql(stack);
+    const [{ n: journalAfter }] = await su<{ n: number }[]>`select count(*)::int as n from drizzle.__drizzle_migrations`;
+    await su.end();
+    expect(journalAfter).toBe(journalBefore);
+  }, TIMEOUT);
 });
 
 describeSnapshots("managed embedded database: off-volume archives and disaster restore", () => {
@@ -237,6 +272,14 @@ describeSnapshots("managed embedded database: off-volume archives and disaster r
       await app`insert into companies (id, name, issue_prefix) values (${randomUUID()}, ${`Company ${i}`}, ${`D${i}`})`;
     }
     await app.end();
+    // Enough plugin tables that the receipt (one row count per table) is
+    // larger than an HTTP header may be.
+    const pluginSql = appSql(sourceSupervisor, "plugin");
+    await pluginSql`create schema plugin_bulk_fixture`;
+    for (let i = 0; i < 300; i += 1) {
+      await pluginSql.unsafe(`create table plugin_bulk_fixture.t_${String(i).padStart(3, "0")}_${"x".repeat(40)} (id int)`);
+    }
+    await pluginSql.end();
 
     const health = await socketRequest(socket, "GET", MANAGED_DATABASE_HTTP.health, {});
     expect(JSON.parse(health.body.toString())).toEqual({ status: "maintenance" });
@@ -253,9 +296,23 @@ describeSnapshots("managed embedded database: off-volume archives and disaster r
     expect(download.status).toBe(200);
     expect(download.headers[MANAGED_DATABASE_HTTP.archiveSha256Header]).toBe(details.sha256);
     expect(createHash("sha256").update(download.body).digest("hex")).toBe(details.sha256);
-    const offVolume = mkdtempSync(path.join(os.tmpdir(), "paperclip-mdb-offvolume-"));
     const archive = download.body;
-    rmSync(offVolume, { recursive: true, force: true });
+    expect(Buffer.from(JSON.stringify(snapshotReceipt)).toString("base64url").length).toBeGreaterThan(16 * 1024);
+
+    // A download that is already open survives a concurrent delete.
+    const racing = buildCommand(source, { kind: "snapshot.download", args: { snapshotId: details.snapshotId }, lease: { id: lease.id, epoch: lease.epoch } });
+    const opened = sourceSupervisor.openArchiveDownload(Buffer.from(JSON.stringify(racing)).toString("base64url"), signManagedDatabasePayload(source.controlKey, "command", racing));
+    if (!opened.ok) throw new Error(JSON.stringify(opened.response));
+    const deleted = await command(source, socket, buildCommand(source, { kind: "snapshot.delete", args: { snapshotId: details.snapshotId }, lease: { id: lease.id, epoch: lease.epoch } }));
+    expect(deleted.status).toBe(200);
+    try {
+      expect(createHash("sha256").update(readFileSync(opened.fd)).digest("hex")).toBe(details.sha256);
+    } finally {
+      closeSync(opened.fd);
+    }
+    const gone = await socketRequest(socket, "GET", MANAGED_DATABASE_HTTP.archive, signedArchiveHeaders(source.controlKey,
+      buildCommand(source, { kind: "snapshot.download", args: { snapshotId: details.snapshotId }, lease: { id: lease.id, epoch: lease.epoch } })));
+    expect(gone.status).toBe(404);
 
     // Disaster: the source volume is gone. A fresh volume for the same stack.
     const destination = await createTestStack({
@@ -272,28 +329,26 @@ describeSnapshots("managed embedded database: off-volume archives and disaster r
     // A corrupted transfer is rejected and leaves nothing behind.
     const corrupt = Buffer.from(archive);
     corrupt[corrupt.length - 10] ^= 0xff;
-    const badUpload = await socketRequest(destinationSocket, "PUT", MANAGED_DATABASE_HTTP.archive, {
-      "content-type": "application/octet-stream",
-      ...signedArchiveHeaders(destination.controlKey, buildCommand(destination, { kind: "snapshot.upload", args: { receipt: snapshotReceipt }, lease: destLeaseRef })),
-    }, corrupt);
+    const badUpload = await uploadArchive(destinationSocket, signedUpload(destination.controlKey, buildCommand(destination, { kind: "snapshot.upload", args: { receipt: snapshotReceipt }, lease: destLeaseRef }), corrupt));
     expect(JSON.parse(badUpload.body.toString()).code).toBe("precondition_failed");
     expect(existsSync(path.join(destinationSupervisor.layout.snapshotsDir, `${details.snapshotId}.dump`))).toBe(false);
 
     // Another stack's archive (validly signed by that stack) is refused.
     const foreign = await createTestStack();
     const foreignReceipt = signManagedDatabaseReceipt(foreign.controlKey, { ...snapshotReceipt, stackId: foreign.config.stackId });
-    const foreignUpload = await socketRequest(destinationSocket, "PUT", MANAGED_DATABASE_HTTP.archive, {
-      "content-type": "application/octet-stream",
-      ...signedArchiveHeaders(destination.controlKey, buildCommand(destination, { kind: "snapshot.upload", args: { receipt: foreignReceipt }, lease: destLeaseRef })),
-    }, archive);
+    const foreignUpload = await uploadArchive(destinationSocket, signedUpload(destination.controlKey, buildCommand(destination, { kind: "snapshot.upload", args: { receipt: foreignReceipt }, lease: destLeaseRef }), archive));
     expect(JSON.parse(foreignUpload.body.toString()).code).toBe("precondition_failed");
     foreign.cleanup();
 
-    const upload = await socketRequest(destinationSocket, "PUT", MANAGED_DATABASE_HTTP.archive, {
-      "content-type": "application/octet-stream",
-      ...signedArchiveHeaders(destination.controlKey, buildCommand(destination, { kind: "snapshot.upload", args: { receipt: snapshotReceipt }, lease: destLeaseRef })),
-    }, archive);
+    const upload = await uploadArchive(destinationSocket, signedUpload(destination.controlKey, buildCommand(destination, { kind: "snapshot.upload", args: { receipt: snapshotReceipt }, lease: destLeaseRef }), archive));
     expect(upload.status).toBe(200);
+
+    // A crash between the archive and its metadata: a retried upload repairs it.
+    const uploadedMetadata = path.join(destinationSupervisor.layout.snapshotsDir, `${details.snapshotId}.json`);
+    rmSync(uploadedMetadata);
+    const retried = await uploadArchive(destinationSocket, signedUpload(destination.controlKey, buildCommand(destination, { kind: "snapshot.upload", args: { receipt: snapshotReceipt }, lease: destLeaseRef }), archive));
+    expect(retried.status).toBe(200);
+    expect(existsSync(uploadedMetadata)).toBe(true);
 
     const startedAt = Date.now();
     const restored = await command(destination, destinationSocket, buildCommand(destination, { kind: "snapshot.restore", args: { snapshotId: details.snapshotId }, lease: destLeaseRef }));
@@ -517,6 +572,8 @@ describeEngine("managed embedded database: interrupts", () => {
       v: 1, restoreId: "aaaa", snapshotId: "snap_x", commandId: "cmd_x",
       staging: "paperclip_restore_aaaa", retained: "paperclip_pre_restore_aaaa", phase: "verified",
     });
+    // The restore was recovering a failed migration; finishing it clears that hold.
+    writeJsonAtomic(layout.holdFile, { reason: "migration_failed", commandId: "cmd_migrate", detail: "boom", since: new Date().toISOString() });
     await supervisor.stop();
 
     supervisor = await buildSupervisor(stack, support);

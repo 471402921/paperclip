@@ -2,10 +2,13 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   canonicalJson,
+  MANAGED_DATABASE_MAX_COMMAND_BYTES,
   managedDatabaseCommandSchema,
+  managedDatabaseUploadPreamble,
   parseManagedDatabaseConfig,
   type ManagedDatabaseConfig,
   type ManagedDatabaseReadiness,
@@ -18,6 +21,7 @@ import {
   verifyManagedDatabaseSignature,
 } from "@paperclipai/shared/managed-database-server";
 import { resolveManagedEmbeddedAppDatabase } from "../managed-database/app-contract.js";
+import { readUploadPreamble } from "../managed-database/control-server.js";
 import { managedDatabaseLayout, writeJsonAtomic } from "../managed-database/layout.js";
 import { lookupOsUser, resolveProductionIdentities } from "../managed-database/main.js";
 import { runManagedDatabasePreflight, type InitializationMarker } from "../managed-database/preflight.js";
@@ -85,6 +89,33 @@ describe("managed database config contract", () => {
     expect(managedDatabaseCommandSchema.safeParse({ ...base, kind: "snapshot.create", args: {} }).success).toBe(false);
     expect(managedDatabaseCommandSchema.safeParse({ ...base, kind: "snapshot.create", args: {}, lease: { id: "lease_1", epoch: 1 } }).success).toBe(true);
     expect(managedDatabaseCommandSchema.safeParse({ ...base, kind: "shell", args: { cmd: "id" } }).success).toBe(false);
+  });
+});
+
+describe("managed database archive upload framing", () => {
+  async function collect(stream: Readable): Promise<Buffer> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(chunk as Buffer);
+    return Buffer.concat(chunks);
+  }
+
+  it("splits the command line from archive bytes across any chunking", async () => {
+    // Larger than a default HTTP header block, like a receipt with many tables.
+    const command = { kind: "snapshot.upload", padding: "t".repeat(40_000) };
+    const archive = randomBytes(70_000);
+    archive[0] = 0x0a; // archive bytes may contain newlines
+    const body = Buffer.concat([Buffer.from(managedDatabaseUploadPreamble(command)), archive]);
+    const chunks = [body.subarray(0, 7), body.subarray(7, 40_003), body.subarray(40_003, 40_100), body.subarray(40_100)];
+    const parsed = await readUploadPreamble(Readable.from(chunks));
+    expect(parsed.command).toEqual(command);
+    expect((await collect(parsed.archive)).equals(archive)).toBe(true);
+  });
+
+  it("refuses a body without a bounded command line", async () => {
+    await expect(readUploadPreamble(Readable.from([Buffer.from('{"kind":"snapshot.upload"}')]))).rejects.toThrow(/ended before/);
+    const oversized = Buffer.alloc(MANAGED_DATABASE_MAX_COMMAND_BYTES + 2, 0x20);
+    await expect(readUploadPreamble(Readable.from([oversized, Buffer.from("\n")]))).rejects.toThrow(/too large/);
+    await expect(readUploadPreamble(Readable.from([Buffer.from("not json\n")]))).rejects.toThrow();
   });
 });
 
