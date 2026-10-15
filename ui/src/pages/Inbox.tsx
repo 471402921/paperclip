@@ -222,7 +222,13 @@ function normalizeInboxCollectionViewState(value: unknown): StreamlinedInboxView
         ? category
         : "everything",
     allApprovalFilter: approval === "actionable" || approval === "resolved" ? approval : "all",
-    issueFilters: normalizeIssueFilterState(candidate.issueFilters),
+    issueFilters: {
+      ...normalizeIssueFilterState(candidate.issueFilters),
+      // The filter menu no longer offers Workspace. Drop a saved selection so
+      // it cannot keep hiding tasks. A task-link workspace query is applied
+      // by the task list after this load.
+      workspaces: [],
+    },
     showDateGroupSeparators: candidate.showDateGroupSeparators !== false,
   };
 }
@@ -2483,7 +2489,6 @@ function StreamlinedInbox({
                 enableRoutineVisibilityFilter
                 buttonVariant="outline"
                 iconOnly
-                workspaces={isolatedWorkspacesEnabled ? executionWorkspaces.filter((w) => w.mode === "isolated_workspace").map((w) => ({ id: w.id, name: w.name })) : undefined}
                 presentation={streamlinedUiEnabled ? "streamlined" : "legacy"}
               />
               <Popover>
@@ -2589,7 +2594,6 @@ function StreamlinedInbox({
                 enableRoutineVisibilityFilter
                 buttonVariant="outline"
                 iconOnly
-                workspaces={isolatedWorkspacesEnabled ? executionWorkspaces.filter((w) => w.mode === "isolated_workspace").map((w) => ({ id: w.id, name: w.name })) : undefined}
                 presentation={streamlinedUiEnabled ? "streamlined" : "legacy"}
                 inboxScopeFilters={tab === "all" ? {
                   category: allCategoryFilter,

@@ -1,4 +1,5 @@
-import { slackRegistrationSchema, slackSetupActionSchema, slackInstallAuthorizationSchema, slackRegistrationStateSchema, slackAppConfigurationSchema, slackAvatarStateSchema, slackAccountStateSchema } from "@paperclipai/shared";
+import { updateFastResponseSchema } from "@paperclipai/shared";
+import { slackTestMessageSchema, slackTestMessageResultSchema, slackManagerAuthorizationSchema, slackSetupOptionsSchema, slackManagedProvisionSchema, slackManagedResultSchema, slackRegistrationSchema, slackSetupActionSchema, slackInstallAuthorizationSchema, slackRegistrationStateSchema, slackAppConfigurationSchema, slackAvatarStateSchema, slackAccountStateSchema } from "@paperclipai/shared";
 import { experimentalApiMetadata } from "./experimental-api-metadata.js";
 import {
   experimentalApiPaths,
@@ -25,6 +26,7 @@ import {
   browserUseSettingsSchema,
   browserUseViewportSchema,
   browserUseViewerSchema,
+  startVoiceSessionSchema, voiceCallbackPreferenceSchema, voicePhoneConfigurationSchema, voiceInboundDecisionSchema, VOICE_SESSION_STATES,
   slackToolCallSchema,
   slackSearchConfigSchema,
   // Agent
@@ -74,6 +76,8 @@ import {
   upsertIssueFeedbackVoteSchema,
   upsertIssueWatchdogSchema,
   runnerGoalActionRequestSchema,
+  selectTaskWorkspaceSchema,
+  prepareWorkspaceRepositorySchema,
   // Project
   createProjectSchema,
   updateProjectSchema,
@@ -801,8 +805,9 @@ const chatAdapterCapabilitiesResponseSchema = z
 const chatEndpointSetupResponseSchema = z
   .object({
     step: z.enum(["choose_agent", "provider_setup", "test", "complete"]),
-    slackSetupMethod: z.enum(["automatic", "manual", "existing"]).optional(),
+    slackSetupMethod: z.enum(["managed", "automatic", "manual", "existing"]).optional(),
     slackRegistration: slackRegistrationStateSchema.optional(),
+    slackManagerError: z.string().optional(),
     slackAvatar: slackAvatarStateSchema.optional(),
     slackAccount: slackAccountStateSchema.optional(),
     slackOAuthCallbackUri: z.string().nullable().optional(),
@@ -1367,6 +1372,11 @@ const browserUseOperations = [
 ] as const;
 
 const BOARD_ONLY_OPERATIONS = new Set([
+  "GET /api/companies/{companyId}/fast-response",
+  "PUT /api/companies/{companyId}/fast-response",
+  "GET /api/companies/{companyId}/fast-response/models",
+  "GET /api/companies/{companyId}/fast-response/availability",
+  "POST /api/companies/{companyId}/fast-response/test",
   "GET /api/companies/{companyId}/decision-model",
   "PUT /api/companies/{companyId}/decision-model",
   "POST /api/companies/{companyId}/decision-model/test",
@@ -1710,7 +1720,10 @@ function operationKey(method: string, path: string) {
   return `${method.toUpperCase()} ${path}`;
 }
 
+function isVoiceSessionOperation(path: string) { return /^\/api\/companies\/\{companyId\}\/voice-(sessions|callbacks|phone|history)(?:\/|$)/.test(path); }
+
 function isBoardOnlyOperation(method: string, path: string) {
+  if (isVoiceSessionOperation(path)) return true;
   const key = operationKey(method, path);
   if (BOARD_ONLY_OPERATIONS.has(key)) return true;
   return BOARD_ONLY_PREFIXES.some((prefix) => path.startsWith(prefix));
@@ -1827,6 +1840,11 @@ function applyDocumentFixups(document: any): any {
               : authLevel === "authenticated"
                 ? { actor: "board_or_agent" }
                 : { actor: "public" };
+
+      if (isVoiceSessionOperation(path)) {
+        operation.security = [{[BOARD_SESSION_AUTH_SCHEME]: []}];
+        operation["x-paperclip-authorization"] = {actor: "board", sessionBound: true};
+      }
 
       const key = operationKey(method, path);
       if (authLevel !== "public") {
@@ -2223,6 +2241,30 @@ for (const [method, path, summary, body] of browserUseOperations) {
   });
 }
 
+// Voice endpoints accept current authenticated board sessions (or local implicit board),
+// never agent keys or board API keys. Provider callbacks use signatures and are
+// intentionally documented separately from this board API contract.
+const voiceSessionResponseSchema = z.object({id:z.string().uuid(), companyId:z.string().uuid(), endpointId:z.string().uuid(), issueId:z.string().uuid(), assignedAgentId:z.string().uuid(), state:z.enum(VOICE_SESSION_STATES), mode:z.enum(["browser","inbound_phone","outbound_phone"]), generation:z.number().int(), callerAuthority:z.enum(["member","instance_admin","local_board","guest_intake","pending_approval"]), replyCursor:z.number().int(), createdAt:z.string(), expiresAt:z.string(), endedAt:z.string().nullable(), errorCode:z.string().nullable()}).strict();
+const voiceMediaResponseSchema = z.object({sessionId:z.string().uuid(), generation:z.number().int(), transportToken:z.string(), transportUrl:z.string()}).strict();
+const voiceStartResponseSchema = z.object({session:voiceSessionResponseSchema, media:voiceMediaResponseSchema.optional()}).strict();
+for (const [method,path,summary,body,response] of [
+  ["post","/api/companies/{companyId}/voice-sessions","Create or resume a caller-bound voice session",startVoiceSessionSchema,voiceStartResponseSchema],
+  ["get","/api/companies/{companyId}/voice-sessions/{sessionId}","Inspect your current voice session",undefined,voiceSessionResponseSchema],
+  ["post","/api/companies/{companyId}/voice-sessions/{sessionId}/end","End your call while preserving task work",undefined,voiceSessionResponseSchema],
+  ["get","/api/companies/{companyId}/voice-sessions/{sessionId}/notification","Check for an approved reply notification",undefined,undefined],
+  ["get","/api/companies/{companyId}/voice-sessions/{sessionId}/report","Read the safe transcript and separate provider charge",undefined,undefined],
+  ["get","/api/companies/{companyId}/voice-history/{endpointId}","List your permitted completed and active calls",undefined,undefined],
+  ["get","/api/companies/{companyId}/voice-callbacks/{endpointId}","Read your own saved callback preference",undefined,voiceCallbackPreferenceSchema],
+  ["put","/api/companies/{companyId}/voice-callbacks/{endpointId}","Save your own number and callback consent",voiceCallbackPreferenceSchema,voiceCallbackPreferenceSchema],
+  ["get","/api/companies/{companyId}/voice-phone/{endpointId}","Inspect the company's existing Speko number inventory",undefined,undefined],
+  ["put","/api/companies/{companyId}/voice-phone/{endpointId}","Configure private calls or restricted guest intake",voicePhoneConfigurationSchema,undefined],
+  ["get","/api/companies/{companyId}/voice-phone/{endpointId}/incoming","List current live calls awaiting authenticated approval",undefined,undefined],
+  ["get","/api/companies/{companyId}/voice-phone/{endpointId}/history","List unapproved calls without private task bindings",undefined,undefined],
+  ["post","/api/companies/{companyId}/voice-phone/{endpointId}/incoming/{callId}","Approve or deny this exact live call",voiceInboundDecisionSchema,undefined],
+] as const) {
+  registry.registerPath({method,path,tags:["voice-sessions"],summary,description:"Experimental Speko connection. Requires a current authenticated board session (or local implicit board), company membership and current task/connection authority. Agent keys and board API keys cannot act as a caller. Caller ID grants no private access. Media tokens are short-lived; durable provider credentials are never returned. Ending your owned call remains available after losing task access.",request:{params:z.object(Object.fromEntries([...path.matchAll(/\{([^}]+)\}/g)].map(m=>[m[1],z.string().uuid()]))),...(body?{body:jsonBody(body)}:{})},responses:{200:r.ok(response),...(method==="post" && path.endsWith("voice-sessions")?{201:r.ok(voiceStartResponseSchema)}:{}),400:r.badRequest,401:r.unauthorized,403:r.forbidden,404:r.notFound,409:r.conflict,422:r.unprocessable,429:{description:"Voice attempt limit reached"}}});
+}
+
 // Explicit task-bound email. Board setup and agent actions share the same vaulted
 // connection, while automatic chat publication never applies to these endpoints.
 registry.registerPath({
@@ -2522,6 +2564,41 @@ registry.registerPath({
     502: { description: "Provider returned an invalid response; inspect provider health" },
     503: { description: "Provider temporarily unavailable; retry later" },
   },
+});
+
+registry.registerPath({
+  method: "get", path: "/api/companies/{companyId}/chat-slack/setup-options", tags: ["chat-channels"],
+  summary: "Discover Slack setup methods and the current user's authorized workspaces",
+  description: "Managed setup is advertised only for approved Cloud deployments with the broker profile enabled. Self-hosted discovery makes no hosted-service requests. Grants are personal and company scoped.",
+  request: { params: z.object({ companyId: z.string().uuid() }) }, responses: { 200: r.ok(slackSetupOptionsSchema), 401: r.unauthorized, 403: r.forbidden },
+});
+for (const action of ["authorize", "provision"] as const) registry.registerPath({
+  method: "post", path: `/api/chat-endpoints/{endpointId}/slack/managed/${action}`, tags: ["chat-channels"],
+  summary: action === "authorize" ? "Authorize a personal Slack manager workspace grant" : "Provision the saved managed Slack app",
+  description: "Requires the selected managed method, company membership, connection-management permission and Cloud availability. Authorization state is actor/session bound and single use. Provisioning accepts a personal grant ID and idempotent request ID; no provider credentials or arbitrary manifests are accepted. Explicit reconnect uses reconnect=true with a fresh request ID to reinstall the saved app. Repeating that reconnect request returns its saved result without reinstalling a healthy connection.",
+  request: { params: z.object({ endpointId: z.string().uuid() }), body: jsonBody(action === "authorize" ? slackSetupActionSchema : slackManagedProvisionSchema) },
+  responses: { 200: r.ok(action === "authorize" ? slackManagerAuthorizationSchema : slackManagedResultSchema), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+registry.registerPath({
+  method: "delete", path: "/api/companies/{companyId}/chat-slack/manager-grants/{grantId}", tags: ["chat-channels"],
+  summary: "Revoke the current user's workspace grant for future managed provisioning",
+  description: "Removes local manager credentials and invalidates pending manager authorization. Installed bots remain connected; this does not uninstall Slack apps.",
+  request: { params: z.object({ companyId: z.string().uuid(), grantId: z.string().uuid() }) }, responses: { 204: { description: "Personal manager grant revoked" }, 401: r.unauthorized, 403: r.forbidden },
+});
+registry.registerPath({
+  method: "get", path: "/api/chat-slack/managed/oauth/callback", tags: ["chat-channels"],
+  summary: "Redeem a sealed manager authorization and return to Slack setup",
+  description: "Authenticated, same-origin continuation with company, actor, session, endpoint revision and configured-origin checks. The broker handoff is single use; credentials are never returned to the browser. Explicit local development qualification accepts a Slack code instead of a broker claim; production ignores code.",
+  request: { query: z.object({ state: z.string(), claim_id: z.string().optional(), code: z.string().optional(), error: z.string().optional() }) },
+  responses: { 200: { description: "Same-origin continuation page" }, 303: { description: "Return to saved setup" }, 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post", path: "/api/chat-endpoints/{endpointId}/slack/test-message", tags: ["chat-channels"],
+  summary: "Connect the current user's Slack identity and send a test DM",
+  description: "Requires a board connection manager and active company membership. Reuses only the actor's verified identity in the same workspace; otherwise returns paginated account choices and sends a private connection challenge. The account holder must confirm it while signed in before linking or test delivery. Revoked and conflicting links cannot be overwritten. The request ID prevents duplicate or ambiguous sends from being replayed.",
+  request: { params: z.object({ endpointId: z.string().uuid() }), body: jsonBody(slackTestMessageSchema) },
+  responses: { 200: r.ok(slackTestMessageResultSchema), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable, 429: { description: "Wait before sending another test message" } },
 });
 
 for (const action of ["registration", "install", "resume"] as const) {
@@ -4249,6 +4326,35 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/issues/{id}/workspace",
+  tags: ["issues"],
+  summary: "Inspect the task workspace and repository preparation state",
+  request: { params: z.object({ id: z.string().uuid() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/issues/{id}/workspace",
+  tags: ["issues"],
+  summary: "Select a task workspace for the next normal admission",
+  description: "Records workspace intent without restarting active work or changing the task's organizational project. Agents may select only for their bound task.",
+  request: { params: z.object({ id: z.string().uuid() }), body: jsonBody(selectTaskWorkspaceSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{id}/workspace/repositories",
+  tags: ["issues"],
+  summary: "Request repository preparation in the task workspace",
+  description: "Queues an authorized repository for the next normal admission. The response does not claim the repository is available in an already-running provider session.",
+  request: { params: z.object({ id: z.string().uuid() }), body: jsonBody(prepareWorkspaceRepositorySchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/issues/{id}/watchdog",
   tags: ["issues"],
   summary: "Get active issue watchdog",
@@ -5581,6 +5687,7 @@ const costSummaryPaths = [
   "window-spend",
   "quota-windows",
   "subscriptions",
+  "data-quality",
 ] as const;
 
 for (const segment of costSummaryPaths) {
@@ -5598,6 +5705,13 @@ for (const segment of costSummaryPaths) {
     responses: { 200: r.ok(), 401: r.unauthorized },
   });
 }
+
+registry.registerPath({ method: "post", path: "/api/companies/{companyId}/costs/retry-accounting", tags: ["costs"],
+  summary: "Retry recording a run's saved cost data",
+  description: "Requires company cost-read and board write access. Viewers and agents cannot retry. Replays accounting evidence only; never starts provider work or invents missing usage.",
+  request: { params: z.object({ companyId: z.string() }), body: jsonBody(retryAccountingSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
 
 registry.registerPath({ method: "post", path: "/api/companies/{companyId}/costs/subscriptions/refresh", tags: ["costs"],
   summary: "Refresh connected subscription estimates in the background",
@@ -10870,6 +10984,16 @@ registerCurrentRoute({
 });
 
 // --- Tool access -------------------------------------------------------------
+
+for (const [method, suffix, summary] of [
+  ["get", "", "Get fast response settings and compatible shared API connections"],
+  ["put", "", "Configure the company fast response model"],
+  ["get", "/models", "List models for an authorized API connection"],
+  ["get", "/availability", "Check fast response configuration without contacting the provider"],
+  ["post", "/test", "Generate a fixed billed fast response sample"],
+  ["get", "/history", "List fast response accounting and publication outcomes"],
+] as const) registerCurrentRoute({ method, path: `/api/companies/{companyId}/fast-response${suffix}`, tags: ["fast-responses"], summary,
+  ...(method === "put" ? { body: updateFastResponseSchema } : {}), responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable } });
 
 registerCurrentRoute({
   method: "get", path: "/api/companies/{companyId}/decision-model", tags: ["decision-models"],

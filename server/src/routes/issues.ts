@@ -1,8 +1,15 @@
 import { parseObject } from "../adapters/utils.js";
+import { enqueueFastResponse } from "../services/fast-responses.js";
 import { hasRequiredWorkspaceRecovery, LEGACY_WORKSPACE_RECOVERY_SCHEMA } from "../services/workspace-restore-recovery-state.js";
+import { hasUnverifiedNativeWorkspaceFinalizationOwner } from "../services/native-runtime/native-workspace-finalization-recovery-state.js";
 import { monitorPoliciesEqual, applyActorMonitorScheduledBy, assertCanManageIssueMonitor, summarizeIssueMonitor } from "../services/issue-monitors.js";
 import type { IssuePrivacyConstraints } from "@paperclipai/shared";
 import { canActorReadHeartbeatRun } from "../services/heartbeat-run-privacy.js";
+import {
+  loadCreationSourceAgent,
+  loadRunBoundIssue,
+  resolveIssueCreationSource,
+} from "../services/issue-creation-source.js";
 import { activeIssueInteractionCondition, readTaskQuestionContext } from "../services/issue-question-context.js";
 import { setIssueTitle } from "../services/issue-title.js";
 import { setIssueTitleSchema } from "@paperclipai/shared";
@@ -113,6 +120,7 @@ import {
   isMarkdownArtifactWorkProduct,
   isMarkdownAttachmentContent,
   isUuidLike,
+  type IssueCreationSource,
   normalizeIssueIdentifier as normalizeIssueReferenceIdentifier,
   type CompactIssue,
   type CompanySearchExtractQuery,
@@ -3710,6 +3718,7 @@ export function issueRoutes(
     input: Record<string, unknown>,
   ) {
     return (
+      input.workspaceSelection !== undefined ||
       input.parentId !== undefined ||
       input.inheritExecutionWorkspaceFromIssueId !== undefined ||
       input.projectWorkspaceId !== undefined ||
@@ -3753,6 +3762,124 @@ export function issueRoutes(
       readNonEmptyString(context.issueId) ??
       readNonEmptyString(paperclipIssue?.id)
     );
+  }
+
+  /**
+   * Default structural parent for a delegated follow-up: the task the agent's
+   * run is executing. Returns null when the new task should stay standalone:
+   * no run-bound task, a conversation (chat handoffs are top-level by design),
+   * a task the agent may not mutate, a parent that would create a delegation
+   * cycle with the requested assignee, or a parent the agent may not create
+   * children under (for example a protected assignment policy without a
+   * grant). The default must never turn a previously allowed standalone
+   * create into a denial; an explicitly requested parent is still rejected by
+   * the ordinary assignment check. Callers only use this when the request
+   * omitted `parentId`; an explicit `parentId: null` keeps the task standalone.
+   */
+  async function resolveRunDelegationParentDefault(
+    req: Request,
+    companyId: string,
+    rawCreateBody: Omit<
+      Parameters<typeof resolveCreateAssignmentProjectId>[0],
+      "companyId" | "parentId"
+    > & { assigneeUserId?: string | null },
+    assigneeAgentId: string | null,
+  ): Promise<string | null> {
+    if (
+      req.actor.type !== "agent" ||
+      !req.actor.agentId ||
+      !req.actor.runId ||
+      !isUuidLike(req.actor.runId)
+    )
+      return null;
+    const run = await db
+      .select()
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.id, req.actor.runId),
+          eq(heartbeatRuns.companyId, companyId),
+        ),
+      )
+      .then((rows) => rows[0] ?? null);
+    if (!run || run.agentId !== req.actor.agentId) return null;
+    const source = await loadRunBoundIssue(db, run);
+    if (!source || isConversation(source)) return null;
+    const decision = await decideIssueAccess(req, source, "issue:mutate");
+    if (!decision.allowed) return null;
+    if (assigneeAgentId && assigneeAgentId !== req.actor.agentId) {
+      const ancestor = await svc.findOpenAncestorCreatedByAgent(
+        source.id,
+        assigneeAgentId,
+      );
+      if (ancestor) return null;
+    }
+    // Mirror the assignment check the create path runs with the defaulted
+    // parent in scope. A protected parent (or project it supplies) denies
+    // child creation without a grant; that must fall back to standalone work
+    // rather than fail a request that succeeded before the default existed.
+    const assignmentScope: TaskAssignmentAuthorizationScope = {
+      projectId: await resolveCreateAssignmentProjectId({
+        ...rawCreateBody,
+        companyId,
+        parentId: source.id,
+      }),
+      parentIssueId: source.id,
+      assigneeAgentId,
+      assigneeUserId:
+        typeof rawCreateBody.assigneeUserId === "string"
+          ? rawCreateBody.assigneeUserId
+          : null,
+    };
+    const assignment = await access.decide({
+      actor: req.actor,
+      action: "tasks:assign",
+      resource: {
+        type: "issue",
+        companyId,
+        issueId: null,
+        projectId: assignmentScope.projectId ?? null,
+        parentIssueId: source.id,
+        assigneeAgentId,
+        assigneeUserId: assignmentScope.assigneeUserId ?? null,
+      },
+      scope: assignmentScope,
+    });
+    if (!assignment.allowed) return null;
+    return source.id;
+  }
+
+  /**
+   * Creation provenance the viewer may see: the source task must be readable
+   * and the run must be visible to the actor. Returns null otherwise, so a
+   * private or foreign source is indistinguishable from no provenance.
+   */
+  async function resolveVisibleIssueCreationSource(
+    req: Request,
+    issue: { id: string; companyId: string; originRunId: string | null },
+  ): Promise<IssueCreationSource | null> {
+    const source = await resolveIssueCreationSource(db, issue);
+    if (!source) return null;
+    const { run, sourceIssue } = source;
+    const readable = await decideIssueAccess(req, sourceIssue, "issue:read");
+    if (!readable.allowed) return null;
+    const runVisible = await canActorReadHeartbeatRun(db, access, req.actor, {
+      companyId: run.companyId,
+      scopeKind: run.scopeKind,
+      issueId: run.issueId ?? run.nativeIssueId ?? sourceIssue.id,
+    });
+    if (!runVisible) return null;
+    const agent = await loadCreationSourceAgent(db, issue.companyId, run.agentId);
+    return {
+      issue: {
+        id: sourceIssue.id,
+        identifier: sourceIssue.identifier,
+        title: sourceIssue.title,
+        status: sourceIssue.status,
+      },
+      run: { id: run.id, agentId: run.agentId },
+      agent,
+    };
   }
 
   async function resolveAgentTrustForIssue(
@@ -4218,6 +4345,10 @@ export function issueRoutes(
         : input.activeRecoveryAction;
     if (!activeRecoveryAction) return null;
 
+    if (await hasUnverifiedNativeWorkspaceFinalizationOwner(db, activeRecoveryAction)) {
+      return activeRecoveryAction;
+    }
+
     const resolutionNote = await classifySourceRecoveryRevalidation(input);
     if (!resolutionNote) return activeRecoveryAction;
 
@@ -4231,13 +4362,12 @@ export function issueRoutes(
     });
     if (!resolved) return activeRecoveryAction;
 
-    const actor = input.actor;
     await logActivity(db, {
       companyId: input.issue.companyId,
-      actorType: actor?.actorType ?? "system",
-      actorId: actor?.actorId ?? "system",
-      agentId: actor?.agentId ?? null,
-      runId: actor?.runId ?? null,
+      actorType: "system",
+      actorId: "recovery",
+      agentId: null,
+      runId: input.actor?.runId ?? null,
       action: "issue.recovery_action_resolved",
       entityType: "issue",
       entityId: input.issue.id,
@@ -4765,31 +4895,11 @@ export function issueRoutes(
     executionWorkspacePreference?: string | null;
     executionWorkspaceSettings?: unknown;
   }) {
-    // Match create()'s project precedence before checking any assignment or
-    // trust policy. A workspace or explicit inheritance source can supply the
-    // project even when a caller omits projectId and the parent is projectless.
     if (input.projectId) return input.projectId;
     const sourceId = input.inheritExecutionWorkspaceFromIssueId ?? input.parentId;
     const source = sourceId ? await svc.getById(sourceId) : null;
     if (sourceId && (!source || source.companyId !== input.companyId)) throw notFound("Workspace inheritance issue not found");
-    if (source?.projectId) return source.projectId;
-    const projectWorkspaceId = input.projectWorkspaceId ?? source?.projectWorkspaceId;
-    if (projectWorkspaceId) {
-      const [workspace] = await db.select({ projectId: projectWorkspaces.projectId }).from(projectWorkspaces)
-        .where(and(eq(projectWorkspaces.id, projectWorkspaceId), eq(projectWorkspaces.companyId, input.companyId)));
-      if (!workspace) throw notFound("Project workspace not found");
-      return workspace.projectId;
-    }
-    const hasExecutionOverride = input.executionWorkspaceId !== undefined ||
-      input.executionWorkspacePreference !== undefined || input.executionWorkspaceSettings !== undefined;
-    const executionWorkspaceId = input.executionWorkspaceId ?? (hasExecutionOverride ? null : source?.executionWorkspaceId);
-    if (executionWorkspaceId && (await instanceSettings.getExperimental()).enableIsolatedWorkspaces) {
-      const [workspace] = await db.select({ projectId: executionWorkspaces.projectId }).from(executionWorkspaces)
-        .where(and(eq(executionWorkspaces.id, executionWorkspaceId), eq(executionWorkspaces.companyId, input.companyId)));
-      if (!workspace) throw notFound("Execution workspace not found");
-      return workspace.projectId;
-    }
-    return null;
+    return source?.projectId ?? null;
   }
 
   async function assertCanAssignTasks(
@@ -7623,7 +7733,6 @@ export function issueRoutes(
   //                   must not install the guard, or it can clear the flag that
   //                   the other request still owns.
   //   null          - this function sent an error response, so the caller stops.
-  // The reopen is scoped to the issue company and project inside the service, and
   // it runs only after the route already authorized the request on the issue.
   async function reopenClosedIssueExecutionWorkspaceOrRespond(
     req: Request,
@@ -7645,6 +7754,7 @@ export function issueRoutes(
             projectId: issue.projectId ?? null,
           },
           actor: { agentId: actor.agentId, actorType: actor.actorType },
+          authorizationActor: req.actor,
         },
       );
     if (result.ok) {
@@ -9146,6 +9256,7 @@ export function issueRoutes(
       externalChannelBinding,
       currentExecutionWorkspace,
       workProducts,
+      createdFrom,
     ] = await Promise.all([
       timing.time("project_goal", () => resolveIssueProjectAndGoal(issue)),
       timing.time("ancestors", () => svc.getAncestors(issue.id)),
@@ -9169,6 +9280,7 @@ export function issueRoutes(
         ? executionWorkspacesSvc.getById(issue.executionWorkspaceId)
         : Promise.resolve(null)),
       timing.time("work_products", () => workProductsSvc.listForIssue(issue.id)),
+      timing.time("created_from", () => resolveVisibleIssueCreationSource(req, issue)),
     ]);
     const [recoveryActionsByRelationIssue, revalidatedActiveRecoveryAction, mentionedProjects] = await Promise.all([
       timing.time("relation_recovery", () => relationRecoveryActionMap(recoveryActionsSvc, issue.companyId, relations)),
@@ -9218,6 +9330,7 @@ export function issueRoutes(
       workProducts,
       linkedCases,
       externalChannelBinding,
+      createdFrom,
     });
   });
 
@@ -12061,9 +12174,27 @@ export function issueRoutes(
           watchdogDiscovery,
         );
       if (watchdogProductBugFollowUp === false) return;
+      const normalizedAssigneeAgentId =
+        await normalizeIssueAssigneeAgentReference(
+          companyId,
+          rawCreateBody.assigneeAgentId as string | null | undefined,
+          { actorType: req.actor.type },
+        );
+      // A delegated follow-up from an ordinary execution task keeps that task as
+      // its structural parent when the agent omits `parentId`. An explicit
+      // `parentId: null` is an intentional standalone task and is honored.
+      const runDelegationParentId =
+        !watchdogProductBugFollowUp && rawCreateBody.parentId === undefined
+          ? await resolveRunDelegationParentDefault(
+              req,
+              companyId,
+              rawCreateBody,
+              normalizedAssigneeAgentId ?? null,
+            )
+          : null;
       const effectiveParentId = watchdogProductBugFollowUp
         ? null
-        : rawCreateBody.parentId;
+        : (runDelegationParentId ?? rawCreateBody.parentId);
       let createParent: Awaited<ReturnType<typeof svc.getById>> | null = null;
       if (req.actor.type === "agent" && effectiveParentId) {
         createParent = await svc.getById(effectiveParentId);
@@ -12087,12 +12218,6 @@ export function issueRoutes(
         ))
       )
         return;
-      const normalizedAssigneeAgentId =
-        await normalizeIssueAssigneeAgentReference(
-          companyId,
-          rawCreateBody.assigneeAgentId as string | null | undefined,
-          { actorType: req.actor.type },
-        );
       await assertNoAgentDelegationCycle({
         actorType: req.actor.type,
         actorAgentId: req.actor.agentId,
@@ -12260,6 +12385,7 @@ export function issueRoutes(
         null;
       const createInput = {
         ...createBody,
+        workspaceSelectionActor: req.actor,
         projectId: createAssignmentScope.projectId,
         ...(taskBridgeOriginForActor(req) ?? {}),
         id: issueId,
@@ -12278,9 +12404,22 @@ export function issueRoutes(
           deduplicationReason = reason;
         },
       };
+      const createAcceptedIssue = (data: typeof createInput) => {
+        if (actor.actorType !== "user" || isOnboardingFirstTask || !data.assigneeAgentId || ["backlog", "done", "cancelled"].includes(data.status ?? "")) {
+          return svc.create(companyId, data);
+        }
+        return db.transaction(async tx => {
+        const created = await svc.create(companyId, data, tx);
+        if (!deduplicationReason && !isOnboardingFirstTask && actor.actorType === "user" && created.assigneeAgentId && !["backlog", "done", "cancelled"].includes(created.status)) {
+          await enqueueFastResponse(tx as unknown as Db, { companyId, issueId: created.id, agentId: created.assigneeAgentId,
+            responsibleUserId: actor.actorId, sourceKey: `issue:${created.id}`, acceptedAt: new Date(created.createdAt) });
+        }
+        return created;
+        });
+      };
       let issue: Awaited<ReturnType<typeof svc.create>>;
       try {
-        issue = await svc.create(companyId, createInput);
+        issue = await createAcceptedIssue(createInput);
       } catch (error) {
         // Concurrent onboarding creates can both pass the zero-count fast path;
         // the issues_onboarding_first_task_uq index rejects the loser here. Fail
@@ -12291,7 +12430,7 @@ export function issueRoutes(
         isOnboardingFirstTask = false;
         const { originKind: _onboardingOriginKind, ...ordinaryCreateInput } =
           createInput;
-        issue = await svc.create(companyId, ordinaryCreateInput);
+        issue = await createAcceptedIssue(ordinaryCreateInput);
       }
       if (deduplicationReason) {
       const referenceSummary = await issueReferencesSvc.listIssueReferenceSummary(issue.id);
@@ -12305,6 +12444,7 @@ export function issueRoutes(
         });
         return;
       }
+
       await retainBacklogHumanAssignment(db, issue, actor);
       await issueReferencesSvc.syncIssue(issue.id);
       await externalObjectsSvc.syncIssueSafely(issue.id);
@@ -12328,6 +12468,9 @@ export function issueRoutes(
         details: {
           title: issue.title,
           identifier: issue.identifier,
+          ...(runDelegationParentId && issue.parentId === runDelegationParentId
+            ? { parentId: issue.parentId, parentDefaultedFromRunIssue: true }
+            : {}),
           ...(watchdogProductBugFollowUp
             ? {
                 watchdogDiscovery: {
@@ -12466,6 +12609,7 @@ export function issueRoutes(
       // token should be spent until the user types: the greeting is posted above
       // (deterministic, no LLM) and the user's first comment wakes the assignee
       // through the normal comment path. Every other create path keeps its wake.
+
       if (!isOnboardingFirstTask) {
         void queueIssueAssignmentWakeup({
           heartbeat,
@@ -12606,6 +12750,7 @@ export function issueRoutes(
       );
       const { issue, parentBlockerAdded } = await svc.createChild(parent.id, {
         ...createBody,
+        workspaceSelectionActor: req.actor,
         projectId: childAssignmentScope.projectId,
         ...(taskBridgeOriginForActor(req) ?? {}),
         id: issueId,
@@ -14194,6 +14339,7 @@ export function issueRoutes(
       const postCommitIssueActions: IssuePostCommitAction[] = [];
       const issueUpdateData = {
         ...updateFields,
+        workspaceSelectionActor: req.actor,
         expectedExecutionPolicy,
         actorAgentId: actor.agentId ?? null,
         actorRunId: actor.agentId ? actor.runId : null,
@@ -14383,6 +14529,10 @@ export function issueRoutes(
                 },
                 tx,
               );
+              if (actor.actorType === "user" && updated.assigneeAgentId && !["backlog", "done", "cancelled"].includes(updated.status)) await enqueueFastResponse(tx as unknown as Db, {
+                companyId: updated.companyId, issueId: updated.id, agentId: updated.assigneeAgentId, responsibleUserId: actor.actorId,
+                sourceCommentId: transactionalComment.id, sourceKey: `comment:${transactionalComment.id}`, acceptedAt: new Date(transactionalComment.createdAt),
+              });
             }
 
             if (decision && decisionId) {
@@ -14973,7 +15123,8 @@ export function issueRoutes(
         const commentReferenceSummaryBefore =
           updateReferenceSummaryAfter ??
           (await issueReferencesSvc.listIssueReferenceSummary(issue.id));
-        comment ??= await svc.addComment(
+        const addCommentAndReceipt = async (tx: Db) => {
+          const saved = await svc.addComment(
           id,
           commentBody,
           {
@@ -14988,7 +15139,17 @@ export function issueRoutes(
             mirrorToSlack: actor.actorType === "user",
             sourceTrust: await sourceTrustForActorWrite(issue, actor),
           },
+          tx as unknown as Db,
         );
+          if (actor.actorType === "user" && issue.assigneeAgentId && !["backlog", "done", "cancelled"].includes(issue.status)) await enqueueFastResponse(tx as unknown as Db, {
+            companyId: issue.companyId, issueId: issue.id, agentId: issue.assigneeAgentId, responsibleUserId: actor.actorId,
+            sourceCommentId: saved.id, sourceKey: `comment:${saved.id}`, acceptedAt: new Date(saved.createdAt),
+          });
+          return saved;
+        };
+        comment ??= actor.actorType === "user" && issue.assigneeAgentId && !["backlog", "done", "cancelled"].includes(issue.status)
+          ? await db.transaction(tx => addCommentAndReceipt(tx as unknown as Db))
+          : await addCommentAndReceipt(db);
         await issueReferencesSvc.syncComment(comment.id);
         await externalObjectsSvc.syncCommentSafely(comment.id);
         if (
@@ -17974,6 +18135,8 @@ export function issueRoutes(
             action: "issue.comment_added", entityType: "issue", entityId: issue.id,
             details: { commentId: saved.id, identifier: issue.identifier },
           }, publications);
+          if (!existing) await enqueueFastResponse(tx as unknown as Db, { companyId: issue.companyId, issueId: issue.id, agentId: issue.conversationAgentId,
+            responsibleUserId: userId, sourceCommentId: saved.id, sourceKey: `comment:${saved.id}`, acceptedAt: new Date(saved.createdAt), sessionGeneration: issue.conversationSessionGeneration });
           return saved;
         });
         for (const publication of publications) publishActivity(publication);
@@ -18308,6 +18471,7 @@ export function issueRoutes(
       // comment is inserted would leave an orphan comment without the corresponding state change.
       let comment: Awaited<ReturnType<typeof svc.addComment>>;
       let goalCommentSteered = false;
+      let fastResponseEnqueued = false;
       if (shouldAutoApproveReviewComment) {
         const transition = applyIssueExecutionPolicyTransition({
           issue: currentIssue,
@@ -18484,9 +18648,22 @@ export function issueRoutes(
             commentOptions,
             dbOrTx,
           );
-        comment = req.body.attachmentIds?.length
-          ? await db.transaction(async (tx) => add(tx as unknown as Db))
-          : await add();
+        const needsFastResponse = actor.actorType === "user" && currentIssue.assigneeAgentId && !["done", "cancelled", "backlog"].includes(currentIssue.status);
+        comment = needsFastResponse ? await db.transaction(async tx => {
+          const saved = await add(tx as unknown as Db);
+          if (actor.actorType === "user" && currentIssue.assigneeAgentId && !["done", "cancelled", "backlog"].includes(currentIssue.status)) {
+            await enqueueFastResponse(tx as unknown as Db, { companyId: currentIssue.companyId, issueId: currentIssue.id, agentId: currentIssue.assigneeAgentId,
+              responsibleUserId: actor.actorId, sourceCommentId: saved.id, sourceKey: `comment:${saved.id}`, acceptedAt: new Date(saved.createdAt) });
+            fastResponseEnqueued = true;
+          }
+          return saved;
+        }) : await add();
+      }
+
+      if (!fastResponseEnqueued && actor.actorType === "user" && currentIssue.assigneeAgentId && !["done", "cancelled", "backlog"].includes(currentIssue.status)) {
+        await db.transaction(tx => enqueueFastResponse(tx as unknown as Db, { companyId: currentIssue.companyId, issueId: currentIssue.id, agentId: currentIssue.assigneeAgentId,
+          responsibleUserId: actor.actorId, sourceCommentId: comment.id, sourceKey: `comment:${comment.id}`, acceptedAt: new Date(comment.createdAt) }))
+          .catch(() => logger.warn({ issueId: currentIssue.id }, "fast response admission unavailable"));
       }
 
       await issueReferencesSvc.syncComment(comment.id);
@@ -18968,6 +19145,7 @@ export function issueRoutes(
             );
         }
       })();
+
 
       await queueTaskWatchdogEvaluation(currentIssue, actor.runId);
       res.status(201).json(comment);
