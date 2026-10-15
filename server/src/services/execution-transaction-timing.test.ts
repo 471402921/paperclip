@@ -1,12 +1,14 @@
 import { context, trace } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { InMemorySpanExporter, SimpleSpanProcessor, TracerProvider } from "@opentelemetry/sdk-trace";
-import { companies, createDb, executionWorkspaces, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS } from "@paperclipai/db";
+import { companies, createDb, executionWorkspaces, issueComments, issues, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS } from "@paperclipai/db";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "../__tests__/helpers/embedded-postgres.js";
 import { measureRunTransaction } from "./execution-transaction-timing.js";
 import { withRunExecutionTiming } from "./execution-preparation-timing.js";
+import { issueService } from "./issues.js";
+import { logActivity } from "./activity-log.js";
 import { executionWorkspaceService } from "./execution-workspaces.js";
 import { lockExecutionWorkspaceRootProvenance } from "./execution-workspace-repositories.js";
 import { assertTaskWorkspaceAccess } from "./task-workspace-source-access.js";
@@ -91,6 +93,27 @@ const support = await getEmbeddedPostgresTestSupport();
     expect(spans.find(span => span.name === "workspace.transaction.rollback")?.status.code).toBe(2);
     expect(spans.some(span => span.name === "workspace.transaction.commit")).toBe(false);
     expect(JSON.stringify(spans.map(span => ({ attributes: span.attributes, events: span.events })))).not.toContain(failure.message);
+  });
+
+  it("records durable response commit and server publication under the same attempt", async () => {
+    const [issue] = await db.insert(issues).values({ companyId, title: "Response timing" }).returning();
+    const body = "Private response fixture";
+    const comment = await withRunExecutionTiming("response", async () => {
+      const saved = await issueService(db).addComment(issue.id, body, { userId: "local-board" });
+      await logActivity(db, { companyId, actorType: "user", actorId: "local-board", action: "issue.comment_added", entityType: "issue", entityId: issue.id });
+      return saved;
+    });
+    const [stored] = await db.select().from(issueComments).where(eq(issueComments.id, comment.id));
+    expect(stored.body).toBe(body);
+    const spans = exporter.getFinishedSpans();
+    const attempt = spans.find(span => span.name === "task.execution_attempt")!;
+    const transaction = spans.find(span => span.name === "response.transaction")!;
+    const commit = spans.find(span => span.name === "response.transaction.commit")!;
+    expect(transaction.parentSpanContext?.spanId).toBe(attempt.spanContext().spanId);
+    expect(commit.parentSpanContext?.spanId).toBe(transaction.spanContext().spanId);
+    expect(spans.map(span => span.name)).toEqual(expect.arrayContaining(["response.row_lock", "response.write", "execution.realtime"]));
+    expect(spans.every(span => span.spanContext().traceId === attempt.spanContext().traceId)).toBe(true);
+    expect(JSON.stringify(spans.map(span => span.attributes))).not.toContain(body);
   });
 
   it("preserves a real access denial and exports only failed status", async () => {
