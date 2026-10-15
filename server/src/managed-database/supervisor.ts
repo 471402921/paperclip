@@ -122,6 +122,16 @@ function reject(code: ManagedDatabaseRejectionCode, httpStatus: number, message:
   throw new CommandRejection(code, httpStatus, message);
 }
 
+/**
+ * Drain an upload body that will not be stored. The body re-emits a client
+ * disconnect as an `error` event; without a listener that is an uncaught
+ * exception, so an unsigned request could take the supervisor down.
+ */
+function discardUpload(stream: Readable): void {
+  stream.on("error", () => {});
+  stream.resume();
+}
+
 function identityOwn(target: string, identity: ProcessIdentity): void {
   if (identity) chownSync(target, identity.uid, identity.gid);
 }
@@ -910,7 +920,7 @@ export class ManagedDatabaseSupervisor {
     try {
       validated = this.validateArchiveCommand(commandBody, signature, "snapshot.upload");
     } catch (error) {
-      stream.resume();
+      discardUpload(stream);
       if (error instanceof CommandRejection) return this.rejection(null, error, startedAt);
       throw error;
     }
@@ -918,7 +928,7 @@ export class ManagedDatabaseSupervisor {
     if (command.kind !== "snapshot.upload") throw new Error("unreachable");
     const stored = this.receipts.get(command.commandId);
     if (stored) {
-      stream.resume();
+      discardUpload(stream);
       return { status: stored.requestSha256 === requestSha256 ? 200 : 409, body: stored };
     }
     this.busy = command.commandId;
@@ -937,7 +947,7 @@ export class ManagedDatabaseSupervisor {
       if (details.engineMajor !== this.config.engineMajor) reject("precondition_failed", 409, "archive engine major differs");
       const paths = snapshotPaths(this.layout, details.snapshotId);
       if (existsSync(paths.archive)) {
-        stream.resume();
+        discardUpload(stream);
         if ((await sha256File(paths.archive)) !== details.sha256) reject("precondition_failed", 409, "a different archive with this id exists");
         // The signed receipt is authoritative; restore missing metadata.
         if (!readSnapshotDetails(this.layout, details.snapshotId)) writeJsonAtomic(paths.metadata, details);
@@ -956,7 +966,7 @@ export class ManagedDatabaseSupervisor {
       this.receipts.put(response);
       return { status: 200, body: response };
     } catch (error) {
-      stream.resume();
+      discardUpload(stream);
       if (error instanceof CommandRejection) return this.rejection(body, error, startedAt);
       const message = error instanceof Error ? error.message : String(error);
       return { status: 500, body: this.sign(receiptMeta(command), requestSha256, startedAt, "failed", {}, { code: "operation_failed", message }) };

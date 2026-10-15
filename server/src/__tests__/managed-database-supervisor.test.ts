@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, pluginMigrations, plugins } from "@paperclipai/db";
@@ -22,6 +23,7 @@ import {
   type TestStack,
 } from "./helpers/managed-database.js";
 import type { ManagedDatabaseSupervisor } from "../managed-database/supervisor.js";
+import { readUploadPreamble } from "../managed-database/control-server.js";
 import { managedDatabaseLayout } from "../managed-database/layout.js";
 
 const support = await getManagedDatabaseTestSupport();
@@ -306,6 +308,24 @@ describeEngine("managed embedded database: authenticated, lease-fenced commands"
     expect(skewed.receipt.code).toBe("clock_skew");
     const shell = await sendCommand(supervisor, stack, { kind: "shell" as never, args: { cmd: "id" } }, issued());
     expect(shell.status).toBe(400);
+  });
+
+  it("survives a client that disconnects while its rejected upload drains", async () => {
+    const uncaught: unknown[] = [];
+    const onUncaught = (error: unknown) => uncaught.push(error);
+    process.on("uncaughtException", onUncaught);
+    try {
+      const request = new PassThrough();
+      request.write("{}\n");
+      const upload = await readUploadPreamble(request);
+      expect((await supervisor.handleArchiveUpload(upload.command, undefined, upload.archive)).status).toBe(401);
+      request.destroy(Object.assign(new Error("aborted"), { code: "ECONNRESET" }));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(uncaught).toEqual([]);
+    } finally {
+      process.off("uncaughtException", onUncaught);
+    }
+    expect((await sendCommand(supervisor, stack, { kind: "status" }, issued())).status).toBe(200);
   });
 
   it("returns a signed readiness identity", async () => {
