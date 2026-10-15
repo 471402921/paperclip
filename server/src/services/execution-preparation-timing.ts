@@ -121,8 +121,13 @@ export async function measureRunPhase<T>(phase: ExecutionPhase, work: () => T | 
 export function beginRunPhase(phase: ExecutionPhase): (failed?: boolean) => void {
   const owned = ownership.getStore();
   if (!endpointEnabled() || !owned?.parent || owned.ended) return () => {};
+  const count = owned.details.get(phase) ?? 0;
+  if (count >= 16) return () => {};
+  owned.details.set(phase, count + 1);
   try {
-    const span = trace.getTracer("paperclip.execution").startSpan(phase, {}, owned.parent);
+    const span = trace.getTracer("paperclip.execution").startSpan(phase, {
+      attributes: { [EXECUTION_PREPARATION_SPAN_ATTRS.runId]: createHash("sha256").update(owned.runId).digest("hex").slice(0, 12) },
+    }, owned.parent);
     let ended = false;
     return failed => {
       if (ended) return;

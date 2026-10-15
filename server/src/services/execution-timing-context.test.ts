@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { getStartupTraceContext, getStartupTracer } from "../instrumentation.js";
 import { prepareVerifiedRemoteProviderPack } from "./native-runtime/remote-provider-pack.js";
 import { createNativeRunTrace } from "./native-runtime/native-run-trace.js";
-import { createRunPreparationTiming, getRunExecutionTraceContext, measureRunPhase, withRunExecutionTiming } from "./execution-preparation-timing.js";
+import { beginRunPhase, createRunPreparationTiming, getRunExecutionTraceContext, measureRunPhase, withRunExecutionTiming } from "./execution-preparation-timing.js";
 
 let exporter: InMemorySpanExporter;
 let provider: TracerProvider;
@@ -97,11 +97,14 @@ it("caps repeated detail spans and ends failed scopes without content or excepti
   const work = vi.fn(() => undefined);
   await expect(withRunExecutionTiming("bounded", async () => {
     for (let index = 0; index < 100; index++) await measureRunPhase("workspace.readers.identity", work);
+    for (let index = 0; index < 100; index++) beginRunPhase("workspace.transaction.entry")();
     await measureRunPhase("workspace.readers.trust", () => { throw failure; });
   })).rejects.toBe(failure);
   expect(work).toHaveBeenCalledTimes(100);
   const spans = exporter.getFinishedSpans();
   expect(spans.filter(span => span.name === "workspace.readers.identity")).toHaveLength(16);
+  expect(spans.filter(span => span.name === "workspace.transaction.entry")).toHaveLength(16);
+  for (const span of spans) expect(Object.keys(span.attributes)).toEqual(["paperclip.task.run.run_id"]);
   expect(spans.filter(span => span.status.code === 2).map(span => span.name).sort()).toEqual(["task.execution_attempt", "workspace.readers.trust"]);
   expect(JSON.stringify(spans.map(span => ({ attributes: span.attributes, events: span.events, status: span.status })))).not.toContain(failure.message);
   expect(getRunExecutionTraceContext("bounded")).toBeUndefined();
