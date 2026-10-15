@@ -7,9 +7,24 @@ import type { CommandResponse, ManagedDatabaseSupervisor } from "./supervisor.js
 
 const MAX_COMMAND_BYTES = MANAGED_DATABASE_MAX_COMMAND_BYTES;
 
-function send(res: ServerResponse, response: CommandResponse): void {
+export type ControlServerLimits = {
+  /** Time allowed to receive an upload's command line, before it is authenticated. */
+  uploadPreambleTimeoutMs?: number;
+  /** Uploads whose command line is still being read; more are refused. */
+  maxPendingUploads?: number;
+};
+
+const DEFAULT_UPLOAD_PREAMBLE_TIMEOUT_MS = 30_000;
+const DEFAULT_MAX_PENDING_UPLOADS = 4;
+
+function send(res: ServerResponse, response: CommandResponse, req?: IncomingMessage): void {
   const payload = JSON.stringify(response.body);
-  res.writeHead(response.status, { "content-type": "application/json", "cache-control": "no-store" });
+  const headers: Record<string, string> = { "content-type": "application/json", "cache-control": "no-store" };
+  // The body was not read and will not be: answer, then drop the connection
+  // rather than let Node drain whatever the caller keeps sending.
+  if (response.closeConnection) headers.connection = "close";
+  res.writeHead(response.status, headers);
+  if (response.closeConnection && req) res.once("finish", () => req.destroy());
   res.end(payload);
 }
 
@@ -64,7 +79,14 @@ function header(req: IncomingMessage, name: string): string | undefined {
  * passthrough. `maintenanceSurface` additionally answers the app's public
  * health path while no app is running.
  */
-export function createControlHandler(supervisor: ManagedDatabaseSupervisor, maintenanceSurface: () => boolean) {
+export function createControlHandler(
+  supervisor: ManagedDatabaseSupervisor,
+  maintenanceSurface: () => boolean,
+  limits: ControlServerLimits = {},
+) {
+  const preambleTimeoutMs = limits.uploadPreambleTimeoutMs ?? DEFAULT_UPLOAD_PREAMBLE_TIMEOUT_MS;
+  const maxPendingUploads = limits.maxPendingUploads ?? DEFAULT_MAX_PENDING_UPLOADS;
+  let pendingUploads = 0;
   return async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     try {
@@ -86,15 +108,35 @@ export function createControlHandler(supervisor: ManagedDatabaseSupervisor, main
       if (url.pathname === MANAGED_DATABASE_HTTP.archive && (req.method === "GET" || req.method === "PUT")) {
         const signature = header(req, MANAGED_DATABASE_HTTP.signatureHeader);
         if (req.method === "PUT") {
+          // Until its command line is authenticated an upload is anonymous:
+          // bound how many may wait, how long, and (in readUploadPreamble) how
+          // many bytes they may send.
+          if (pendingUploads >= maxPendingUploads) {
+            send(res, { status: 503, body: { outcome: "rejected", code: "busy", error: "too many uploads in progress" }, closeConnection: true }, req);
+            return;
+          }
+          pendingUploads += 1;
           let upload: Awaited<ReturnType<typeof readUploadPreamble>>;
+          let timedOut = false;
+          const deadline = setTimeout(() => {
+            timedOut = true;
+            req.destroy();
+          }, preambleTimeoutMs);
           try {
             upload = await readUploadPreamble(req);
           } catch {
-            req.resume();
-            send(res, { status: 400, body: { outcome: "rejected", code: "invalid_command", error: "upload body must start with one line of command JSON" } });
+            if (timedOut) return; // The connection is already gone.
+            send(res, {
+              status: 400,
+              body: { outcome: "rejected", code: "invalid_command", error: "upload body must start with one line of command JSON" },
+              closeConnection: true,
+            }, req);
             return;
+          } finally {
+            clearTimeout(deadline);
+            pendingUploads -= 1;
           }
-          send(res, await supervisor.handleArchiveUpload(upload.command, signature, upload.archive));
+          send(res, await supervisor.handleArchiveUpload(upload.command, signature, upload.archive), req);
           return;
         }
         const opened = supervisor.openArchiveDownload(header(req, MANAGED_DATABASE_HTTP.commandHeader), signature);
@@ -149,9 +191,14 @@ export async function listenTcp(server: Server, port: number, host: string): Pro
   });
 }
 
-export function createControlServer(supervisor: ManagedDatabaseSupervisor, maintenanceSurface: () => boolean): Server {
+export function createControlServer(
+  supervisor: ManagedDatabaseSupervisor,
+  maintenanceSurface: () => boolean,
+  limits: ControlServerLimits = {},
+): Server {
+  const handler = createControlHandler(supervisor, maintenanceSurface, limits);
   return createServer((req, res) => {
-    void createControlHandler(supervisor, maintenanceSurface)(req, res);
+    void handler(req, res);
   });
 }
 

@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { chmodSync, chownSync, createWriteStream, existsSync, fstatSync, mkdirSync, openSync, readdirSync, rmSync } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { createHash } from "node:crypto";
-import type { Readable } from "node:stream";
+import { Transform, type Readable } from "node:stream";
 import { applyPendingMigrations, inspectMigrations } from "@paperclipai/db";
 import {
   canonicalJson,
@@ -105,7 +105,12 @@ export type ManagedDatabaseSupervisorOptions = {
   engineRestartDelaysMs?: number[];
 };
 
-export type CommandResponse = { status: number; body: unknown };
+/**
+ * `closeConnection`: the request body was not read and must not be. The HTTP
+ * layer answers with `connection: close` and drops the connection instead of
+ * draining whatever the caller keeps sending.
+ */
+export type CommandResponse = { status: number; body: unknown; closeConnection?: boolean };
 
 type ReceiptMeta = { commandId: string; kind: string; lease: ManagedDatabaseLeaseRef | null };
 
@@ -124,13 +129,40 @@ function reject(code: ManagedDatabaseRejectionCode, httpStatus: number, message:
 }
 
 /**
- * Drain an upload body that will not be stored. The body re-emits a client
- * disconnect as an `error` event; without a listener that is an uncaught
- * exception, so an unsigned request could take the supervisor down.
+ * The body re-emits a client disconnect as an `error` event; without a
+ * listener that is an uncaught exception, so an unsigned request could take
+ * the supervisor down.
  */
-function discardUpload(stream: Readable): void {
+function ignoreUploadErrors(stream: Readable): void {
   stream.on("error", () => {});
+}
+
+/** Drain an authenticated upload body that will not be stored. */
+function discardUpload(stream: Readable): void {
+  ignoreUploadErrors(stream);
   stream.resume();
+}
+
+/**
+ * Refuse an upload without reading the rest of its body: an unsigned or
+ * malformed upload, so an anonymous caller cannot make the supervisor consume
+ * an arbitrarily large or slow body, and a body cut off mid-stream.
+ */
+function refuseUpload(stream: Readable, response: CommandResponse): CommandResponse {
+  ignoreUploadErrors(stream);
+  return { ...response, closeConnection: true };
+}
+
+/** Fails the upload as soon as it carries more bytes than its receipt declares. */
+function limitUploadBytes(limit: number): Transform {
+  let received = 0;
+  return new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      received += chunk.length;
+      if (received > limit) callback(new CommandRejection("precondition_failed", 409, `uploaded archive exceeds the receipt's ${limit} bytes`));
+      else callback(null, chunk);
+    },
+  });
 }
 
 function identityOwn(target: string, identity: ProcessIdentity): void {
@@ -972,9 +1004,16 @@ export class ManagedDatabaseSupervisor {
     try {
       validated = this.validateArchiveCommand(commandBody, signature, "snapshot.upload");
     } catch (error) {
+      if (!(error instanceof CommandRejection)) {
+        ignoreUploadErrors(stream);
+        throw error;
+      }
+      const response = this.rejection(null, error, startedAt);
+      // An unauthenticated caller gets no further read. A signed caller's
+      // body is drained so it reliably receives its rejection.
+      if (error.code === "bad_signature" || error.code === "invalid_command") return refuseUpload(stream, response);
       discardUpload(stream);
-      if (error instanceof CommandRejection) return this.rejection(null, error, startedAt);
-      throw error;
+      return response;
     }
     const { command, requestSha256, body, stored } = validated;
     if (command.kind !== "snapshot.upload") throw new Error("unreachable");
@@ -1006,7 +1045,7 @@ export class ManagedDatabaseSupervisor {
         partial = `${paths.archive}.upload-${randomBytes(4).toString("hex")}`;
         const hash = createHash("sha256");
         stream.on("data", (chunk: Buffer) => hash.update(chunk));
-        await pipeline(stream, createWriteStream(partial, { mode: 0o600 }));
+        await pipeline(stream, limitUploadBytes(details.sizeBytes), createWriteStream(partial, { mode: 0o600 }));
         const actual = hash.digest("hex");
         if (actual !== details.sha256) reject("precondition_failed", 409, `uploaded archive sha256 ${actual} does not match receipt`);
         fsyncFile(partial);
@@ -1017,10 +1056,20 @@ export class ManagedDatabaseSupervisor {
       this.receipts.put(response);
       return { status: 200, body: response };
     } catch (error) {
+      const response: CommandResponse = error instanceof CommandRejection
+        ? this.rejection(body, error, startedAt)
+        : {
+          status: 500,
+          body: this.sign(receiptMeta(command), requestSha256, startedAt, "failed", {}, {
+            code: "operation_failed",
+            message: error instanceof Error ? error.message : String(error),
+          }),
+        };
+      // A body cut off mid-stream (too large, or a write failure) cannot be
+      // drained; drop the connection instead of reading the rest.
+      if (stream.destroyed) return refuseUpload(stream, response);
       discardUpload(stream);
-      if (error instanceof CommandRejection) return this.rejection(body, error, startedAt);
-      const message = error instanceof Error ? error.message : String(error);
-      return { status: 500, body: this.sign(receiptMeta(command), requestSha256, startedAt, "failed", {}, { code: "operation_failed", message }) };
+      return response;
     } finally {
       if (partial) rmSync(partial, { force: true });
       this.busy = null;

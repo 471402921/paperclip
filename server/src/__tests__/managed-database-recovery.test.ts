@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { closeSync, existsSync, readFileSync, rmSync } from "node:fs";
+import { closeSync, existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -333,6 +333,14 @@ describeSnapshots("managed embedded database: off-volume archives and disaster r
     const badUpload = await uploadArchive(destinationSocket, signedUpload(destination.controlKey, buildCommand(destination, { kind: "snapshot.upload", args: { receipt: snapshotReceipt }, lease: destLeaseRef }), corrupt));
     expect(JSON.parse(badUpload.body.toString()).code).toBe("precondition_failed");
     expect(existsSync(path.join(destinationSupervisor.layout.snapshotsDir, `${details.snapshotId}.dump`))).toBe(false);
+
+    // A body longer than the receipt declares is cut off at that size.
+    const oversized = Buffer.concat([archive, Buffer.alloc(1)]);
+    const longUpload = await uploadArchive(destinationSocket, signedUpload(destination.controlKey, buildCommand(destination, { kind: "snapshot.upload", args: { receipt: snapshotReceipt }, lease: destLeaseRef }), oversized));
+    expect(longUpload.status).toBe(409);
+    expect(longUpload.headers.connection).toBe("close");
+    expect(JSON.parse(longUpload.body.toString())).toMatchObject({ code: "precondition_failed", error: expect.stringContaining("exceeds") });
+    expect(readdirSync(destinationSupervisor.layout.snapshotsDir).filter((name) => name.startsWith(details.snapshotId))).toEqual([]);
 
     // Another stack's archive (validly signed by that stack) is refused.
     const foreign = await createTestStack();

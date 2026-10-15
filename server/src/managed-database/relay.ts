@@ -39,13 +39,26 @@ export function managedDatabaseRelay(controlSocket: string): RequestHandler {
         const value = response.headers[name];
         if (typeof value === "string") outgoing[name] = value;
       }
+      // The supervisor refused the body without reading it (for example an
+      // unsigned upload). Stop reading it here as well and drop the client.
+      if (response.headers.connection === "close" && !req.complete) {
+        outgoing.connection = "close";
+        stopReading();
+      }
       res.writeHead(response.statusCode ?? 502, outgoing);
       response.pipe(res);
     });
     upstream.on("error", () => {
-      if (!res.headersSent) res.status(502).json({ error: "managed database supervisor unreachable" });
-      else res.destroy();
+      if (!req.complete) stopReading();
+      if (!res.headersSent) res.status(502).set("connection", "close").json({ error: "managed database supervisor unreachable" });
+      else if (!res.writableFinished) res.destroy();
     });
     req.pipe(upstream);
+
+    function stopReading() {
+      req.unpipe(upstream);
+      if (res.writableFinished) req.destroy();
+      else res.once("finish", () => req.destroy());
+    }
   };
 }

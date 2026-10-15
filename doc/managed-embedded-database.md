@@ -125,8 +125,14 @@ signature header:
 - `PUT` (upload): the body starts with the command as one line of JSON ending
   in `\n`, at most 256 KiB (`managedDatabaseUploadPreamble`). The archive bytes
   follow. The command is not a header because its receipt lists every table,
-  which can exceed HTTP header limits.
- `GET /__paperclip/managed-database/v1/health` (and
+  which can exceed HTTP header limits. The command line must arrive within
+  30 seconds, and at most 4 uploads may wait for theirs. An unsigned or
+  malformed upload, and an archive longer than its receipt's `sizeBytes`, are
+  answered with `connection: close` and the rest of the body is not read. A
+  client that keeps sending can see a connection reset instead of the
+  response. Signed rejections drain the body, so a signed client receives them.
+
+`GET /__paperclip/managed-database/v1/health` (and
 `/api/health` while no app runs) returns `{ "status": "starting" | "maintenance" | "serving" | "recovery" }`.
 
 Every command carries `v, stackId, configGeneration, commandId, issuedAt, kind, args`;

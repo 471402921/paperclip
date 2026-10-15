@@ -1,13 +1,21 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
+import express from "express";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, pluginMigrations, plugins } from "@paperclipai/db";
 import type { PaperclipPluginManifestV1 } from "@paperclipai/shared";
-import { canonicalJson, type ManagedDatabaseConfig, type ManagedDatabaseReceipt } from "@paperclipai/shared/managed-database";
+import {
+  canonicalJson,
+  MANAGED_DATABASE_HTTP,
+  type ManagedDatabaseConfig,
+  type ManagedDatabaseReceipt,
+} from "@paperclipai/shared/managed-database";
 import {
   sha256HexOf,
   signManagedDatabasePayload,
@@ -27,7 +35,15 @@ import {
   type TestStack,
 } from "./helpers/managed-database.js";
 import type { ManagedDatabaseSupervisor } from "../managed-database/supervisor.js";
-import { readUploadPreamble } from "../managed-database/control-server.js";
+import {
+  closeServer,
+  createControlServer,
+  listenTcp,
+  listenUnix,
+  readUploadPreamble,
+  type ControlServerLimits,
+} from "../managed-database/control-server.js";
+import { managedDatabaseRelay } from "../managed-database/relay.js";
 import { managedDatabaseLayout } from "../managed-database/layout.js";
 
 const support = await getManagedDatabaseTestSupport();
@@ -314,7 +330,7 @@ describeEngine("managed embedded database: authenticated, lease-fenced commands"
     expect(shell.status).toBe(400);
   });
 
-  it("survives a client that disconnects while its rejected upload drains", async () => {
+  it("refuses an unsigned upload without reading it, and survives the client disconnecting", async () => {
     const uncaught: unknown[] = [];
     const onUncaught = (error: unknown) => uncaught.push(error);
     process.on("uncaughtException", onUncaught);
@@ -322,7 +338,10 @@ describeEngine("managed embedded database: authenticated, lease-fenced commands"
       const request = new PassThrough();
       request.write("{}\n");
       const upload = await readUploadPreamble(request);
-      expect((await supervisor.handleArchiveUpload(upload.command, undefined, upload.archive)).status).toBe(401);
+      const refused = await supervisor.handleArchiveUpload(upload.command, undefined, upload.archive);
+      expect(refused).toMatchObject({ status: 401, closeConnection: true });
+      // Never resumed: the HTTP layer drops the connection instead of draining.
+      expect(upload.archive.readableFlowing).not.toBe(true);
       request.destroy(Object.assign(new Error("aborted"), { code: "ECONNRESET" }));
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(uncaught).toEqual([]);
@@ -529,5 +548,139 @@ describeEngine("managed embedded database: receipt reconciliation after a lost r
       writeFileSync(file, original);
     }
     expect(await currentLease()).toMatchObject(leaseOf(lostReceipt));
+  });
+});
+
+describeEngine("managed embedded database: unauthenticated upload limits", () => {
+  if (!support.supported) return;
+  let stack: TestStack;
+  let supervisor: ManagedDatabaseSupervisor;
+  const servers: Server[] = [];
+
+  beforeAll(async () => {
+    stack = await createTestStack();
+    supervisor = await buildSupervisor(stack, support);
+    await supervisor.start();
+  }, TIMEOUT);
+
+  afterAll(async () => {
+    for (const server of servers) await closeServer(server);
+    await supervisor?.stop();
+    stack?.cleanup();
+  });
+
+  async function controlSocket(limits: ControlServerLimits = {}): Promise<string> {
+    const server = createControlServer(supervisor, () => false, limits);
+    servers.push(server);
+    const socketPath = path.join(stack.volume, `control-${randomUUID().slice(0, 8)}.sock`);
+    await listenUnix(server, socketPath);
+    return socketPath;
+  }
+
+  type Outcome = { closed: boolean; sentBytes: number; response: string };
+
+  /**
+   * An unsigned PUT whose body never ends. `stream: false` sends only the
+   * start of the body and then waits. Resolves when the server drops the
+   * connection, or after 5 seconds if it never does.
+   */
+  function hostileUpload(connect: () => net.Socket, preamble: string, stream = true): Promise<Outcome> {
+    return new Promise((resolve) => {
+      const socket = connect();
+      const chunk = Buffer.alloc(64 * 1024, 0x61);
+      let sentBytes = 0;
+      let response = "";
+      const writeChunk = (data: Buffer) => {
+        socket.write(`${data.length.toString(16)}\r\n`);
+        socket.write(data);
+        socket.write("\r\n");
+      };
+      // Respect backpressure and stop once answered, so the client reads the
+      // response instead of failing a write into a closed connection.
+      const pump = setInterval(() => {
+        if (!stream || !socket.writable || socket.writableLength > 0 || response !== "") return;
+        writeChunk(chunk);
+        sentBytes += chunk.length;
+      }, 5);
+      let gaveUp = false;
+      const giveUp = setTimeout(() => {
+        gaveUp = true;
+        socket.destroy();
+      }, 5_000);
+      socket.on("error", () => {});
+      socket.on("data", (data: Buffer) => { response += data.toString("latin1"); });
+      socket.on("connect", () => {
+        socket.write(`PUT ${MANAGED_DATABASE_HTTP.archive} HTTP/1.1\r\nhost: localhost\r\ncontent-type: application/octet-stream\r\ntransfer-encoding: chunked\r\n\r\n`);
+        writeChunk(Buffer.from(preamble));
+      });
+      socket.on("close", () => {
+        clearInterval(pump);
+        clearTimeout(giveUp);
+        resolve({ closed: !gaveUp, sentBytes, response });
+      });
+    });
+  }
+
+  // Closing a connection with unread inbound bytes resets it, so a caller
+  // that keeps sending may not see the response. Flooding tests only require
+  // that the connection is dropped; the response itself is checked with a
+  // caller that stops after its command line.
+  const droppedOrAnswered = (outcome: Outcome, status: number) =>
+    outcome.response === "" || outcome.response.startsWith(`HTTP/1.1 ${status}`);
+
+  it("answers an unsigned upload and closes the connection", async () => {
+    const socketPath = await controlSocket();
+    const outcome = await hostileUpload(() => net.connect({ path: socketPath }), "{}\n", false);
+    expect(outcome.closed).toBe(true);
+    expect(outcome.response).toMatch(/^HTTP\/1\.1 401/);
+    expect(outcome.response.toLowerCase()).toContain("connection: close");
+    expect(outcome.response).toContain('"code":"bad_signature"');
+  });
+
+  it("drops an unsigned upload after its command line instead of draining the body", async () => {
+    const socketPath = await controlSocket();
+    const outcome = await hostileUpload(() => net.connect({ path: socketPath }), "{}\n");
+    expect(outcome.closed).toBe(true);
+    expect(droppedOrAnswered(outcome, 401)).toBe(true);
+  });
+
+  it("drops an unsigned upload relayed through the serving app", async () => {
+    const socketPath = await controlSocket();
+    const app = express();
+    app.use(MANAGED_DATABASE_HTTP.prefix, managedDatabaseRelay(socketPath));
+    const appServer = createServer(app);
+    servers.push(appServer);
+    await listenTcp(appServer, 0, "127.0.0.1");
+    const { port } = appServer.address() as net.AddressInfo;
+    const answered = await hostileUpload(() => net.connect({ port, host: "127.0.0.1" }), "{}\n", false);
+    expect(answered.closed).toBe(true);
+    expect(answered.response).toMatch(/^HTTP\/1\.1 401/);
+    const flooded = await hostileUpload(() => net.connect({ port, host: "127.0.0.1" }), "{}\n");
+    expect(flooded.closed).toBe(true);
+    expect(droppedOrAnswered(flooded, 401)).toBe(true);
+  });
+
+  it("drops an upload whose command line does not arrive in time", async () => {
+    const socketPath = await controlSocket({ uploadPreambleTimeoutMs: 200 });
+    const outcome = await hostileUpload(() => net.connect({ path: socketPath }), "{", false);
+    expect(outcome.closed).toBe(true);
+    expect(outcome.response).toBe("");
+  });
+
+  it("refuses more pending uploads than the limit", async () => {
+    const socketPath = await controlSocket({ maxPendingUploads: 1, uploadPreambleTimeoutMs: 10_000 });
+    const holder = net.connect({ path: socketPath });
+    holder.on("error", () => {});
+    await new Promise<void>((resolve) => holder.on("connect", () => resolve()));
+    holder.write(`PUT ${MANAGED_DATABASE_HTTP.archive} HTTP/1.1\r\nhost: localhost\r\ntransfer-encoding: chunked\r\n\r\n1\r\n{\r\n`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    try {
+      const outcome = await hostileUpload(() => net.connect({ path: socketPath }), "{}\n", false);
+      expect(outcome.closed).toBe(true);
+      expect(outcome.response).toMatch(/^HTTP\/1\.1 503/);
+      expect(outcome.response).toContain('"code":"busy"');
+    } finally {
+      holder.destroy();
+    }
   });
 });
