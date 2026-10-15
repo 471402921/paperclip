@@ -188,7 +188,7 @@ export class WorkspaceBusyDeferral extends Error {
   constructor(input: {
     holder: SharedWorkspaceHolder;
     projectWorkspaceId: string | null;
-    executionWorkspaceId: string | null;
+    executionWorkspaceId?: string | null;
     deferralAttempt: number;
     wasIssueAssignee: boolean;
   }) {
@@ -200,7 +200,7 @@ export class WorkspaceBusyDeferral extends Error {
     this.name = "WorkspaceBusyDeferral";
     this.holder = input.holder;
     this.projectWorkspaceId = input.projectWorkspaceId;
-    this.executionWorkspaceId = input.executionWorkspaceId;
+    this.executionWorkspaceId = input.executionWorkspaceId ?? null;
     this.deferralAttempt = input.deferralAttempt;
     this.wasIssueAssignee = input.wasIssueAssignee;
   }

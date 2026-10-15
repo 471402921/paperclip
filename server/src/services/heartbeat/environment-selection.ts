@@ -319,22 +319,22 @@ export async function selectHeartbeatEnvironment(db: Db, input: HeartbeatEnviron
       agentId: heartbeatRuns.agentId,
       issueId: sql<string>`${issues.id}::text`,
       issueIdentifier: issues.identifier,
-      lastActivityAt: sql<Date>`coalesce(${heartbeatRuns.lastOutputAt}, ${heartbeatRuns.startedAt}, ${heartbeatRuns.createdAt})`,
     }).from(heartbeatRuns).innerJoin(issues, and(
       eq(issues.companyId, heartbeatRuns.companyId),
       eq(issues.executionWorkspaceId, reusableExistingExecutionWorkspace.id),
       sql`(${issues.executionRunId} = ${heartbeatRuns.id} or ${issues.id}::text = coalesce(${heartbeatRuns.contextSnapshot}->>'issueId', ${heartbeatRuns.contextSnapshot}->>'taskId'))`,
     )).where(and(
       eq(heartbeatRuns.companyId, agent.companyId), ne(heartbeatRuns.id, run.id), eq(heartbeatRuns.status, "running"),
+      sharedWorkspaceConcurrency === "allow"
+        ? undefined
+        : sql`coalesce(${heartbeatRuns.lastOutputAt}, ${heartbeatRuns.startedAt}, ${heartbeatRuns.createdAt}) >= ${new Date(Date.now() - WORKSPACE_BUSY_HOLDER_STALE_AFTER_MS).toISOString()}::timestamptz`,
     )).orderBy(asc(heartbeatRuns.createdAt), asc(heartbeatRuns.id)).limit(1);
     if (remoteSharedHolder && sharedWorkspaceConcurrency === "allow") {
       throw new ConfigurationIncompleteFailure("This environment cannot place concurrent agents in one physical shared folder. Use local/SSH sharing or isolated task workspaces.", {
         configurationIncomplete: { reason: "shared_realization_unsupported", issueId },
       });
     }
-    // Auto/serialize policy waits for a live holder, as for a shared project workspace.
-    if (remoteSharedHolder &&
-        new Date(remoteSharedHolder.lastActivityAt).getTime() >= Date.now() - WORKSPACE_BUSY_HOLDER_STALE_AFTER_MS) {
+    if (remoteSharedHolder) {
       throw new WorkspaceBusyDeferral({
         holder: {
           runId: remoteSharedHolder.runId,

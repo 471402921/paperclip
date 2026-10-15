@@ -449,6 +449,18 @@ This pre-provider wait records `ai_connection_busy` on the cancelled run and doe
 not consume the provider-failure retry allowance. The event contains no credentials
 and creates no Telemetry or OpenTelemetry export.
 
+## Shared workspace busy deferral
+
+When a sandbox or plugin run waits for another live run in the same shared
+workspace, the heartbeat writes an informational `lifecycle` event to the
+local run log. The payload contains `projectWorkspaceId`, `holderRunId`,
+`holderIssueId`, `deferralAttempt`, and `retryScheduled`. For a shared project
+workspace, `projectWorkspaceId` is the workspace ID. For a reused shared
+execution workspace, `projectWorkspaceId` is `null` and the payload adds
+`executionWorkspaceId`. Project-workspace payloads do not include
+`executionWorkspaceId`. The event contains no credentials or file paths and
+creates no Telemetry or OpenTelemetry export.
+
 ## Managed Agent File Save Receipts
 
 The server writes `instruction_save` after managed file collection or a warm

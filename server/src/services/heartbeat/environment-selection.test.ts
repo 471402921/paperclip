@@ -177,6 +177,15 @@ describe.skipIf(!support.supported)("heartbeat environment selection boundary", 
     expect(result.selectedEnvironmentForConfig?.driver).toBe("sandbox");
   });
 
+  it("waits on a newer live holder when an older shared execution workspace holder is stale", async () => {
+    const { input, saved, holderIssue } = await remoteSharedExecutionWorkspace(new Date(Date.now() - WORKSPACE_BUSY_HOLDER_STALE_AFTER_MS - 60_000));
+    const [liveRun] = await db.insert(heartbeatRuns).values({ companyId: input.agent.companyId, agentId: input.agent.id, status: "running", runtimeMode: "legacy",
+      contextSnapshot: { issueId: holderIssue.id }, startedAt: new Date(), lastOutputAt: new Date() }).returning();
+    const error = await selectHeartbeatEnvironment(db, input).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(WorkspaceBusyDeferral);
+    expect(error).toMatchObject({ executionWorkspaceId: saved.id, holder: { runId: liveRun.id } });
+  });
+
   it("uses the low-trust task sandbox even when workspace feature gates hide issue settings", async () => {
     const { input, issue } = await fixture();
     const [sandbox] = await db.insert(environments).values({ name: "Task sandbox", driver: "sandbox", status: "active", config: { provider: "fake" } }).returning();
