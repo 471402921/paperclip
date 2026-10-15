@@ -2497,6 +2497,9 @@ refs and files are verified reproducible. Shared project clones remain intact.
 Normal authorized reopening recreates a missing source and checks out the saved
 commit, even after upstream advances. Inaccessible upstream produces an explicit
 retryable restoration failure. It never substitutes the default branch.
+Reopening failures reject the consuming request with HTTP 409 before saving a
+comment or changing its task. The response preserves the restoration message, so
+the composer keeps an editable draft and permits retry after access is restored.
 
 Both enable switches default off. Rollback disables further expiration while
 leaving saved recipes and restoration support intact. Recovery archives, runner
