@@ -45,7 +45,8 @@ import { useSidebar } from "../context/SidebarContext";
 import { InlineBanner } from "./InlineBanner";
 import { PendingSendNotice } from "./PendingSendNotice";
 import { useDurableSubmit } from "../hooks/useDurableSubmit";
-import type { ErrorDescription } from "../api/errors";
+import { describeError, type ErrorDescription } from "../api/errors";
+import { clearPendingSend, readPendingSend, writePendingSend } from "../lib/pending-send";
 import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
 import { getTrustPreset } from "../lib/trust-policy-ui";
 
@@ -79,6 +80,17 @@ class StagedFilesMissingError extends Error {
     );
     this.name = "StagedFilesMissingError";
   }
+}
+
+/**
+ * A restored create that could not be sent for lack of its files. Its key is
+ * kept until a create succeeds or the user cancels, so reattaching after any
+ * number of reloads replays a create that already reached the server.
+ */
+const CREATE_AWAITING_FILES_KEY = "paperclip:issue-draft:create-awaiting-files";
+
+function stagedFilesMissingDescription(names: string[]): ErrorDescription {
+  return describeError(new StagedFilesMissingError(names), { action: "create the task" });
 }
 
 /** Identifies a staged file across reselection from disk, unlike its per-staging `id`. */
@@ -355,7 +367,12 @@ export function NewIssueDialog() {
   const initializationKeyRef = useRef<string | null>(null);
   const defaultAssigneePendingRef = useRef(false);
   const defaultProjectPendingRef = useRef(false);
-  const createRequestRef = useRef<{ fingerprint: string; idempotencyKey: string } | null>(null);
+  const [createAwaitingFiles] = useState(() => readPendingSend(CREATE_AWAITING_FILES_KEY, isPendingCreate));
+  const createRequestRef = useRef<{ fingerprint: string; idempotencyKey: string } | null>(
+    createAwaitingFiles
+      ? { fingerprint: createAwaitingFiles.payload.fingerprint, idempotencyKey: createAwaitingFiles.idempotencyKey }
+      : null,
+  );
 
   const primaryAgent = usePrimaryAgentPresentation(effectiveCompanyId);
   const isSubIssueMode = Boolean(newIssueDefaults.parentId);
@@ -534,7 +551,11 @@ export function NewIssueDialog() {
   // The composer shows a rejection of the first attempt; later (automatic or
   // Resend now) rejections show here.
   const firstAttemptKey = useRef<string | null>(null);
-  const [resendError, setResendError] = useState<ErrorDescription | null>(null);
+  const [resendError, setResendError] = useState<ErrorDescription | null>(() =>
+    createAwaitingFiles?.payload.stagedFileNames?.length
+      ? stagedFilesMissingDescription(createAwaitingFiles.payload.stagedFileNames)
+      : null,
+  );
   const durableCreate = useDurableSubmit<PendingCreate, unknown>({
     sourceId: "new-issue-dialog",
     storageKey: PENDING_CREATE_KEY,
@@ -559,6 +580,7 @@ export function NewIssueDialog() {
         // Reattaching the same files resubmits under the original key, so a
         // create that already reached the server is replayed, not duplicated.
         createRequestRef.current = { fingerprint: pending.payload.fingerprint, idempotencyKey: pending.idempotencyKey };
+        writePendingSend(CREATE_AWAITING_FILES_KEY, pending);
       }
       if (pending.idempotencyKey !== firstAttemptKey.current) setResendError(description);
     },
@@ -839,6 +861,7 @@ export function NewIssueDialog() {
 
   function reset() {
     createRequestRef.current = null;
+    clearPendingSend(CREATE_AWAITING_FILES_KEY);
     setIssueText("", "");
     setStatus("todo");
     setPriority("");
@@ -1308,8 +1331,12 @@ export function NewIssueDialog() {
                           onResendNow={durableCreate.resendNow}
                           onCancel={() => {
                             // The draft (title and description) is still saved; only the send stops.
+                            const cancelledKey = durableCreate.pending?.idempotencyKey;
                             const cancelled = durableCreate.cancel();
-                            if (cancelled) createRequestRef.current = null;
+                            if (cancelled) {
+                              createRequestRef.current = null;
+                              clearPendingSend(CREATE_AWAITING_FILES_KEY, cancelledKey);
+                            }
                           }}
                         />
                       ) : null}

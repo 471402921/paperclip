@@ -170,4 +170,17 @@ describe("useUpdateIssueMutation", () => {
     expect(mockUpdate).toHaveBeenCalledTimes(2);
     expect(mockUpdate.mock.calls.map((call) => call[1])).toEqual([{ status: "in_progress" }, { status: "done" }]);
   });
+
+  it("does not hold an update to another task behind a pending one", async () => {
+    let finishFirst!: (value: unknown) => void;
+    mockUpdate
+      .mockReturnValueOnce(new Promise((done) => { finishFirst = done; }))
+      .mockResolvedValue({ ...issue({ id: "issue-2", identifier: "PAP-2" }), changes: {} });
+    render();
+    act(() => current.mutate({ id: "PAP-1", data: { status: "in_progress" } }));
+    act(() => current.mutate({ id: "PAP-2", data: { status: "done" } }));
+    await act(async () => {});
+    expect(mockUpdate.mock.calls.map((call) => call[0])).toEqual(["PAP-1", "PAP-2"]);
+    await act(async () => finishFirst({ ...issue({ status: "in_progress" }), changes: {} }));
+  });
 });

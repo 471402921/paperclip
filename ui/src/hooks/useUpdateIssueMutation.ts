@@ -93,6 +93,32 @@ export function applyOptimisticIssueUpdate(
   return snapshot;
 }
 
+interface IssueWriteTurn {
+  /** Settles once the previous update to the same issue has settled. */
+  ready: Promise<void>;
+  release: () => void;
+}
+
+/**
+ * Updates to one issue are sent in the order they were made, so a change
+ * still retrying through an outage cannot land after, and overwrite, a newer
+ * one. Updates to different issues never wait for each other.
+ */
+const issueWriteTails = new Map<string, Promise<void>>();
+const issueWriteTurns = new WeakMap<UpdateIssueVariables, IssueWriteTurn>();
+
+function takeIssueWriteTurn(key: string): IssueWriteTurn {
+  const ready = issueWriteTails.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const settled = new Promise<void>((resolve) => { release = resolve; });
+  const tail = ready.then(() => settled);
+  issueWriteTails.set(key, tail);
+  void tail.then(() => {
+    if (issueWriteTails.get(key) === tail) issueWriteTails.delete(key);
+  });
+  return { ready, release };
+}
+
 export interface UseUpdateIssueMutationOptions {
   companyId: string | null | undefined;
   /** Query keys this surface lists issues under; refreshed after every update. */
@@ -129,7 +155,11 @@ export function useUpdateIssueMutation(options: UseUpdateIssueMutationOptions): 
   const { companyId, invalidateKeys, onSuccess, onSettled, action = "update the task" } = options;
 
   const mutationOptions = {
-    mutationFn: ({ id, data }: UpdateIssueVariables) => issuesApi.update(id, data),
+    mutationFn: async (variables: UpdateIssueVariables) => {
+      // Retries reuse the turn, which has already settled by then.
+      await issueWriteTurns.get(variables)?.ready;
+      return issuesApi.update(variables.id, variables.data);
+    },
     onMutate: async ({ id, data }: UpdateIssueVariables): Promise<UpdateIssueContext> => {
       const refs = new Set([id]);
       const cached = queryClient.getQueryData<Issue>(queryKeys.issues.detail(id));
@@ -154,6 +184,7 @@ export function useUpdateIssueMutation(options: UseUpdateIssueMutationOptions): 
       pushToast({ title, body, tone: "error" });
     },
     onSettled: (_result: unknown, _error: unknown, variables: UpdateIssueVariables) => {
+      issueWriteTurns.get(variables)?.release();
       void queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(variables.id) });
       for (const queryKey of invalidateKeys ?? (companyId ? [queryKeys.issues.list(companyId)] : [])) {
         void queryClient.invalidateQueries({ queryKey });
@@ -162,28 +193,33 @@ export function useUpdateIssueMutation(options: UseUpdateIssueMutationOptions): 
     },
   };
   // Two observers, because `meta` is fixed per mutation: absolute updates may
-  // replay across an outage, anything else fails fast. Both share one scope,
-  // so issue updates run in the order they were made: a change still retrying
-  // through an outage cannot land after, and overwrite, a newer one.
-  const scope = { id: `issue-update:${companyId ?? "none"}` };
-  const replayable = useMutation({ ...mutationOptions, scope, meta: { replay: "idempotent" } });
-  const direct = useMutation({ ...mutationOptions, scope });
+  // replay across an outage, anything else fails fast.
+  const replayable = useMutation({ ...mutationOptions, meta: { replay: "idempotent" } });
+  const direct = useMutation(mutationOptions);
 
   // Stable callbacks: callers list `mutate` in effect and callback deps.
   const replayableRef = useRef(replayable);
   replayableRef.current = replayable;
   const directRef = useRef(direct);
   directRef.current = direct;
-  const pick = (variables: UpdateIssueVariables) =>
-    isReplayableIssueUpdate(variables.data) ? replayableRef.current : directRef.current;
-  const mutate = useCallback<UpdateIssueMutation["mutate"]>(
-    (variables, mutateOptions) => pick(variables).mutate(variables, mutateOptions),
-    [],
-  );
-  const mutateAsync = useCallback<UpdateIssueMutation["mutateAsync"]>(
-    (variables, mutateOptions) => pick(variables).mutateAsync(variables, mutateOptions),
-    [],
-  );
+  const companyIdRef = useRef(companyId);
+  companyIdRef.current = companyId;
+  const queue = (variables: UpdateIssueVariables) => {
+    // A copy, so each call gets its own turn even if a caller reuses variables.
+    const queued = { ...variables };
+    const cached = queryClient.getQueryData<Issue>(queryKeys.issues.detail(variables.id));
+    issueWriteTurns.set(queued, takeIssueWriteTurn(`${companyIdRef.current ?? "none"}:${cached?.id ?? variables.id}`));
+    const mutation = isReplayableIssueUpdate(queued.data) ? replayableRef.current : directRef.current;
+    return { mutation, queued };
+  };
+  const mutate = useCallback<UpdateIssueMutation["mutate"]>((variables, mutateOptions) => {
+    const { mutation, queued } = queue(variables);
+    mutation.mutate(queued, mutateOptions);
+  }, []);
+  const mutateAsync = useCallback<UpdateIssueMutation["mutateAsync"]>((variables, mutateOptions) => {
+    const { mutation, queued } = queue(variables);
+    return mutation.mutateAsync(queued, mutateOptions);
+  }, []);
   const latest = (replayable.submittedAt ?? 0) >= (direct.submittedAt ?? 0) ? replayable : direct;
 
   return useMemo(

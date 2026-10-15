@@ -48,9 +48,14 @@ vi.mock("../api/issues", () => ({
   issuesApi: mockIssuesApi,
 }));
 
-const mockSession = vi.hoisted(() => ({ userId: "user-1" }));
+const mockSession = vi.hoisted(() => ({ userId: "user-1", unreachable: false }));
 vi.mock("../api/auth", () => ({
-  authApi: { getSession: async () => ({ user: { id: mockSession.userId } }) },
+  authApi: {
+    getSession: async () => {
+      if (mockSession.unreachable) throw new Error("Service unavailable");
+      return { user: { id: mockSession.userId } };
+    },
+  },
 }));
 
 vi.mock("@/lib/router", () => ({
@@ -289,6 +294,7 @@ describe("IssueDocumentsSection", () => {
     window.localStorage.clear();
     vi.clearAllMocks();
     markdownEditorMockState.emitMountEmptyChange = false;
+    mockSession.unreachable = false;
   });
 
   afterEach(() => {
@@ -891,6 +897,39 @@ describe("IssueDocumentsSection", () => {
     expect(container.textContent).toContain("Server body");
     expect(container.textContent).not.toContain("Someone else's draft");
     expect(mockIssuesApi.upsertDocument).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+    queryClient.clear();
+    window.localStorage.clear();
+  });
+
+  it("keeps the known account's drafts while a session refetch fails", async () => {
+    const document = createIssueDocument({ body: "Server body" });
+    const issue = createIssue();
+    window.localStorage.setItem(
+      `paperclip:document-draft:v2:user-1:${issue.id}:plan`,
+      JSON.stringify({ key: "plan", title: "Plan", body: "Typed before the outage", baseRevisionId: "revision-4", isNew: false }),
+    );
+    mockIssuesApi.listDocuments.mockResolvedValue([document]);
+    mockSession.unreachable = true;
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    // Signed in earlier; the refetch on mount fails but the query keeps its data.
+    queryClient.setQueryData(queryKeys.auth.session, { user: { id: "user-1" } }, { updatedAt: 0 });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDocumentsSection issue={issue} canDeleteDocuments={false} />
+        </QueryClientProvider>,
+      );
+    });
+    await flush();
+    await flush();
+    expect(queryClient.getQueryState(queryKeys.auth.session)?.status).toBe("error");
+    expect(container.textContent).toContain("Typed before the outage");
 
     await act(async () => {
       root.unmount();

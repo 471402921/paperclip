@@ -1585,7 +1585,16 @@ describe("NewIssueDialog", () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Attach it again");
     expect(mockIssuesApi.create).not.toHaveBeenCalled();
     expect(localStorage.getItem("paperclip:issue-draft:pending-create")).toBeNull();
+    // The original key outlives the rejection, so it survives another reload.
+    expect(localStorage.getItem("paperclip:issue-draft:create-awaiting-files")).toContain("create-key-123");
     act(() => root.unmount());
+
+    const reloaded = renderDialog(container);
+    await flush();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("spec.pdf");
+    expect(localStorage.getItem("paperclip:issue-draft:create-awaiting-files")).toContain("create-key-123");
+    expect(mockIssuesApi.create).not.toHaveBeenCalled();
+    act(() => reloaded.root.unmount());
   });
 
   it("submits Chinese, Japanese, and Hindi issue text without normalization", async () => {

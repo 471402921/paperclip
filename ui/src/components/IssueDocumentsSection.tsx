@@ -343,12 +343,14 @@ export function IssueDocumentsSection({
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftState | null>(null);
   const [documentConflict, setDocumentConflict] = useState<DocumentConflictState | null>(null);
-  const { data: session, isSuccess: sessionLoaded } = useQuery({
+  const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
   });
   const draftOwnerId = session?.user?.id ?? session?.session?.userId ?? null;
-  const draftScope = sessionLoaded ? `${draftOwnerId ?? "signed-out"}:${documentSubject.id}` : null;
+  // Once known, the account stays known through a failed refetch (the query
+  // keeps its data), so edits keep being backed up during an outage.
+  const draftScope = session !== undefined ? `${draftOwnerId ?? "signed-out"}:${documentSubject.id}` : null;
   const [foldedDocumentKeys, setFoldedDocumentKeys] = useState<string[]>(() => loadFoldedDocumentKeys(documentSubject.id));
   const [annotationPanelOpenKeys, setAnnotationPanelOpenKeys] = useState<string[]>(
     () => (defaultAnnotationPanelOpenKeys ?? []),
