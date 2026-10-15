@@ -75,6 +75,10 @@ When changing the workflow path or branch, authorize the new reference before
 updating the caller. Retain older authorized SHA references while queued runs or
 supported reruns still use them.
 
+For a full wall-clock profile of all main PR CI jobs, add `profile-ci` to the PR.
+See [CI profiling](ci-profiling.md) for the Honeycomb waterfall, coverage,
+operator setup, and activation requirements.
+
 ## Start Dev
 
 From repo root:

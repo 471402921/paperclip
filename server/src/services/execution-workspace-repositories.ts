@@ -31,6 +31,11 @@ type DbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 const controllerAcquisitionMessage = "New controller repository acquisition requires a trusted task. Existing verified public checkouts remain available.";
 const lowTrustRepositoryMessage = "Low-trust repository reuse permits anonymous public URLs only; new acquisition is unavailable. Use an authorized configured source for private repositories.";
+const rootReaderRunColumns = {
+  id: heartbeatRuns.id, companyId: heartbeatRuns.companyId, agentId: heartbeatRuns.agentId,
+  responsibleUserId: heartbeatRuns.responsibleUserId, nativeIssueId: heartbeatRuns.nativeIssueId, issueId: heartbeatRuns.issueId,
+  contextSnapshot: sql<Record<string, unknown>>`jsonb_build_object('issueId', ${heartbeatRuns.contextSnapshot}->'issueId', 'taskId', ${heartbeatRuns.contextSnapshot}->'taskId', 'executionPolicy', ${heartbeatRuns.contextSnapshot}->'executionPolicy')`,
+};
 
 function resolveAcquisitionSource(request: PrepareWorkspaceRepository["repository"], available: ProjectRepository[], anonymousOnly: boolean) {
   if (anonymousOnly && request.kind === "catalog") throw forbidden(lowTrustRepositoryMessage);
@@ -188,8 +193,17 @@ async function assertRootProjectAccess(db: Db | DbTransaction, actor: Authorizat
   }
 }
 
+async function assertRootProjectsReadAccessForActors(db: Db | DbTransaction, actors: AuthorizationActor[], companyId: string, projectIds: Set<string>) {
+  if (!actors.length || !projectIds.size) return;
+  const decisions = await authorizationService(db).decideReadsForActors(actors,
+    [...projectIds].map(projectId => ({ type: "project" as const, companyId, projectId })));
+  if (decisions.some(batch => batch.some(decision => !decision.allowed))) {
+    throw forbidden("Workspace source project is no longer accessible");
+  }
+}
+
 async function retainedRootReader(tx: DbTransaction, companyId: string, reader: Pick<typeof executionWorkspaceRepositoryAccess.$inferSelect, "scopeId" | "issueId" | "agentId" | "responsibleUserId">) {
-  const [run] = await measureRunPhase("workspace.sources.inventory", async () => tx.select().from(heartbeatRuns).where(and(eq(heartbeatRuns.id, reader.scopeId), eq(heartbeatRuns.companyId, companyId))));
+  const [run] = await measureRunPhase("workspace.sources.inventory", async () => tx.select(rootReaderRunColumns).from(heartbeatRuns).where(and(eq(heartbeatRuns.id, reader.scopeId), eq(heartbeatRuns.companyId, companyId))));
   const [agent] = reader.agentId ? await measureRunPhase("workspace.sources.inventory", async () => tx.select({ id: agents.id }).from(agents).where(and(eq(agents.id, reader.agentId!), eq(agents.companyId, companyId)))) : [];
   const [issue] = reader.issueId ? await measureRunPhase("workspace.sources.inventory", async () => tx.select().from(issues).where(and(eq(issues.id, reader.issueId!), eq(issues.companyId, companyId)))) : [];
   if (!run || !agent || !issue || run.agentId !== reader.agentId || run.responsibleUserId !== reader.responsibleUserId
@@ -268,8 +282,8 @@ async function retainGitMetadataOwners(tx: DbTransaction, input: {
   for (const reader of closure.overlappingEntries.filter(entry => entry.kind === "reader")) {
     const { actor } = await measureRunPhase("workspace.readers.identity", () => retainedRootReader(tx, input.companyId, reader));
     readerActors.push(actor);
-    await measureRunPhase("workspace.readers.projects", () => assertRootProjectAccess(tx, actor, input.companyId, projectIds));
   }
+  await measureRunPhase("workspace.readers.projects", () => assertRootProjectsReadAccessForActors(tx, readerActors, input.companyId, projectIds));
   await measureRunPhase("workspace.readers.sources", () => assertTaskWorkspacesReadAccessForActors(tx, readerActors, input.companyId, workspaceIds));
   for (const [kind, ids] of [["source", workspaceIds], ["project_source", projectIds]] as const) {
     for (const scopeId of ids) if (!closure.entries.some(entry => entry.kind === kind && entry.scopeId === scopeId)) {
@@ -364,8 +378,8 @@ export async function retainIsolatedWorkspaceSourceAccess(db: Db, input: {
         const { actor, issue } = await measureRunPhase("workspace.readers.identity", () => retainedRootReader(tx, input.companyId, reader));
         readerActors.push(actor);
         await measureRunPhase("workspace.readers.trust", () => assertRootProjectTrust(tx, { companyId: input.companyId, actor, issueId: issue.id, projectIds: target.sourceProjectIds }));
-        await measureRunPhase("workspace.readers.projects", () => assertRootProjectAccess(tx, actor, input.companyId, target.sourceProjectIds));
       }
+      await measureRunPhase("workspace.readers.projects", () => assertRootProjectsReadAccessForActors(tx, readerActors, input.companyId, target.sourceProjectIds));
       await measureRunPhase("workspace.readers.sources", () => assertTaskWorkspacesReadAccessForActors(tx, readerActors, input.companyId, target.sourceIds));
     } catch (error) { failure ??= error; }
     if (!failure && verifiedCopyProjectIds) {
@@ -393,7 +407,7 @@ async function assertRootProjectTrust(db: Db | DbTransaction, input: {
   if (!restricted.length) return;
   const incompatible = () => forbidden("Physical workspace source trust is incompatible with the task's execution policy");
   const runId = input.actor.runId;
-  const [run] = runId ? await db.select().from(heartbeatRuns).where(and(eq(heartbeatRuns.id, runId), eq(heartbeatRuns.companyId, input.companyId))) : [];
+  const [run] = runId ? await db.select(rootReaderRunColumns).from(heartbeatRuns).where(and(eq(heartbeatRuns.id, runId), eq(heartbeatRuns.companyId, input.companyId))) : [];
   const creation = !input.issueId && input.actor.type === "agent" && runId ? input.taskCreation : undefined;
   const runIssueId = run?.nativeIssueId ?? run?.contextSnapshot?.issueId ?? run?.contextSnapshot?.taskId ?? run?.issueId;
   const issueId = input.issueId ?? (creation && typeof runIssueId === "string" ? runIssueId : null);
@@ -479,7 +493,7 @@ export function executionWorkspaceRepositoryService(db: Db) {
     const [project] = issue.projectId ? await reader.select().from(projects).where(and(eq(projects.id, issue.projectId), eq(projects.companyId, issue.companyId))) : [];
     const [workspaceSourceProject] = workspace?.projectId ? await reader.select().from(projects).where(and(eq(projects.id, workspace.projectId), eq(projects.companyId, issue.companyId))) : [];
     const runId = input.runId ?? issue.executionRunId;
-    const [run] = runId ? await reader.select().from(heartbeatRuns).where(and(eq(heartbeatRuns.id, runId), eq(heartbeatRuns.companyId, issue.companyId))) : [];
+    const [run] = runId ? await reader.select(rootReaderRunColumns).from(heartbeatRuns).where(and(eq(heartbeatRuns.id, runId), eq(heartbeatRuns.companyId, issue.companyId))) : [];
     if (runId && (!run || (input.runId && run.agentId !== agentId) || (run.nativeIssueId ?? run.contextSnapshot?.issueId ?? run.contextSnapshot?.taskId ?? run.issueId) !== issue.id)) {
       throw forbidden("Task repository run identity is unavailable");
     }
@@ -553,13 +567,15 @@ export function executionWorkspaceRepositoryService(db: Db) {
     const sourceProjects = sourceIds.size ? await measureRunPhase("workspace.sources.inventory", async () => tx.selectDistinct({ projectId: executionWorkspaces.projectId }).from(executionWorkspaces).where(and(
       eq(executionWorkspaces.companyId, input.companyId), inArray(executionWorkspaces.id, [...sourceIds])))) : [];
     const sourceActors: AuthorizationActor[] = [];
+    const projectReaders: AuthorizationActor[] = [];
     await measureRunPhase("workspace.readers", async () => {
       for (const reader of readers) {
         const { actor, issue } = await measureRunPhase("workspace.readers.identity", () => retainedRootReader(tx, input.companyId, reader));
         await measureRunPhase("workspace.readers.trust", () => assertRootProjectTrust(tx, { companyId: input.companyId, projectIds: sourceProjectIds, actor, issueId: issue.id,
           sourceWorkspaceId: input.reader?.runId === reader.scopeId ? input.sourceWorkspaceId : undefined }));
-        await measureRunPhase("workspace.readers.projects", () => assertRootProjectAccess(tx, actor, input.companyId, sourceProjectIds,
-          input.reader?.runId === reader.scopeId ? { sharedProjectIds, issueId: issue.id } : undefined));
+        if (input.reader?.runId === reader.scopeId) {
+          await measureRunPhase("workspace.readers.projects", () => assertRootProjectAccess(tx, actor, input.companyId, sourceProjectIds, { sharedProjectIds, issueId: issue.id }));
+        } else projectReaders.push(actor);
         if (ownAdmissionOnly) {
           const [ownSource] = await measureRunPhase("workspace.sources.inventory", async () => tx.select({ id: executionWorkspaces.id }).from(executionWorkspaces).where(and(
             eq(executionWorkspaces.companyId, input.companyId), eq(executionWorkspaces.id, input.sourceWorkspaceId!),
@@ -575,6 +591,7 @@ export function executionWorkspaceRepositoryService(db: Db) {
           }
         }
       }
+      await measureRunPhase("workspace.readers.projects", () => assertRootProjectsReadAccessForActors(tx, projectReaders, input.companyId, sourceProjectIds));
     });
     if (input.actor) {
       if (!input.issueId) throw forbidden("Workspace write authorization requires a task");
@@ -688,7 +705,7 @@ export function executionWorkspaceRepositoryService(db: Db) {
       throw forbidden("Task repository publication binding is unavailable");
     }
     await requiresAnonymousAcquisition(tx, { issue, workspace, agentId: input.agentId, runId: input.runId });
-    const [run] = await measureRunPhase("workspace.sources.inventory", async () => tx.select().from(heartbeatRuns).where(and(eq(heartbeatRuns.id, input.runId), eq(heartbeatRuns.companyId, input.companyId))));
+    const [run] = await measureRunPhase("workspace.sources.inventory", async () => tx.select({ responsibleUserId: heartbeatRuns.responsibleUserId }).from(heartbeatRuns).where(and(eq(heartbeatRuns.id, input.runId), eq(heartbeatRuns.companyId, input.companyId))));
     const { actor } = await measureRunPhase("workspace.readers.identity", () => retainedRootReader(tx, input.companyId, {
       scopeId: input.runId, issueId: input.issueId, agentId: input.agentId, responsibleUserId: run?.responsibleUserId ?? null,
     }));

@@ -29,8 +29,11 @@ paste it into Paperclip's authorization page. Keep it out of Bot chat.
 Assign ordinary tasks to the agent. Read its progress, answer its question cards,
 and review its documents and files in the task thread. The Bot can initiate a
 new task from its Grok conversation through the admitted work-session tools.
-An immediate proactive claim does not send the same assignment back through the
-routine.
+The originating conversation checks the same request while admission is queued.
+Neither immediate nor delayed Bot-initiated admission sends that assignment back
+through the routine. Grok keeps the request ID stable until admission succeeds
+or fails. Human-assigned work and continuations after an answered question still
+use their normal assignment wakes.
 
 ## Files and completion
 

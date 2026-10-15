@@ -427,7 +427,11 @@ describe("sandbox managed runtime", () => {
     const local = path.join(root, "local"), remote = path.join(root, "remote");
     await mkdir(local);
     await writeFile(path.join(local, "file.txt"), "before");
-    const capture = vi.spyOn(restoreMerge, "captureDirectorySnapshotOffThread");
+    const mergeDirectoryWithBaseline = restoreMerge.mergeDirectoryWithBaseline;
+    const capture = vi.spyOn(restoreMerge, "captureDirectorySnapshotOffThread")
+      .mockImplementation(restoreMerge.captureDirectorySnapshot);
+    const merge = vi.spyOn(restoreMerge, "mergeDirectoryWithBaseline")
+      .mockImplementation(input => mergeDirectoryWithBaseline({ ...input, workspaceSnapshotIsolation: undefined }));
     try {
       const prepared = await prepareCommandManagedRuntime({
         runner: makeInlineSpawnRunner(),
@@ -442,8 +446,10 @@ describe("sandbox managed runtime", () => {
       expect(await readFile(path.join(remote, "file.txt"), "utf8")).toBe("before");
       await writeFile(path.join(remote, "file.txt"), "after");
       await prepared.restoreWorkspace();
+      expect(merge).toHaveBeenCalled();
+      expect(merge.mock.calls.every(([input]) => input.workspaceSnapshotIsolation === isolation)).toBe(true);
       expect(await readFile(path.join(local, "file.txt"), "utf8")).toBe("after");
-    } finally { capture.mockRestore(); }
+    } finally { capture.mockRestore(); merge.mockRestore(); }
   });
 
   it.each(["host_current", "adopt_remote", "durable_seed"] as const)("stages and restores both project repositories with independent Git histories (%s)", async (mode) => {

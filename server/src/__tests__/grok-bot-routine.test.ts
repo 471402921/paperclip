@@ -289,6 +289,28 @@ describe("durable Grok routine qualification", () => {
     expect((await dotRunnerBroker(db).read(f.principal, work.id)).toolUsageInstructions).toContain("paperclip_grok_operation_status");
   });
 
+  it.each(["new offer", "prepared before restart"] as const)("does not echo delayed Bot-initiated work: %s", async scenario => {
+    const f = await fixture(); const { work, run } = await admittedWork(f, "offered");
+    await db.update(heartbeatRuns).set({ contextSnapshot: { grokProactiveRequest: {
+      requestId: randomUUID(), bindingId: f.pairing.bindingId, bindingGeneration: 1,
+    } } }).where(eq(heartbeatRuns.id, run.id));
+    await db.update(dotRunnerAssignments).set({ createdAt: new Date(Date.now() - 60_000) }).where(eq(dotRunnerAssignments.id, work.id));
+    const legacy = scenario === "prepared before restart" ? await f.service.reserve({
+      companyId: f.company.id, agentId: f.agent.id, bindingId: f.pairing.bindingId,
+      assignmentId: work.id, kind: "mailbox_updated", sourceEventId: `proactive-admission:${work.id}`,
+    }) : null;
+    f.delivery.mockClear(); const dispatcher = createGrokRoutineDispatcher(db, () => true, f.delivery);
+    await dispatcher.tick(); await dispatcher.tick();
+    expect(f.delivery).not.toHaveBeenCalled();
+    const wakes = await db.select().from(grokBotDispatches).where(eq(grokBotDispatches.assignmentId, work.id));
+    if (legacy) expect(wakes).toEqual([expect.objectContaining({ id: legacy.id, status: "cancelled" })]);
+    else expect(wakes).toEqual([]);
+    // The original conversation still owns and can accept the polled offer.
+    await expect(dotRunnerBroker(db).read(f.principal, work.id)).resolves.toBeDefined();
+    await (await acceptance(f, work))();
+    expect((await db.select().from(dotRunnerAssignments).where(eq(dotRunnerAssignments.id, work.id)))[0]?.status).toBe("accepted");
+  });
+
   it("cancels a queued wake when its assignment was already accepted", async () => {
     const f = await fixture(); const { work } = await admittedWork(f, "offered");
     const queued = await f.service.reserve({ companyId: f.company.id, agentId: f.agent.id,
