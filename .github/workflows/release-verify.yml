@@ -18,6 +18,9 @@ on:
       native_consumer_matrix:
         value: ${{ jobs.runner_binary_targets.outputs.native_consumers }}
 
+env:
+  CARGO_PROFILE_DEV_DEBUG: '0'
+
 # Caller-provided refs may name unmerged PR code. AWS is eligible only when
 # the caller runs on canonical master and verifies that event's exact SHA.
 # The organization group also restricts these workflow files to master.

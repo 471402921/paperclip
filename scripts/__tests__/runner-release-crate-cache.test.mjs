@@ -14,6 +14,15 @@ const readWorkflow = (name) => readFileSync(path.join(repoRoot, ".github/workflo
 const prWorkflow = readWorkflow("pr-trusted.yml");
 const releaseWorkflow = readWorkflow("release-verify.yml");
 
+test('shared Rust cache readers and writer omit only development debug symbols', () => {
+  for (const workflow of [prWorkflow, releaseWorkflow]) {
+    const globals = workflow.slice(0, workflow.indexOf('\njobs:\n'));
+    assert.match(globals, /^env:\n(?: {2}.+\n)* {2}CARGO_PROFILE_DEV_DEBUG: '0'\n/m);
+    assert.equal(workflow.match(/CARGO_PROFILE_DEV_DEBUG:/g)?.length, 1);
+    assert.doesNotMatch(workflow, /CARGO_PROFILE_(?:DEV|TEST)_(?:DEBUG_ASSERTIONS|OVERFLOW_CHECKS|OPT_LEVEL)/);
+  }
+});
+
 // Slice one job out of a workflow, from its two-space-indented key to the next.
 function job(workflow, name) {
   const start = workflow.indexOf(`\n  ${name}:\n`);
@@ -313,8 +322,7 @@ test("the Verify Paperclip Runner job restores the crate only in the lanes that 
   assert.deepEqual(lanes, [
     ["static checks", false],
     ["rust", true],
-    ["vitest 1/2", false],
-    ["vitest 2/2", true],
+    ...Array.from({ length: 8 }, (_, index) => [`vitest ${index + 1}/8`, index === 7]),
   ]);
   for (const stepName of [KEY_STEP, RESTORE_STEP]) {
     assert.match(step(body, stepName), /if: \$\{\{ matrix\.release_crate == true \}\}/, stepName);

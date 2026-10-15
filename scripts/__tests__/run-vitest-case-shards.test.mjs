@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { assertExecutedCases, partitionCaseNames, runCaseShards } from '../run-vitest-case-shards.mjs';
+import { assertExecutedCases, assignedCaseShards, partitionCaseNames, runCaseShards } from '../run-vitest-case-shards.mjs';
 
 const file = resolve('case.test.mjs');
 const cases = ['alpha (.*)', 'beta [x] + $', 'duplicate', 'duplicate'].map(name => ({ name, file }));
@@ -19,6 +19,19 @@ test('every case belongs to exactly one shard, with duplicate titles kept togeth
   }
   assert.equal(shards.some(shard => new RegExp(shard.pattern).test('alpha anything')), false);
   assert.equal(shards.some(shard => new RegExp(shard.pattern).test('prefix beta [x] + $')), false);
+});
+
+test('external lanes form a complete non-overlapping cover, including empty lanes', () => {
+  for (const count of [1, 2, 8]) {
+    const lanes = Array.from({ length: count }, (_, shardIndex) => assignedCaseShards(cases, 2, file, shardIndex, count));
+    assert.deepEqual(lanes.flat(2).flatMap(shard => shard.tests).map(test => test.name).sort(), cases.map(test => test.name).sort());
+    for (const name of new Set(cases.map(test => test.name))) {
+      assert.equal(lanes.filter(lane => lane.some(shard => new RegExp(shard.pattern).test(name))).length, 1);
+    }
+  }
+  for (const [index, count] of [[-1, 2], [2, 2], [0, 0], [0.5, 2], [0, Infinity]]) {
+    assert.throws(() => assignedCaseShards(cases, 1, file, index, count));
+  }
 });
 
 test('missing, extra, skipped, failed and wrong-file execution cannot qualify', () => {
@@ -84,6 +97,12 @@ test('real Vitest expands each cases and runs them in separate processes with li
       readFileSync(join(root, 'profile', file), 'utf8').trim().split('\n').map(line => JSON.parse(line)));
     for (const kind of ['expected', 'start', 'end']) assert.equal(records.filter(record => record.kind === kind).length, 4, kind);
     assert.equal(records.filter(record => record.kind === 'test' && record.status === 'passed').length, 5);
+    writeFileSync(join(root, 'pids.jsonl'), '');
+    const external = await Promise.all(Array.from({ length: 3 }, (_, shardIndex) => runCaseShards({ ...options,
+      workers: 2, shardIndex, shardCount: 3, directory: join(root, `external-${shardIndex}`) })));
+    assert.equal(external.reduce((total, receipt) => total + receipt.tests, 0), 5);
+    const distributed = readFileSync(join(root, 'pids.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.deepEqual(distributed.map(entry => entry.name).sort(), [...names, 'child > literal'].sort());
     writeFileSync(target, makeSource(true));
     await assert.rejects(runCaseShards({ ...options, directory: join(root, 'fail') }), /failed/);
   } finally {

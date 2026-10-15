@@ -42,7 +42,13 @@ export function assertExecutedCases(expected, report, file) {
   assert.deepEqual(actual.sort(), expected.map(test => test.name).sort(), 'Executed cases differ from assigned cases');
 }
 
-export async function runCaseShards({ file, workers, directory, cwd = process.cwd(), env = process.env, command = ['pnpm', 'exec', 'vitest'] }) {
+export function assignedCaseShards(tests, workers, file, shardIndex = 0, shardCount = 1) {
+  assert.ok(Number.isSafeInteger(shardCount) && shardCount > 0, 'Invalid shard count');
+  assert.ok(Number.isSafeInteger(shardIndex) && shardIndex >= 0 && shardIndex < shardCount, 'Invalid shard index');
+  return partitionCaseNames(tests, workers * shardCount, file).filter((_, index) => index % shardCount === shardIndex);
+}
+
+export async function runCaseShards({ file, workers, directory, shardIndex = 0, shardCount = 1, cwd = process.cwd(), env = process.env, command = ['pnpm', 'exec', 'vitest'] }) {
   const started = performance.now();
   const absoluteFile = realpathSync(resolve(cwd, file));
   const output = resolve(directory);
@@ -58,7 +64,7 @@ export async function runCaseShards({ file, workers, directory, cwd = process.cw
     const collected = resolve(output, 'collected.json');
     await launch('collect', ['list', file, '--no-static-parse', '--allowOnly=false', `--json=${collected}`], env).done;
     const tests = JSON.parse(readFileSync(collected, 'utf8'));
-    const shards = partitionCaseNames(tests, workers, absoluteFile);
+    const shards = assignedCaseShards(tests, workers, absoluteFile, shardIndex, shardCount);
     const collectMs = performance.now() - started;
     const results = await Promise.allSettled(shards.map(async (shard, index) => {
       const reportPath = resolve(output, `shard-${index}.json`);
@@ -75,7 +81,7 @@ export async function runCaseShards({ file, workers, directory, cwd = process.cw
     }));
     const failure = results.find(result => result.status === 'rejected');
     if (failure) throw failure.reason;
-    const receipt = { file, workers: shards.length, tests: tests.length, collectMs,
+    const receipt = { file, workers: shards.length, tests: shards.reduce((total, shard) => total + shard.tests.length, 0), totalTests: tests.length, shardIndex, shardCount, collectMs,
       elapsedMs: performance.now() - started, shards: results.map(result => result.value) };
     writeFileSync(resolve(output, 'receipt.json'), JSON.stringify(receipt, null, 2) + '\n');
     console.log(JSON.stringify(receipt));

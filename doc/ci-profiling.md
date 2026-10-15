@@ -215,6 +215,15 @@ Vitest worker limit stays within the detected CPU capacity or the explicit
 keeps project execution serial. All projects finish before a failure is returned.
 The UI/CLI and database lanes retain their existing scheduling.
 
+The PR and canonical release-verification workflows set `CARGO_PROFILE_DEV_DEBUG=0`
+before restoring the shared Rust cache. This omits debug symbols from the debug
+helpers used by TypeScript integration tests. It preserves development-profile
+optimization, debug assertions, overflow checks and every test. Developer builds
+keep their normal defaults. Both cache readers and the writer use the same
+setting; the pinned Rust cache action hashes all `CARGO*` environment variables,
+so the first run uses a separate cache entry and builds normally on a miss.
+Release-profile daemon compilation is unchanged.
+
 Serialized shards share one Vitest controller with `forks`, `isolate`, one
 worker, and file parallelism disabled. Each file gets a separate process and
 test home/configuration. The isolation regression runs files in both orders and
@@ -252,3 +261,33 @@ unique verifier-owned name and is removed on early failure as well as completion
 `pi_setup_prefetch_ms` measures setup wall time; `pi_setup_wait_ms` measures only
 the remaining wait after the other probes. These overlapping durations must not
 be added when interpreting total verification time.
+
+The PR Runner matrix has eight file shards. When
+`PAPERCLIP_RUNNER_CASE_SHARDS=true`, each shard excludes the four files listed in
+`packages/paperclip-runner/scripts/run-pr-case-shard.mjs` from its ordinary file
+run and then runs its assigned cases from those files. Every lane dynamically
+collects the same inventory, keeps duplicate titles together, and checks actual
+results against its assignment. A missing, failed, or skipped assigned case
+fails the lane. All eight lanes are required. The server native-runner group
+still runs only on the final lane. Without the opt-in, the wrapper retains its
+complete ordinary file run, including on older PR heads that lack the new
+helper. This preserves coverage while trusted workflows advance on master.
+
+Each case file uses one Vitest process per lane, with up to four files active
+within the CPU budget. Cases remain serial within that process. The OpenCode
+fixture is made executable before each case because filtered runs cannot rely
+on an earlier case setting its permissions. Its file must not run in multiple
+processes sharing one checkout: its final cleanup resets the shared fixture's
+permissions. CI lanes have separate checkouts. Deadline cases retain their
+real lease expiry waits. This adds six Runner jobs; include their setup,
+collection, and runner-minutes when measuring the whole workflow. A shorter
+case phase alone does not establish a faster complete workflow.
+
+Release planning fetches only stable, canary, nightly, and beta tags. It does
+not need the remote's development branches or preview tags. Existing release
+tags are never overwritten or removed, and the exact remote-tag existence
+check still runs before a release. A paired shallow-checkout experiment against
+the same public remote took 15.35 seconds for all branches and tags, versus
+7.72 seconds for release tags only. All 1,781 release tag object IDs matched;
+repository data was 424 MB versus 248 MB. These are local fetch measurements,
+not a measured reduction in complete CI wall time.
