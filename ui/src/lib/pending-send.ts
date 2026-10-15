@@ -59,6 +59,11 @@ const MAX_RECORD_LENGTH = 256_000;
 
 export type PendingSendStorage = "local" | "session";
 
+/** Pending sends are stored per signed-in account (see `useDraftOwner`). */
+export function pendingSendKeyFor(key: string, owner: string): string {
+  return `${key}:${owner}`;
+}
+
 function storageFor(kind: PendingSendStorage): Storage | null {
   try {
     return kind === "session" ? sessionStorage : localStorage;

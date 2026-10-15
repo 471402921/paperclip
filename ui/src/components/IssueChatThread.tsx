@@ -74,6 +74,7 @@ import {
   loadDraftAttachments,
   saveDraftAttachments,
   loadDraftSubmission,
+  replayableRequest,
   saveDraftSubmission,
   clearDraftSubmission,
   settleDraftSubmission,
@@ -82,6 +83,7 @@ import {
 } from "../lib/composer-draft";
 import { classifySendFailure, type SendOutcome } from "../lib/pending-send";
 import { useAutoResend } from "../hooks/useDurableSubmit";
+import { useDraftOwner } from "../hooks/useDraftOwner";
 import { PendingSendNotice } from "./PendingSendNotice";
 import { describeError } from "../api/errors";
 import {
@@ -4710,12 +4712,15 @@ const IssueChatComposer = forwardRef<
   const bodyRef = useRef(body);
   bodyRef.current = body;
   const reconciledSubmissionRef = useRef<{ draftKey: string | undefined; attemptId: string } | null>(null);
+  // Only the account that made a request may replay it.
+  const draftOwner = useDraftOwner();
   const pendingDraftRef = useRef<{
     draftKey: string;
     attemptId: string;
     submittedBody: string;
     submittedAttachmentIds: string[];
     request: ComposerSendRequest;
+    requestOwner?: string;
   } | null>(null);
   function changeBody(update: string | ((current: string) => string)) {
     const value = typeof update === "function" ? update(bodyRef.current) : update;
@@ -4734,6 +4739,7 @@ const IssueChatComposer = forwardRef<
       nextDraftOffset: pending.submittedBody.length + (value ? 2 : 0),
       submittedAttachmentIds: pending.submittedAttachmentIds,
       request: pending.request,
+      requestOwner: pending.requestOwner,
     });
   }
   const submittingRef = useRef(submitting);
@@ -4894,7 +4900,7 @@ const IssueChatComposer = forwardRef<
 
   async function resendUncertainSubmission(): Promise<SendOutcome> {
     const submission = uncertainSubmission;
-    const request = submission?.request;
+    const request = replayableRequest(submission, draftOwner);
     if (!submission || !request) return "rejected";
     const taskKey = draftKey;
     const args = [
@@ -4927,7 +4933,7 @@ const IssueChatComposer = forwardRef<
   const resendSourceId = useId();
   const autoResend = useAutoResend({
     sourceId: `issue-chat-composer:${resendSourceId}`,
-    active: Boolean(uncertainSubmission?.request) && !submitting,
+    active: Boolean(replayableRequest(uncertainSubmission, draftOwner)) && !submitting,
     resend: resendUncertainSubmission,
   });
 
@@ -5085,6 +5091,7 @@ const IssueChatComposer = forwardRef<
     setBody("");
     let attemptId: string | null = null;
     let request: ComposerSendRequest | null = null;
+    const requestOwner = draftOwner;
     try {
       if (workModeChanged && onWorkModeChange) {
         await onWorkModeChange(pendingWorkMode);
@@ -5107,8 +5114,8 @@ const IssueChatComposer = forwardRef<
       };
       if (draftKey) {
         saveDraft(draftKey, trimmed);
-        saveDraftSubmission(draftKey, { attemptId, reviewed: false, request });
-        pendingDraftRef.current = { draftKey, attemptId, submittedBody: trimmed, submittedAttachmentIds: attachmentIds, request };
+        saveDraftSubmission(draftKey, { attemptId, reviewed: false, request, requestOwner });
+        pendingDraftRef.current = { draftKey, attemptId, submittedBody: trimmed, submittedAttachmentIds: attachmentIds, request, requestOwner };
         changeBody(bodyRef.current);
       }
       // assistant-ui thread.append is fire-and-forget. Await the actual Board
@@ -5141,6 +5148,7 @@ const IssueChatComposer = forwardRef<
           nextDraftOffset: trimmed.length + (nextDraft ? 2 : 0),
           submittedAttachmentIds: attachmentIds,
           request,
+          requestOwner,
         };
         setUncertainSubmission(uncertain);
         if (draftKey && loadDraftSubmission(draftKey)?.attemptId === attemptId)
@@ -5482,7 +5490,7 @@ const IssueChatComposer = forwardRef<
           noun="comment"
           resending={autoResend.resending}
           stalled={autoResend.stalled}
-          onResendNow={uncertainSubmission.request ? autoResend.resendNow : undefined}
+          onResendNow={replayableRequest(uncertainSubmission, draftOwner) ? autoResend.resendNow : undefined}
           onCancel={() => {
             // Stop resending; the text stays in the editor to edit or send again.
             if (draftKey) clearDraftSubmission(draftKey, uncertainSubmission.attemptId);

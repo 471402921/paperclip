@@ -9,7 +9,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { trackRecentAssignee, trackRecentAssigneeUser } from "../lib/recent-assignees";
 import { getLastProjectId, trackRecentProject } from "../lib/recent-projects";
 import { rememberComposerEffort } from "../lib/recent-composer-effort";
-import { NewIssueDialog } from "./NewIssueDialog";
+import { addStagedFilesToIssue, NewIssueDialog } from "./NewIssueDialog";
 
 const primaryState = vi.hoisted(() => ({ primaryAgentId: null as string | null, loading: false }));
 vi.mock("./primary-agent/PrimaryAgentPresentation", () => ({ usePrimaryAgentPresentation: () => primaryState }));
@@ -1530,7 +1530,7 @@ describe("NewIssueDialog", () => {
     act(() => button("Create task").click());
     await waitForAssertion(() => expect(container.textContent).toContain("Sending when reconnected…"));
     expect(container.textContent).not.toContain("tenant_app_unavailable");
-    expect(localStorage.getItem("paperclip:issue-draft:pending-create")).toContain(
+    expect(localStorage.getItem("paperclip:issue-draft:pending-create:user-1")).toContain(
       mockIssuesApi.create.mock.calls[0][1].idempotencyKey,
     );
 
@@ -1541,7 +1541,7 @@ describe("NewIssueDialog", () => {
     await waitForAssertion(() => expect(mockIssuesApi.create).toHaveBeenCalledTimes(2));
     expect(mockIssuesApi.create.mock.calls[1][1].idempotencyKey).toBe(mockIssuesApi.create.mock.calls[0][1].idempotencyKey);
     await waitForAssertion(() => expect(dialogState.closeNewIssue).toHaveBeenCalled());
-    expect(localStorage.getItem("paperclip:issue-draft:pending-create")).toBeNull();
+    expect(localStorage.getItem("paperclip:issue-draft:pending-create:user-1")).toBeNull();
     act(() => root.unmount());
   });
 
@@ -1567,9 +1567,9 @@ describe("NewIssueDialog", () => {
 
   it("never creates a restored task without the files it was submitted with", async () => {
     dialogState.newIssueDefaults = { title: "Has files" };
-    localStorage.setItem("paperclip:issue-draft:pending-create", JSON.stringify({
+    localStorage.setItem("paperclip:issue-draft:pending-create:user-1", JSON.stringify({
       version: 1,
-      key: "paperclip:issue-draft:pending-create",
+      key: "paperclip:issue-draft:pending-create:user-1",
       idempotencyKey: "create-key-123",
       createdAt: Date.now(),
       payload: {
@@ -1584,15 +1584,15 @@ describe("NewIssueDialog", () => {
     await waitForAssertion(() => expect(container.querySelector('[role="alert"]')?.textContent).toContain("spec.pdf"));
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Attach it again");
     expect(mockIssuesApi.create).not.toHaveBeenCalled();
-    expect(localStorage.getItem("paperclip:issue-draft:pending-create")).toBeNull();
+    expect(localStorage.getItem("paperclip:issue-draft:pending-create:user-1")).toBeNull();
     // The original key outlives the rejection, so it survives another reload.
-    expect(localStorage.getItem("paperclip:issue-draft:create-awaiting-files")).toContain("create-key-123");
+    expect(localStorage.getItem("paperclip:issue-draft:create-awaiting-files:user-1")).toContain("create-key-123");
     act(() => root.unmount());
 
     const reloaded = renderDialog(container);
     await flush();
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("spec.pdf");
-    expect(localStorage.getItem("paperclip:issue-draft:create-awaiting-files")).toContain("create-key-123");
+    expect(localStorage.getItem("paperclip:issue-draft:create-awaiting-files:user-1")).toContain("create-key-123");
     expect(mockIssuesApi.create).not.toHaveBeenCalled();
     act(() => reloaded.root.unmount());
   });
@@ -2166,4 +2166,31 @@ describe("NewIssueDialog", () => {
     });
   });
 
+});
+
+describe("addStagedFilesToIssue", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockIssuesApi.uploadAttachment.mockReset();
+  });
+
+  it("never adds a file twice when a create replays after a reload mid-upload", async () => {
+    const spec = { id: "staged-1", kind: "attachment" as const, file: new File(["a"], "spec.pdf", { lastModified: 1 }) };
+    const notes = { id: "staged-2", kind: "attachment" as const, file: new File(["bb"], "notes.txt", { lastModified: 2 }) };
+    mockIssuesApi.uploadAttachment.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error("Upload interrupted"));
+    const target = { companyId: "company-1", issueId: "issue-1", idempotencyKey: "create-key-123" };
+    expect(await addStagedFilesToIssue({ ...target, stagedFiles: [spec, notes] })).toEqual(["notes.txt"]);
+
+    // Reattached after a reload: new staging ids, the same files, the same key.
+    mockIssuesApi.uploadAttachment.mockResolvedValue({});
+    expect(await addStagedFilesToIssue({
+      ...target,
+      stagedFiles: [{ ...spec, id: "staged-3" }, { ...notes, id: "staged-4" }],
+    })).toEqual([]);
+    expect(mockIssuesApi.uploadAttachment.mock.calls.map((call) => (call[2] as File).name)).toEqual([
+      "spec.pdf",
+      "notes.txt",
+      "notes.txt",
+    ]);
+  });
 });

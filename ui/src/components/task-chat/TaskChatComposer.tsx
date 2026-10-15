@@ -19,6 +19,7 @@ import {
   saveDraft,
   saveDraftAttachments,
   loadDraftSubmission,
+  replayableRequest,
   saveDraftSubmission,
   clearDraftSubmission,
   settleDraftSubmission,
@@ -28,6 +29,7 @@ import {
 import { classifySendFailure, type SendOutcome } from "@/lib/pending-send";
 import { describeError } from "@/api/errors";
 import { useAutoResend } from "@/hooks/useDurableSubmit";
+import { useDraftOwner } from "@/hooks/useDraftOwner";
 import { PendingSendNotice } from "@/components/PendingSendNotice";
 import {
   ArrowUp,
@@ -490,12 +492,15 @@ export function TaskChatComposer({
   const editorRef = useRef<MarkdownEditorRef>(null);
   const bodyRef = useRef(body);
   bodyRef.current = body;
+  // Only the account that made a request may replay it.
+  const draftOwner = useDraftOwner();
   const pendingDraftRef = useRef<{
     draftKey: string;
     attemptId: string;
     submittedBody: string;
     submittedAttachmentIds: string[];
     request: ComposerSendRequest;
+    requestOwner?: string;
   } | null>(null);
   function changeBody(value: string) {
     bodyRef.current = value;
@@ -517,6 +522,7 @@ export function TaskChatComposer({
       nextDraftOffset: pending.submittedBody.length + (value ? 2 : 0),
       submittedAttachmentIds: pending.submittedAttachmentIds,
       request: pending.request,
+      requestOwner: pending.requestOwner,
     });
   }
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1043,6 +1049,7 @@ export function TaskChatComposer({
     setSubmitting(true);
     let attemptId: string | null = null;
     let request: ComposerSendRequest | null = null;
+    const requestOwner = draftOwner;
     try {
       if (queuedEdit) {
         if (!onSaveQueuedEdit) return;
@@ -1087,8 +1094,8 @@ export function TaskChatComposer({
       };
       if (draftKey) {
         saveDraft(draftKey, submittedBody);
-        saveDraftSubmission(draftKey, { attemptId, reviewed: false, request });
-        pendingDraftRef.current = { draftKey, attemptId, submittedBody, submittedAttachmentIds: attachmentIds, request };
+        saveDraftSubmission(draftKey, { attemptId, reviewed: false, request, requestOwner });
+        pendingDraftRef.current = { draftKey, attemptId, submittedBody, submittedAttachmentIds: attachmentIds, request, requestOwner };
         changeBody(bodyRef.current);
       }
       if (runSettings) {
@@ -1120,6 +1127,7 @@ export function TaskChatComposer({
           nextDraftOffset: submittedBody.length + (nextDraft ? 2 : 0),
           submittedAttachmentIds: submittedAttachments.flatMap(item => item.attachmentId ? [item.attachmentId] : []),
           request,
+          requestOwner,
         };
         setUncertainSubmission(uncertain);
         if (draftKey && loadDraftSubmission(draftKey)?.attemptId === attemptId)
@@ -1166,7 +1174,7 @@ export function TaskChatComposer({
 
   async function resendUncertainSubmission(): Promise<SendOutcome> {
     const submission = uncertainSubmission;
-    const request = submission?.request;
+    const request = replayableRequest(submission, draftOwner);
     if (!submission || !request || !onAdd) return "rejected";
     const taskKey = draftKey;
     const args = [
@@ -1199,7 +1207,7 @@ export function TaskChatComposer({
   const resendSourceId = useId();
   const autoResend = useAutoResend({
     sourceId: `task-chat-composer:${resendSourceId}`,
-    active: Boolean(uncertainSubmission?.request) && !submitting,
+    active: Boolean(replayableRequest(uncertainSubmission, draftOwner)) && !submitting,
     resend: resendUncertainSubmission,
   });
 
@@ -1350,7 +1358,7 @@ export function TaskChatComposer({
             noun="message"
             resending={autoResend.resending}
             stalled={autoResend.stalled}
-            onResendNow={uncertainSubmission.request ? autoResend.resendNow : undefined}
+            onResendNow={replayableRequest(uncertainSubmission, draftOwner) ? autoResend.resendNow : undefined}
             onCancel={cancelUncertainSubmission}
           />
         ) : null}

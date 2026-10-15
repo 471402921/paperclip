@@ -171,6 +171,34 @@ describe("useUpdateIssueMutation", () => {
     expect(mockUpdate.mock.calls.map((call) => call[1])).toEqual([{ status: "in_progress" }, { status: "done" }]);
   });
 
+  it("rolls back only the failed update, keeping other tasks' changes", async () => {
+    let failFirst!: (error: unknown) => void;
+    mockUpdate.mockReturnValueOnce(new Promise((_, reject) => { failFirst = reject; }));
+    queryClient.setQueryData(queryKeys.issues.list("company-1"), [issue(), issue({ id: "issue-2", identifier: "PAP-2" })]);
+    render();
+    act(() => current.mutate({ id: "PAP-1", data: { status: "in_progress" } }));
+    await act(async () => {});
+    // Another task changes while this update is still in flight.
+    queryClient.setQueryData<Issue[]>(queryKeys.issues.list("company-1"), (rows) =>
+      rows?.map((row) => (row.id === "issue-2" ? { ...row, status: "done" } : row)));
+    await act(async () => failFirst(new ApiError("not_allowed_here", 403, { error: "not_allowed_here" })));
+    const rows = queryClient.getQueryData<Issue[]>(queryKeys.issues.list("company-1"));
+    expect(rows?.map((row) => row.status)).toEqual(["todo", "done"]);
+  });
+
+  it("keeps a newer edit to the same field when an older update fails", async () => {
+    let failFirst!: (error: unknown) => void;
+    mockUpdate
+      .mockReturnValueOnce(new Promise((_, reject) => { failFirst = reject; }))
+      .mockResolvedValue({ ...issue({ status: "done" }), changes: {} });
+    render();
+    act(() => current.mutate({ id: "PAP-1", data: { status: "in_progress" } }));
+    act(() => current.mutate({ id: "PAP-1", data: { status: "done" } }));
+    await act(async () => {});
+    await act(async () => failFirst(new ApiError("not_allowed_here", 403, { error: "not_allowed_here" })));
+    expect(statusIn(queryKeys.issues.detail("PAP-1"))).toBe("done");
+  });
+
   it("does not hold an update to another task behind a pending one", async () => {
     let finishFirst!: (value: unknown) => void;
     mockUpdate

@@ -3,6 +3,7 @@ import { cn } from "../lib/utils";
 import { MarkdownBody, type MarkdownExternalReferenceMap } from "./MarkdownBody";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
 import { useDurableAutosave } from "../hooks/useDurableAutosave";
+import { useDraftOwner } from "../hooks/useDraftOwner";
 import { loadStructuredDraft, saveStructuredDraft } from "../lib/composer-draft";
 
 type StoredInlineDraft = { version: 1; draft: string; base: string };
@@ -102,8 +103,10 @@ export function InlineEditor({
   const autosaveState = autosave.status;
 
   // Unsaved edits are stored with the value they were based on, so a restored
-  // edit never silently overwrites a newer server value.
-  const storageKey = draftKey ? `paperclip:inline-draft:${draftKey}` : null;
+  // edit never silently overwrites a newer server value, and per signed-in
+  // account, so another account in this browser never sees or saves them.
+  const draftOwner = useDraftOwner();
+  const storageKey = draftKey && draftOwner !== undefined ? `paperclip:inline-draft:v2:${draftOwner}:${draftKey}` : null;
   const clearStoredDraft = useCallback(() => {
     if (!storageKey) return;
     try {

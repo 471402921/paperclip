@@ -14,7 +14,6 @@ import { isSystemIssueDocumentKey } from "@paperclipai/shared";
 import { useLocation } from "@/lib/router";
 import { ApiError } from "../api/client";
 import { issuesApi } from "../api/issues";
-import { authApi } from "../api/auth";
 import { useDurableAutosave } from "../hooks/useDurableAutosave";
 import { describeError } from "../api/errors";
 import { loadStructuredDraft, saveStructuredDraft } from "../lib/composer-draft";
@@ -22,6 +21,7 @@ import { copyTextToClipboard } from "../lib/clipboard";
 import { deriveDocumentRevisionState } from "../lib/document-revisions";
 import type { CompanyUserProfile } from "../lib/company-members";
 import { queryKeys } from "../lib/queryKeys";
+import { useDraftOwner } from "../hooks/useDraftOwner";
 import { cn, relativeTime } from "../lib/utils";
 import { FoldCurtain } from "./FoldCurtain";
 import { DocumentAnnotationsCountChip, IssueDocumentAnnotations } from "./IssueDocumentAnnotations";
@@ -343,14 +343,8 @@ export function IssueDocumentsSection({
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftState | null>(null);
   const [documentConflict, setDocumentConflict] = useState<DocumentConflictState | null>(null);
-  const { data: session } = useQuery({
-    queryKey: queryKeys.auth.session,
-    queryFn: () => authApi.getSession(),
-  });
-  const draftOwnerId = session?.user?.id ?? session?.session?.userId ?? null;
-  // Once known, the account stays known through a failed refetch (the query
-  // keeps its data), so edits keep being backed up during an outage.
-  const draftScope = session !== undefined ? `${draftOwnerId ?? "signed-out"}:${documentSubject.id}` : null;
+  const draftOwner = useDraftOwner();
+  const draftScope = draftOwner !== undefined ? `${draftOwner}:${documentSubject.id}` : null;
   const [foldedDocumentKeys, setFoldedDocumentKeys] = useState<string[]>(() => loadFoldedDocumentKeys(documentSubject.id));
   const [annotationPanelOpenKeys, setAnnotationPanelOpenKeys] = useState<string[]>(
     () => (defaultAnnotationPanelOpenKeys ?? []),

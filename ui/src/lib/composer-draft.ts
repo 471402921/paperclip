@@ -116,6 +116,16 @@ export interface ComposerDraftSubmission {
   submittedAttachmentIds?: string[];
   /** Present when the send can be replayed; older records have none. */
   request?: ComposerSendRequest;
+  /** The account that made `request`; only that account may replay it (see `useDraftOwner`). */
+  requestOwner?: string;
+}
+
+/** The retained request, only for the account that made it: another account in this browser never replays it. */
+export function replayableRequest(
+  submission: ComposerDraftSubmission | null | undefined,
+  owner: string | undefined,
+): ComposerSendRequest | undefined {
+  return owner !== undefined && submission?.request && submission.requestOwner === owner ? submission.request : undefined;
 }
 
 function isNullableString(value: unknown): value is string | null {
@@ -158,17 +168,19 @@ export function loadDraftSubmission(
     const record = JSON.parse(raw);
     return record?.version === 1 &&
       record.draftKey === draftKey &&
-      Object.keys(record).every((key) => ["version", "draftKey", "attemptId", "reviewed", "nextDraftOffset", "submittedAttachmentIds", "request"].includes(key)) &&
+      Object.keys(record).every((key) => ["version", "draftKey", "attemptId", "reviewed", "nextDraftOffset", "submittedAttachmentIds", "request", "requestOwner"].includes(key)) &&
       typeof record.attemptId === "string" &&
       /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(record.attemptId) &&
       typeof record.reviewed === "boolean" &&
       (record.nextDraftOffset === undefined || (Number.isSafeInteger(record.nextDraftOffset) && record.nextDraftOffset >= 0)) &&
       (record.submittedAttachmentIds === undefined || (Array.isArray(record.submittedAttachmentIds) && record.submittedAttachmentIds.length <= 256 && record.submittedAttachmentIds.every((id: unknown) => typeof id === "string" && id.length <= 128))) &&
-      (record.request === undefined || isComposerSendRequest(record.request))
+      (record.request === undefined || isComposerSendRequest(record.request)) &&
+      (record.requestOwner === undefined || (typeof record.requestOwner === "string" && record.requestOwner.length <= 256))
       ? { attemptId: record.attemptId, reviewed: record.reviewed,
           ...(record.nextDraftOffset !== undefined ? { nextDraftOffset: record.nextDraftOffset } : {}),
           ...(record.submittedAttachmentIds !== undefined ? { submittedAttachmentIds: record.submittedAttachmentIds } : {}),
           ...(record.request !== undefined ? { request: record.request } : {}),
+          ...(record.requestOwner !== undefined ? { requestOwner: record.requestOwner } : {}),
         }
       : null;
   } catch {

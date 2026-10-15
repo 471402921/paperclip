@@ -11,7 +11,8 @@ import {
   type ConnectivityStore,
   type ProbeResult,
 } from "@/lib/connectivity";
-import { MAX_ONLINE_RESENDS, readPendingSend, writePendingSend } from "@/lib/pending-send";
+import { MAX_ONLINE_RESENDS, pendingSendKeyFor, readPendingSend, writePendingSend } from "@/lib/pending-send";
+import { DETACHED_DRAFT_OWNER } from "./useDraftOwner";
 import { useAutoResend, useDurableSubmit, type AutoResendState, type DurableSubmit, type DurableSubmitOptions } from "./useDurableSubmit";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -21,6 +22,8 @@ const isPayload = (value: unknown): value is Payload =>
   !!value && typeof value === "object" && typeof (value as Payload).body === "string";
 
 const KEY = "test:pending-send";
+/** Mounted without a QueryClientProvider, records belong to the detached owner. */
+const STORED_KEY = pendingSendKeyFor(KEY, DETACHED_DRAFT_OWNER);
 const outage = () => new ApiError("Paperclip is restarting", 503, { error: "tenant_app_unavailable" });
 
 /**
@@ -88,7 +91,7 @@ describe("useDurableSubmit", () => {
     const server = createDedupingServer();
     let storedDuringRequest: unknown = null;
     const send = vi.fn(async (payload: Payload, key: string) => {
-      storedDuringRequest = readPendingSend(KEY, isPayload);
+      storedDuringRequest = readPendingSend(STORED_KEY, isPayload);
       return server.post(payload, key);
     });
     render({ send });
@@ -100,7 +103,7 @@ describe("useDurableSubmit", () => {
 
     expect(storedDuringRequest).toMatchObject({ payload: { body: "Hello" }, idempotencyKey: send.mock.calls[0]![1] });
     expect(result).toMatchObject({ kind: "sent", result: { body: "Hello" } });
-    expect(readPendingSend(KEY, isPayload)).toBeNull();
+    expect(readPendingSend(STORED_KEY, isPayload)).toBeNull();
     expect(current.status).toBe("idle");
   });
 
@@ -121,7 +124,7 @@ describe("useDurableSubmit", () => {
     expect(first?.kind).toBe("pending");
     expect(current.status).toBe("waiting");
     expect(store.getSnapshot().pendingWrites).toBe(1);
-    expect(readPendingSend(KEY, isPayload)?.payload.body).toBe("Typed during the outage");
+    expect(readPendingSend(STORED_KEY, isPayload)?.payload.body).toBe("Typed during the outage");
 
     // The connection drops before the scheduled resend: nothing is sent.
     store.reportError(outage());
@@ -142,7 +145,7 @@ describe("useDurableSubmit", () => {
     expect(server.rows.size).toBe(1);
     expect(current.status).toBe("idle");
     expect(current.pending).toBeNull();
-    expect(readPendingSend(KEY, isPayload)).toBeNull();
+    expect(readPendingSend(STORED_KEY, isPayload)).toBeNull();
     expect(store.getSnapshot().pendingWrites).toBe(0);
   });
 
@@ -175,19 +178,29 @@ describe("useDurableSubmit", () => {
     expect(result?.kind).toBe("rejected");
     expect(current.error).toEqual({ title: "Couldn't post the comment", body: "Forbidden", retryable: false });
     expect(onRejected).toHaveBeenCalledWith(expect.any(ApiError), current.error, expect.objectContaining({ payload: { body: "Not allowed" } }));
-    expect(readPendingSend(KEY, isPayload)).toBeNull();
+    expect(readPendingSend(STORED_KEY, isPayload)).toBeNull();
     await advance(60_000);
     expect(send).toHaveBeenCalledTimes(1);
   });
 
   it("restores a pending send after a reload and resends it with its stored key", async () => {
-    writePendingSend(KEY, { idempotencyKey: "stored-key-123", payload: { body: "From before reload" }, createdAt: 1 });
+    writePendingSend(STORED_KEY, { idempotencyKey: "stored-key-123", payload: { body: "From before reload" }, createdAt: 1 });
     const send = vi.fn().mockResolvedValue({ id: "row-1", body: "From before reload" });
     render({ send });
     expect(current.status).toBe("waiting");
     await advance(1_000);
     expect(send).toHaveBeenCalledWith({ body: "From before reload" }, "stored-key-123");
     expect(current.status).toBe("idle");
+  });
+
+  it("neither restores nor resends another account's pending send", async () => {
+    writePendingSend(pendingSendKeyFor(KEY, "user-2"), { idempotencyKey: "other-account-key", payload: { body: "Not mine" }, createdAt: 1 });
+    const send = vi.fn().mockResolvedValue({ id: "row-1", body: "Not mine" });
+    render({ send });
+    expect(current.pending).toBeNull();
+    await advance(5_000);
+    expect(send).not.toHaveBeenCalled();
+    expect(readPendingSend(pendingSendKeyFor(KEY, "user-2"), isPayload)?.idempotencyKey).toBe("other-account-key");
   });
 
   it("cancel stops resending and returns the payload", async () => {
@@ -202,7 +215,7 @@ describe("useDurableSubmit", () => {
     });
     expect(cancelled).toEqual({ body: "Keep my text" });
     expect(current.status).toBe("idle");
-    expect(readPendingSend(KEY, isPayload)).toBeNull();
+    expect(readPendingSend(STORED_KEY, isPayload)).toBeNull();
     await advance(60_000);
     expect(send).toHaveBeenCalledTimes(1);
   });

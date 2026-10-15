@@ -20,10 +20,12 @@ export interface UpdateIssueVariables {
   data: Record<string, unknown>;
 }
 
-type QuerySnapshot = Array<[QueryKey, unknown]>;
+/** One cached copy of the issue, as it was before and right after the optimistic update. */
+type IssueRollback = Array<{ queryKey: QueryKey; before: Issue; after: Issue }>;
 
 export interface UpdateIssueContext {
-  snapshot: QuerySnapshot;
+  refs: ReadonlySet<string>;
+  rollback: IssueRollback;
 }
 
 /**
@@ -70,27 +72,58 @@ export function mapIssuesInQueryData(data: unknown, refs: ReadonlySet<string>, u
   return data;
 }
 
-/** Optimistically apply `data` to the issue everywhere it is cached; returns a snapshot for rollback. */
+/** Optimistically apply `data` to the issue everywhere it is cached; returns what rollback needs. */
 export function applyOptimisticIssueUpdate(
   queryClient: QueryClient,
   companyId: string | null | undefined,
   refs: ReadonlySet<string>,
   data: Record<string, unknown>,
-): QuerySnapshot {
-  const snapshot: QuerySnapshot = [];
+): IssueRollback {
+  const rollback: IssueRollback = [];
   const filters = [
     { queryKey: ["issues", "detail"] as QueryKey },
     ...(companyId ? [{ queryKey: ["issues", companyId] as QueryKey }] : []),
   ];
   for (const filter of filters) {
     for (const [queryKey, cached] of queryClient.getQueriesData({ queryKey: filter.queryKey })) {
-      const next = mapIssuesInQueryData(cached, refs, (issue) => applyOptimisticIssueFieldUpdate(issue, data) ?? issue);
-      if (next === cached) continue;
-      snapshot.push([queryKey, cached]);
+      let copy: { before: Issue; after: Issue } | null = null;
+      const next = mapIssuesInQueryData(cached, refs, (issue) => {
+        const after = applyOptimisticIssueFieldUpdate(issue, data) ?? issue;
+        copy ??= { before: issue, after };
+        return after;
+      });
+      if (next === cached || !copy) continue;
+      rollback.push({ queryKey, ...(copy as { before: Issue; after: Issue }) });
       queryClient.setQueryData(queryKey, next);
     }
   }
-  return snapshot;
+  return rollback;
+}
+
+/**
+ * Undo one failed update: only the fields it changed, only on this issue, and
+ * only where its value still shows. Other tasks' rows and newer edits to the
+ * same field (made since, and possibly still sending) stay as they are.
+ */
+export function rollbackOptimisticIssueUpdate(queryClient: QueryClient, refs: ReadonlySet<string>, rollback: IssueRollback) {
+  for (const rows of rollback) {
+    const before = rows.before as unknown as Record<string, unknown>;
+    const after = rows.after as unknown as Record<string, unknown>;
+    const changed = Object.keys(after).filter((field) => !Object.is(after[field], before[field]));
+    if (changed.length === 0) continue;
+    queryClient.setQueryData(rows.queryKey, (current: unknown) =>
+      mapIssuesInQueryData(current, refs, (issue) => {
+        const shown = issue as unknown as Record<string, unknown>;
+        let reverted: Record<string, unknown> | null = null;
+        for (const field of changed) {
+          if (!Object.is(shown[field], after[field])) continue;
+          reverted ??= { ...shown };
+          reverted[field] = before[field];
+        }
+        return (reverted as unknown as Issue | null) ?? issue;
+      }),
+    );
+  }
 }
 
 interface IssueWriteTurn {
@@ -171,13 +204,13 @@ export function useUpdateIssueMutation(options: UseUpdateIssueMutationOptions): 
         ...[...refs].map((ref) => queryClient.cancelQueries({ queryKey: queryKeys.issues.detail(ref) })),
         ...(companyId ? [queryClient.cancelQueries({ queryKey: queryKeys.issues.list(companyId) })] : []),
       ]);
-      return { snapshot: applyOptimisticIssueUpdate(queryClient, companyId, refs, data) };
+      return { refs, rollback: applyOptimisticIssueUpdate(queryClient, companyId, refs, data) };
     },
     onSuccess: (result: IssueUpdateResponse, variables: UpdateIssueVariables) => {
       onSuccess?.(result, variables);
     },
     onError: (error: Error, _variables: UpdateIssueVariables, context: UpdateIssueContext | undefined) => {
-      for (const [queryKey, previous] of context?.snapshot ?? []) queryClient.setQueryData(queryKey, previous);
+      if (context) rollbackOptimisticIssueUpdate(queryClient, context.refs, context.rollback);
       // While the connection banner is up it already explains an outage.
       if (isTransientError(error) && connectivity.getSnapshot().status !== "online") return;
       const { title, body } = describeError(error, { action });

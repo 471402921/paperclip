@@ -5,6 +5,7 @@ import {
   MAX_ONLINE_RESENDS,
   classifySendFailure,
   clearPendingSend,
+  pendingSendKeyFor,
   readPendingSend,
   resendDelayFor,
   writePendingSend,
@@ -12,6 +13,7 @@ import {
   type PendingSendStorage,
   type SendOutcome,
 } from "@/lib/pending-send";
+import { useDraftOwner } from "./useDraftOwner";
 
 export interface AutoResendOptions {
   /** Distinct per surface instance; the connection banner counts one pending write per source. */
@@ -178,7 +180,12 @@ export interface DurableSubmit<T, R> {
  * a definitive rejection; anything in between resends with the same key.
  */
 export function useDurableSubmit<T, R>(options: DurableSubmitOptions<T, R>): DurableSubmit<T, R> {
-  const { sourceId, storageKey, storage = "local", autoResend = true } = options;
+  const { sourceId, storage = "local", autoResend = true } = options;
+  // Records are kept per signed-in account, so another account in this
+  // browser never sees or resends them. Until the account is known nothing is
+  // restored, and a send stays in memory.
+  const owner = useDraftOwner();
+  const storageKey = options.storageKey && owner !== undefined ? pendingSendKeyFor(options.storageKey, owner) : null;
   const optionsRef = useRef(options);
   optionsRef.current = options;
 
@@ -197,7 +204,13 @@ export function useDurableSubmit<T, R>(options: DurableSubmitOptions<T, R>): Dur
   const loadedKey = useRef(storageKey);
   useEffect(() => {
     if (loadedKey.current === storageKey) return;
+    const unsaved = loadedKey.current === null ? pendingRef.current : null;
     loadedKey.current = storageKey;
+    // A send made before the account was known moves into that account's storage.
+    if (unsaved && storageKey) {
+      writePendingSend(storageKey, unsaved, storage);
+      return;
+    }
     setPending(storageKey ? readPendingSend(storageKey, optionsRef.current.isPayload, storage) : null);
     setError(null);
   }, [setPending, storage, storageKey]);

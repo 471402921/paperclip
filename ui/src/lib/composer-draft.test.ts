@@ -12,6 +12,7 @@ import {
   saveDraftSubmission,
   clearDraftSubmission,
   settleDraftSubmission,
+  replayableRequest,
 } from "./composer-draft";
 
 describe("task draft upload receipts", () => {
@@ -154,5 +155,27 @@ describe("task draft upload receipts", () => {
     expect(loadDraftAttachments(key)).toEqual([]);
     saveDraft(key, `[unbound](${receipt.contentPath})`);
     expect(loadDraftAttachments(key)).toEqual([]);
+  });
+});
+
+describe("replayable comment requests", () => {
+  const key = "paperclip:issue-comment-draft:task-two";
+  const id = "1c6ad4b0-7f55-4c1e-9d6a-2a3d2b1f4e10";
+  beforeEach(() => localStorage.clear());
+
+  it("replays a retained request only for the account that made it", () => {
+    saveDraft(key, "Sent during the outage");
+    saveDraftSubmission(key, { attemptId: id, reviewed: false, request: { body: "Sent during the outage" }, requestOwner: "user-1" });
+    const stored = loadDraftSubmission(key);
+    expect(stored?.requestOwner).toBe("user-1");
+    expect(replayableRequest(stored, "user-1")).toEqual({ body: "Sent during the outage" });
+    expect(replayableRequest(stored, "user-2")).toBeUndefined();
+    expect(replayableRequest(stored, undefined)).toBeUndefined();
+  });
+
+  it("never replays a request with no recorded account", () => {
+    saveDraft(key, "Older record");
+    saveDraftSubmission(key, { attemptId: id, reviewed: false, request: { body: "Older record" } });
+    expect(replayableRequest(loadDraftSubmission(key), "user-1")).toBeUndefined();
   });
 });
