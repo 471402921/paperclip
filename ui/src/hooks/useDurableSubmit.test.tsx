@@ -2,6 +2,7 @@
 
 import { act, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/api/client";
 import { CommentSubmissionUnknownError } from "@/lib/comment-submit-result";
@@ -12,10 +13,16 @@ import {
   type ProbeResult,
 } from "@/lib/connectivity";
 import { MAX_ONLINE_RESENDS, pendingSendKeyFor, readPendingSend, writePendingSend } from "@/lib/pending-send";
+import { queryKeys } from "@/lib/queryKeys";
 import { DETACHED_DRAFT_OWNER } from "./useDraftOwner";
 import { useAutoResend, useDurableSubmit, type AutoResendState, type DurableSubmit, type DurableSubmitOptions } from "./useDurableSubmit";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+// The session lookup never answers on its own; tests set the account directly.
+vi.mock("@/api/auth", () => ({
+  authApi: { getSession: () => new Promise(() => {}) },
+}));
 
 type Payload = { body: string };
 const isPayload = (value: unknown): value is Payload =>
@@ -201,6 +208,55 @@ describe("useDurableSubmit", () => {
     await advance(5_000);
     expect(send).not.toHaveBeenCalled();
     expect(readPendingSend(pendingSendKeyFor(KEY, "user-2"), isPayload)?.idempotencyKey).toBe("other-account-key");
+  });
+
+  it.each([
+    ["a receipt", () => ({ id: "row-1", body: "Before the session" })],
+    ["a rejection", () => { throw new ApiError("Title is required", 422, { error: "validation_error" }); }],
+  ])("clears a send that moved into the account's storage before %s", async (_label, settle) => {
+    const userKey = pendingSendKeyFor(KEY, "user-1");
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let finish!: () => void;
+    const send = vi.fn((_payload: Payload, _key: string) => new Promise<{ id: string; body: string }>((resolve, reject) => {
+      finish = () => {
+        try {
+          resolve(settle());
+        } catch (error) {
+          reject(error);
+        }
+      };
+    }));
+    act(() => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <ConnectivityProvider store={store}>
+            <Harness sourceId="test" storageKey={KEY} isPayload={isPayload} send={send} />
+          </ConnectivityProvider>
+        </QueryClientProvider>,
+      );
+    });
+
+    // The session is still loading: the send is kept in memory only.
+    let submitted!: Promise<unknown>;
+    act(() => {
+      submitted = current.submit({ body: "Before the session" });
+    });
+    expect(readPendingSend(userKey, isPayload)).toBeNull();
+
+    // The account becomes known mid-request, so the record moves into its key.
+    act(() => {
+      client.setQueryData(queryKeys.auth.session, { user: { id: "user-1" } });
+    });
+    await flush();
+    expect(readPendingSend(userKey, isPayload)?.idempotencyKey).toBe(send.mock.calls[0]![1]);
+
+    await act(async () => {
+      finish();
+      await submitted;
+    });
+    expect(readPendingSend(userKey, isPayload)).toBeNull();
+    expect(current.pending).toBeNull();
+    client.clear();
   });
 
   it("cancel stops resending and returns the payload", async () => {

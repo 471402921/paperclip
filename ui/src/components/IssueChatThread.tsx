@@ -84,6 +84,7 @@ import {
 import { classifySendFailure, type SendOutcome } from "../lib/pending-send";
 import { useAutoResend } from "../hooks/useDurableSubmit";
 import { useDraftOwner } from "../hooks/useDraftOwner";
+import { useRequestOwnerBinding } from "../hooks/useRequestOwnerBinding";
 import { PendingSendNotice } from "./PendingSendNotice";
 import { describeError } from "../api/errors";
 import {
@@ -4722,6 +4723,9 @@ const IssueChatComposer = forwardRef<
     request: ComposerSendRequest;
     requestOwner?: string;
   } | null>(null);
+  const markRequestUnbound = useRequestOwnerBinding({
+    draftKey, owner: draftOwner, uncertainSubmission, setUncertainSubmission, pendingDraftRef,
+  });
   function changeBody(update: string | ((current: string) => string)) {
     const value = typeof update === "function" ? update(bodyRef.current) : update;
     bodyRef.current = value;
@@ -5103,6 +5107,7 @@ const IssueChatComposer = forwardRef<
         return;
       }
       attemptId = crypto.randomUUID();
+      if (requestOwner === undefined) markRequestUnbound(attemptId);
       // The exact request is stored before it is sent, so a lost response or
       // an outage can resend it with the same ID instead of losing it.
       request = {

@@ -12,10 +12,12 @@ import { flushSync } from "react-dom";
 import type { ComponentProps, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Agent } from "@paperclipai/shared";
 import { CommentSubmissionUnknownError } from "../lib/comment-submit-result";
 import { loadDraft, preserveDraftInTab, settleDraftSubmission } from "../lib/composer-draft";
+import { queryKeys } from "../lib/queryKeys";
 import {
   IssueAssigneePausedNotice,
   IssueChatThread,
@@ -79,6 +81,12 @@ const {
   restoreComposerViewportSnapshotMock: vi.fn(),
   shouldPreserveComposerViewportMock: vi.fn(),
 }));
+
+// The session lookup never answers on its own; tests set the account directly.
+vi.mock("../api/auth", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api/auth")>();
+  return { ...actual, authApi: { ...actual.authApi, getSession: () => new Promise(() => {}) } };
+});
 
 vi.mock("@assistant-ui/react", () => ({
   AssistantRuntimeProvider: ({ children }: { children: ReactNode }) => (
@@ -2952,6 +2960,48 @@ describe("IssueChatThread", () => {
       expect(localStorage.getItem(`${key}:submission:v1`)).toBeNull();
     } finally {
       await act(async () => root.unmount());
+    }
+  });
+
+  it("resends a comment sent before the session loaded once the account is known", async () => {
+    const key = "resend-before-session";
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onAdd = vi.fn()
+      .mockRejectedValueOnce(new CommentSubmissionUnknownError())
+      .mockResolvedValue(undefined);
+    const root = createRoot(container);
+    const editor = () => container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Issue chat editor"]')!;
+    const button = (label: string) => Array.from(container.querySelectorAll("button")).find(item => item.textContent === label) as HTMLButtonElement | undefined;
+    try {
+      await act(async () => root.render(
+        <QueryClientProvider client={client}>
+          <MemoryRouter>
+            <IssueChatThread comments={[]} currentUserId="user-1" linkedRuns={[]} timelineEvents={[]} liveRuns={[]}
+              onAdd={onAdd} draftKey={key} enableLiveTranscriptPolling={false} />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      ));
+      act(() => {
+        Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")!.set!.call(editor(), "Sent before the session");
+        editor().dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await act(async () => button("Send")!.click());
+      // Until the account is known the send cannot be replayed.
+      expect(button("Resend now")).toBeUndefined();
+
+      await act(async () => {
+        client.setQueryData(queryKeys.auth.session, { user: { id: "user-1" } });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(JSON.parse(localStorage.getItem(`${key}:submission:v1`)!).requestOwner).toBe("user-1");
+      expect(container.textContent).toContain("Sending when reconnected…");
+      await act(async () => button("Resend now")!.click());
+      expect(onAdd).toHaveBeenCalledTimes(2);
+      expect(onAdd.mock.calls[1]![4]).toBe(onAdd.mock.calls[0]![4]);
+      expect(container.textContent).not.toContain("Sending when reconnected…");
+    } finally {
+      await act(async () => root.unmount());
+      client.clear();
     }
   });
 

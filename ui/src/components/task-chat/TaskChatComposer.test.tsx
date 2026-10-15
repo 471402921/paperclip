@@ -18,6 +18,14 @@ import {
   saveDraftSubmission,
 } from "../../lib/composer-draft";
 import { CommentSubmissionUnknownError } from "../../lib/comment-submit-result";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { queryKeys } from "../../lib/queryKeys";
+
+// The session lookup never answers on its own; tests set the account directly.
+vi.mock("../../api/auth", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../api/auth")>();
+  return { ...actual, authApi: { ...actual.authApi, getSession: () => new Promise(() => {}) } };
+});
 
 /**
  * MDXEditor-in-jsdom weight (mirrors MarkdownEditor.test.tsx): the real editor
@@ -576,6 +584,68 @@ describe("TaskChatComposer", () => {
     expect(editable().textContent).toBe("Rejected later");
     expect(container.textContent).toContain("Forbidden");
     expect(loadDraftSubmission("rejected-resend")).toBeNull();
+  });
+
+  it("resends a comment sent before the session loaded once the account is known", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onAdd = vi
+      .fn()
+      .mockRejectedValueOnce(new CommentSubmissionUnknownError())
+      .mockResolvedValue(undefined);
+    render(
+      <QueryClientProvider client={client}>
+        <TaskChatComposer onAdd={onAdd} workMode="standard" draftKey="owner-late" />
+      </QueryClientProvider>,
+    );
+    typeText("Sent before the session");
+    pressKey("Enter", { metaKey: true });
+    await flushAsync();
+    await flushAsync();
+    // Until the account is known the send cannot be replayed.
+    const resendButton = () => Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Resend now",
+    );
+    expect(resendButton()).toBeUndefined();
+
+    act(() => {
+      client.setQueryData(queryKeys.auth.session, { user: { id: "user-1" } });
+    });
+    await flushAsync();
+    await flushAsync();
+    expect(loadDraftSubmission("owner-late")?.requestOwner).toBe("user-1");
+    expect(container.textContent).toContain("Sending when reconnected…");
+    flushSync(() => resendButton()!.click());
+    await flushAsync();
+    await flushAsync();
+    expect(onAdd).toHaveBeenCalledTimes(2);
+    expect(onAdd.mock.calls[1]?.[4]).toBe(onAdd.mock.calls[0]?.[4]);
+    expect(container.textContent).not.toContain("Sending when reconnected…");
+    client.clear();
+  });
+
+  it("never binds an account to a stored send that has no owner", async () => {
+    const key = "owner-unknown-stored";
+    saveDraft(key, "Stored without owner");
+    saveDraftSubmission(key, {
+      attemptId: "baf8228f-0be7-45ae-a104-6fbe0af6f1d3",
+      reviewed: false,
+      request: { body: "Stored without owner" },
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(queryKeys.auth.session, { user: { id: "user-1" } });
+    const onAdd = vi.fn();
+    render(
+      <QueryClientProvider client={client}>
+        <TaskChatComposer onAdd={onAdd} workMode="standard" draftKey={key} />
+      </QueryClientProvider>,
+    );
+    await flushAsync();
+    expect(Array.from(container.querySelectorAll("button")).some(
+      (button) => button.textContent === "Resend now",
+    )).toBe(false);
+    expect(loadDraftSubmission(key)?.requestOwner).toBeUndefined();
+    expect(onAdd).not.toHaveBeenCalled();
+    client.clear();
   });
 
   it("restores an in-flight submission as uncertain only for its exact task key", async () => {

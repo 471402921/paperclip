@@ -30,6 +30,7 @@ import { classifySendFailure, type SendOutcome } from "@/lib/pending-send";
 import { describeError } from "@/api/errors";
 import { useAutoResend } from "@/hooks/useDurableSubmit";
 import { useDraftOwner } from "@/hooks/useDraftOwner";
+import { useRequestOwnerBinding } from "@/hooks/useRequestOwnerBinding";
 import { PendingSendNotice } from "@/components/PendingSendNotice";
 import {
   ArrowUp,
@@ -502,6 +503,9 @@ export function TaskChatComposer({
     request: ComposerSendRequest;
     requestOwner?: string;
   } | null>(null);
+  const markRequestUnbound = useRequestOwnerBinding({
+    draftKey, owner: draftOwner, uncertainSubmission, setUncertainSubmission, pendingDraftRef,
+  });
   function changeBody(value: string) {
     bodyRef.current = value;
     if (creation) {
@@ -1067,6 +1071,7 @@ export function TaskChatComposer({
         return;
       }
       attemptId = crypto.randomUUID();
+      if (requestOwner === undefined) markRequestUnbound(attemptId);
       // IDs come only from this composer's upload receipts, never from parsing
       // arbitrary Markdown. A removed inline image no longer selects its receipt.
       const attachmentIds = [

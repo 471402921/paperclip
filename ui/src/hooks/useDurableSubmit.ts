@@ -221,15 +221,23 @@ export function useDurableSubmit<T, R>(options: DurableSubmitOptions<T, R>): Dur
       inFlight.current = record.idempotencyKey;
       const key = loadedKey.current;
       const current = () => pendingRef.current?.idempotencyKey === record.idempotencyKey;
+      // The record may have moved into the account's key during the request
+      // (see above). Only a record with this idempotency key is removed, so
+      // another account's record is never touched.
+      const clearStored = () => {
+        for (const stored of new Set([key, loadedKey.current])) {
+          if (stored) clearPendingSend(stored, record.idempotencyKey, storage);
+        }
+      };
       try {
         const result = await optionsRef.current.send(record.payload, record.idempotencyKey);
-        if (key) clearPendingSend(key, record.idempotencyKey, storage);
+        clearStored();
         if (current()) setPending(null);
         optionsRef.current.onSent?.(result, record);
         return { kind: "sent", result };
       } catch (cause) {
         if (classifySendFailure(cause) === "pending") return { kind: "pending", error: cause };
-        if (key) clearPendingSend(key, record.idempotencyKey, storage);
+        clearStored();
         const description = describeError(cause, { action: optionsRef.current.action });
         if (current()) {
           setPending(null);
