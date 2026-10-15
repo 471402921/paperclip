@@ -628,7 +628,16 @@ export function createPublicMcpOAuth(db: Db, config: PublicMcpConfig, options: {
       await assertEnabled();
       const clientId = typeof input.client_id === "string" ? input.client_id : "";
       input = withResource(input) as Record<string, unknown>;
-      if (!clientId || input.resource !== config.resource) throw new McpOAuthError("invalid_target", "Client and matching resource are required.");
+      if (!clientId || input.resource !== config.resource) {
+        if(observation&&typeof input.code==="string") {
+          const failedChecks:MuseCodeExchangeCheck[]=[];
+          if(!clientId)failedChecks.push("client_mismatch");
+          if(input.resource!==config.resource)failedChecks.push("resource_mismatch");
+          decideMuseCodeExchange(observation,failedChecks);
+          await recordMuseCodeRejection(db,config.resource,hashMcpSecret(input.code),observation);
+        }
+        throw new McpOAuthError("invalid_target", "Client and matching resource are required.");
+      }
       if (input.grant_type === DEVICE_GRANT) { if(museAgentConnection)throw new McpOAuthError("unsupported_grant_type", "Muse requires PKCE."); return deviceToken(input, clientId); }
       if (input.grant_type === "authorization_code") {
         return exchangeAuthorizationCode(input,clientId,observation);

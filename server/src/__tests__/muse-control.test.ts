@@ -1601,6 +1601,24 @@ describe("personal Muse control plane",()=>{
       expect((await codeState(f)).consumedAt===null).toBe(check!=="code_consumed");
       expect(await db.select().from(mcpOauthTokens).where(eq(mcpOauthTokens.grantId,f.binding.grantId!))).toHaveLength(check==="code_consumed"?2:0);
     });
+    it.each(["wrong_resource","missing_client","both"] as const)("records known-code early invalid_target evidence for %s without changing public errors",async(kind)=>{
+      const f=await oauthFixture(),input=f.tokenInput(),resource="https://resource-canary.example/unsupported",claimedCompany=randomUUID();
+      const submitted:Record<string,unknown>={...input},failedChecks:string[]=[];
+      if(kind!=="wrong_resource"){delete submitted.client_id;failedChecks.push("client_mismatch");}
+      if(kind!=="missing_client"){submitted.resource=resource;failedChecks.push("resource_mismatch");}
+      const expected={error:"invalid_target",error_description:"Client and matching resource are required."};
+      const unknown=await request(transport()).post("/api/muse/v1/oauth/token").type("form").send({...submitted,code:"pcmcp_code_unknown_resource_canary",company_id:claimedCompany});
+      expect(unknown.status).toBe(400);expect(unknown.body).toEqual(expected);expect(await events(f)).toHaveLength(0);
+      const response=await request(transport()).post("/api/muse/v1/oauth/token").type("form").set("X-Private-Canary","resource-header-canary")
+        .send({...submitted,company_id:claimedCompany,reason:"resource-client-reason-canary"});
+      expect(response.status).toBe(400);expect(response.body).toEqual(expected);
+      const rows=await events(f);expect(rows).toHaveLength(failedChecks.length);expect(rows.map(row=>row.action).sort()).toEqual(failedChecks.map(check=>prefix+"rejected_"+check).sort());
+      for(const row of rows){expect(row).toMatchObject({actorType:"system",actorId:"muse-oauth",responsibleUserId:f.operatorId,entityType:"agent",entityId:f.agent.id,agentId:f.agent.id});expect(row.details).toMatchObject({bindingId:f.binding.id,generation:f.binding.generation,grantId:f.binding.grantId,failedChecks});}
+      const serialized=JSON.stringify(rows),code=await codeState(f);
+      for(const value of [resource,claimedCompany,input.code,input.code_verifier,f.client.client_id,f.input.code_challenge,f.input.state,oauthCallback,code.id,code.codeHash,"resource-header-canary","resource-client-reason-canary"])expect(serialized).not.toContain(value);
+      expect(code.consumedAt).toBeNull();expect(await db.select().from(mcpOauthTokens).where(eq(mcpOauthTokens.grantId,f.binding.grantId!))).toHaveLength(0);
+      await expect(f.oauth.token(input)).resolves.toMatchObject({token_type:"Bearer"});
+    });
     it("retains overlapping failed checks without claiming a single cause",async()=>{
       const f=await oauthFixture();await db.update(mcpOauthRequests).set({expiresAt:new Date(Date.now()-1)}).where(eq(mcpOauthRequests.grantId,f.binding.grantId!));
       await expect(f.oauth.token({...f.tokenInput(),redirect_uri:oauthCallback+"?changed=1",code_verifier:"z".repeat(43)})).rejects.toMatchObject({code:"invalid_grant",status:400});
