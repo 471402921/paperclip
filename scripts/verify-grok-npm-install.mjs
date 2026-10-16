@@ -365,6 +365,10 @@ try {
   await writePackedRegistryCatalog(assets);
   cpSync(join(repo, 'scripts/public-install-registry.mjs'), join(assets, 'public-install-registry.mjs'));
   timing.registry_metadata_ms = Math.round(performance.now() - metadataStarted);
+  if (process.env.PAPERCLIP_PUBLIC_INSTALL_NPM_CACHE_STATUS) {
+    const { waitForPublicInstallNpmCache } = await import('./public-install-cache-warmup.mjs');
+    timing.npm_cache_wait_ms = (await waitForPublicInstallNpmCache()).waitMs;
+  }
   isolated(['node', '/packages/public-install-registry.mjs', '/packages'], { download: true });
   phase('consumer_install');
   assert.equal(existsSync(sentinel), false, 'Dependency download must not run lifecycle scripts');

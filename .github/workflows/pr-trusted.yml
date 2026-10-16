@@ -968,7 +968,7 @@ jobs:
       # That graph is fixed by source manifests, so this fetches it in the
       # background while the Rust restore, Evalbook and `pnpm build` run, about
       # 150s before the verifier installs anything. Only the cache is handed
-      # over, and the verify step waits for this first. A failed or partial
+      # over. New verifiers wait only before consumer installation. A failed or partial
       # warm-up leaves the verifier to fetch what is missing as before.
       - name: Start warming the public-install npm cache
         if: ${{ hashFiles('scripts/warm-public-install-npm-cache.mjs') != '' }}
@@ -1105,15 +1105,19 @@ jobs:
         run: |
           status="$RUNNER_TEMP/public-install-npm-cache.status"
           if [ -f "$RUNNER_TEMP/public-install-npm-cache.log" ]; then
-            # Normally finished long before this; never let it hold the lane.
-            for _ in $(seq 180); do [ -f "$status" ] && break; sleep 1; done
-            if [ "$(cat "$status" 2>/dev/null)" = 0 ]; then
-              tail -n 1 "$RUNNER_TEMP/public-install-npm-cache.log"
-            else
-              echo '::notice title=Public-install npm cache::warm-up did not finish cleanly; the verifier fetches what is missing'
-              tail -n 20 "$RUNNER_TEMP/public-install-npm-cache.log"
-            fi
             export PAPERCLIP_PUBLIC_INSTALL_NPM_CACHE="$RUNNER_TEMP/public-install-npm-cache"
+            if [ -f scripts/public-install-cache-warmup.mjs ]; then
+              export PAPERCLIP_PUBLIC_INSTALL_NPM_CACHE_STATUS="$status"
+              export PAPERCLIP_PUBLIC_INSTALL_NPM_CACHE_LOG="$RUNNER_TEMP/public-install-npm-cache.log"
+            else
+              for _ in $(seq 180); do [ -f "$status" ] && break; sleep 1; done
+              if [ "$(cat "$status" 2>/dev/null)" = 0 ]; then
+                tail -n 1 "$RUNNER_TEMP/public-install-npm-cache.log"
+              else
+                echo '::notice title=Public-install npm cache::warm-up did not finish cleanly; the verifier fetches what is missing'
+                tail -n 20 "$RUNNER_TEMP/public-install-npm-cache.log"
+              fi
+            fi
           fi
           node scripts/verify-grok-npm-install.mjs
 

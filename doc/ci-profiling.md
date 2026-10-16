@@ -301,12 +301,27 @@ probes. No lifecycle, network-isolation, lock-preservation or provider checks
 are skipped. Native ARM and Mac qualification keep their existing file installs.
 
 The Linux verifier also shares `PAPERCLIP_PUBLIC_INSTALL_NPM_CACHE` with the
-producer installs that prepare bundled dependencies. These run after the existing
-cache warm-up and reuse its downloaded archives instead of populating a second
-host cache. Each producer still installs into a separate empty directory, applies
+producer installs that prepare bundled dependencies. These share the background
+cache warm-up and reuse downloaded archives instead of populating a second host
+cache. Each producer still installs into a separate empty directory, applies
 the release patches, and packs fresh output. npm resolution and integrity checks
 remain enabled; cache misses download normally. Without an explicit shared cache,
 producer installs keep their normal npm cache configuration.
+
+The verifier waits for the optional cache warm-up immediately before its clean
+consumer install, after staging, packing, and registry metadata are complete.
+The remaining wait is recorded as `npm_cache_wait_ms`. Failed or incomplete
+warm-up still falls back to normal npm downloads after at most 180 seconds.
+Trusted workflows retain the earlier shell wait for older source checkouts
+without the helper. A native Linux ARM64 experiment with four CPUs, 6 GiB RAM,
+and an empty npm cache and consumer in each phase compared serial warm-up and
+packing against this overlap, then repeated the serial control. The overlap
+took 89.49 seconds versus the final control's 106.05 seconds, saving 16.55 seconds
+(15.6%). All 18 archive SHA-512s and the installed tree's 69,049 files, modes,
+and links matched in all three phases. The payload was a retained earlier
+public-install fixture, held constant across phases; this measures scheduling
+of warm-up, packing, and installation, excluding upstream build and bundled
+dependency staging. It does not establish current-head or complete CI speed.
 
 After the offline lifecycle finishes, Pi setup runs in its own download sandbox
 while the independent Codex/Grok probes run offline. Pi admission still waits
