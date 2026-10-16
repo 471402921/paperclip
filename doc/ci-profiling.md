@@ -221,6 +221,19 @@ Vitest worker limit stays within the detected CPU capacity or the explicit
 keeps project execution serial. All projects finish before a failure is returned.
 The database lane retains its existing scheduling.
 
+Playwright compiles the UI through `scripts/build-e2e-ui.mjs`, which gives only
+the build subprocess `NODE_ENV=production`. The server keeps `NODE_ENV=test`
+and its existing provider fixtures. Previously the server's environment also
+made Vite bundle development-mode browser code. On the same checkout, the
+initial JavaScript fell from 9,084,030 to 6,971,848 bytes. A serial browser
+comparison retained all 25 provider/session cases, zero retries, fresh server
+and database instances, and the slow-CPU/service-worker checks. Test-built UI
+took 167.02 seconds, production-built UI 142.81 seconds, and the final test-built
+control 155.03 seconds: a 12.22-second (7.9%) saving against that control. These
+durations include server startup and cleanup, but exclude prior UI compilation
+and dependency setup. All exact case identities and outcomes matched. This is
+a local browser comparison, not a measured whole-workflow improvement.
+
 The PR and release workflows split the UI/CLI projects across eight jobs with
 Vitest's native file sharding. Each job runs both projects and its slice of each
 current file list. Local source `831ec89f2` passed the same 8,981 tests and 814

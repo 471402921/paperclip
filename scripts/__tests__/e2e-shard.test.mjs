@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -111,6 +111,38 @@ test("the ignored spec list matches playwright.config.ts testIgnore", () => {
   assert.ok(match, "expected a testIgnore array in playwright.config.ts");
   const configured = [...match[1].matchAll(/"([^"]+)"/g)].map((entry) => entry[1]);
   assert.deepEqual([...configured].sort(), [...IGNORED_SPECS].sort());
+});
+
+test("e2e UI compilation uses production mode without changing the server fixture environment", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "paperclip-e2e-ui-build-"));
+  const receipt = path.join(directory, "receipt.json");
+  const executable = path.join(directory, "pnpm");
+  writeFileSync(executable, `#!/usr/bin/env node
+require("node:fs").writeFileSync(process.env.PAPERCLIP_UI_BUILD_RECEIPT, JSON.stringify({args:process.argv.slice(2),mode:process.env.NODE_ENV,fixtures:process.env.PAPERCLIP_UI_BUILD_FIXTURE}));
+process.exit(Number(process.env.PAPERCLIP_UI_BUILD_EXIT));
+`);
+  chmodSync(executable, 0o755);
+  try {
+    for (const exit of [0, 42]) {
+      const env = {
+        ...process.env, PATH: `${directory}${path.delimiter}${process.env.PATH}`,
+        NODE_ENV: "test", PAPERCLIP_UI_BUILD_RECEIPT: receipt,
+        PAPERCLIP_UI_BUILD_FIXTURE: "retained", PAPERCLIP_UI_BUILD_EXIT: String(exit),
+      };
+      const result = spawnSync(process.execPath, [path.join(repoRoot, "scripts/build-e2e-ui.mjs")], { env, encoding: "utf8" });
+      assert.equal(result.status, exit, result.stderr);
+      assert.deepEqual(JSON.parse(readFileSync(receipt, "utf8")), {
+        args: ["--filter", "@paperclipai/ui", "build", "--outDir", "../server/ui-dist", "--emptyOutDir"],
+        mode: "production", fixtures: "retained",
+      });
+    }
+    const config = readFileSync(playwrightConfig, "utf8");
+    assert.match(config, /node scripts\/build-e2e-ui\.mjs && node .* onboard --yes --run/);
+    assert.match(config, /NODE_ENV: "test"/);
+    for (const fixture of ["agent-chat-github.mjs", "ai-connection-provider.mjs"]) assert.ok(config.includes(fixture));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("the duration manifest only names specs that still exist", () => {
