@@ -62,11 +62,17 @@ test("local Vite environment files and compiler environment invalidate reuse", (
 
 test("both cache-save guards reject PRs, other repositories, and noncanonical source refs", () => {
   const action = readFileSync(path.join(root, ".github/actions/vitest-transform-cache/action.yml"), "utf8");
-  const guards = [...action.matchAll(/    - name: (?:Verify canonical producer|Save canonical module transforms)\n      if: >-\n([\s\S]*?)(?=      (?:shell|uses):)/g)];
-  assert.equal(guards.length, 2);
+  const steps = action.split(/^    - name: /m).slice(1);
+  const guards = ["Verify canonical producer", "Save canonical module transforms"].map(name => {
+    const matches = steps.filter(step => step.startsWith(`${name}\n`));
+    assert.equal(matches.length, 1, `Expected exactly one ${name} step`);
+    const guard = matches[0].match(/^      if: >-\n([\s\S]*?)(?=^      [\w-]+:)/m);
+    assert.ok(guard, `Missing ${name} guard`);
+    return guard[1];
+  });
   const canonical = { repository: "paperclipai/paperclip", repository_id: "1170821064", event_name: "push", ref: "refs/heads/master", sha: "a".repeat(40) };
-  for (const match of guards) {
-    const expression = match[1].trim().replaceAll("inputs.verified-ref", "inputs.verifiedRef");
+  for (const guard of guards) {
+    const expression = guard.trim().replaceAll("inputs.verified-ref", "inputs.verifiedRef");
     const allowed = new Function("github", "inputs", "steps", `return ${expression}`);
     const evaluate = (github = canonical, inputs = {}, cacheable = "true") => allowed( github,
       { mode: "save", verifiedRef: canonical.sha, ...inputs }, { scope: { outputs: { cacheable } } });
