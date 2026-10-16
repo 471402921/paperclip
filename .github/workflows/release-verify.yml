@@ -263,6 +263,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
+      - name: Restore Vitest transforms
+        id: vitest_transforms
+        if: hashFiles('.github/actions/vitest-transform-cache/action.yml') != ''
+        uses: ./.github/actions/vitest-transform-cache
+        with:
+          role: ${{ matrix.group }}
+          shard: ${{ matrix.shard_index || 0 }}
+
       - name: Run grouped general test suites
         if: ${{ matrix.group != 'general-adapter-utils' || hashFiles('scripts/project-test-shard.mjs') != '' }}
         run: |
@@ -272,6 +280,15 @@ jobs:
           else
             pnpm test:run:general -- --group '${{ matrix.group }}'
           fi
+
+      - name: Save canonical Vitest transforms
+        if: hashFiles('.github/actions/vitest-transform-cache/action.yml') != '' && steps.vitest_transforms.outputs.cache-hit != 'true'
+        uses: ./.github/actions/vitest-transform-cache
+        with:
+          mode: save
+          role: ${{ matrix.group }}
+          shard: ${{ matrix.shard_index || 0 }}
+          verified-ref: ${{ inputs.ref }}
 
   serialized_tests:
     if: ${{ !inputs.runner_binaries_only }}
@@ -320,8 +337,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
+      - name: Restore Vitest transforms
+        id: vitest_transforms
+        if: hashFiles('.github/actions/vitest-transform-cache/action.yml') != ''
+        uses: ./.github/actions/vitest-transform-cache
+        with:
+          role: serialized
+          shard: ${{ matrix.shard_index }}
+
       - name: Run serialized server test shard
         run: pnpm test:run:serialized -- --shard-index ${{ matrix.shard_index }} --shard-count ${{ matrix.shard_count }}
+
+      - name: Save canonical Vitest transforms
+        if: hashFiles('.github/actions/vitest-transform-cache/action.yml') != '' && steps.vitest_transforms.outputs.cache-hit != 'true'
+        uses: ./.github/actions/vitest-transform-cache
+        with:
+          mode: save
+          role: serialized
+          shard: ${{ matrix.shard_index }}
+          verified-ref: ${{ inputs.ref }}
 
   runner_workflow_evals:
     if: ${{ !inputs.runner_binaries_only }}

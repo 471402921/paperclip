@@ -534,6 +534,13 @@ jobs:
             pnpm install --frozen-lockfile
           fi
 
+      - name: Restore Vitest transforms
+        if: hashFiles('.github/actions/vitest-transform-cache/action.yml') != ''
+        uses: ./.github/actions/vitest-transform-cache
+        with:
+          role: ${{ matrix.group }}
+          shard: ${{ matrix.shard_index || 0 }}
+
       - name: Run grouped general test suites
         if: ${{ matrix.group != 'general-adapter-utils' || hashFiles('scripts/project-test-shard.mjs') != '' }}
         run: |
@@ -1238,6 +1245,13 @@ jobs:
             pnpm install --resolution-only --ignore-scripts --no-frozen-lockfile
             pnpm install --frozen-lockfile
           fi
+
+      - name: Restore Vitest transforms
+        if: hashFiles('.github/actions/vitest-transform-cache/action.yml') != ''
+        uses: ./.github/actions/vitest-transform-cache
+        with:
+          role: serialized
+          shard: ${{ matrix.shard_index }}
 
       - name: Run serialized server test shard
         run: pnpm test:run:serialized -- --shard-index ${{ matrix.shard_index }} --shard-count ${{ matrix.shard_count }}

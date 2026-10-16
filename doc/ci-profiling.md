@@ -345,3 +345,48 @@ the same public remote took 15.35 seconds for all branches and tags, versus
 7.72 seconds for release tags only. All 1,781 release tag object IDs matched;
 repository data was 424 MB versus 248 MB. These are local fetch measurements,
 not a measured reduction in complete CI wall time.
+
+### Reuse Vitest transforms while running every test
+
+The stable test launcher enables Vitest's filesystem module cache. This stores
+transformed module code. It does not store test outcomes or evaluated module
+state. Every invocation retains its private home, configuration, temporary
+paths, isolated forks, and existing assertions and deadlines.
+
+The cache namespace includes the checkout path, Node/V8 and platform,
+compiler-related environment, current file inventory, manifests, lockfile,
+configuration, scripts, patches, and local Vite environment files. File additions
+or removals invalidate the namespace to avoid retaining an old import resolution.
+Vitest checks each source file's contents before reusing its transformed code.
+Unknown checkout inputs disable reuse. The regression qualification changes a
+source dependency while preserving its timestamp, checks different mocks in
+separate forks, and verifies that warm tests still execute.
+
+```sh
+pnpm test:run
+PAPERCLIP_VITEST_FS_MODULE_CACHE=false pnpm test:run
+```
+
+The second command is the control with transform reuse disabled. The required
+PR lanes restore module transforms read-only. Successful canonical master push
+verification may save them only when the checkout matches the event revision.
+Each group first tries its previous shard, then another shard in the same group.
+Each namespace and shard has one immutable cache entry, rather than a new
+archive per commit. Changed source modules compile again when their content
+hash misses; the other cached modules remain usable. A cache miss compiles
+normally. Cache restoration time and cache misses remain
+part of the complete CI wall-time measurement.
+
+A native macOS ARM64 probe of four routing files passed the same 36 cases in
+13.14 seconds with reuse disabled and 8.57 seconds with a warm transform cache.
+The cold-cache phase passed in 13.24 seconds. These are focused local timings,
+not evidence of a complete workflow below three minutes. A fresh full UI/CLI comparison used eight jobs with one worker each. The
+original launcher passed all 8,981 cases in 128.79 seconds. With caching enabled,
+the cold run passed in 125.48 seconds and the warm run passed in 122.26 seconds.
+All phases retained the exact 814 files and complete case identities and results.
+A final cache-disabled warm control passed in 126.47 seconds. Against that
+control, the whole-lane warm gain was 3.3%, substantially smaller than the focused
+routing gain. The local warm phase reused transforms produced by the preceding real test
+phase; it did not reuse test outcomes. Fleet cache restoration cost and complete
+workflow timing remain unverified. Retain all failures and compare wall time and
+runner-minutes after normal reviewed workflow adoption.

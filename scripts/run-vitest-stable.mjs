@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { loadShardDurations, selectGeneralServerShard } from "./general-server-shard.mjs";
 import { projectFileShard } from "./project-test-shard.mjs";
 import { invocationEnv } from "./ci-profile/record.mjs";
+import { vitestTransformCache } from "./vitest-transform-cache.mjs";
 
 import { assertSelectedTests, partitionTestLines } from "./test-line-shard.mjs";
 
@@ -156,7 +157,10 @@ const serializedServerVitestArgs = [
   "--no-file-parallelism",
   "--maxWorkers=1",
 ];
-const sourceOnlyVitestArgs = ["--exclude", "**/dist/**"];
+const transformCache = vitestTransformCache(repoRoot);
+const sourceOnlyVitestArgs = ["--exclude", "**/dist/**", ...(transformCache
+  ? ["--fsModuleCache=true", `--fsModuleCachePath=${transformCache.directory}`]
+  : ["--fsModuleCache=false"])];
 
 function walk(dir) {
   const entries = readdirSync(dir);
