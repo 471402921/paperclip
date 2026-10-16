@@ -219,7 +219,15 @@ keeps its own temporary home, configuration and instance identity. Their combine
 Vitest worker limit stays within the detected CPU capacity or the explicit
 `VITEST_MAX_WORKERS` budget. A configured shared test database or a single worker
 keeps project execution serial. All projects finish before a failure is returned.
-The UI/CLI and database lanes retain their existing scheduling.
+The database lane retains its existing scheduling.
+
+The PR and release workflows split the UI/CLI projects across eight jobs with
+Vitest's native file sharding. Each job runs both projects and its slice of each
+current file list. Local source `831ec89f2` passed the same 8,981 tests and 814
+files in 192.28 seconds with two jobs of two workers, and 140.23 seconds with
+eight jobs of one worker. This comparison uses more total capacity; it does not
+predict fleet queue time. Include the six added setup phases and runner-minutes
+in CI acceptance. The unsharded local command and two-shard callers stay valid.
 
 With `PAPERCLIP_ADAPTER_UTILS_FILE_SHARDS=true`, adapter-utils moves from
 workspace-B into four separate file jobs. Each job obtains the current project

@@ -165,12 +165,16 @@ test("workspaces-c runs the db project alone and workspaces-b no longer carries 
   assert.ok(!workspacesB.workspaceProjects.includes("@paperclipai/db"), "db must not run twice");
   assert.ok(workspacesB.workspaceProjects.length > 0, "workspaces-b must still run its other projects");
   for (const workflow of ["pr-trusted.yml", "release-verify.yml"]) {
-    const entries = matrixEntries(readFileSync(path.join(repoRoot, ".github", "workflows", workflow), "utf8"));
+    const text = readFileSync(path.join(repoRoot, ".github", "workflows", workflow), "utf8");
+    const entries = matrixEntries(text);
     // The parser must demonstrably see shard keys in this workflow, otherwise
     // the unsharded assertions below could pass for the wrong reason.
     const sharded = entries.filter(entry => entry.group === "general-workspaces-a");
-    assert.ok(sharded.length > 0 && sharded.every(entry => entry.keys.includes("shard_index") && entry.keys.includes("shard_count")),
-      `${workflow} must carry the sharded workspaces-a entries`);
+    assert.equal(sharded.length, 8, `${workflow} must carry all eight workspaces-a entries`);
+    assert.ok(sharded.every(entry => entry.keys.includes("shard_index") && entry.keys.includes("shard_count")));
+    for (let index = 0; index < 8; index++) {
+      assert.ok(text.includes(`group_label: workspaces-a (${index + 1}/8)\n            shard_index: ${index}\n            shard_count: 8`));
+    }
     for (const group of ["general-workspaces-b", "general-workspaces-c"]) {
       const matching = entries.filter(entry => entry.group === group);
       assert.equal(matching.length, 1, `${workflow} must run ${group} exactly once`);
@@ -181,31 +185,19 @@ test("workspaces-c runs the db project alone and workspaces-b no longer carries 
 });
 
 test("workspaces-a shards map to Vitest native --shard slices over a stable project list", () => {
-  const shards = [0, 1].map((index) =>
-    dryRunJson([
+  for (const count of [2, 8]) {
+    const shards = Array.from({ length: count }, (_, index) => dryRunJson([
       "--mode", "general", "--group", "general-workspaces-a",
-      "--shard-index", String(index), "--shard-count", "2",
-    ]),
-  );
-
-  assert.deepEqual(
-    shards.map((shard) => shard.workspacesVitestShard),
-    ["1/2", "2/2"],
-    "each matrix job must pass its own --shard slice to vitest",
-  );
-  // Vitest's --shard partitions each project's file list deterministically, so
-  // an identical project list across jobs is what guarantees complete,
-  // non-overlapping coverage of the lane.
-  assert.deepEqual(shards[0].workspaceProjects, shards[1].workspaceProjects);
-  assert.ok(shards[0].workspaceProjects.length > 0, "workspaces-a must run at least one project");
-
-  const unsharded = dryRunJson(["--mode", "general", "--group", "general-workspaces-a"]);
-  assert.deepEqual(
-    unsharded.workspaceProjects,
-    shards[0].workspaceProjects,
-    "sharding must not change which projects the lane covers",
-  );
-  assert.equal(unsharded.workspacesVitestShard, null);
+      "--shard-index", String(index), "--shard-count", String(count),
+    ]));
+    assert.deepEqual(shards.map(shard => shard.workspacesVitestShard),
+      Array.from({ length: count }, (_, index) => `${index + 1}/${count}`));
+    assert.ok(shards[0].workspaceProjects.length > 0);
+    for (const shard of shards) assert.deepEqual(shard.workspaceProjects, shards[0].workspaceProjects);
+    const unsharded = dryRunJson(["--mode", "general", "--group", "general-workspaces-a"]);
+    assert.deepEqual(unsharded.workspaceProjects, shards[0].workspaceProjects);
+    assert.equal(unsharded.workspacesVitestShard, null);
+  }
 });
 
 test("duration-aware partition balances skewed weights better than round-robin", () => {
