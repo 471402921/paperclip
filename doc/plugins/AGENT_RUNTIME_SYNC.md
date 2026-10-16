@@ -127,6 +127,9 @@ User-scoped audiences can affect task-time access for any company agent, so chan
 audiences conservatively refresh the company once. Agent secret bindings instead
 invalidate only their owning agent, avoiding lock inversion with configuration
 saves that already hold that agent's row lock.
+Creating a personal grant delegation invalidates only its target agent. Creation
+locks the grant, connection reference, and target agent before inserting the delegation.
+Broader grant revocation and membership cleanup retain company invalidation.
 OAuth persistence and membership cleanup lock affected connections before
 credential/access mutations can lock agent runtimes. Existing grants are locked
 before applications and connections. App finalization and archival also lock their

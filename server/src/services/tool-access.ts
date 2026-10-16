@@ -18516,6 +18516,8 @@ export function toolAccessService(
           throw forbidden(
             "Only the active personal grant owner can create a delegation",
           );
+        await tx.select({ id: toolConnections.id }).from(toolConnections)
+          .where(eq(toolConnections.id, connection.id)).for("key share");
         const [targetAgent] = await tx
           .select({ id: agents.id })
           .from(agents)
@@ -18525,6 +18527,7 @@ export function toolAccessService(
               eq(agents.companyId, connection.companyId),
             ),
           )
+          .for("no key update")
           .limit(1);
         if (!targetAgent) throw notFound("Agent not found");
         const [existing] = await tx
@@ -18538,7 +18541,6 @@ export function toolAccessService(
           )
           .limit(1);
         if (existing) return existing;
-        await tx.execute(sql`SELECT paperclip_invalidate_connector_company(${connection.companyId}::uuid)`);
         const [delegation] = await tx
           .insert(connectionGrantDelegations)
           .values({

@@ -429,9 +429,17 @@ describeDatabase("connector runtime synchronization", () => {
     await db.update(toolPolicies).set({ config: { ...used.config, trustRule: { ...(used.config?.trustRule as object), revokedAt: new Date().toISOString() } } }).where(eq(toolPolicies.id, rule.id));
     expect(await events()).toHaveLength(before.length + 2);
   });
-  it("serializes concurrent delegations before acquiring agent foreign-key locks", async () => {
+  it("journals a personal grant delegation only for its target agent", async () => {
+    await db.insert(companyMemberships).values({ companyId, principalType: "user", principalId: "alice", status: "active" });
+    const [grant] = await db.insert(connectionGrants).values({ companyId, connectionId, kind: "user", subjectUserId: "alice" }).returning();
+    const before = await events();
+    await toolAccessService(db).createConnectionGrantDelegation(connectionId, grant.id, agentId, "alice");
+    expect((await events()).slice(before.length).map(event => event.resourceId)).toEqual([agentId]);
+  });
+  it("limits delegation creation to its target without waiting on unrelated agents", async () => {
     await db.insert(companyMemberships).values(["alice", "bob"].map(principalId => ({ companyId, principalType: "user", principalId, status: "active" })));
     const grants = await db.insert(connectionGrants).values(["alice", "bob"].map(subjectUserId => ({ companyId, connectionId, kind: "user", subjectUserId }))).returning();
+    const baseline = await events();
     const [lower, higher] = [agentId, peerId].sort();
     let locked!: () => void; let release!: () => void;
     const held = new Promise<void>(resolve => { locked = resolve; });
@@ -445,20 +453,23 @@ describeDatabase("connector runtime synchronization", () => {
     const saves = grants.map((grant, index) => db.transaction(async tx => {
       await tx.execute(sql`SET LOCAL lock_timeout = '8s'`);
       const [row] = await tx.execute(sql`SELECT pg_backend_pid() AS pid`);
-      pids.push(Number(row.pid));
+      pids[index] = Number(row.pid);
       return toolAccessService(tx as unknown as Db).createConnectionGrantDelegation(connectionId, grant.id, index === 0 ? higher : lower, grant.subjectUserId!);
     }));
     const completed = Promise.allSettled(saves);
     try {
+      await expect(saves[0]).resolves.toMatchObject({ agentId: higher });
+      expect((await events()).slice(baseline.length).map(event => event.resourceId)).toEqual([higher]);
       await vi.waitFor(async () => {
         expect(pids).toHaveLength(2);
-        const rows = await db.execute(sql`SELECT pid FROM pg_stat_activity WHERE pid IN (${pids[0]}, ${pids[1]}) AND wait_event_type = 'Lock'`);
-        expect(rows).toHaveLength(2);
+        const rows = await db.execute(sql`SELECT pid FROM pg_stat_activity WHERE pid = ${pids[1]} AND wait_event_type = 'Lock'`);
+        expect(rows).toHaveLength(1);
       }, { timeout: 5000 });
     } finally { release(); await blocker; }
     expect((await completed).map(result => result.status)).toEqual(["fulfilled", "fulfilled"]);
     expect(await db.select().from(connectionGrantDelegations).where(eq(connectionGrantDelegations.companyId, companyId))).toHaveLength(2);
     const before = await events();
+    expect(before.slice(baseline.length).map(event => event.resourceId).sort()).toEqual([lower, higher]);
     await toolAccessService(db).createConnectionGrantDelegation(connectionId, grants[0].id, higher, grants[0].subjectUserId!);
     expect(await events()).toEqual(before);
   }, 15000);

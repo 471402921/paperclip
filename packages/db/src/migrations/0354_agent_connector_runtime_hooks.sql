@@ -90,6 +90,12 @@ DECLARE company uuid; query text; binding record; candidate uuid;
     'health_status', 'health_checked_at', 'health_message', 'last_catalog_refresh_at', 'last_seen_at', 'last_error', 'last_event_at', 'last_publication_at',
     'last_sync_at', 'sync_checkpoint', 'activation_at', 'lease_token', 'lease_expires_at'];
 BEGIN
+  IF TG_TABLE_NAME = 'connection_grant_delegations' AND TG_OP = 'INSERT' THEN
+    FOR binding IN SELECT DISTINCT company_id, agent_id FROM new_rows ORDER BY company_id, agent_id LOOP
+      PERFORM paperclip_record_agent_runtime(binding.company_id, binding.agent_id);
+    END LOOP;
+    RETURN NULL;
+  END IF;
   IF TG_TABLE_NAME = 'company_secret_bindings' THEN
     IF TG_OP = 'INSERT' THEN query := 'SELECT DISTINCT company_id, target_type, target_id FROM new_rows ORDER BY company_id, target_id';
     ELSIF TG_OP = 'DELETE' THEN query := 'SELECT DISTINCT company_id, target_type, target_id FROM old_rows ORDER BY company_id, target_id';
