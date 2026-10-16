@@ -98,7 +98,7 @@ skill mentions and a running task's saved version selection remain task-owned.
 
 ## MCP and connectors
 
-Migration 0349 records changes to connections, application settings, catalogs,
+Migration 0354 records changes to connections, application settings, catalogs,
 installs, profile definitions/entries/bindings, policies, grants, delegation,
 company permissions, named gateway settings, and connector endpoint configuration.
 Referenced credential rotation and revocation also invalidate runtime state.
