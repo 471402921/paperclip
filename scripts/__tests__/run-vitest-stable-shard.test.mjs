@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,7 @@ import {
   partitionGeneralServerSuites,
 } from "../general-server-shard.mjs";
 
+import { projectFileShard, projectTestFiles } from "../project-test-shard.mjs";
 import { assertSelectedTests, partitionTestLines } from "../test-line-shard.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -32,6 +33,7 @@ function workflowEnv(envOverrides = {}) {
   if (!("GITHUB_WORKFLOW" in envOverrides)) {
     delete env.GITHUB_WORKFLOW;
   }
+  if (!("PAPERCLIP_ADAPTER_UTILS_FILE_SHARDS" in envOverrides)) delete env.PAPERCLIP_ADAPTER_UTILS_FILE_SHARDS;
   return env;
 }
 
@@ -611,4 +613,77 @@ test("case-sharded Runner lanes exclude only the files the isolated case runner 
   assert.equal(nativeGroups, 1);
   const legacy = wrapperPlan(["--shard=1/2"], { GITHUB_WORKFLOW: "PR" });
   assert.ok(!legacy.plannedCommands.some(command => command.args.includes("--exclude")));
+});
+
+
+test("adapter-utils opt-in keeps both legacy and split callers complete", () => {
+  for (const enabled of [false, true]) {
+    const env = { PAPERCLIP_ADAPTER_UTILS_FILE_SHARDS: String(enabled) };
+    const groups = dryRunJson(["--mode", "general"], env).defaultGeneralGroups;
+    const projects = groups.filter(group => group !== "general-server")
+      .flatMap(group => dryRunJson(["--mode", "general", "--group", group], env).workspaceProjects);
+    const legacy = ["general-workspaces-a", "general-workspaces-b", "general-workspaces-c"]
+      .flatMap(group => dryRunJson(["--mode", "general", "--group", group]).workspaceProjects).sort();
+    assert.deepEqual(projects.sort(), legacy);
+    assert.equal(groups.includes("general-adapter-utils"), enabled);
+    assert.equal(dryRunJson(["--mode", "general", "--group", "general-workspaces-b"], env)
+      .workspaceProjects.includes("@paperclipai/adapter-utils"), !enabled);
+  }
+  for (const workflow of ["pr-trusted.yml", "release-verify.yml"]) {
+    const text = readFileSync(path.join(repoRoot, ".github/workflows", workflow), "utf8");
+    const entries = matrixEntries(text).filter(entry => entry.group === "general-adapter-utils");
+    assert.equal(entries.length, 4);
+    assert.ok(entries.every(entry => entry.keys.includes("shard_index") && entry.keys.includes("shard_count")));
+    for (let index = 0; index < 4; index++) {
+      assert.ok(text.includes(`group_label: adapter-utils (${index + 1}/4)\n            shard_index: ${index}\n            shard_count: 4`));
+    }
+    assert.match(text, /PAPERCLIP_ADAPTER_UTILS_FILE_SHARDS: "true"/);
+    assert.match(text, /Run grouped general test suites\n        if: \$\{\{ matrix\.group != 'general-adapter-utils' \|\| hashFiles\('scripts\/project-test-shard\.mjs'\) != '' \}\}/);
+  }
+});
+
+test("project file selection includes unmeasured files and rejects foreign or duplicated inventory", () => {
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), "project-file-inventory-")));
+  try {
+    mkdirSync(path.join(root, "project"));
+    const specifications = ["a.test.ts", "b.spec.mjs", "new.test.tsx"].map(name => {
+      const file = path.join(root, "project", name); writeFileSync(file, "");
+      return { file, projectName: "fixture" };
+    });
+    const options = { root, project: "fixture", directory: "project", count: 2,
+      durations: { "project/a.test.ts": 200, "project/b.spec.mjs": 100 } };
+    const selected = [0, 1].flatMap(index => projectFileShard(specifications, { ...options, index }).files);
+    assert.deepEqual(selected.sort(), projectTestFiles(specifications, options));
+    for (const inventory of [[], [...specifications, specifications[0]],
+      [{ ...specifications[0], projectName: "wrong" }], [{ ...specifications[0], file: "relative.test.ts" }]]) {
+      assert.throws(() => projectTestFiles(inventory, options));
+    }
+    writeFileSync(path.join(root, "foreign.test.ts"), "");
+    symlinkSync(path.join(root, "foreign.test.ts"), path.join(root, "project", "escape.test.ts"));
+    assert.throws(() => projectTestFiles([{ file: path.join(root, "project", "escape.test.ts"), projectName: "fixture" }], options));
+    for (const [index, count] of [[-1, 2], [2, 2], [0, 0], [0, 1.5]]) {
+      assert.throws(() => projectFileShard(specifications, { ...options, index, count }));
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("actual Vitest file discovery produces a complete disjoint adapter-utils cover", { timeout: 30_000 }, () => {
+  const temporary = mkdtempSync(path.join(os.tmpdir(), "project-file-collection-"));
+  try {
+    const inventory = path.join(temporary, "files.json");
+    const cli = path.join(path.dirname(fileURLToPath(import.meta.resolve("vitest/package.json"))), "vitest.mjs");
+    const result = spawnSync(process.execPath, [cli, "list", "--project", "@paperclipai/adapter-utils",
+      "--exclude", "**/dist/**", "--filesOnly", `--json=${inventory}`], {
+      cwd: repoRoot, env: { ...process.env, PAPERCLIP_CI_PROFILE: "false" }, encoding: "utf8", timeout: 20_000,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const specifications = JSON.parse(readFileSync(inventory, "utf8"));
+    const options = { root: repoRoot, project: "@paperclipai/adapter-utils", directory: "packages/adapter-utils",
+      count: 4, durations: loadShardDurations(path.join(repoRoot, "scripts/adapter-utils-shard-durations.json")) };
+    const all = projectTestFiles(specifications, options);
+    assert.ok(all.length > 50);
+    const selected = Array.from({ length: 4 }, (_, index) => projectFileShard(specifications, { ...options, index }));
+    assert.ok(selected.every(shard => shard.total === all.length));
+    assert.deepEqual(selected.flatMap(shard => shard.files).sort(), all);
+  } finally { rmSync(temporary, { recursive: true, force: true }); }
 });

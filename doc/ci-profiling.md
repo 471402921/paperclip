@@ -221,6 +221,25 @@ Vitest worker limit stays within the detected CPU capacity or the explicit
 keeps project execution serial. All projects finish before a failure is returned.
 The UI/CLI and database lanes retain their existing scheduling.
 
+With `PAPERCLIP_ADAPTER_UTILS_FILE_SHARDS=true`, adapter-utils moves from
+workspace-B into four separate file jobs. Each job obtains the current project
+file list from Vitest, then applies the existing duration-based partition. The
+weights in `scripts/adapter-utils-shard-durations.json` are local planning data,
+not CI timings. New files receive the median weight. Invalid, duplicated, or
+foreign inventory fails the job. Cases inside a file remain serial in one
+isolated fork. Every job retains its private home, configuration, and scratch
+paths. There are no case-name filters or cached test results.
+
+Callers without that opt-in retain the complete workspace-B project list. On an
+older source head without `scripts/project-test-shard.mjs`, the trusted workflow
+omits the additional file jobs and the older workspace-B command still covers
+adapter-utils. A new source head must run every configured file job. Include the
+four extra setup phases and their runner-minutes in the eventual CI comparison.
+
+```sh
+PAPERCLIP_ADAPTER_UTILS_FILE_SHARDS=true node scripts/run-vitest-stable.mjs --mode general --group general-adapter-utils --shard-index 0 --shard-count 4
+```
+
 The PR and canonical release-verification workflows set `CARGO_PROFILE_DEV_DEBUG=0`
 before restoring the shared Rust cache. This omits debug symbols from the debug
 helpers used by TypeScript integration tests. It preserves development-profile

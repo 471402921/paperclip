@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadShardDurations, selectGeneralServerShard } from "./general-server-shard.mjs";
+import { projectFileShard } from "./project-test-shard.mjs";
 import { invocationEnv } from "./ci-profile/record.mjs";
 
 import { assertSelectedTests, partitionTestLines } from "./test-line-shard.mjs";
@@ -119,6 +120,9 @@ function excludedServerSuites(groupName) {
 const generalWorkspacesAGroupName = "general-workspaces-a";
 const generalWorkspacesBGroupName = "general-workspaces-b";
 const generalWorkspacesCGroupName = "general-workspaces-c";
+const generalAdapterUtilsGroupName = "general-adapter-utils";
+const adapterUtilsFileShards = process.env.PAPERCLIP_ADAPTER_UTILS_FILE_SHARDS === "true";
+const adapterUtilsProject = "@paperclipai/adapter-utils";
 const generalWorkspacesAProjects = ["@paperclipai/ui", "paperclipai"];
 // The db project runs in its own lane. Its vitest invocation took 168-250s
 // of a 436-513s workspaces-b job (PR runs 38084171761, 38083084276 and
@@ -131,16 +135,18 @@ const generalWorkspacesAProjects = ["@paperclipai/ui", "paperclipai"];
 // with this lane.
 const generalWorkspacesCProjects = ["@paperclipai/db"];
 const generalWorkspacesBProjects = nonServerProjects.filter(
-  (project) => !generalWorkspacesAProjects.includes(project) && !generalWorkspacesCProjects.includes(project),
+  (project) => !generalWorkspacesAProjects.includes(project) && !generalWorkspacesCProjects.includes(project)
+    && !(adapterUtilsFileShards && project === adapterUtilsProject),
 );
 const generalGroupNames = [
   generalServerGroupName,
   generalWorkspacesAGroupName,
   generalWorkspacesBGroupName,
   generalWorkspacesCGroupName,
+  ...(adapterUtilsFileShards ? [generalAdapterUtilsGroupName] : []),
 ];
 const allowedGeneralGroupNames = [
-  ...generalGroupNames,
+  ...new Set([...generalGroupNames, generalAdapterUtilsGroupName]),
   generalServerWithoutChatGroupName,
   generalServerWithoutChatOrNativeRunnerGroupName,
   generalChatGroupName,
@@ -322,10 +328,10 @@ function parseCliOptions(argv) {
   const shardAllowed =
     mode === serializedModeName ||
     (mode === generalModeName &&
-      ([...generalServerGroups, generalChatGroupName, generalWorkspacesAGroupName].includes(group)));
+      ([...generalServerGroups, generalChatGroupName, generalWorkspacesAGroupName, generalAdapterUtilsGroupName].includes(group)));
   if (!shardAllowed && shardIndex !== null) {
     fail(
-      "--shard-index/--shard-count are only valid with serialized mode or a shardable general server/chat/workspaces-a group.",
+      "--shard-index/--shard-count are only valid with serialized mode or a shardable general server/chat/workspaces-a/adapter-utils group.",
     );
   }
 
@@ -377,7 +383,7 @@ function selectSerializedSuites(routeTests, shardIndex, shardCount) {
   return shardFiles.map((file) => byRepoPath.get(file));
 }
 
-async function runVitest(args, label, testShard = null, environment = {}) {
+async function runVitest(args, label, testShard = null, environment = {}, fileShard = null) {
   console.log(`\n[test:run] ${label}`);
   invocationIndex += 1;
   const tempRootParent = process.platform === "win32" ? os.tmpdir() : "/tmp";
@@ -400,6 +406,18 @@ async function runVitest(args, label, testShard = null, environment = {}) {
   };
   mkdirSync(env.PAPERCLIP_HOME, { recursive: true });
   mkdirSync(env.TMPDIR, { recursive: true });
+  if (fileShard) {
+    const inventory = path.join(testRoot, "files.json");
+    const collected = spawnSync("pnpm", ["exec", "vitest", "list", ...sourceOnlyVitestArgs,
+      "--project", fileShard.project, "--filesOnly", `--json=${inventory}`], {
+      cwd: repoRoot, env, stdio: "inherit",
+    });
+    if (collected.error || collected.status !== 0) throw new Error(`Project inventory failed: ${collected.error?.message ?? collected.status}`);
+    const selected = projectFileShard(JSON.parse(readFileSync(inventory, "utf8")), { root: repoRoot, ...fileShard });
+    console.log(`[test:run] ${label}: ${selected.files.length}/${selected.total} test files`);
+    if (selected.files.length === 0) return;
+    args = [...args, ...selected.files];
+  }
   if (testShard) {
     const file = path.resolve(repoRoot, chatSuite);
     const sourceLines = readFileSync(file, "utf8").split("\n");
@@ -492,6 +510,14 @@ function chatShardWorkers(index, count) {
 }
 
 async function runGeneralGroup(routeTests, groupName, shardIndex = null, shardCount = null) {
+  if (groupName === generalAdapterUtilsGroupName) {
+    await runVitest(["--project", adapterUtilsProject, "--pool=forks", "--isolate", "--maxWorkers=1", "--no-file-parallelism", "--allowOnly=false"],
+      `adapter-utils file shard ${(shardIndex ?? 0) + 1}/${shardCount ?? 1}`, null, { VITEST_MAX_WORKERS: "1" }, {
+        project: adapterUtilsProject, directory: "packages/adapter-utils", index: shardIndex ?? 0, count: shardCount ?? 1,
+        durations: loadShardDurations(path.join(scriptsDir, "adapter-utils-shard-durations.json")),
+      });
+    return;
+  }
   if (groupName === generalChatGroupName) {
     // Each invocation gets its own temporary home and embedded PostgreSQL.
     // Wait for both children even on failure so no sibling is abandoned.
@@ -640,6 +666,7 @@ if (options.dryRun) {
     JSON.stringify(
       {
         mode: options.mode,
+        defaultGeneralGroups: generalGroupNames,
         shardIndex: options.shardIndex,
         shardCount: options.shardCount,
         group: options.group,
@@ -669,7 +696,9 @@ if (options.dryRun) {
               ? generalWorkspacesBProjects
               : options.group === generalWorkspacesCGroupName
                 ? generalWorkspacesCProjects
-                : null,
+                : options.group === generalAdapterUtilsGroupName
+                  ? [adapterUtilsProject]
+                  : null,
         workspacesVitestShard:
           options.group === generalWorkspacesAGroupName &&
           options.shardCount !== null &&

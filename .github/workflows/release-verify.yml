@@ -201,6 +201,25 @@ jobs:
           # Keep parity with pr.yml: the db project runs as its own lane.
           - group: general-workspaces-c
             group_label: workspaces-c
+          - group: general-adapter-utils
+            group_label: adapter-utils (1/4)
+            shard_index: 0
+            shard_count: 4
+          - group: general-adapter-utils
+            group_label: adapter-utils (2/4)
+            shard_index: 1
+            shard_count: 4
+          - group: general-adapter-utils
+            group_label: adapter-utils (3/4)
+            shard_index: 2
+            shard_count: 4
+          - group: general-adapter-utils
+            group_label: adapter-utils (4/4)
+            shard_index: 3
+            shard_count: 4
+
+    env:
+      PAPERCLIP_ADAPTER_UTILS_FILE_SHARDS: "true"
 
     steps:
       - name: Checkout repository
@@ -223,6 +242,7 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Run grouped general test suites
+        if: ${{ matrix.group != 'general-adapter-utils' || hashFiles('scripts/project-test-shard.mjs') != '' }}
         run: |
           if [ -n "${{ matrix.shard_count }}" ]; then
             pnpm test:run:general -- --group '${{ matrix.group }}' \
