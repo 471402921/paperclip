@@ -264,15 +264,21 @@ describeEmbeddedPostgres("reconstructable Git expiration", () => {
       const f = await fixture();
       const agentId = randomUUID(), runId = randomUUID(), otherIssueId = randomUUID();
       const finishedAt = new Date(Date.now() - 48 * 3_600_000);
+      const contextSnapshot = binding === "context_issue" ? { issueId: f.issueId }
+        : binding === "context_task" ? { taskId: f.issueId }
+        : binding === "context_workspace" ? { executionWorkspaceId: f.workspaceId } : {};
       await db.insert(agents).values({ id: agentId, companyId: f.companyId, name: "Fixture", adapterType: "process" });
       await db.insert(issues).values({ id: otherIssueId, companyId: f.companyId, title: "Other finished task", status: "done", completedAt: finishedAt });
       await db.insert(heartbeatRuns).values({ id: runId, companyId: f.companyId, agentId,
         issueId: binding === "issue" ? f.issueId : null,
         nativeIssueId: binding === "issue" ? null : binding === "native_issue" ? f.issueId : otherIssueId,
-        contextSnapshot: binding === "context_issue" ? { issueId: f.issueId }
-          : binding === "context_task" ? { taskId: f.issueId }
-          : binding === "context_workspace" ? { executionWorkspaceId: f.workspaceId } : {},
+        contextSnapshot,
         status: "succeeded", finishedAt });
+      if (binding === "native_issue") await db.update(heartbeatRuns).set({ issueId: null }).where(eq(heartbeatRuns.id, runId));
+      const [savedRun] = await db.select({ issueId: heartbeatRuns.issueId, nativeIssueId: heartbeatRuns.nativeIssueId,
+        contextSnapshot: heartbeatRuns.contextSnapshot }).from(heartbeatRuns).where(eq(heartbeatRuns.id, runId));
+      expect(savedRun).toEqual({ issueId: binding === "native_issue" ? null : binding === "issue" ? f.issueId : otherIssueId,
+        nativeIssueId: binding === "issue" ? null : binding === "native_issue" ? f.issueId : otherIssueId, contextSnapshot });
       if (binding === "checkout" || binding === "execution") {
         await db.update(issues).set(binding === "checkout" ? { checkoutRunId: runId } : { executionRunId: runId }).where(eq(issues.id, f.issueId));
       }
