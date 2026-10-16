@@ -4,6 +4,24 @@ Paperclip uses PostgreSQL via [Drizzle ORM](https://orm.drizzle.team/). There ar
 
 ### Task query performance
 
+The Git worktree expiration check filters run history by blocking state before
+it reads large context snapshots. Finished runs remain relevant when they have
+unfinished finalization or environment cleanup. The check keeps every issue,
+workspace, recovery, lease, and runtime consumer gate. It still runs again under
+the existing lifecycle lock before deletion. It does not cache an earlier result.
+
+Compare the full check against an explicit pre-fix revision on a disposable
+PostgreSQL database, with empty and 2,000-run histories:
+
+```sh
+pnpm --filter @paperclipai/server exec tsx ../scripts/benchmark-git-expiration-query.ts --baseline-ref=<pre-fix-commit>
+```
+
+The benchmark uses synthetic 96 KiB run contexts, alternates both queries,
+checks the complete result, and emits query text, timing samples, buffer plans,
+database settings, and source/dependency revisions. It needs a committed, clean
+checkout. Local timings do not predict provider charges.
+
 Run-context lookups use expression indexes for both `context_snapshot.issueId`
 and `context_snapshot.paperclipIssue.id`. Task creation provenance has its own
 company-scoped expression index that follows the query's native issue ID and

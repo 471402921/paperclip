@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
-import { companies, projects, issues, executionWorkspaces, agents, heartbeatRuns, nativeRunFinalizations, workspaceRuntimeServices, createDb } from "@paperclipai/db";
+import { companies, projects, issues, executionWorkspaces, agents, heartbeatRuns, nativeRunFinalizations, environmentLeases, workspaceRuntimeServices, createDb } from "@paperclipai/db";
 import { getEmbeddedPostgresTestSupport, startEmbeddedPostgresTestDatabase } from "./helpers/embedded-postgres.js";
 import { resolveManagedProjectWorkspaceDir } from "../home-paths.js";
 import { materializeManagedProjectWorkspace } from "../services/managed-repository-checkout.js";
@@ -256,6 +256,87 @@ describeEmbeddedPostgres("reconstructable Git expiration", () => {
     await db.insert(workspaceRuntimeServices).values({ id: randomUUID(), companyId: f.companyId, executionWorkspaceId: f.workspaceId,
       scopeType: "execution_workspace", serviceName: "Preview", status: "running", lifecycle: "persistent", provider: "local" });
     expect((await f.expire()).expired).toBe(false);
+    expect(await exists(f.cwd)).toBe(true);
+  });
+
+  it.each(["issue", "native_issue", "context_issue", "context_task", "context_workspace", "checkout", "execution"])(
+    "keeps every run and cleanup blocker through the %s binding", async binding => {
+      const f = await fixture();
+      const agentId = randomUUID(), runId = randomUUID(), otherIssueId = randomUUID();
+      const finishedAt = new Date(Date.now() - 48 * 3_600_000);
+      await db.insert(agents).values({ id: agentId, companyId: f.companyId, name: "Fixture", adapterType: "process" });
+      await db.insert(issues).values({ id: otherIssueId, companyId: f.companyId, title: "Other finished task", status: "done", completedAt: finishedAt });
+      await db.insert(heartbeatRuns).values({ id: runId, companyId: f.companyId, agentId,
+        issueId: binding === "issue" ? f.issueId : null,
+        nativeIssueId: binding === "issue" ? null : binding === "native_issue" ? f.issueId : otherIssueId,
+        contextSnapshot: binding === "context_issue" ? { issueId: f.issueId }
+          : binding === "context_task" ? { taskId: f.issueId }
+          : binding === "context_workspace" ? { executionWorkspaceId: f.workspaceId } : {},
+        status: "succeeded", finishedAt });
+      if (binding === "checkout" || binding === "execution") {
+        await db.update(issues).set(binding === "checkout" ? { checkoutRunId: runId } : { executionRunId: runId }).where(eq(issues.id, f.issueId));
+      }
+      const allowed = async (expected: boolean) => {
+        expect(await f.expire({ dryRun: true }), binding).toMatchObject({
+          candidate: expected, expired: false, skipReason: expected ? null : "live_or_unresolved_consumer",
+        });
+        expect(await exists(f.cwd)).toBe(true);
+      };
+      await allowed(true);
+      for (const patch of [
+        { status: "running" }, { status: "scheduled_retry" }, { finishedAt: null },
+        { controllerLeaseExpiresAt: new Date(Date.now() + 3_600_000) },
+      ]) {
+        await db.update(heartbeatRuns).set(patch).where(eq(heartbeatRuns.id, runId));
+        await allowed(false);
+        await db.update(heartbeatRuns).set({ status: "succeeded", finishedAt, controllerLeaseExpiresAt: null }).where(eq(heartbeatRuns.id, runId));
+      }
+      const finalizationIssueId = binding === "issue" || binding === "native_issue" ? f.issueId : otherIssueId;
+      if (binding === "issue") await db.update(heartbeatRuns).set({ nativeIssueId: f.issueId }).where(eq(heartbeatRuns.id, runId));
+      for (const patch of [
+        { phase: "terminal_failure" }, { phase: "committed", leaseOwner: "fixture" },
+        { phase: "committed", recoveryState: "blocked" },
+      ]) {
+        await db.insert(nativeRunFinalizations).values({ runId, companyId: f.companyId,
+          issueId: finalizationIssueId, ...patch });
+        await allowed(false);
+        await db.delete(nativeRunFinalizations).where(eq(nativeRunFinalizations.runId, runId));
+      }
+      for (const patch of [
+        { status: "active" }, { status: "pending_cleanup", releasedAt: finishedAt },
+        { status: "released", releasedAt: finishedAt, cleanupStatus: "failed" },
+        { status: "released", releasedAt: finishedAt, metadata: { nativeWorkspaceExportResume: false } },
+        { status: "retained", leasePolicy: "reuse_by_environment", cleanupStatus: null },
+        { status: "retained", leasePolicy: "ephemeral", cleanupStatus: "success" },
+      ]) {
+        const [lease] = await db.insert(environmentLeases).values({ companyId: f.companyId, heartbeatRunId: runId, ...patch }).returning();
+        await allowed(false);
+        await db.delete(environmentLeases).where(eq(environmentLeases.id, lease!.id));
+      }
+      await db.insert(nativeRunFinalizations).values({ runId, companyId: f.companyId,
+        issueId: finalizationIssueId, phase: "committed" });
+      await db.insert(environmentLeases).values([
+        { companyId: f.companyId, heartbeatRunId: runId, status: "retained", leasePolicy: "reuse_by_environment", cleanupStatus: "success" },
+        { companyId: f.companyId, heartbeatRunId: runId, status: "released", releasedAt: finishedAt },
+      ]);
+      await allowed(true);
+    }, 30_000,
+  );
+
+  it("ignores unrelated blocking runs but catches a new workspace lease before deletion", async () => {
+    const f = await fixture();
+    const agentId = randomUUID(), runId = randomUUID(), otherIssueId = randomUUID();
+    await db.insert(agents).values({ id: agentId, companyId: f.companyId, name: "Fixture", adapterType: "process" });
+    await db.insert(issues).values({ id: otherIssueId, companyId: f.companyId, title: "Unrelated task" });
+    await db.insert(heartbeatRuns).values({ id: runId, companyId: f.companyId, agentId, nativeIssueId: otherIssueId, status: "running" });
+    await db.insert(nativeRunFinalizations).values({ runId, companyId: f.companyId, issueId: otherIssueId, phase: "pending" });
+    await db.insert(environmentLeases).values({ companyId: f.companyId, heartbeatRunId: runId, status: "pending_cleanup" });
+    expect(await f.expire({ dryRun: true })).toMatchObject({ candidate: true, skipReason: null });
+    const outcome = await f.expire({ beforeDelete: async () => {
+      await db.insert(environmentLeases).values({ companyId: f.companyId, executionWorkspaceId: f.workspaceId,
+        status: "pending_cleanup", releasedAt: new Date() });
+    } });
+    expect(outcome).toMatchObject({ candidate: true, expired: false, skipReason: "live_or_unresolved_consumer" });
     expect(await exists(f.cwd)).toBe(true);
   });
 

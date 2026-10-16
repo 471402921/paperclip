@@ -39,8 +39,26 @@ async function eligible(tx: Tx, workspace: Workspace, now: Date) {
       UNION
       SELECT c.id, c.status, c.completed_at, c.cancelled_at, c.updated_at FROM ${issues} c
       JOIN tree p ON c.parent_id = p.id WHERE c.company_id = ${workspace.companyId}
+    ), blocking_finalizations AS (
+      SELECT run_id, issue_id FROM ${nativeRunFinalizations}
+      WHERE company_id = ${workspace.companyId}
+        AND (phase <> 'committed' OR lease_owner IS NOT NULL OR recovery_state IS NOT NULL)
+    ), blocking_leases AS (
+      SELECT heartbeat_run_id, execution_workspace_id FROM ${environmentLeases}
+      WHERE company_id = ${workspace.companyId}
+        AND (status = 'pending_cleanup' OR cleanup_status = 'failed' OR metadata ? 'nativeWorkspaceExportResume'
+          OR (released_at IS NULL AND NOT coalesce(status = 'retained' AND lease_policy = 'reuse_by_environment' AND cleanup_status = 'success', false)))
+    ), candidate_runs AS MATERIALIZED (
+      SELECT r.id, r.issue_id, r.native_issue_id, r.context_snapshot,
+        r.status, r.finished_at, r.controller_lease_expires_at
+      FROM ${heartbeatRuns} r WHERE r.company_id = ${workspace.companyId} AND (
+        r.status NOT IN ('succeeded', 'failed', 'timed_out', 'cancelled', 'interrupted')
+        OR r.finished_at IS NULL OR r.controller_lease_expires_at > now()
+        OR r.id IN (SELECT run_id FROM blocking_finalizations)
+        OR r.id IN (SELECT heartbeat_run_id FROM blocking_leases)
+      )
     ), relevant_runs AS (
-      SELECT r.* FROM ${heartbeatRuns} r WHERE r.company_id = ${workspace.companyId} AND (
+      SELECT r.id, r.status, r.finished_at, r.controller_lease_expires_at FROM candidate_runs r WHERE (
         r.issue_id IN (SELECT id FROM tree) OR r.native_issue_id IN (SELECT id FROM tree)
         OR r.context_snapshot->>'issueId' IN (SELECT id::text FROM tree)
         OR r.context_snapshot->>'taskId' IN (SELECT id::text FROM tree)
@@ -58,13 +76,10 @@ async function eligible(tx: Tx, workspace: Workspace, now: Date) {
         OR finished_at IS NULL OR controller_lease_expires_at > now())
       AND NOT EXISTS (SELECT 1 FROM ${issueRecoveryActions} WHERE company_id = ${workspace.companyId}
         AND source_issue_id IN (SELECT id FROM tree) AND status IN ('active', 'escalated'))
-      AND NOT EXISTS (SELECT 1 FROM ${nativeRunFinalizations} f WHERE f.company_id = ${workspace.companyId}
-        AND (f.issue_id IN (SELECT id FROM tree) OR f.run_id IN (SELECT id FROM relevant_runs))
-        AND (f.phase <> 'committed' OR f.lease_owner IS NOT NULL OR f.recovery_state IS NOT NULL))
-      AND NOT EXISTS (SELECT 1 FROM ${environmentLeases} l WHERE l.company_id = ${workspace.companyId}
-        AND (l.execution_workspace_id = ${workspace.id} OR l.heartbeat_run_id IN (SELECT id FROM relevant_runs))
-        AND (l.status = 'pending_cleanup' OR l.cleanup_status = 'failed' OR l.metadata ? 'nativeWorkspaceExportResume'
-          OR (l.released_at IS NULL AND NOT coalesce(l.status = 'retained' AND l.lease_policy = 'reuse_by_environment' AND l.cleanup_status = 'success', false))))
+      AND NOT EXISTS (SELECT 1 FROM blocking_finalizations f
+        WHERE f.issue_id IN (SELECT id FROM tree) OR f.run_id IN (SELECT id FROM relevant_runs))
+      AND NOT EXISTS (SELECT 1 FROM blocking_leases l
+        WHERE l.execution_workspace_id = ${workspace.id} OR l.heartbeat_run_id IN (SELECT id FROM relevant_runs))
       AND NOT EXISTS (SELECT 1 FROM ${workspaceRuntimeServices} WHERE company_id = ${workspace.companyId}
         AND (execution_workspace_id = ${workspace.id} OR cwd = ${workspace.cwd}
           OR left(cwd, length(${workspace.cwd}) + 1) = ${workspace.cwd} || '/') AND status <> 'stopped')
