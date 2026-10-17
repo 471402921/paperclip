@@ -30,10 +30,18 @@ Node 25.9.0, isolated checkout with `pnpm install --filter @paperclipai/server..
 1. Baseline (before edit): 9/9 passed.
 2. Candidate (darwin row deleted): 8/8 passed.
 3. Control: temporarily changed the production fallback arm to
-   `"/bin/bash"`. The retained linux row failed at its exact assertion
-   (`expected '/bin/bash' to be '/bin/sh'`), proving the retained row
-   carries the deleted row's failure sensitivity. The non-win32 arm's
-   mutation also breaks nothing else in the selected run.
+   `"/bin/bash"` and reran the same focused selection (re-verified
+   2026-10-17). Exactly three rows failed at the same assertion shape
+   (`expected '/bin/bash' to be '/bin/sh'`): the retained linux unset
+   row (the deleted darwin row's keeper), the empty-`SHELL` row, and
+   the missing-absolute-path row. The win32 rows and the set-`SHELL`
+   rows still passed (3 failed, 5 passed). This proves the retained
+   linux row carries the deleted row's failure sensitivity; it also
+   shows the same non-win32 fallback value is observed by the
+   empty-`SHELL` and missing-absolute-path rows, so that value keeps
+   multiple guards after this change. An earlier draft of this receipt
+   wrongly said the mutation "breaks nothing else" in the selected run;
+   that claim is corrected here (Greptile review finding, PR #16639).
 4. Production restored byte-exact (sha256
    `335fd5332b4242ab0ff2a565323e27db48a69ddfb7bbd8d913e5148f79ff961b`
    before and after), rerun: 8/8 passed.
