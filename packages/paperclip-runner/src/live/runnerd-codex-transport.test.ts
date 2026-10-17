@@ -5075,6 +5075,8 @@ it("captures exact provider frames and correlates Rust and TypeScript interpreta
     params: {
       developerInstructions: withCodexCollaborationRuntimeInstructions(
         CODEX_SKILLLESS_BASE_INSTRUCTIONS,
+        true,
+        codexSemanticToolSpecs(),
       ),
     },
   });
