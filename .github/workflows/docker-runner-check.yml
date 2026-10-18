@@ -15,6 +15,10 @@ on:
         description: "Publish an immutable Daytona qualification image on hosted Linux (no provider credentials)"
         type: boolean
         default: false
+      publish_copilot_v41_artifact:
+        description: "Publish only the scanned OCI artifact from run 39124965075, without rebuilding"
+        type: boolean
+        default: false
       verify_source:
         description: "Run broad source checks on hosted Linux"
         type: boolean
@@ -101,8 +105,72 @@ jobs:
           [[ "$target_sha" =~ ^[0-9a-f]{40}$ ]]
           echo "target_sha=$target_sha" >> "$GITHUB_OUTPUT"
 
+  publish_copilot_v41_artifact:
+    name: Publish exact scanned Copilot artifact
+    if: inputs.publish_copilot_v41_artifact
+    needs: authorize_manual
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - name: Verify the retained build identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPOSITORY/actions/runs/39124965075" \
+            --jq '{head_sha, conclusion, event, path}' > build-run.json
+          jq -e '.head_sha == "97a6e405221860a6a015a10cb5e4e30bc42a6fc3" and
+            .conclusion == "success" and .event == "workflow_dispatch" and
+            .path == ".github/workflows/docker-runner-check.yml"' build-run.json
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: grok-remote-verification-39124965075
+          run-id: 39124965075
+          github-token: ${{ github.token }}
+          path: retained-image
+      - name: Verify the exact scanned bytes
+        run: |
+          set -euo pipefail
+          test "$(cat retained-image/source.txt)" = 97a6e405221860a6a015a10cb5e4e30bc42a6fc3
+          printf '%s  %s\n' 8b5161a59673e956ec142ec2312ff2dce179ae6d19644fa8efc404c9ebb02288 retained-image/image.oci.tar | sha256sum -c -
+          test "$(jq -r '."containerimage.digest"' retained-image/image.json)" = sha256:4faf8a4ead490c0118d0ff7f739ba853537cc34518b292ca163574eaa358a119
+      - name: Install the OCI copy tool
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y skopeo
+      - name: Publish unchanged OCI bytes and verify anonymous access
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          export REGISTRY_AUTH_FILE="$RUNNER_TEMP/copilot-publication-auth.json"
+          trap 'rm -f "$REGISTRY_AUTH_FILE"' EXIT
+          printf '%s' "$GH_TOKEN" | skopeo login --authfile "$REGISTRY_AUTH_FILE" --username "$REGISTRY_USER" --password-stdin ghcr.io
+          unset GH_TOKEN
+          mkdir publication-receipt
+          image=ghcr.io/paperclipai/paperclip-daytona-runner:qualification-97a6e405221860a6a015a10cb5e4e30bc42a6fc3-39124965075
+          digest=sha256:4faf8a4ead490c0118d0ff7f739ba853537cc34518b292ca163574eaa358a119
+          skopeo copy --all --preserve-digests --authfile "$REGISTRY_AUTH_FILE" --digestfile publication-receipt/published.digest \
+            oci-archive:retained-image/image.oci.tar "docker://$image"
+          test "$(cat publication-receipt/published.digest)" = "$digest"
+          env -u REGISTRY_AUTH_FILE skopeo inspect --raw --no-creds "docker://${image%:*}@$digest" > publication-receipt/manifest.json
+          printf '%s  %s\n' "${digest#sha256:}" publication-receipt/manifest.json | sha256sum -c -
+          printf '%s\n' "$image" > publication-receipt/tag.txt
+          echo "Published and anonymously verified: ${image%:*}@$digest" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: copilot-v41-publication-receipt
+          path: publication-receipt
+          if-no-files-found: error
+          retention-days: 30
+
   manual_image:
     name: Build and verify on Linux
+    if: ${{ !inputs.publish_copilot_v41_artifact }}
     needs: authorize_manual
     # Keep maintainer authorization below; use a native hosted Linux builder.
     runs-on: ubuntu-latest
