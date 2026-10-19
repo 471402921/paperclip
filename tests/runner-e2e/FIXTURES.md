@@ -111,6 +111,32 @@ registry therefore discovers that row through the public environments API.
 This still provides full isolation because every cell starts a new Paperclip
 instance and database.
 
+
+Native-generation Codex on Daytona qualifies its immutable image through one
+existing saved-environment probe before agent creation. Automatic Codex requests
+also inspect the scoped server discovery default. Legacy and other provider
+fixtures keep their existing setup. The probe uses no provider turn, permits one
+setup lease per cell, has a 330-second HTTP deadline and a 10-second platform
+command budget, and performs no retry. It uses the existing archive/release and
+provider-expiry cleanup policy. The returned owned probe lease joins task leases
+in the existing runtime-cost estimator; unrelated lease IDs do not gain task
+attribution. Failed setup before fixture completion retains unavailable/unknown
+cost coverage and its holds. A connection-only probe or name-only snapshot cannot
+qualify native defaults.
+
+The manual managed first-task cell is the exception to fixture prequalification:
+`confirmation-replies.runner-codex.daytona.task-card-accept` leaves the saved
+environment unqualified until the ordinary onboarding Connect action. It
+observes exactly one platform response and one selected-runtime response, fresh
+scoped native discovery and the saved automatic choice. Both setup leases must
+have authoritative response IDs, match this company/environment, and reach
+released/success before setup is accepted. Exact IDs join the existing task-run
+lease collector and runtime estimate, including failed setup. New uncorrelated
+or response-less leases remain unknown and unattributed; incomplete coverage
+removes the estimate and retains its budget holds. No retry or extra fixture
+probe closes that gap. The existing environment deletion, expiry backstops and
+instance cleanup still apply on every outcome.
+
 Daytona creates sandbox environments through the public API. The core fixture
 keeps `reuseLease:false` and `runnerLifecycleMode:"per_turn"`. The dedicated
 warm-continuity fixture uses `reuseLease:true` and
@@ -589,7 +615,7 @@ provider timeout, 300s attempt budget). `native-permission-deny-write` denies on
 exact native edit through its browser card, waits for the delivered rejection and
 failed tool, then cancels through the public run API. Its expected outcome is a
 cancelled run and an unfinished task, not successful task completion.
-The retained `paperclip.e2e.copilot-denial-settlement.v3` proof separates the exact
+The current `paperclip.e2e.copilot-denial-settlement.v4` proof separates the exact
 provider terminal from the audited controller Stop. It records either
 `provider_cancelled_or_interrupted` or `provider_completed_observed_before_stop`.
 The latter requires the exact terminal row to be returned by the operator API
@@ -698,12 +724,27 @@ actor receives HTTP409; local trusted board uses the `local-board` user ID.
 Default clients may omit the field; they preserve and join an existing reserved
 intent rather than overwrite it.
 
-The denial fixture generates its UUID before observation, retains it in
-`paperclip.e2e.copilot-pre-stop-observation.v2`, and requires the same intent in
-the response and final `paperclip.e2e.copilot-denial-settlement.v3` receipt.
-It refuses a non-running controller or existing Stop marker before dispatch.
-The completed-provider branch still requires a running controller that this
-request can stop; it does not accept a no-op Stop of an already terminal run.
+The current Copilot fixture invokes the ordinary cancel endpoint without supplying
+its observation UUID. It retains that UUID only as fixture correlation in
+`paperclip.e2e.copilot-pre-stop-observation.v2`. The actual API response supplies
+the server's intent and audit IDs; `paperclip.e2e.copilot-stop-acknowledgement.v1`
+binds and hashes the returned cancellation metadata, exact caller and scope.
+The final `paperclip.e2e.copilot-denial-settlement.v4` receipt verifies that same
+response metadata and the observation's monotonic order. The public API's optional
+`cancellationRequestId` support is separate from this fixture correlation.
+
+The fixture refuses a non-running controller or existing Stop marker before
+sending the request. A completed-provider branch requires the exact canonical
+terminal retained before Stop; only that branch can accept an acknowledgement
+with no provider dispatch. Active-permission Stop still requires dispatch.
+The unfinished task may be blocked only when its exact missing-result lifecycle
+row was retained before Stop and matches the final rows, and its recovery action
+is bound to the same company, issue and cancelled run. A late row, foreign action,
+missing hash or cancelled/interrupted-provider branch cannot use this exception.
+The observer refreshes and retains completion or missing-result evidence that
+arrives while an earlier receipt is being written. Scope, no-extra-run, no-effect
+and independently retired-process checks remain mandatory. Historical failed
+attempts and v3 receipts are retained without regrading.
 
 ## Definitely-active native Stop
 
@@ -806,7 +847,8 @@ result is one separate complete read lifecycle: pending and any progress name th
 started shell, and its successful terminal also names the original command. A
 completed-only read or a second shell read cannot inherit that exemption.
 
-Denial case version 5 and denial settlement schema v3 are unchanged.
+Denial case version 5 retains its definition and prompt. The current denial
+settlement is schema v4; historical v3 receipts are not relabelled.
 
 ## Direct blocker fixtures
 
@@ -860,3 +902,22 @@ not task success or operator cancellation. Stop during an unresolved permission
 remains a separate `native-active-stop/pending-permission-stop` gate.
 
 Pi controls definition 9 and native definition 16 create an explicit title through the production search creation action and bind the task ID from the public creation response. The scoped task and assignee must match before any native control. Automatic naming is outside these strict native-operation fixtures; all existing permission, byte, process, run-count and cleanup assertions remain required. Preserve the failed title-lookup attempt as its original failure.
+
+## Projectless task files and repository admission
+
+The explicit `task_workspaces` flow supplies no project and strips the legacy
+profile's operator cwd. It retains the ordinary company, encrypted credentials,
+environment and agent fixtures. All mutations use production browser/API/semantic
+surfaces; the oracle never inserts database rows or prepares a replacement checkout.
+The passive public Git source is `https://github.com/octocat/Hello-World`.
+No GitHub credentials, remote repository creation or push is used.
+
+Three user-requested turns test pending idempotent preparation, controller restart,
+next-admission realization and later nested Git/dirty-file persistence. The source
+pin is observed from the real checkout rather than assumed from a mutable branch.
+Host Git inspection is limited to the verified isolated company/task root. Public
+execution-workspace file reads and run-attributed artifact downloads verify bytes.
+Calibration rejects wrong roots, missing history, changed pins, duplicate receipts,
+extra wakes, incomplete persistence, tool bypass and missing remote leases. Partial
+observations remain in retained attempt evidence; missing evidence cannot pass.
+The Copilot `extended-harnesses` file case supplies a portable read-only validation command with hexadecimal expected bytes. The provider still creates and edits the file itself. The command must exit zero before registration and semantic completion; independent workspace and downloaded-artifact byte matchers remain authoritative. The explicit command avoids ambiguous shell operands and escaped-newline literals. Original prompt measurements retain their original grade and source; only the two Copilot file prompts change. Other providers, deadlines and matchers remain unchanged.

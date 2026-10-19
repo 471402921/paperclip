@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import { canonicalJson } from "../../packages/shared/src/portability-hash.js";
 
 type Row = Record<string, any>;
+/** Denial can prove the native turn completed before Stop. Active-permission
+ * Stop continues to require dispatch to the provider. */
+export type CopilotStopDispatchRequirement = "active-provider" | "provider-completed-before-stop";
 export interface CopilotStopScope { companyId: string; runId: string; issueId: string; callerUserId: string }
 export interface CopilotStopAcknowledgement extends CopilotStopScope {
   schema: "paperclip.e2e.copilot-stop-acknowledgement.v1";
@@ -17,7 +20,8 @@ const mono = (v: unknown): v is string => typeof v === "string" && /^[1-9][0-9]{
  * its response after the retained pre-Stop observation; never invent support
  * for a caller-supplied cancellation UUID or infer a response from later rows. */
 export function readCopilotStopAcknowledgement(runInput: unknown, scope: CopilotStopScope, fixtureCorrelationId: string,
-  dispatchMonotonicNs: string, apiResponseObservedMonotonicNs = process.hrtime.bigint().toString()): CopilotStopAcknowledgement {
+  dispatchMonotonicNs: string, apiResponseObservedMonotonicNs = process.hrtime.bigint().toString(),
+  dispatchRequirement: CopilotStopDispatchRequirement = "active-provider"): CopilotStopAcknowledgement {
   const invalid = () => new Error("Copilot Stop acknowledgement lacks exact current-mainline caller and scope");
   const run = rec(runInput), result = rec(run.resultJson), stop = rec(result.nativeCancellation), startup = rec(result.startupCancellation), cancellation = rec(result.cancellation);
   if (!Object.values(scope).every(id) || !uuid(fixtureCorrelationId) || !mono(dispatchMonotonicNs) || !mono(apiResponseObservedMonotonicNs)
@@ -28,7 +32,8 @@ export function readCopilotStopAcknowledgement(runInput: unknown, scope: Copilot
     || typeof startup.requestedAt !== "string" || !Number.isFinite(Date.parse(startup.requestedAt)) || startup.beforeNativeSelection !== false
     || stop.schema !== "paperclip.native-cancellation.v1" || stop.runId !== scope.runId || stop.companyId !== scope.companyId || stop.issueId !== scope.issueId
     || typeof stop.intentId !== "string" || !stop.intentId.startsWith("native-cancellation:") || !uuid(stop.intentId.slice("native-cancellation:".length))
-    || stop.scope !== "run" || stop.dispatched !== true || stop.dispatchState !== "acknowledged" || stop.reasonCode !== "cancellation_run_only"
+    || stop.scope !== "run" || typeof stop.dispatched !== "boolean"
+    || (!stop.dispatched && dispatchRequirement !== "provider-completed-before-stop") || stop.dispatchState !== "acknowledged" || stop.reasonCode !== "cancellation_run_only"
     || !Array.isArray(stop.effects) || stop.effects.length !== 1 || stop.effects[0] !== "release_run_resources"
     || !id(stop.intentAuditId) || !id(stop.acknowledgementAuditId) || stop.intentAuditId === stop.acknowledgementAuditId) throw invalid();
   const metadata = { id: run.id, companyId: run.companyId, nativeIssueId: run.nativeIssueId, runtimeMode: run.runtimeMode, status: run.status,
@@ -39,8 +44,9 @@ export function readCopilotStopAcknowledgement(runInput: unknown, scope: Copilot
 }
 
 export function assertCopilotStopAcknowledgement(proof: CopilotStopAcknowledgement, run: unknown, scope: CopilotStopScope,
-  fixtureCorrelationId: string, dispatchMonotonicNs: string): void {
+  fixtureCorrelationId: string, dispatchMonotonicNs: string,
+  dispatchRequirement: CopilotStopDispatchRequirement = "active-provider"): void {
   if (!proof || proof.schema !== "paperclip.e2e.copilot-stop-acknowledgement.v1") throw new Error("Copilot Stop acknowledgement response was not retained");
-  const current = readCopilotStopAcknowledgement(run, scope, fixtureCorrelationId, dispatchMonotonicNs, proof.apiResponseObservedMonotonicNs);
+  const current = readCopilotStopAcknowledgement(run, scope, fixtureCorrelationId, dispatchMonotonicNs, proof.apiResponseObservedMonotonicNs, dispatchRequirement);
   if (canonicalJson(proof) !== canonicalJson(current)) throw new Error("Copilot Stop acknowledgement changed after the API response");
 }

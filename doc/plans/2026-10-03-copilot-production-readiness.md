@@ -1,24 +1,168 @@
 # GitHub Copilot production readiness
 
-Current release checklist, updated 2026-10-09 (America/Chicago).
+## Current execution checkpoint — 2026-10-19
 
-## Current shipping gate: freeze profile 35 and qualify the cloud build
+**Not production-ready, merged, or shipped.** The frozen candidate is
+`97a6e405221860a6a015a10cb5e4e30bc42a6fc3`, reconciled with master
+`8de28c12e4c77b5fe0089ddeaf9ea18d216344c9`, in the attached isolated worktree
+`copilot-release-reconciliation/paperclip`. The original worktree and its
+user-owned lockfile remain preserved. Copilot stays at 1.0.88, profile41,
+digest `sha256:1fcb0d545bd1711b8871ff47dc4f0f3cc9933d4584f4da5355212189a14bc577`.
+Other providers' release declarations are unchanged.
 
-Frozen **v33 qualification is complete**: **20/20 Product cells**, **7/7 protocol cases** (46 assertions), and both ordinary installed local and Daytona canaries passed. Those results retain their original build identities and do not qualify different runtime bytes.
+The final integration branch `codex/copilot-release-final` now preserves master `6e89919631786d0097a640c9bd7dadecb05a4917`, including its controller-owned completion continuation and bounded remote read-verification fixes. Nine merge conflicts are resolved without dropping historical records. These bound runtime changes require profile **42**, digest `sha256:c26839c0b2b1f66802d1a4c9561da82eb8b533355fda64fe6b771697782c72ed`. The complete profile41 campaign below remains evidence for that source; it is not silently relabeled as profile42 qualification.
 
-The candidate incorporates master `2bc88ca1c53a9be2d0edbfd31ff8ce60c1ddecad`, including its agent lifecycle services and dependency updates. Copilot remains **1.0.88**, with exact **gpt-5.6-luna** selected for qualification. Copilot **profile 35** is `sha256:6ecb42102c9440e5c8fe5b462b894f9457f255b29f8c584d8b713057cffe4327`. Pi and Cursor retain their current mainline identities. The shared sandbox file matches mainline exactly; Copilot owns its instruction composition.
+The profile42 merge checks pass **259 Runner tests** and **766 server tests**. The first sidecar attempt used ARM Node with Intel esbuild; a credential-free baseline/treatment probe confirmed the cause, and the unchanged sidecar suite passed with Intel Node pinned. Initial server preparation omitted dependency links and the native PostgreSQL package postinstall. Those attempts remain retained; the unchanged two-suite run passed after normal dependency preparation.
 
-| Current gate | State |
+| Required outcome | Current evidence | Remaining gap | Next action / owner |
+| --- | --- | --- | --- |
+| One coherent candidate | Source reconciliation is committed and published on `codex/copilot-production-v41`. Focused Runner, connection, UI, database and Product regressions pass. Recursive typecheck, token gates, `pnpm test:run` and `pnpm build` pass. The complete test run has **39,391 passes**, with 123 existing skips across 22 groups. | Current-head CI and review remain separate shipping gates. | Codex: reuse the retained current-source results; do not repeat broad checks without a demonstrated cause. |
+| Exact remote image | [Cloud build 39124965075](https://github.com/paperclipai/paperclip/actions/runs/39124965075) succeeded for that exact source. All 42 layer digests and 247,816 regular-file entries were scanned with zero selected Copilot credential hits. [Publisher 39127491865](https://github.com/paperclipai/paperclip/actions/runs/39127491865) copied those exact bytes and verified anonymous access. | None for image publication. The digest is `sha256:4faf8a4ead490c0118d0ff7f739ba853537cc34518b292ca163574eaa358a119`. | Codex: use the immutable GHCR image for the selected remote cases. |
+| Saved-token access and spending | The selected Copilot token is recovered into durable private storage; expiry is 2027-01-05 UTC. Packaged metadata discovery verifies 18 models, including exact `gpt-5.6-luna`, without a prompt. The user-directed Daytona key is recovered from `~/.secrets` and authenticates successfully. Its documented analytics API returns current organization usage; the main usage endpoint returns 403. GitHub's selected account shows 246.68 included AI credits consumed, with additional paid usage disabled; no billing setting changed. | Organization/account aggregates include historical or unrelated workloads and cannot release earlier campaign holds. The last trusted $17.77 remaining is retained, with $2 reserved for the local attached-command case and each remote attached-command attempt, plus $0.40 per remaining Product cell and $0.50 per protocol case. Current reservations and remaining allowance are recorded in the durable private budget checkpoint; no earlier hold is released. Native Copilot USD remains unknown. | Codex: retain reservations and usage evidence; do not reset the ceiling or change billing settings. |
+| Required live behavior | **20/20 Product cells pass: ten local and ten native Daytona**, with accepted completion evidence, launcher exit 0 and cleanup. **7/7 Runner protocol cases pass**, including context-before-action. All use source `97a6e405221860a6a015a10cb5e4e30bc42a6fc3`, profile41, Copilot1.0.88 and exact `gpt-5.6-luna`. | The selected profile41 campaign is complete. The final current-master completion changes are bound in profile42, so its complete frozen campaign and normal installed canaries remain required. The host-sleep infrastructure failure and unchanged-case retry remain recorded. | Codex: freeze the final PR source after relevant checks/review, then run the same seven protocol and twenty Product selectors against profile42. |
+| Packaged platform startup | Actual Copilot 1.0.88 initialization and cleanup pass on macOS ARM64, macOS x64 under Rosetta, and Linux x64 from the published image under Docker emulation. Every smoke verifies the current profile and source, uses no credentials, and sends no prompt. | These installation-only checks do not prove entitlement, model execution, ordinary installed-app journeys, or native Daytona behavior. | Codex: retain the three smoke records and use the native Daytona campaign for remote execution proof. |
+| Ordinary installation and shipping | Normal saved-token admission is implemented without operator qualification overrides. [Normal-package build 39193379485](https://github.com/paperclipai/paperclip/actions/runs/39193379485) passed four native daemon producers and clean installation consumers. Archive inspection demonstrated a shipping blocker: its server archive omitted `remote-provider-packs/linux-x64/provider-pack.json`. The eight-file packaging repair `d3c4a30c95` passed **92 focused checks** and is published on `codex/copilot-release-package-authority`. | Complete archives and ordinary installed local/Daytona user journeys remain unverified; CI/review, protected merge and shipped canaries follow. | Codex: [cloud package build 39250973090](https://github.com/paperclipai/paperclip/actions/runs/39250973090) uses the frozen runtime and repaired assembly; require its manifest to match the qualified image before installed canaries. |
+
+The next concrete gate is coherent current-master PR source and the final profile42 build. Cloud export of the packaging repair already matches the qualified image manifest byte for byte; all four native producers passed, with final archive assembly still running. Then freeze and qualify profile42 and prove saved-token setup, save/reopen, Test and one useful artifact task in each installed execution environment. The new helper builds only the existing pinned provider-pack Docker stage in GitHub Actions; it publishes no image and sends no model prompt. Runtime, profile and tested assertions remain unchanged.
+
+Both credentials are retained privately in durable storage. The current conservative budget checkpoint has **$13.67 available** after reconciling the closed profile41 attempts. Daytona reports **$0.0923652668** for all eleven owned sandboxes. The retained $4.10 cost pool covers those resources, the entire selected GitHub account current-month included-usage value ($2.73 displayed), and a separate reporting-delay hold. No historical hold or ceiling is reset. Native per-run USD remains unknown. The final twenty Product cells, seven protocol cases and two canaries fit the remaining allowance at the maintained per-cell reservations. Native Copilot USD remains unknown. No authentication or billing-setting change is pending.
+
+The protocol interruption was diagnosed from macOS power logs: clamshell sleep interrupted the original 60-second case. That attempt and reservation remain recorded. The same source, definition, grader and deadline passed a fresh attempt with a command-scoped idle assertion; there was no behavior retry or weakened assertion. Evidence and the operational checkpoint live in this chat's durable `copilot-release-evidence` directory. This documentation update does not change the frozen runtime.
+
+The exact first paid selection is
+`copilot-protection.runner-acpx-copilot.local.attached-async-settlement`, with
+one parallel execution and zero automatic retries. It completed with launcher
+exit 0 and retained evidence under `product-copilot-v41-local-attached-01`.
+The durable operational
+checkpoint records its command, credential source, immutable remote image and
+executable digests. The exact remote counterpart is
+`copilot-protection.runner-acpx-copilot.daytona.attached-async-settlement`,
+campaign `copilot-v41-daytona-attached-02`, passed with launcher exit 0 and
+retained evidence under `product-copilot-v41-daytona-attached-02`.
+The negative cell is
+`copilot-protection.runner-acpx-copilot.daytona.native-permission-deny-write`,
+which passed with all 11 assertions and cleanup. Every subsequent remote cell
+also passed on its first attempt, with a separate conservative $0.40 reservation
+and the same no-retry policy. The durable budget checkpoint is authoritative
+for current reservations after both serial queues completed.
+Both selected credentials remain private. The organization-wide usage aggregate
+is evidence of account access, not an attribution of all account spending to
+this campaign; unknown native USD and earlier holds remain explicit.
+
+Remote attempt 01 remains failed (`candidate_failure`), with cleanup passed.
+Its `remote_native_fixture:lease_scope` followed the real run error
+`runner_remote_provider_artifact_incompatible: provider-pack.json is unreadable (missing)`.
+The Mac source harness lacked the release-owned Linux manifest required by
+current mainline; the provider had not reached the tested command. The exact
+manifest and Linux daemon were recovered from the already-scanned cloud image.
+The production `readBundledRemoteProviderPackManifest` resolver now accepts
+the matching source, pack digest and Copilot profile. Attempt 02 supplies that
+verified daemon explicitly. No runtime source, profile, assertion or image build
+changed. The failed Docker-copy preparation (Docker Desktop unavailable) and
+the successful extraction from the exact retained OCI archive are also kept.
+
+The Intel preparation failures remain retained: an archive-root guard stopped
+SDK extraction, and using an ARM dependency graph stopped package preparation
+before provider startup. The successful smoke used a separate managed Intel
+worktree at the same frozen source and an actual Intel dependency graph. No
+product code, profile identity, smoke assertion or live case was changed.
+
+## Historical release audit — 2026-10-17
+
+Historical audit: **not production-ready, merged, or shipped.**
+
+The release claim remains: a normal user can connect a saved GitHub token through Apps, select and reopen the correct Copilot model and local or Daytona environment, and complete useful work on the shipped package without qualification overrides. Permission denial, Stop, restart, provider death, warm continuation, and context-before-action must preserve the agreed safety and continuity contracts. The finish line is shipped-build canary verification, not a PR-only handoff.
+
+### Critical path at the historical audit
+
+| Required outcome | Current evidence | Remaining gap | Next action / owner |
+| --- | --- | --- | --- |
+| One coherent release candidate | Local profile40 source `639e25777adcfc7899acf6a8cdb470923926a0b9` survives. The restored worktree snapshot `31e727075959ca858d93782c8630dff14bd0c608` adds only the previously user-owned lockfile changes. A fresh merge probe against master `1f27427ffdefaf5fb2760d1d53c0d78cb9683d4c` finds **39 conflicts**. | The old candidate cannot merge unchanged. Master still declares Copilot profile20 with qualification pending. Its AI provider list has no GitHub entry and its Copilot connection probe/setup guide are absent. | Codex: reconcile the Copilot delta once with current master, preserve newer mainline behavior and other providers, then freeze the resulting source and profile before another campaign. Do not rebuild every historical candidate. |
+| Working saved-token access and bounded spending | Historical setup/discovery succeeded. The token file and budget ledger under `/tmp` are now missing. The repository has no Copilot Actions secret. The last recorded conservative remaining allowance was **$17.77**; no new paid call was started in this audit. | Recover the intended credential and budget evidence. The earlier full test run also has no surviving terminal log, so its final result is unknown. | Codex: recover an existing Apps/secret-manager connection or replace the token through supported GitHub setup; retain it and campaign evidence in durable private storage. Reconcile prior spending without resetting the existing $100 authorization. Never use ambient GitHub credentials. |
+| Required live behavior on the same candidate | The committed [profile39 record](2026-10-10-copilot-qualification-v39.json) reports **7 protocol passes, 10 local Product passes, and the ordinary local canary**. These are historical results. Original raw temporary evidence is no longer available in this audit. No profile40 live pass is evidenced. | No complete current-build local/Daytona campaign or ordinary remote canary. | Codex: cloud-build and pin one credential-free image, run the attached-command boundary first, then the agreed **7 protocol + 20 Product cells** and ordinary installed local/Daytona canaries. Preserve failed attempts and unchanged assertions; no automatic behavior retries. |
+| Ordinary installation and supported platforms | Prior platform smokes were reported for macOS ARM64, macOS x64, and Linux x64. Profile40 macOS/discovery/build passes were reported in the chat; their raw temporary proof files have expired. | Current final artifact and normal setup path are not qualified across the promised platforms. | Codex: verify the actual installed runtime on all three promised platforms and exercise saved-token setup, save/reopen, metadata Test, completion, and a usable artifact. Keep the existing packaging tools and cloud Docker path. |
+| Review-ready, merged code | [Runtime #15701](https://github.com/paperclipai/paperclip/pull/15701), [regressions #15703](https://github.com/paperclipai/paperclip/pull/15703), [setup #15705](https://github.com/paperclipai/paperclip/pull/15705), and [qualification #15706](https://github.com/paperclipai/paperclip/pull/15706) are still drafts on their old public heads. Runtime build/typecheck and runtime/qualification review checks fail. Later local repairs were not pushed. | No current-head clean CI/review and no merge. | Codex: update coherent PR slices from the frozen candidate, run required final checks through maintained tooling, resolve current-head findings, and satisfy the independent code-owner gate after qualification. |
+| Shipped and usable | No production release or shipped-build canary is established by this work. The old loopback canary URL is a disposable test instance, not a production deployment. | Shipping and ordinary-use verification remain incomplete. | Codex: merge through the supported workflow, ship the agreed canary, and verify the served package/image identity and ordinary local/Daytona result before broader rollout. |
+
+A fresh credential-free check confirms that local profile40 still matches its declared source hashes and generated TypeScript/Rust admission. This proves source consistency only.
+
+The earliest implementation blocker is the current-master reconciliation. Credential/budget recovery can proceed independently. The old profile40 public-source publication was rejected by automatic approval review because its exact authorization named profile39. That rejection is not cleared; it must be addressed with the final concrete payload and current authority before publication. Publishing an obsolete profile39 image is not a route around this gate.
+
+## Keep the release finite
+
+- Required scope stays unchanged: Copilot 1.0.88 unless a demonstrated release blocker requires an upgrade; authenticated model discovery with exact `gpt-5.6-luna` for qualification if available; no substitution; 7 protocol cases, 20 selected Product cells, normal local/Daytona canaries, and the three promised installed-platform smokes.
+- Native steering, native plan mode, detached work, additional event presentation, and unrelated provider enablement remain deferred. Questions and plans use Paperclip semantic tools.
+- Prior effort went into repeated runtime/profile repairs and rebuilds, mainline reconciliation, approval waits, and a public handoff that was not completed. The last full-suite run was still pending in the chat after roughly 34 minutes; its terminal result cannot now be recovered. Do not report it as passed or restart a broad campaign merely to fill that gap.
+- Iterate with the smallest faithful failing boundary. Use the existing eval selectors and CI/check workflow. Run mandatory final checks once on the candidate handed over; repair demonstrated blockers rather than adding infrastructure or a wider matrix.
+- Fresh audit metadata and the non-mutating merge probe are stored privately outside `/tmp` under the task's `copilot-release-evidence/2026-10-17` directory. No build, provider prompt, credential transfer, source publication, or billing setting change occurred in this audit. This is an audit checkpoint, not qualification evidence.
+
+## Historical records
+
+Historical checklist recorded 2026-10-10 (America/Chicago).
+
+## Historical profile40 preparation, 2026-10-10
+
+Current master is `2a2071340d39e7ec9eeeec8615191df365b4dbac`. Its migration inventory and runtime-selection extraction conflict with the frozen profile39 candidate. The isolated integration preserves master, ports Copilot's managed warm-session policy into the extracted selection module, and retains master’s OpenCode image selection. Canonical migration generation produces `0331_copilot_defaults`: only the two existing provider-default check constraints change; the connection storage does not change. The replacement constraints are idempotent.
+
+Master changes seven implementation hashes bound to Copilot's identity. Profile **40**, digest `sha256:a63549478ffe915e6f06cd644869eed6d449f146ac17562703056db622acf561`, binds the integrated implementation. Copilot remains **1.0.88**, exact model **gpt-5.6-luna**; Pi 22 and Cursor 15 are unchanged. The stale profile39 identity check fails before regeneration and passes afterward. No profile40 live result is claimed.
+
+The critical path is:
+
+1. Focused merge regressions pass **94/94** across five suites, including database-backed managed warm-session selection. The regression fails on the pre-port policy and passes after the port; mismatched credentials remain per-turn. The initial skipped attempt does not count as a pass.
+2. Finish required checks and publish the reviewed source for a cloud-only Docker build. Freeze one current source, profile, model, case-contract set, provider pack, and image.
+3. Qualify all seven protocol cases, ten local Product cases, ten Daytona Product cases, and both ordinary installed-app canaries against that build. Preserve historical failures and prohibit automatic behavior retries.
+4. Require current-head CI and clean review, independent code-owner approval, normal merge, and a shipped-build canary.
+
+The unapproved profile39 image publication request is superseded. Its publisher now refuses that obsolete image. Original image bytes, scans, local results, and the ordinary local canary remain historical evidence. The budget window is not reset, and no new paid attempt was launched during reconciliation. Current profile40 build, qualification, and full handoff checks remain pending. **Not production-ready or shipped.**
+
+## Historical profile39 qualification and ordinary local canary
+
+The application/runtime source is `254926af530819fa3e5e27037c717761d2b2f76a`, based on master `0726a00e80f392598b17b847a2bb7fa663f25dcd`. Copilot **1.0.88**, exact **gpt-5.6-luna**, profile **39** and digest `sha256:82878a8275c2f50be7dcb1b236c4cad17e162437970aba4b37a5ebc6eb279316` are frozen. Pi 22 and Cursor 15 remain unchanged. Current controller/harness source is `586d1b81abf527d17ea0eb70ccbd29ae5a483524`; its eleven changed files contain no production runtime changes. Those fixes are ported into this worktree at `07dc1e256af7e53bbbd423fc6a72b9bc5fdb0da7`.
+
+| Gate | Current evidence and remaining work |
 |---|---|
-| Current-master integration | Copilot metadata checks use the current environment-test/lifecycle services; mainline migration 0320 is preserved and Copilot follows with 0321 |
-| Demonstrated blockers | Metadata CLI packaging, Rust fixture identity, exact instruction ownership, read-only model access, durable catalog source and stale pending-admission assertions repaired |
-| Focused verification | Runtime/profile checks: 74 pass, one platform-specific skip; package/shim contracts: 15 pass; ACPX Rust: 28 pass; setup/access/UI: 51 pass; ordinary admission: 95 pass; exact guarded recovery: pass; catalog regeneration: pass |
-| Full validation | Prior full suite retained: 15,880 passed; failures include stale admission assertions, missing system-tool PATH, embedded Postgres bootstrap failures and fixture provider selection. Required checks on the integrated current-master source remain pending |
-| Cloud image | v34 build-only cloud export retained; superseded before publication/live inference by demonstrated repairs. Build and scan the exact profile-35 image in the cloud |
-| Live qualification | Freeze source, profile, model, packs, case definitions and image; require exact 20 Product cells, seven protocol cases, three installed-platform smokes and both ordinary canaries |
-| Shipping | Current-head CI/review, separate code-owner approval, normal merge and shipped-build canary pending |
+| Runtime and platforms | Application build and runner/server types pass. All three actual installed executable smokes pass: macOS ARM64, macOS x64 under Rosetta, and Linux x64 under Docker emulation. Native Daytona coverage remains below. |
+| Runner protocol | **7/7 pass**, including context-before-action, with unchanged cases and confirmed cleanup. |
+| Local Product | **10/10 pass**: attached-command settlement, warm continuation, pending-permission Stop (attempt 04), provider death (attempt 01), denied write (attempt 03), hello, question, plan, and controller-restart continuation. File-edit attempt 02 passes after the verified fixture repair; attempt 01 remains failed. Original failures remain retained. |
+| Harness repair | Independent Stop observations overlap without changing deadlines or active cancellation fences. The denial oracle now distinguishes an already completed provider acknowledgement and allows an incomplete blocked disposition only with exact pre-Stop missing-result evidence and the bound recovery action. Active cancellation still requires dispatch. Focused settlement/acknowledgement tests and current harness typecheck pass. The unchanged watcher assertion passes in isolation after a timeout; the original failure remains, and its precise host cause is unconfirmed. Full current handoff checks remain pending. |
+| Cloud image | Approved source publication and build-only Actions run **37986730659** succeeded. OCI manifest `sha256:14d4a4deb6f8ad225fd2d757969809da51b9a188bd738a6c28bcd74f0bb3cda9` passed digest-verified scanning of all **42 layers / 247,771 regular-file entries**, including deleted lower-layer bytes and image configuration, with zero selected credentials. Exact image publication approval is pending separately from source/build approval. |
+| Daytona | Ten maintained cells remain; attached-command settlement runs first after ten local passes and exact image publication. Linux runtime artifacts are already extracted and verified. |
+| Ordinary installation | Fresh consumer npm installation passes with lifecycle scripts enabled, all three platform binaries present, and no qualification overrides. The ordinary local path passes: personal saved token, exact model, save/reopen, metadata-only Test, one completed task, exactly 30 downloaded bytes, one accepted completion and final response, and independent cleanup. The ordinary Daytona path remains. |
+| Handoff and shipping | Current-head checks and review, independent code-owner approval, normal merge and shipped-build canary remain. **Not production-ready or shipped.** |
 
-No live profile-35 qualification or production rollout is claimed. Failed attempts and original assertions remain retained. Future Docker image builds run in the cloud. The approved budget retains historical exposure and infrastructure holds; it is not reset again. GitHub-attributed native per-run USD remains unknown.
+Stop attempts 01–03 remain failed: navigation, a Stop dispatched 35 ms after the native timeout because observer reads were sequential, and test-server startup before any model prompt. The production static UI and overlapping observer reads are used by the passing attempt 04. Their original grades and cleanup evidence remain unchanged.
+
+Denied-write attempt 01 reached the real denial and recorded no target effects, then failed the harness's unconditional active-dispatch requirement for an already ended provider. Attempt 02 retained the correct Stop acknowledgement and pre-Stop native completion, then failed because the negative prompt intentionally omitted semantic completion and current mainline projected the issue as blocked. The new validator requires a missing-result lifecycle row actually retained before Stop, its exact replay hash, and a recovery action bound to the same company, issue and cancelled run. A late row, foreign action or cancelled/interrupted provider cannot use this exception. These are contextual acknowledgement/disposition validator changes; the old failed attempts are not relabelled as passes. The denial definitions and prompts remain unchanged. Runtime and image bytes remain unchanged. Historical passes below do not qualify the current runtime.
+
+File-edit attempt 01 retains a failed grade and confirmed cleanup. The provider generated a `cmp` call with a missing operand and a Python check for literal escape bytes; no accepted completion was observed before the unchanged deadline. The precise timeout/transport cause remains unconfirmed. The Copilot file prompt now supplies a read-only hexadecimal byte check. Both Copilot file prompts receive fresh measurements; every independent matcher, deadline, other captured provider/workflow contract and runtime byte remains unchanged. The original two offline checks failed; 131 repaired offline checks and the current harness typecheck pass. No validation result is manufactured.
+
+The **$100 authorization window is not reset**. The last closed account reconciliation leaves **$20.04**, before the settled fresh file-case **$2 reservation** and current ordinary-local **$2 reservation**. Further reservations require the same closed account reconciliation; no new allowance is created. Native per-run USD remains unknown and GitHub-attributed. No billing controls changed. Docker **builds run in the cloud**. The slow local final-filesystem export scan was interrupted and retained as incomplete; the completed OCI scan covers every published layer byte and is a superset of final regular-file coverage. Current private evidence remains under `/tmp/copilot-production-campaign-v39`; publish only the sanitized qualification record at handoff.
+
+The ordinary local reservation is now settled against the independently verified canary result. No new provider call or billing-control change was needed for verification. Current public master is `2a2071340d39e7ec9eeeec8615191df365b4dbac`. It has advanced 40 commits from the frozen baseline and overlaps shared runner, connection and orchestration code. Current qualification proves the frozen application source above; current-master reconciliation and qualification of any changed production bytes remain shipping gates. The current sanitized record is [2026-10-10-copilot-qualification-v39.json](2026-10-10-copilot-qualification-v39.json).
+
+## Historical profile 37–38 repairs and initial profile 39 preparation
+
+The current master baseline is `0726a00e80f392598b17b847a2bb7fa663f25dcd`. Copilot remains pinned to **1.0.88**, with exact **gpt-5.6-luna** for qualification. Pi 22, Cursor 15, and the shared mainline sandbox remain unchanged. Docker images build in the cloud.
+
+Profile 38 source `05bbf940ba609fe3d976da7f08f995304f1582b2` passes application build, runner/server types, native startup/cleanup, both macOS installed smokes and exact authenticated model discovery. Its first local Product attached-command case ran and settled the exact command, retired its processes, then failed the unchanged pre-action evidence oracle. The read happened before the command, but the projector emitted the pending native origin after the receipt. It has **0/20 Product passes** and has not shipped. No profile38 Docker image was built or published.
+
+The narrow follow-up treats explicit `{}` as complete native arguments and publishes the actual pending origin before execution. Only wholly absent arguments can stream later. Missing input and changed arguments still fail correlation; no file-read authority is inferred. The chronological origin regression fails against profile38; the repair passes **72 focused checks**, with one preexisting skip. All oracle and completion assertions remain unchanged. Profile39 must receive fresh live qualification.
+
+Profile 37 source `59aab279f9da6d811406761cb2f94abd03131821` passed full native no-prompt startup/cleanup, macOS ARM64 and Intel installed-runtime smokes, exact authenticated model discovery, and recursive typecheck. Its first local Product attached-command case failed because context evidence was explicitly incomplete; it has **0/20 Product passes**, with cleanup passed. The task's successful status alone does not qualify settlement. The profile37 cloud image was never built or published.
+
+The failure is reproduced offline: Copilot classifies `get_task_context` as a read, and its actual empty `{}` origin was deferred as an unfinished file-read input. The authoritative context receipt then could not match that lost digest. The first repair retained the bounded origin digest and restored receipt matching, but profile38 showed that deferring the origin notice still broke chronological evidence. The profile39 follow-up above corrects that ordering and rejects absent or changed semantic input. The initial regression failed exactly this case; the repair passes 70 focused checks with one preexisting skip. Qualification must restart on the new identity.
+
+Profile 36 source `9769279bb712cec9c5aa1d814e82f369129149bf` passed seven protocol cases and three installed platform smokes, then failed its first Product case before startup because the native manifest/root ownership was inconsistent. Profile37 repaired that root binding with regressions for source, scoped npm, and deployment layouts. Canonical temporary paths preserve owned cleanup. Historical v33 evidence remains historical.
+
+| Next gate | Required evidence |
+|---|---|
+| Repaired candidate | Mint profile 39; synchronized TypeScript/Rust identity, receipt regressions, native no-prompt startup/cleanup |
+| Local Product | Exact attached-command case first, seven unchanged protocol cases, then nine remaining local cells; no automatic behavior retries |
+| Daytona | Scan and publish the exact cloud-built repaired image, then ten exact remote cells |
+| Ordinary installation | Saved-token setup, save/reopen, metadata-only Test and a completed file task locally and remotely |
+| Handoff and shipping | Current-head CI/review, separate code-owner approval, normal merge, and shipped-build canary |
+
+All failed attempts, assertions, and private evidence remain retained. No current release readiness is claimed. The existing approved budget retains historical exposure and audited infrastructure reservations and is not reset. GitHub-attributed native per-run USD remains unknown.
 
 ## Completed frozen v33 qualification
 

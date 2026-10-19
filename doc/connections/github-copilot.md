@@ -1,8 +1,8 @@
 # GitHub Copilot runtime connection
 
 The current candidate uses the pinned Copilot CLI **1.0.88** and Paperclip Runner
-profile **v36**. This profile is undergoing a frozen local/Daytona qualification
-campaign. Historical passes apply to their recorded builds. Current-head CI,
+profile **v40**. This profile is being prepared for a frozen local/Daytona
+qualification campaign. Historical passes apply to their recorded builds. Current-head CI,
 review, all required live cases, and ordinary installed canaries must pass
 before rollout.
 

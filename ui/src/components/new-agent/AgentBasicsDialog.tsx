@@ -1,4 +1,5 @@
 import { useCompany } from "@/context/CompanyContext";
+import { PAPERCLIP_RUNNER_ACPX_PROFILES } from "@paperclipai/adapter-utils";
 import { useAgentAppearanceDraft } from "@/hooks/useAgentAppearanceDraft";
 import { AdapterMark } from "../AdapterMark";
 import { AgentCharacter } from "../AgentCharacter";
@@ -14,6 +15,7 @@ import { getAdapterDisplay } from "@/adapters/adapter-display-registry";
 import { cn } from "@/lib/utils";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { SelectPopover } from "../ui/select";
 import {
   Dialog,
   DialogContent,
@@ -65,21 +67,27 @@ export function AgentBasicsDialog({
     error,
   } = useQuery({
     queryKey: queryKeys.adapters.all,
-    queryFn: adaptersApi.list,
+    queryFn: () => adaptersApi.list(),
     enabled: open,
   });
-  const choices = (adapters ?? []).filter(
+  const nativeRunner = adapters?.find(adapter => adapter.type === "paperclip_runner" && adapter.loaded && !adapter.disabled);
+  const copilotAvailable = Boolean(nativeRunner) && PAPERCLIP_RUNNER_ACPX_PROFILES.some(profile => profile.value === "copilot" && profile.qualified);
+  const choices = [...(adapters ?? []).filter(
     (adapter) =>
       adapter.loaded &&
       !adapter.disabled &&
+      adapter.type !== "paperclip_runner" &&
       isNewAgentAdapterAllowed(adapter.type, {
         cloud,
         nativeRunnerEnabled: experimental.data?.enableNativeRunner === true,
       }) &&
       !["process", "http"].includes(adapter.type) &&
       !getAdapterDisplay(adapter.type).comingSoon,
-  );
-  const validAdapter = choices.some((adapter) => adapter.type === adapterType);
+  ), ...(copilotAvailable ? [{ ...nativeRunner!, type: "copilot_runtime" }] : [])];
+  const experimentalRunnerAvailable = experimental.data?.enableNativeRunner === true
+    && adapters?.some(adapter => adapter.type === "paperclip_runner" && adapter.loaded && !adapter.disabled);
+  const validAdapter = choices.some((adapter) => adapter.type === adapterType)
+    || (experimentalRunnerAvailable && adapterType === "paperclip_runner");
   return (
     <Dialog
       open={open}
@@ -117,8 +125,8 @@ export function AgentBasicsDialog({
             if (step === "name") setStep("adapter");
             else if (validAdapter)
               onContinue({ name: name.trim(),
-                adapterType: adapterType === "openai_dot" ? "paperclip_runner" : adapterType,
-                runnerProvider: adapterType === "openai_dot" ? "openai_dot" : runnerProvider });
+                adapterType: ["openai_dot", "copilot_runtime"].includes(adapterType) ? "paperclip_runner" : adapterType,
+                runnerProvider: adapterType === "copilot_runtime" ? "copilot" : adapterType === "openai_dot" ? "openai_dot" : adapterType === "paperclip_runner" ? runnerProvider : "codex" });
           }}
         >
           <div className="flex min-h-0 flex-col gap-7 overflow-y-auto px-6 pb-8 sm:px-10">
@@ -211,24 +219,22 @@ export function AgentBasicsDialog({
                     );
                   })}
                 </div>
-                {validAdapter && adapterType === "paperclip_runner" && (
-                  <label className="flex flex-col gap-2 text-sm font-medium">
-                    Runner
-                    <select
-                      className="rounded-md border border-border bg-background px-3 py-2"
-                      value={runnerProvider}
-                      onChange={(event) =>
-                        setRunnerProvider(event.target.value)
-                      }
-                    >
-                      <option value="codex">Codex (app server)</option>
-                      <option value="claude">Claude (ACPX)</option>
-                      <option value="grok">Grok Build (ACPX)</option>
-                      <option value="copilot">GitHub Copilot</option>
-                      <option value="opencode">OpenCode</option>
-                    </select>
-                  </label>
-                )}
+                {experimentalRunnerAvailable && <details className="space-y-3">
+                  <summary className="cursor-pointer text-sm text-muted-foreground">Advanced</summary>
+                  <div className="space-y-2">
+                    <label className="text-sm text-muted-foreground">Experimental harness</label>
+                    <SelectPopover aria-label="Experimental harness"
+                      value={adapterType === "paperclip_runner" ? runnerProvider : ""}
+                      placeholder="Choose a native harness…"
+                      onValueChange={provider => { setRunnerProvider(provider); setAdapterType("paperclip_runner"); }}
+                      options={[
+                        { value: "codex", label: "Codex (Paperclip Runner)" },
+                        { value: "claude", label: "Claude Code (Paperclip Runner)" },
+                        { value: "grok", label: "Grok Build (Paperclip Runner)" },
+                        { value: "opencode", label: "OpenCode (Paperclip Runner)" },
+                      ]} />
+                  </div>
+                </details>}
               </fieldset>
             )}
           </div>

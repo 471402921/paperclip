@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { readCopilotStopAcknowledgement } from "./copilot-stop-acknowledgement.js";
 import { applyMainlineStopMetadata, stopAcknowledgementForTest } from "./copilot-stop-test-fixtures.js";
 import { readCopilotToolEvidence } from "./copilot-evidence.js";
 import { observeCopilotPreStop, copilotDenialSampleCursor, readCopilotDenialSettlement } from "./copilot-protection-evidence.js";
@@ -40,6 +41,20 @@ function fixture(eventType = "turn.completed") {
 
 }
 const terminal = (f: ReturnType<typeof fixture>) => f.events[4]!.payload.prpEvent;
+function blockedNaturalFixture() {
+  const f = fixture();
+  f.events.push({ seq: 162, companyId: "company", runId: "run", eventType: "lifecycle", createdAt: date(890), payload: {
+    retryReasonCode: "semantic_result_missing", attempt: 1, nextAttemptAt: date(999), fallbackSuppressed: true,
+    failureDetail: { originalFailureCode: "native_session_interrupted", recoveryMode: "exact_checkpoint_resume", checkpointExists: true, providerSessionEstablished: true },
+  } } as any);
+  Object.assign(f.issue, { status: "blocked", activeRecoveryAction: { id: "recovery", companyId: "company", sourceIssueId: "issue", kind: "active_run_watchdog", cause: "native_session_interrupted", status: "active", wakePolicy: { kind: "resume_native_run", runId: "run", notBefore: date(999) } } });
+  f.run.resultJson.nativeCancellation.dispatched = false;
+  f.preStop = observeCopilotPreStop({ ...f, companyId: "company", cancellationRequestId: f.preStop.cancellationRequestId });
+  f.stopDispatchMonotonicNs = process.hrtime.bigint().toString();
+  f.stopAcknowledgement = readCopilotStopAcknowledgement(f.run, { companyId: "company", issueId: "issue", runId: "run", callerUserId: "local-board" }, f.preStop.cancellationRequestId, f.stopDispatchMonotonicNs, undefined, "provider-completed-before-stop");
+  return f;
+}
+
 const liveRun = (f: ReturnType<typeof fixture>) => ({ ...f.run, status: "running", resultJson: {} });
 function stopPost(f: ReturnType<typeof fixture>, callback = () => {}) {
   return vi.fn(async (_path: string) => {
@@ -49,6 +64,44 @@ function stopPost(f: ReturnType<typeof fixture>, callback = () => {}) {
 }
 
 describe("Copilot denial provider settlement and separate audited run Stop", () => {
+  it("retains an undispatched acknowledgement only for independently observed pre-Stop completion", () => {
+    const f = fixture();
+    f.run.resultJson.nativeCancellation.dispatched = false;
+    f.stopAcknowledgement = readCopilotStopAcknowledgement(f.run,
+      { companyId: "company", issueId: "issue", runId: "run", callerUserId: "local-board" },
+      f.preStop.cancellationRequestId, f.stopDispatchMonotonicNs, undefined, "provider-completed-before-stop");
+    expect(readCopilotDenialSettlement(f)).toMatchObject({ branch: "provider_completed_observed_before_stop", providerCancellationTerminalObserved: false });
+    f.preStop.terminal = null;
+    expect(() => readCopilotDenialSettlement(f)).toThrow(/settlement/);
+  });
+  it.each(["turn.cancelled", "turn.interrupted"])("does not use an undispatched acknowledgement to qualify %s", type => {
+    const f = fixture(type); f.run.resultJson.nativeCancellation.dispatched = false;
+    f.stopAcknowledgement = readCopilotStopAcknowledgement(f.run,
+      { companyId: "company", issueId: "issue", runId: "run", callerUserId: "local-board" },
+      f.preStop.cancellationRequestId, f.stopDispatchMonotonicNs, undefined, "provider-completed-before-stop");
+    expect(() => readCopilotDenialSettlement(f)).toThrow(/settlement/);
+  });
+  it("retains bound incomplete recovery observed before Stop after natural denial completion", () => {
+    const f = blockedNaturalFixture();
+    expect(readCopilotDenialSettlement(f)).toMatchObject({ branch: "provider_completed_observed_before_stop", runStop: { issueStatus: "blocked", incompleteRecovery: { actionId: "recovery" } } });
+  });
+  it.each(["missing-pre-stop", "row-hash", "row-seq", "late-row", "foreign-company", "foreign-issue", "foreign-run", "wrong-kind", "wrong-cause", "wrong-wake", "wrong-retry", "active-cancel", "missing-action"])("rejects blocked denial with %s recovery", kind => {
+    const f = blockedNaturalFixture(), a = (f.issue as any).activeRecoveryAction;
+    if (kind === "missing-pre-stop") delete (f.preStop as any).incompleteRecovery;
+    if (kind === "row-hash") (f.preStop as any).incompleteRecovery.rowSha256 = `sha256:${"a".repeat(64)}`;
+    if (kind === "row-seq") (f.preStop as any).incompleteRecovery.rowSeq++;
+    if (kind === "late-row") { (f.preStop as any).incompleteRecovery = null; }
+    if (kind === "foreign-company") a.companyId = "other";
+    if (kind === "foreign-issue") a.sourceIssueId = "other";
+    if (kind === "foreign-run") a.wakePolicy.runId = "other";
+    if (kind === "wrong-kind") a.kind = "other";
+    if (kind === "wrong-cause") a.cause = "other";
+    if (kind === "wrong-wake") a.wakePolicy.kind = "other";
+    if (kind === "wrong-retry") a.wakePolicy.notBefore = date(950);
+    if (kind === "missing-action") delete (f.issue as any).activeRecoveryAction;
+    if (kind === "active-cancel") { f.events[4]!.eventType = terminal(f).eventType = "turn.cancelled"; terminal(f).payload.status = "cancelled"; f.preStop = observeCopilotPreStop({ ...f, companyId: "company", cancellationRequestId: f.preStop.cancellationRequestId }); }
+    expect(() => readCopilotDenialSettlement(f)).toThrow(/settlement/);
+  });
   it("accepts a synthetic pre-Stop API observation without claiming provider cancellation", () => {
     const f = fixture();
     expect(readCopilotDenialSettlement(f)).toMatchObject({ branch: "provider_completed_observed_before_stop", providerCancellationTerminalObserved: false,
@@ -168,6 +221,7 @@ describe("Copilot denial provider settlement and separate audited run Stop", () 
     vi.useFakeTimers(); let mono = 100n; vi.spyOn(process.hrtime, "bigint").mockImplementation(() => ++mono);
     try {
       const f = fixture(); let completionVisible = false;
+      f.run.resultJson.nativeCancellation.dispatched = false;
       const receipts: Array<ReturnType<typeof observeCopilotPreStop>> = [];
       const post = stopPost(f, () => { expect(receipts).toHaveLength(2); expect(receipts[1]!.terminal?.eventType).toBe("turn.completed"); });
       const result = settleCopilotDeniedRun({ api: { post } as any, request: f.request, deadlineAt: Date.now() + 5000,
@@ -177,6 +231,20 @@ describe("Copilot denial provider settlement and separate audited run Stop", () 
       const settled = await result;
       expect(settled.branch).toBe("provider_completed_observed_before_stop");
       expect(settled.preStop).toEqual(receipts[1]); expect(receipts[0]!.terminal).toBeNull(); expect(post).toHaveBeenCalledOnce();
+    } finally { vi.restoreAllMocks(); vi.useRealTimers(); }
+  });
+  it("retains a missing-result row first returned during receipt persistence before Stop", async () => {
+    vi.useFakeTimers(); let mono = 100n; vi.spyOn(process.hrtime, "bigint").mockImplementation(() => ++mono);
+    try {
+      const f = blockedNaturalFixture(); let recoveryVisible = false;
+      const receipts: Array<ReturnType<typeof observeCopilotPreStop>> = [];
+      const post = stopPost(f, () => { expect(receipts).toHaveLength(2); expect(receipts[1]!.incompleteRecovery).toBeDefined(); });
+      const result = settleCopilotDeniedRun({ api: { post } as any, request: f.request, deadlineAt: Date.now() + 5000,
+        load: async () => ({ ...f, events: recoveryVisible ? f.events : f.events.filter(row => row.eventType !== "lifecycle"), run: post.mock.calls.length ? f.run : liveRun(f), retired: true }),
+        afterDeniedEdit: async () => {}, retainPreStop: async receipt => { receipts.push(receipt); recoveryVisible = true; }, afterSettlement: async () => {} });
+      await vi.advanceTimersByTimeAsync(2000);
+      const settled = await result;
+      expect(settled.runStop.issueStatus).toBe("blocked"); expect(receipts[0]!.incompleteRecovery).toBeUndefined(); expect(settled.preStop).toEqual(receipts[1]); expect(post).toHaveBeenCalledOnce();
     } finally { vi.restoreAllMocks(); vi.useRealTimers(); }
   });
   it.each(["earlier-stop", "retention-failed"])("refuses dispatch when refreshed terminal retention encounters %s", async kind => {

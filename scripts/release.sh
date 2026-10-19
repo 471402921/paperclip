@@ -284,6 +284,14 @@ release_info ""
 release_info "==> Step 2/7: Building workspace artifacts..."
 cd "$REPO_ROOT"
 pnpm build
+if [ -n "${PAPERCLIP_RELEASE_RUNNER_ARTIFACTS_DIR:-}" ]; then
+  if [ -z "${PAPERCLIP_RELEASE_RUNNER_PROVIDER_PACK_MANIFEST:-}" ]; then
+    release_fail "Public releases require the matching Linux provider-pack authority."
+  fi
+  node "$REPO_ROOT/scripts/assemble-release-runner-inputs.mjs" "$PAPERCLIP_RELEASE_RUNNER_ARTIFACTS_DIR" "$(git rev-parse HEAD)" "$PAPERCLIP_RELEASE_RUNNER_PROVIDER_PACK_MANIFEST"
+elif [ "$dry_run" = false ]; then
+  release_fail "Public releases require the four hosted runner daemon artifacts; use the supported Release workflow."
+fi
 node "$REPO_ROOT/scripts/build-standalone-public-packages.mjs"
 bash "$REPO_ROOT/scripts/prepare-server-ui-dist.sh"
 for pkg_dir in server packages/adapters/claude-local packages/adapters/codex-local; do

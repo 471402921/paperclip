@@ -201,7 +201,7 @@ describe("OnboardingWizard adapter selection", () => {
     });
   });
 
-  it("keeps onboarding on legacy adapters even when Paperclip Runner is enabled", async () => {
+  it("recovers a saved Codex runner draft without changing its model or runner", async () => {
     mockAdapterRegistry.list = [
       { type: "paperclip_runner" },
       { type: "codex_local" },
@@ -224,7 +224,8 @@ describe("OnboardingWizard adapter selection", () => {
       window.localStorage.getItem(ONBOARDING_STORAGE_KEY) ?? "{}",
     );
     expect(saved.adapterType).toBe("codex_local");
-    expect(saved.model).toBe("");
+    expect(saved.runner).toBe("paperclip");
+    expect(saved.model).toBe("gpt-runner-only");
     expect(saved.command).toBe("");
     expect(saved.args).toBe("");
     expect(saved.url).toBe("");
@@ -254,8 +255,9 @@ describe("OnboardingWizard adapter selection", () => {
     const saved = JSON.parse(
       window.localStorage.getItem(ONBOARDING_STORAGE_KEY) ?? "{}",
     );
-    expect(saved.adapterType).toBe("claude_local");
-    expect(saved.model).toBe("");
+    expect(saved.adapterType).toBe("codex_local");
+    expect(saved.runner).toBe("paperclip");
+    expect(saved.model).toBe("gpt-runner-only");
     expect(saved.command).toBe("");
     expect(saved.args).toBe("");
     expect(saved.url).toBe("");
@@ -289,12 +291,11 @@ describe("OnboardingWizard adapter selection", () => {
     });
   });
 
-  it("does not offer or retain Copilot when only OpenAI Dot is enabled", async () => {
+  it("retains an explicit Copilot draft with the native runner experiment disabled", async () => {
     mockAdapterRegistry.list = [{ type: "paperclip_runner" }, { type: "codex_local" }];
     window.localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify({ step: 0, adapterType: "paperclip_runner", onboardingCopilot: true, model: "gpt-5.6-luna" }));
-    const { root, container } = await mount(false);
-    expect(JSON.parse(window.localStorage.getItem(ONBOARDING_STORAGE_KEY)!)).toMatchObject({ adapterType: "codex_local", onboardingCopilot: false, model: "" });
-    expect(container.textContent).not.toContain("GitHub Copilot");
+    const { root } = await mount(false);
+    expect(JSON.parse(window.localStorage.getItem(ONBOARDING_STORAGE_KEY)!)).toMatchObject({ adapterType: "paperclip_runner", onboardingCopilot: true, model: "gpt-5.6-luna" });
     await act(async () => root.unmount());
   });
 

@@ -202,7 +202,7 @@ function normalizeCloudConnectorEnrollmentReturnTo(returnTo?: string | null): st
     const parsed = new URL(returnTo, "http://paperclip.local");
     if (
       parsed.origin !== "http://paperclip.local"
-      || parsed.pathname !== "/apps/connect"
+      || !["/apps/connect", "/apps/chat/connect"].includes(parsed.pathname)
       || parsed.username
       || parsed.password
     ) return null;
@@ -2281,7 +2281,7 @@ function connectorEnrollmentPrincipal(req: Request): string {
     assertBoard(req);
     const existing = await getAccessibleResource(req, res, svc.getConnection(req.params.connectionId as string), "Tool connection not found");
     if (!existing) return;
-    res.json({ catalog: await svc.listCatalog(existing.id, existing.companyId) });
+    res.json({ catalog: await svc.listCatalog(existing.id, existing.companyId, getActorInfo(req)) });
   });
 
   router.get("/tool-connections/:connectionId/activity", async (req, res) => {
