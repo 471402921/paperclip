@@ -54,7 +54,13 @@ export async function startPackedRegistry(directory) {
     if (!packageName.test(path)) { response.writeHead(404).end(); return; }
     const entry = packages.get(path);
     if (!entry) {
-      response.writeHead(302, { location: `https://registry.npmjs.org/${encodeURIComponent(path)}` }).end();
+      // Escape the name exactly as npm does for its own requests (`@scope%2fname`,
+      // npm-package-arg's escapedName), not with encodeURIComponent
+      // (`%40scope%2Fname`). npm keys cached metadata by the URL it fetched, so a
+      // differently escaped redirect missed every scoped packument the CI
+      // warm-up had just cached: 291 refetches, ~285 MB of metadata per install.
+      // `packageName` above admits only characters that need no other escaping.
+      response.writeHead(302, { location: `https://registry.npmjs.org/${path.replace('/', '%2f')}` }).end();
       return;
     }
     const { manifest, integrity } = entry;
