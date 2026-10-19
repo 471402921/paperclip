@@ -2269,7 +2269,7 @@ function OnboardingWizardInner({
       const existing = existingAgents?.find(
         (agent) =>
           agent.name.trim().toLowerCase() === hireName.toLowerCase() &&
-          agentHarnessType(agent.adapterType, agent.adapterConfig) === adapterType,
+          agentHarnessType(agent.adapterType, agent.adapterConfig) === agentHarnessType(adapterType, hireAdapterConfig),
       );
       if (existing) {
         if (!isCurrent()) return;

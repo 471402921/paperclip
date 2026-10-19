@@ -84,7 +84,7 @@ const mockAgentsApi = vi.hoisted(() => ({
   // The hire step lists the company's agents first and adopts one that already
   // carries the typed name on the same source, so a wizard that reopens on the
   // agent step cannot hire "Ada 2". Empty by default: the company is new.
-  list: vi.fn(async () => [] as Array<{ id: string; name: string; adapterType: string }>),
+  list: vi.fn(async () => [] as Array<{ id: string; name: string; adapterType: string; adapterConfig?: Record<string, unknown> }>),
   instructionsBundle: vi.fn(async () => ({ entryFile: "AGENTS.md" })),
   saveInstructionsFile: vi.fn(async () => ({})),
   // No default implementation: the top-level `beforeEach` sets the "no
@@ -483,6 +483,26 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
       await act(async () => root.unmount());
       mockInstanceSettingsApi.get.mockResolvedValue({ defaultEnvironmentId: null });
       mockEnvironmentsApi.list.mockResolvedValue([]);
+    });
+
+    it("reuses an existing Copilot hire after losing its draft id without adopting another Runner", async () => {
+      const { root, click } = await openCopilot();
+      try {
+        await click("Use saved Copilot connection");
+        const select = document.body.querySelector('[aria-label="Copilot model"]') as HTMLSelectElement;
+        await act(async () => { select.value = "gpt-5.6-luna"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+        await flushReact();
+        mockAgentsApi.list.mockResolvedValue([
+          { id: "codex-other", name: "Copilot canary", adapterType: "paperclip_runner", adapterConfig: { provider: "codex" } },
+          { id: "copilot-existing", name: "Copilot canary", adapterType: "paperclip_runner", adapterConfig: { provider: "acpx", acpxAgent: "copilot", model: "gpt-5.6-luna" } },
+        ]);
+        await click("Connect");
+        expect(mockAgentsApi.hire).not.toHaveBeenCalled();
+        expect(JSON.parse(window.localStorage.getItem(ONBOARDING_STORAGE_KEY)!)).toMatchObject({ createdAgentId: "copilot-existing" });
+        expect(document.body.textContent).toContain("Copilot canary is ready to work!");
+      } finally {
+        await act(async () => root.unmount());
+      }
     });
 
     it("refuses an unavailable model after refresh without substituting or hiring", async () => {
