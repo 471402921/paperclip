@@ -110,7 +110,7 @@ jobs:
     if: inputs.publish_copilot_v46_artifact
     needs: authorize_manual
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     permissions:
       contents: read
       actions: read
