@@ -1109,11 +1109,13 @@ fn provider_death_expires_input_and_commits_failure_without_querying_the_dead_pr
     let mode = "turns-provider-death";
     let mut config = acpx_config(&directory, mode);
     let mut payload = prepare_payload_with_mode(&directory, "codex", mode);
-    let identity: Value = serde_json::from_str(include_str!(
-        "../../../../test/fixtures/copilot-profile-v40-identity.json"
-    ))
-    .unwrap();
-    let digest = identity["commandDigest"].as_str().unwrap();
+    // Keep the death/expiry assertions on the active immutable profile. A
+    // historical digest fails admission before a provider can die.
+    let identity: Value =
+        serde_json::from_str(include_str!("../../../../acpx-profiles.json")).unwrap();
+    let digest = identity["profiles"]["copilot"]["commandDigest"]
+        .as_str()
+        .unwrap();
     *config
         .acpx_launch_profile
         .as_mut()
