@@ -427,11 +427,11 @@ describe("NativeExecutionInputV1", () => {
     })).toThrow("does not match");
   });
 
-  it("decodes saved Copilot v17 input after the current source declaration advances", () => {
-    const historical = JSON.parse(readFileSync(new URL("../../test/fixtures/copilot-profile-v17-identity.json", import.meta.url), "utf8"));
+  it.each([17, 43, 44] as const)("decodes saved Copilot v%s input after the current source declaration advances", (version) => {
+    const historical = JSON.parse(readFileSync(new URL(`../../test/fixtures/copilot-profile-v${version}-identity.json`, import.meta.url), "utf8"));
     const { permissionPolicy, qualificationStatus: _status, ...currentProfile } = QUALIFIED_ACPX_PROFILES.copilot;
     const provider = { kind: "acpx", agent: "copilot", model: "explicit-provider-model", permissionPolicy,
-      profile: { ...currentProfile, agentProfileVersion: 17, commandDigest: historical.commandDigest } };
+      profile: { ...currentProfile, agentProfileVersion: version, commandDigest: historical.commandDigest } };
     const parsed = parseNativeExecutionInput({ ...input, session: { ...input.session, driverKind: "acpx_runtime" }, provider });
     expect(parsed.provider).toEqual(provider);
     expect(parseNativeExecutionInput(parsed)).toEqual(parsed);
