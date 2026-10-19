@@ -37,7 +37,7 @@ export function verifyReleaseProviderPack(identity, sourceRevision, target = "li
     }
   }
   const copilot = payload.providers?.copilot;
-  const copilotProfile = profiles.profiles.copilot;
+  const copilotProfile = releaseProfiles.profiles.copilot;
   if (Object.hasOwn(payload.candidateProviders ?? {}, "copilot") || !copilot
     || copilot.version !== copilotProfile.agentServerVersion || copilot.profileDigest !== copilotProfile.commandDigest
     || copilot.closureDigest !== "sha256:a3d8f4367cfa1694d79e3f8b7930b6fbfe42a229c272b375b11951d631db8d07"

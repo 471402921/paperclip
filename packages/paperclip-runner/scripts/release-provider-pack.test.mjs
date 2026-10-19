@@ -163,3 +163,12 @@ test("frozen image validation uses release profiles rather than the newer workfl
   payload.acpxProfileDigests.claude = "sha256:" + "d".repeat(64);
   assert.throws(() => verifyReleaseProviderPack(seal(payload), revision, "linux-x64", expected), /profiles/);
 });
+
+test("uses the frozen release's Copilot profile when the workflow checkout has advanced", () => {
+  const releaseProfiles = structuredClone(profiles);
+  releaseProfiles.profiles.copilot.commandDigest = "sha256:" + "e".repeat(64);
+  const payload = fixture(); payload.providers.copilot.profileDigest = releaseProfiles.profiles.copilot.commandDigest;
+  const manifest = seal(payload);
+  assert.equal(verifyReleaseProviderPack(manifest, revision, "linux-x64", { profiles: releaseProfiles, distributions }), manifest);
+  assert.throws(() => verifyReleaseProviderPack(manifest, revision), /Copilot identity/);
+});

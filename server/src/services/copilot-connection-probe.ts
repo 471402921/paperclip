@@ -72,18 +72,35 @@ function requireVerified(value: unknown) {
 
 export async function probeCopilotExecutionTarget(token: string, target: AdapterExecutionTarget | null | undefined, model?: string) {
   if (!target || target.kind === "local") return requireVerified(await probeCopilotMetadata(token, model));
-  // Same standard installed locations used by native runner admission. The
-  // runtime verifier binds the inner executable and distribution before spawn.
-  const command = 'for pack in /opt/paperclip-runner/provider-pack "$HOME/.local/share/paperclip-runner/provider-pack"; do if [ -f "$pack/provider-pack.json" ] && [ -f "$pack/dist/cli/copilot-metadata-probe.js" ]; then export PAPERCLIP_ACPX_PROVIDER_PACKAGE_ROOT="$pack" PAPERCLIP_ACPX_PROVIDER_PACKAGE_MANIFEST="$pack/package.json"; exec "$pack/node_modules/node/bin/node" "$pack/dist/cli/copilot-metadata-probe.js"; fi; done; exit 127';
-  // The exact model is an environment value and never enters shell source.
-  const response = await runAdapterExecutionTargetShellCommand(`copilot-metadata-${randomUUID()}`, target, command, {
-    cwd: target.remoteCwd, env: { COPILOT_GITHUB_TOKEN: token, ...(model ? { PAPERCLIP_COPILOT_PROBE_MODEL: model } : {}) }, timeoutSec: 35, graceSec: 3,
-  });
-  if (response.timedOut || response.stdout.length > 64 * 1024) throw unprocessable("Copilot metadata verification timed out.", { code: "COPILOT_REQUEST_FAILED" });
-  let result: unknown;
-  try { result = JSON.parse(response.stdout.trim()); } catch { throw unprocessable("Install the verified Copilot runtime in this environment.", { code: "COPILOT_INSTALLATION_INVALID" }); }
-  const verified = requireVerified(result);
-  if (response.exitCode !== 0 || response.signal) throw unprocessable("Copilot metadata verification did not exit cleanly.", { code: "COPILOT_REQUEST_FAILED" });
-  if (model && !verified.models.some(value => value.id === model)) throw unprocessable("The selected Copilot model is unavailable for this account.", { code: "COPILOT_MODEL_UNAVAILABLE" });
-  return verified;
+  // Try the same two installed locations as native admission. An old /opt
+  // pack must not hide a valid home pack; account/model failures remain final.
+  const deadlineAt = Date.now() + 35_000;
+  let incompatibleMetadata: unknown;
+  for (const location of ["/opt/paperclip-runner/provider-pack", '"$HOME/.local/share/paperclip-runner/provider-pack"']) {
+    const remainingMs = deadlineAt - Date.now();
+    if (remainingMs <= 0) throw unprocessable("Copilot metadata verification timed out.", { code: "COPILOT_REQUEST_FAILED" });
+    const command = `pack=${location}; if [ -f "$pack/provider-pack.json" ] && [ -f "$pack/dist/cli/copilot-metadata-probe.js" ] && [ -x "$pack/node_modules/node/bin/node" ]; then export PAPERCLIP_ACPX_PROVIDER_PACKAGE_ROOT="$pack" PAPERCLIP_ACPX_PROVIDER_PACKAGE_MANIFEST="$pack/package.json"; exec "$pack/node_modules/node/bin/node" "$pack/dist/cli/copilot-metadata-probe.js"; fi; exit 127`;
+    // The selected token and exact model are environment values, never shell source.
+    const response = await runAdapterExecutionTargetShellCommand(`copilot-metadata-${randomUUID()}`, target, command, {
+      cwd: target.remoteCwd, env: { COPILOT_GITHUB_TOKEN: token, ...(model ? { PAPERCLIP_COPILOT_PROBE_MODEL: model } : {}) }, timeoutSec: Math.ceil(remainingMs / 1000), graceSec: 3,
+    });
+    if (response.timedOut || response.stdout.length > 64 * 1024) throw unprocessable("Copilot metadata verification timed out.", { code: "COPILOT_REQUEST_FAILED" });
+    let result: unknown;
+    try { result = JSON.parse(response.stdout.trim()); } catch { continue; }
+    const verified = validateCopilotMetadata(result);
+    if (verified.status === "failed") {
+      if (verified.code === "COPILOT_INSTALLATION_INVALID") continue;
+      if (result !== null && typeof result === "object" && (result as Record<string, unknown>).status === "verified") {
+        incompatibleMetadata = verified;
+        continue;
+      }
+      requireVerified(verified);
+      continue;
+    }
+    if (response.exitCode !== 0 || response.signal) throw unprocessable("Copilot metadata verification did not exit cleanly.", { code: "COPILOT_REQUEST_FAILED" });
+    if (model && !verified.models.some(value => value.id === model)) throw unprocessable("The selected Copilot model is unavailable for this account.", { code: "COPILOT_MODEL_UNAVAILABLE" });
+    return verified;
+  }
+  if (incompatibleMetadata) requireVerified(incompatibleMetadata);
+  throw unprocessable("Install the verified Copilot runtime in this environment.", { code: "COPILOT_INSTALLATION_INVALID" });
 }

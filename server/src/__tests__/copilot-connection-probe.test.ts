@@ -17,7 +17,7 @@ import type { AdapterExecutionTarget } from "@paperclipai/adapter-utils/executio
 const verified = { status: "verified", version: "1.0.88", profileDigest: QUALIFIED_ACPX_PROFILES.copilot.commandDigest, promptSent: false, models: [{ id: "gpt-5.6-luna", label: "GPT" }] };
 const remote = { kind: "remote", remoteCwd: "/workspace" } as AdapterExecutionTarget;
 beforeEach(() => {
-  vi.clearAllMocks(); mocks.general.mockResolvedValue({ executionMode: "local" }); mocks.experimental.mockResolvedValue({}); mocks.defaults.mockResolvedValue({ defaultEnvironmentId: null });
+  vi.clearAllMocks(); mocks.command.mockReset(); mocks.general.mockResolvedValue({ executionMode: "local" }); mocks.experimental.mockResolvedValue({}); mocks.defaults.mockResolvedValue({ defaultEnvironmentId: null });
   mocks.environment.mockResolvedValue({ id: "selected", driver: "sandbox", status: "active", config: { provider: "daytona" } }); mocks.bindings.mockResolvedValue(["company"]);
   mocks.acquire.mockResolvedValue({ lease: { id: "lease", metadata: {} } }); mocks.realize.mockResolvedValue({}); mocks.release.mockResolvedValue(undefined); mocks.resolve.mockResolvedValue(remote);
   mocks.command.mockResolvedValue({ timedOut: false, stdout: JSON.stringify(verified), exitCode: 0 }); mocks.metadata.mockResolvedValue(verified);
@@ -97,5 +97,29 @@ describe("Copilot connection verification", () => {
     await expect(probeCopilotExecutionTarget("private-token", remote)).rejects.toMatchObject({ details: { code: "COPILOT_REQUEST_FAILED" } });
     mocks.command.mockResolvedValue({ timedOut: false, stdout: JSON.stringify(verified), exitCode: 0 });
     await expect(probeCopilotExecutionTarget("private-token", remote, "missing")).rejects.toMatchObject({ details: { code: "COPILOT_MODEL_UNAVAILABLE" } });
+  });
+});
+
+describe("remote Copilot installation fallback", () => {
+  it.each(["missing", "incomplete", "stale-profile"])("uses the valid home pack after rejecting a %s opt pack", async variant => {
+    const rejected = variant === "missing" ? { timedOut: false, stdout: "", exitCode: 127 }
+      : { timedOut: false, exitCode: variant === "incomplete" ? 1 : 0, stdout: JSON.stringify(variant === "incomplete"
+        ? { status: "failed", code: "COPILOT_INSTALLATION_INVALID", promptSent: false }
+        : { ...verified, profileDigest: `sha256:${"0".repeat(64)}` }) };
+    mocks.command.mockResolvedValueOnce(rejected).mockResolvedValueOnce({ timedOut: false, stdout: JSON.stringify(verified), exitCode: 0 });
+    await expect(probeCopilotExecutionTarget("private-token", remote, "gpt-5.6-luna")).resolves.toEqual(verified);
+    expect(mocks.command).toHaveBeenCalledTimes(2);
+    expect(mocks.command.mock.calls[0]![2]).toContain("/opt/paperclip-runner/provider-pack");
+    expect(mocks.command.mock.calls[1]![2]).toContain("$HOME/.local/share/paperclip-runner/provider-pack");
+    for (const call of mocks.command.mock.calls) {
+      expect(call[2]).not.toContain("private-token");
+      expect(call[3].env).toMatchObject({ COPILOT_GITHUB_TOKEN: "private-token", PAPERCLIP_COPILOT_PROBE_MODEL: "gpt-5.6-luna" });
+      expect(call[3].timeoutSec).toBeLessThanOrEqual(35);
+    }
+  });
+  it.each(["COPILOT_AUTH_REQUIRED", "COPILOT_ENTITLEMENT_DENIED", "COPILOT_MODEL_UNAVAILABLE"])("keeps %s and does not try another installation", async code => {
+    mocks.command.mockResolvedValueOnce({ timedOut: false, exitCode: 1, stdout: JSON.stringify({ status: "failed", code, promptSent: false }) });
+    await expect(probeCopilotExecutionTarget("private-token", remote)).rejects.toMatchObject({ details: { code } });
+    expect(mocks.command).toHaveBeenCalledOnce();
   });
 });
