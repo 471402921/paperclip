@@ -36,6 +36,7 @@ export type CodexServerRequestHandler = (
 ) => Promise<Record<string, unknown>>;
 
 export interface CodexAppServerTransport {
+  supportsTurnReasoning?(): boolean;
   /** Runner-owned live capability projection; absent on native Codex transports. */
   turnControlCapabilities?(): NativeTurnControlCapabilities | null;
   request(
@@ -218,6 +219,10 @@ const SAFE_ENVIRONMENT_KEYS = [
   "NO_PROXY",
   "NODE_EXTRA_CA_CERTS",
   "PAPERCLIP_RUNNER_EXTERNAL_SANDBOX",
+  "PAPERCLIP_RUNNER_HOME_MODE",
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+  "XDG_CACHE_HOME",
   "PATH",
   "PATHEXT",
   "SSL_CERT_FILE",

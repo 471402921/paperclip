@@ -2390,7 +2390,7 @@ fn replacement_continuity_payload(
     })
 }
 
-fn secure_directory(path: &Path, label: &str) -> Result<(), DurableRunnerError> {
+pub(crate) fn secure_directory(path: &Path, label: &str) -> Result<(), DurableRunnerError> {
     let mut builder = DirBuilder::new();
     #[cfg(unix)]
     builder.mode(0o700);
@@ -3196,7 +3196,7 @@ mod tests {
     #[test]
     fn pi_profile_matches_published_identity_and_rejects_prior_profiles() {
         let published: Value = serde_json::from_str(include_str!(
-            "../../../../test-fixtures/pi-acp/profile-v22-identity.json"
+            "../../../../test-fixtures/pi-acp/profile-v23-identity.json"
         ))
         .unwrap();
         let mut value = descriptor("codex");
@@ -4083,7 +4083,7 @@ mod tests {
         descriptor_value["agentRuntimePackage"] = Value::Null;
         descriptor_value["agentRuntimeVersion"] = Value::Null;
         descriptor_value["commandDigest"] = serde_json::from_str::<Value>(include_str!(
-            "../../../../test/fixtures/copilot-profile-v36-identity.json"
+            "../../../../test/fixtures/copilot-profile-v40-identity.json"
         ))
         .unwrap()["commandDigest"]
             .clone();

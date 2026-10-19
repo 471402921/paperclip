@@ -16,6 +16,13 @@ import {
 import { createAgentSchema } from "./agent.js";
 
 describe("issue validators", () => {
+  it("preserves the exact expected execution policy snapshot without defaults", () => {
+    const snapshot = { mode: "normal", stages: [], monitor: { nextCheckAt: "2026-10-10T12:00:00Z" } };
+    expect(updateIssueSchema.parse({ expectedExecutionPolicy: snapshot }).expectedExecutionPolicy).toEqual(snapshot);
+    expect(updateIssueSchema.parse({ expectedExecutionPolicy: null }).expectedExecutionPolicy).toBeNull();
+    expect(updateIssueSchema.parse({}).expectedExecutionPolicy).toBeUndefined();
+    expect(updateIssueSchema.safeParse({ expectedExecutionPolicy: [] }).success).toBe(false);
+  });
   it("accepts private visibility without adding defaults to updates", () => {
     expect(createIssueSchema.parse({ title: "Private", visibility: "private" }).visibility).toBe("private");
     expect(createIssueSchema.parse({ title: "Open" }).visibility).toBe("open");
@@ -643,6 +650,12 @@ describe("issue validators", () => {
     });
 
     expect(parsed.success).toBe(false);
+  });
+
+  it.each(["preconfigured", "isolated"])("rejects task-level homeMode %s on create and update", homeMode => {
+    const overrides = { assigneeAdapterOverrides: { adapterConfig: { homeMode } } };
+    expect(createIssueSchema.safeParse({ title: "Task", ...overrides }).success).toBe(false);
+    expect(updateIssueSchema.safeParse(overrides).success).toBe(false);
   });
 
   it("rejects retired model profiles in agent runtime config", () => {
