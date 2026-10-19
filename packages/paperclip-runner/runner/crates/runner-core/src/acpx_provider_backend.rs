@@ -4078,15 +4078,9 @@ mod tests {
             artifacts: vec![artifact(&command)],
         };
         let mut descriptor_value = descriptor("copilot");
-        descriptor_value["agentServerPackage"] = json!("@github/copilot");
-        descriptor_value["agentServerVersion"] = json!("1.0.88");
-        descriptor_value["agentRuntimePackage"] = Value::Null;
-        descriptor_value["agentRuntimeVersion"] = Value::Null;
-        descriptor_value["commandDigest"] = serde_json::from_str::<Value>(include_str!(
-            "../../../../test/fixtures/copilot-profile-v40-identity.json"
-        ))
-        .unwrap()["commandDigest"]
-            .clone();
+        // The fixture factory uses the generated current release identity.
+        // Overwriting it with a historical digest prevents restore before the
+        // instruction-refresh behavior under test can run.
         descriptor_value["providerPolicy"] = json!({ "readOnly": true });
         descriptor_value["sidecarCommand"] = json!(command);
         descriptor_value["runtimeContext"] = json!({ "instructions": { "digest": "stable" }, "mcp": { "digest": "before" }, "aggregateDigest": "before" });
