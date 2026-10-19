@@ -92,7 +92,6 @@ test('the registry exposes only known tarballs, redirects other packages to npm 
     assert.equal(await (await fetch(metadata.versions['1.0.0'].dist.tarball)).text(), 'packed bytes');
     const external = await fetch(`${registry.url}/@other%2fpkg`, { redirect: 'manual' });
     assert.equal(external.status, 302);
-    // npm's own escaping, so the redirect hits metadata a direct npm fetch cached.
     assert.equal(external.headers.get('location'), 'https://registry.npmjs.org/@other%2fpkg');
     const unscoped = await fetch(`${registry.url}/other-pkg`, { redirect: 'manual' });
     assert.equal(unscoped.headers.get('location'), 'https://registry.npmjs.org/other-pkg');
