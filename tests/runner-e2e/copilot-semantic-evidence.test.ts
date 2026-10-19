@@ -70,7 +70,7 @@ describe("Copilot semantic completion public-event oracle", () => {
   });
   it("versions semantic completion and current-mainline denial settlement independently", () => {
     const suite = runnerSuites.find(s => s.id === "copilot-protection")!;
-    expect(suite.definitionMetadata).toMatchObject({ version: 23, titleCreation: "explicit-search-composer", taskBinding: "browser-creation-response-id", remoteBootstrapContext: "already-exposed-dedicated-tool-no-http-substitution", semanticCompletionEvidence: "paperclip.e2e.copilot-semantic-completion.v4", denialSettlementEvidence: "paperclip.e2e.copilot-denial-settlement.v4" });
+    expect(suite.definitionMetadata).toMatchObject({ version: 24, titleCreation: "explicit-search-composer", taskBinding: "browser-creation-response-id", remoteBootstrapContext: "already-exposed-dedicated-tool-no-http-substitution", semanticCompletionEvidence: "paperclip.e2e.copilot-semantic-completion.v4", denialSettlementEvidence: "paperclip.e2e.copilot-denial-settlement.v4" });
     expect(suiteDefinitionHash(suite)).not.toBe(suiteDefinitionHash({ ...suite, definitionMetadata: { ...suite.definitionMetadata, version: 8 } }));
   });
   it("joins exact native lifecycle, authoritative callback, proposed content and accepted control-plane result", () => {
