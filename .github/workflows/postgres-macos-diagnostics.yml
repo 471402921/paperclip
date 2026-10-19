@@ -38,7 +38,7 @@ jobs:
           pnpm --filter @paperclipai/db exec vitest run src/test-postgres-diagnostics.test.ts src/test-postgres-diagnostics-fixture.test.ts src/test-embedded-postgres.test.ts --no-file-parallelism --reporter=verbose 2>&1 | tee "$PAPERCLIP_TEST_POSTGRES_DIAGNOSTIC_EVIDENCE_DIR/vitest.log"
       - name: Retain live macOS diagnostic evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: postgres-macos-diagnostics-${{ github.sha }}
           path: test-results/postgres-macos-diagnostics
