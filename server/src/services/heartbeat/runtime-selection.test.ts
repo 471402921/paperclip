@@ -98,6 +98,25 @@ describe.skipIf(!support.supported)("heartbeat runtime selection boundary", () =
     expect(input.onNativeOwnershipHeld).not.toHaveBeenCalled();
   });
 
+  it("persists the Copilot task model without accepting task provider or permission changes", async () => {
+    const { input, run, issue } = await fixture();
+    const adapterConfig = { provider: "acpx", acpxAgent: "copilot", model: "gpt-5.6-luna", acpxPermissionMode: "approve-reads" };
+    input.agent = { ...input.agent, adapterConfig };
+    await db.update(agents).set({ adapterConfig }).where(eq(agents.id, input.agent.id));
+    input.nativeRuntimeResolution = resolveHeartbeatNativeRuntimeMode({
+      persisted: input.run, enabled: true, runtimeConfig: {}, adapterConfig,
+      agent: input.agent, issue, target: null, workspaceId: null,
+    });
+    input.config.issueAssigneeOverrides = { adapterConfig: {
+      model: "gpt-6-luna", provider: "codex", acpxAgent: "pi", acpxPermissionMode: "approve-all",
+    } };
+    const selected = await selectHeartbeatRuntime(db, input);
+    if (!selected.selected || !selected.nativeExecution) throw new Error("Expected native Copilot selection");
+    const expected = { kind: "acpx", agent: "copilot", model: "gpt-6-luna", permissionMode: "approve-reads" };
+    expect(selected.nativeExecution.provider).toMatchObject(expected);
+    expect((await read(run.id)).runnerProfileJson).toMatchObject({ nativeExecutionInput: { provider: expected } });
+  });
+
   it("persists configured GitHub instruction skills without admitting provider-mentioned skills", async () => {
     const { input, issue, run } = await fixture();
     input.config.runScopedMentionedSkillKeys = ["company/test/configured"];

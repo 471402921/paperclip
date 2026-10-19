@@ -718,6 +718,8 @@ export async function selectHeartbeatRuntime(db: Db, input: HeartbeatRuntimeSele
       getNativeFreshSessionHandoff = nativeReviewRequest ? undefined : getFreshSessionHandoff;
       const nativeProviderConfig = nativeRuntimeResolution.profile.backend === "codex_app_server"
         || nativeRuntimeResolution.profile.backend === "opencode_server"
+        || (nativeRuntimeResolution.profile.backend === "acpx_runtime"
+          && parseObject(agent.adapterConfig).acpxAgent === "copilot")
         ? projectPaperclipRunnerTaskConfig(
             nativeRuntimeResolution.profile.backend,
             agent.adapterConfig,
