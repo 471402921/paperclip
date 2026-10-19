@@ -723,8 +723,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         onLog,
       },
     });
-    // Make tool commands, not the Claude process, the sandbox's first
-    // out-of-memory victims. See `CLAUDE_TOOL_SHELL_PREFIX_SCRIPT`.
     if (toolShellPrefixInstalled && remoteToolShellPrefixPath) {
       env.CLAUDE_CODE_SHELL_PREFIX = remoteToolShellPrefixPath;
       loggedEnv.CLAUDE_CODE_SHELL_PREFIX = remoteToolShellPrefixPath;

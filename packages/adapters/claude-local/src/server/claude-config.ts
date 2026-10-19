@@ -218,24 +218,6 @@ export async function prepareClaudeConfigSeed(
   return targetDir;
 }
 
-/**
- * The `CLAUDE_CODE_SHELL_PREFIX` script for a remote sandbox.
- *
- * Claude Code calls the prefix with one argument: the complete shell command
- * string for a Bash tool call (or a hook). The script raises its own
- * `oom_score_adj` to 1000, then runs the command string in the shell that
- * Claude Code itself selects (`CLAUDE_CODE_SHELL`, then `SHELL`, when either is
- * an executable bash or zsh; otherwise zsh or bash from `PATH`, bash first when
- * `SHELL` names bash). A process can raise its own score without privilege, and
- * the command's processes inherit it.
- *
- * Sandboxes have a fixed memory limit. Without this, every process has the same
- * score, so a memory-heavy tool command (a type check, a dependency install)
- * can make the kernel kill the Claude Code process instead. The agent then
- * reports "The connection to Claude was lost." and the whole run fails. With
- * the raised score the kernel kills the tool command, and Claude sees a failed
- * command (exit 137) that it can recover from.
- */
 export const CLAUDE_TOOL_SHELL_PREFIX_SCRIPT = [
   "#!/bin/sh",
   "echo 1000 > /proc/self/oom_score_adj 2>/dev/null || :",
@@ -262,10 +244,6 @@ export function buildRemoteClaudeConfigMaterializationCommand(input: {
   remoteToolShellPrefixPath?: string | null;
 }): string {
   const prefixPath = input.remoteToolShellPrefixPath;
-  // The prefix install runs last and prints a marker only when the executable
-  // file is in place. The caller sets `CLAUDE_CODE_SHELL_PREFIX` only when it
-  // sees the marker: a prefix path that does not exist would fail every Bash
-  // tool call.
   const installToolShellPrefix = prefixPath
     ? `; { umask 077 && printf '%s' ${shellQuote(CLAUDE_TOOL_SHELL_PREFIX_SCRIPT)} > ${shellQuote(`${prefixPath}.partial`)} && ` +
       `chmod 700 ${shellQuote(`${prefixPath}.partial`)} && mv -f ${shellQuote(`${prefixPath}.partial`)} ${shellQuote(prefixPath)} && ` +
@@ -283,10 +261,6 @@ export function buildRemoteClaudeConfigMaterializationCommand(input: {
     installToolShellPrefix;
 }
 
-/**
- * The in-sandbox path for the tool shell prefix, or null when the run env
- * already carries an operator `CLAUDE_CODE_SHELL_PREFIX`. An operator prefix wins.
- */
 export function resolveRemoteClaudeToolShellPrefixPath(
   env: Record<string, string>,
   remoteClaudeRuntimeRoot: string,
@@ -295,13 +269,6 @@ export function resolveRemoteClaudeToolShellPrefixPath(
   return path.posix.join(remoteClaudeRuntimeRoot, "tool-shell-prefix.sh");
 }
 
-/**
- * Materialize the managed Claude config dir in the sandbox. With
- * `remoteToolShellPrefixPath`, also install the tool shell prefix (see
- * `CLAUDE_TOOL_SHELL_PREFIX_SCRIPT`). `toolShellPrefixInstalled` is true only
- * when the sandbox confirmed the install; only then may the caller set
- * `CLAUDE_CODE_SHELL_PREFIX`.
- */
 export async function materializeRemoteClaudeConfig(input: {
   runId: string;
   target: AdapterExecutionTarget | null | undefined;

@@ -914,8 +914,6 @@ describe("claude_local ACP lane", () => {
     );
     // C4 — no XDG_* variable is introduced for in-sandbox credential discovery.
     expect(Object.keys(meta[0]?.env ?? {}).filter((key) => key.startsWith("XDG_"))).toEqual([]);
-    // The tool shell prefix is installed next to the config dir as an
-    // executable file before the env points Claude at it.
     const toolShellPrefix = String(meta[0]?.env?.CLAUDE_CODE_SHELL_PREFIX ?? "");
     expect(toolShellPrefix).toBe(path.posix.join(path.posix.dirname(remappedConfigDir), "tool-shell-prefix.sh"));
     expect((await fs.stat(toolShellPrefix)).mode & 0o777).toBe(0o700);

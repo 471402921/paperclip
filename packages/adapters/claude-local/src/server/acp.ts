@@ -316,8 +316,6 @@ async function prepareClaudeRemoteManagedHome(
   });
   // Repoint CLAUDE_CONFIG_DIR onto the in-sandbox config dir.
   env.CLAUDE_CONFIG_DIR = remoteClaudeConfigDir;
-  // Make tool commands, not the Claude process, the sandbox's first
-  // out-of-memory victims. See `CLAUDE_TOOL_SHELL_PREFIX_SCRIPT`.
   if (toolShellPrefixInstalled && remoteToolShellPrefixPath) {
     env.CLAUDE_CODE_SHELL_PREFIX = remoteToolShellPrefixPath;
   }

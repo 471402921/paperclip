@@ -258,7 +258,6 @@ describe("Claude tool shell prefix", () => {
     return { root, prefixPath, stdout };
   }
 
-  // Claude Code runs `<prefix> '<command string>'`; the prefix gets one argument.
   async function runThroughPrefix(prefixPath: string, commandString: string, env: Record<string, string>) {
     const { stdout } = await execFileAsync(prefixPath, [commandString], { env });
     return stdout.trim();
@@ -299,23 +298,18 @@ describe("Claude tool shell prefix", () => {
     const { root, prefixPath } = await installPrefix();
     const bash = (await execFileAsync("/bin/sh", ["-c", "command -v bash"])).stdout.trim();
     const probe = 'if [ -n "${BASH_VERSION:-}" ]; then echo bash; else echo other; fi';
-    // A valid bash SHELL is used.
     await expect(runThroughPrefix(prefixPath, probe, { PATH: process.env.PATH ?? "", SHELL: bash }))
       .resolves.toBe("bash");
-    // An invalid CLAUDE_CODE_SHELL falls back to SHELL, as Claude Code does.
     await expect(runThroughPrefix(prefixPath, probe, {
       PATH: process.env.PATH ?? "",
       SHELL: bash,
       CLAUDE_CODE_SHELL: "/missing/bash",
     })).resolves.toBe("bash");
-    // A SHELL that is not bash or zsh falls back to bash or zsh from PATH. Only
-    // bash is on this PATH, so bash runs the command.
     const binDir = path.join(root, "bin");
     await fs.mkdir(binDir, { recursive: true });
     await fs.symlink(bash, path.join(binDir, "bash"));
     await expect(runThroughPrefix(prefixPath, probe, { PATH: binDir, SHELL: "/bin/sh" }))
       .resolves.toBe("bash");
-    // The command string keeps its quoting and its exit status.
     await expect(runThroughPrefix(prefixPath, `printf '%s' "q'uote"`, { PATH: process.env.PATH ?? "", SHELL: bash }))
       .resolves.toBe("q'uote");
     await expect(execFileAsync(prefixPath, ["exit 7"], { env: { PATH: process.env.PATH ?? "", SHELL: bash } }))
