@@ -24,6 +24,11 @@ Agent access: `available` — REST / native call_api; CLI issue diagnostics.
 
 Policy: Task/run visibility, run ownership and source/action policy; workspace export
 retry and some operator controls require board.
+Graceful legacy shutdown retains the exact sandbox until its owned adapter
+settles, including after the first shutdown wait. A renewed settlement fence
+protects cleanup by other controllers. Loss of the owner retains the source
+for repair after expiry. This automatic protection grants no agent operation,
+execution permission, or bypass of workspace repair gates.
 The server can recover a prepared remote bootstrap only with a durable
 never-claimed executor receipt and no contradictory execution evidence. This
 automatic classification grants no new agent action or permission; normal
