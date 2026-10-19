@@ -22,7 +22,7 @@ A Company is a first-order object. One Paperclip instance runs multiple Companie
 Every Company has a **Board** that governs high-impact decisions. The Board is the human oversight layer.
 
 Human invitations default to Operator, with company editing, invitations,
-connections, tools, environments, pipelines, and audit views available by
+connections, tools, environments, and audit views available by
 default. Join approval and member-permission management remain separate grants.
 An inviter must hold these membership grants to invite a role that includes them.
 See [human Operator defaults](SPEC-implementation.md#91-board-auth).
@@ -787,3 +787,8 @@ Agents select authorized workspace/repository intent while the harness owns path
 ### Fast responses
 
 A company may use a shared API model to acknowledge accepted human messages across tasks, agent chat and external channels while normal work starts. Acknowledgements retain their platform provenance and cannot satisfy execution or completion requirements. The bounded inference, authorization, sponsorship and independent accounting contract is defined in [fast-responses.md](fast-responses.md).
+
+### Retired Pipelines experiment
+
+Pipelines is no longer a product feature. Its database tables remain for existing
+data preservation; Cases and Routines continue independently.
