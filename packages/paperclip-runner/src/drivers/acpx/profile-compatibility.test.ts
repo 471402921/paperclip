@@ -8,6 +8,7 @@ describe("historical ACPX profile decoding", () => {
     expect(isSupportedAcpxProfileVersion("copilot", 17)).toBe(true);
     expect(isSupportedAcpxProfileVersion("pi", 17)).toBe(true);
     expect(isSupportedAcpxProfileVersion("pi", 18)).toBe(true);
+    expect(isSupportedAcpxProfileVersion("pi", 23)).toBe(true);
     expect(isSupportedAcpxProfileVersion("cursor", 15)).toBe(true);
     expect(isSupportedAcpxProfileVersion("cursor", 16)).toBe(false);
     for (const agent of ["pi", "copilot"]) {
@@ -26,9 +27,10 @@ describe("historical ACPX profile decoding", () => {
       expect(isSupportedAcpxProfileVersion("copilot", version)).toBe(true);
     }
     expect(isSupportedAcpxProfileVersion("copilot", QUALIFIED_ACPX_PROFILE_DATA.copilot.agentProfileVersion + 1)).toBe(false);
-    // Mainline already admits Pi 23; this Copilot change must preserve that boundary.
+    // Preserve Pi history and its current mainline release without admitting the next profile.
     expect(isSupportedAcpxProfileVersion("pi", 23)).toBe(true);
-    expect(isSupportedAcpxProfileVersion("pi", 24)).toBe(false);
+    expect(isSupportedAcpxProfileVersion("pi", QUALIFIED_ACPX_PROFILE_DATA.pi.agentProfileVersion)).toBe(true);
+    expect(isSupportedAcpxProfileVersion("pi", QUALIFIED_ACPX_PROFILE_DATA.pi.agentProfileVersion + 1)).toBe(false);
     for (const agent of ["cursor", "claude", "codex", "grok"]) {
       expect(isSupportedAcpxProfileVersion(agent, 23)).toBe(false);
       expect(isSupportedAcpxProfileVersion(agent, 24)).toBe(false);
