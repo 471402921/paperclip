@@ -439,3 +439,18 @@ it.each([
   expect(error.cause).toBeUndefined(); expect(error.stack).not.toContain("PRIVATE");
   expect(h.bind).not.toHaveBeenCalled();
 });
+
+it("uses a short exact Copilot bootstrap path while preserving observer-before-action delivery", async () => {
+  const h = harness();
+  const bootstrap = createRemoteNativeBootstrap({ ...h.input, requireCopilotTaskContext: true }, h.bind);
+  const prompt = bootstrap.prompt("copilot-short-path");
+  const path = prompt.match(/workspace file (\S+)\./u)?.[1];
+  expect(path).toMatch(/^\.paperclip-eval-action-[a-f0-9]{12}\.txt$/u);
+  expect(prompt).toContain("exact relative file");
+  expect(prompt).toContain("retry the read for up to 20 seconds");
+  expect(h.fixture.publishAction).not.toHaveBeenCalled();
+  await bootstrap.bindAndRelease(h.request);
+  expect(h.bind).toHaveBeenCalledWith(expect.objectContaining({ actionFile: path }));
+  expect(h.fixture.publishAction).toHaveBeenCalledWith(path, "PRIVATE ACTUAL ACTION");
+  expect(h.order.indexOf("armed")).toBeLessThan(h.order.indexOf("publish"));
+});

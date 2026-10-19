@@ -116,3 +116,12 @@ it("accepts bounded correlated progress for status-omitting native content updat
   progressed.payload.prpEvent.payload.target = "other.txt";
   expect(() => withoutProvenBootstrapReads(notices, origin, { actionFile, events })).toThrow();
 });
+
+it("requires the exact short Copilot setup path and rejects a miscopied path", () => {
+  const shortPath = ".paperclip-eval-action-4c0217d3b2bb.txt";
+  const notice = { ...read(), readTargetSha256: `sha256:${createHash("sha256").update(shortPath).digest("hex")}` };
+  const row = receipt(); row.payload.prpEvent.payload.target = shortPath;
+  expect(withoutProvenBootstrapReads([notice, origin], origin, { actionFile: shortPath, events: [row] })).toEqual([origin]);
+  row.payload.prpEvent.payload.target = shortPath.replace("d3", "");
+  expect(() => withoutProvenBootstrapReads([notice, origin], origin, { actionFile: shortPath, events: [row] })).toThrow(/proof/);
+});
