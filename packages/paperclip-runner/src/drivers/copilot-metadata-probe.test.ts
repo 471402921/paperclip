@@ -1,13 +1,14 @@
 import { EventEmitter } from "node:events";
 import { PassThrough, Writable } from "node:stream";
-import { access } from "node:fs/promises";
+import { access, rm } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { QUALIFIED_ACPX_PROFILES } from "./acpx/qualified-profiles.js";
 const mocks = vi.hoisted(() => ({ verify: vi.fn() }));
 vi.mock("./acpx/copilot-installation.js", () => ({ verifyCopilotInstallation: mocks.verify }));
 import { createMetadataRpc, probeCopilotMetadata, validateCopilotMetadata } from "./copilot-metadata-probe.js";
-function fakeChild(reply: (message: any) => unknown) {
+function fakeChild(reply: (message: any) => unknown, closeOnEnd = true) {
   const child = new EventEmitter() as ChildProcessWithoutNullStreams;
   child.stdout = new PassThrough(); child.stderr = new PassThrough();
   child.kill = vi.fn(() => { child.emit("close", 0); return true; });
@@ -16,7 +17,7 @@ function fakeChild(reply: (message: any) => unknown) {
     const response = reply(message);
     if (response !== undefined) queueMicrotask(() => child.stdout.emit("data", Buffer.from(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, ...response as object })}\n`)));
     done();
-  }, final(done) { queueMicrotask(() => child.emit("close", 0)); done(); } });
+  }, final(done) { if (closeOnEnd) queueMicrotask(() => child.emit("close", 0)); done(); } });
   return child;
 }
 const verified = { status: "verified", version: "1.0.88", profileDigest: QUALIFIED_ACPX_PROFILES.copilot.commandDigest, models: [{ id: "gpt-5.6-luna", label: "GPT" }], promptSent: false };
@@ -39,6 +40,44 @@ describe("Copilot metadata boundary", () => {
     for (const key of ["GH_TOKEN", "GITHUB_TOKEN", "NODE_OPTIONS", "SSH_AUTH_SOCK"]) expect(environment).not.toHaveProperty(key);
     expect(environment.HOME).toContain(cwd); expect(close).toHaveBeenCalledOnce();
     await expect(access(cwd)).rejects.toThrow();
+  });
+  it("retires a stubborn native descendant before releasing metadata state", async () => {
+    let launcher: ChildProcessWithoutNullStreams | undefined;
+    let providerPid = 0;
+    let probe: ReturnType<typeof probeCopilotMetadata> | undefined;
+    const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    const provider = `const readline=require("node:readline");process.on("SIGTERM",()=>{});setInterval(()=>{},1000);process.stderr.write("provider-pid:"+process.pid+"\\n");
+      readline.createInterface({input:process.stdin}).on("line",line=>{const m=JSON.parse(line);const result=m.method==="initialize"?{agentInfo:{version:"1.0.88"}}:m.method==="session/new"?{sessionId:"metadata",models:{availableModels:[{modelId:"gpt-5.6-luna",name:"GPT"}]}}:{};process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:m.id,result})+"\\n");});`;
+    const script = `const {spawn}=require("node:child_process");process.on("SIGTERM",()=>{});const c=spawn(process.execPath,["-e",${JSON.stringify(provider)}],{stdio:"inherit",detached:false});c.once("exit",()=>process.exit(0));`;
+    const close = vi.fn(async () => { expect(alive(launcher!.pid!)).toBe(false); await vi.waitFor(() => expect(alive(providerPid)).toBe(false)); });
+    mocks.verify.mockResolvedValue({ commandDigest: verified.profileDigest, openCommand: async () => ({ close, spawn: (_args: unknown, options: any) => {
+      launcher = spawn(process.execPath, ["-e", script], { cwd: options.cwd, detached: true, stdio: "pipe" });
+      launcher.stderr.on("data", value => { const match = /provider-pid:(\d+)/.exec(value.toString()); if (match) providerPid = Number(match[1]); });
+      return launcher;
+    } }) });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      probe = probeCopilotMetadata("token");
+      const result = await Promise.race([probe, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("metadata cleanup exceeded its bound")), 3500); })]);
+      expect(result).toMatchObject({ status: "verified", promptSent: false });
+      expect(providerPid).toBeGreaterThan(0); expect(close).toHaveBeenCalledOnce();
+    } finally {
+      if (timer) clearTimeout(timer);
+      if (launcher?.pid) { try { process.kill(-launcher.pid, "SIGKILL"); } catch {} }
+      if (probe) await probe.catch(() => undefined);
+    }
+  });
+  it("fails metadata verification and retains private state when shutdown is unconfirmed", async () => {
+    let cwd = "";
+    const child = fakeChild(message => ({ result: message.method === "initialize" ? { agentInfo: { version: "1.0.88" } } : { sessionId: "metadata", models: { availableModels: [{ modelId: "gpt-5.6-luna" }] } } }), false);
+    child.kill = vi.fn(() => false);
+    const close = vi.fn(async () => {});
+    mocks.verify.mockResolvedValue({ commandDigest: verified.profileDigest, openCommand: async () => ({ close, spawn: (_args: unknown, options: any) => { cwd = options.cwd; return child; } }) });
+    try {
+      expect(await probeCopilotMetadata("token")).toMatchObject({ status: "failed", code: "COPILOT_REQUEST_FAILED", promptSent: false });
+      expect(close).toHaveBeenCalledOnce();
+      await expect(access(cwd)).resolves.toBeUndefined();
+    } finally { child.emit("close", 0); if (cwd) await rm(cwd, { recursive: true, force: true }); }
   });
   it("rejects an unavailable model without sending a prompt or selecting another model", async () => {
     const methods: string[] = [];
