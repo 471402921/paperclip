@@ -3,7 +3,8 @@ import { readCopilotStopAcknowledgement } from "./copilot-stop-acknowledgement.j
 import { applyMainlineStopMetadata, stopAcknowledgementForTest } from "./copilot-stop-test-fixtures.js";
 import { readCopilotToolEvidence } from "./copilot-evidence.js";
 import { observeCopilotPreStop, copilotDenialSampleCursor, readCopilotDenialSettlement } from "./copilot-protection-evidence.js";
-import { settleCopilotDeniedRun } from "./copilot-protection-flow.js";
+import { copilotProtectionTasks } from "./copilot-protection-tasks.js";
+import { copilotDeniedIssueOutcome, settleCopilotDeniedRun } from "./copilot-protection-flow.js";
 
 // Sanitized source order from the failed Daytona attempt. Its .900 createdAt
 // is transaction time, not commit evidence. Pre-Stop receipts below are synthetic
@@ -80,6 +81,29 @@ describe("Copilot denial provider settlement and separate audited run Stop", () 
       { companyId: "company", issueId: "issue", runId: "run", callerUserId: "local-board" },
       f.preStop.cancellationRequestId, f.stopDispatchMonotonicNs, undefined, "provider-completed-before-stop");
     expect(() => readCopilotDenialSettlement(f)).toThrow(/settlement/);
+  });
+  it("declares every strictly verified denial outcome before the UI checks", () => {
+    const task = copilotProtectionTasks.find(task => task.id === "native-permission-deny-write")!;
+    for (const input of [fixture(), blockedNaturalFixture()]) {
+      const settlement = readCopilotDenialSettlement(input);
+      const expected = task.expectedTerminalState as { issue: string; alternativeIssue?: string };
+      expect([expected.issue, expected.alternativeIssue]).toContain(settlement.runStop.issueStatus);
+    }
+  });
+  it.each([false, true])("carries a verified denial disposition into the visible status control: blocked=%s", blocked => {
+    const f = blocked ? blockedNaturalFixture() : fixture();
+    const task = copilotProtectionTasks.find(task => task.id === "native-permission-deny-write")!;
+    const settlement = readCopilotDenialSettlement(f);
+    expect(copilotDeniedIssueOutcome(task, f.issue, settlement)).toEqual({
+      issueStatus: blocked ? "blocked" : "in_progress",
+      statusControl: { name: blocked ? "Change status (current: Blocked" : "Change status (current: In Progress)", exact: !blocked },
+    });
+    expect(() => copilotDeniedIssueOutcome(task, { ...f.issue, status: "done" }, settlement)).toThrow(/outcome/);
+    expect(() => copilotDeniedIssueOutcome(task, { ...f.issue, companyId: "foreign" }, settlement)).toThrow(/outcome/);
+    if (blocked) {
+      expect(() => copilotDeniedIssueOutcome(task, { ...f.issue, activeRecoveryAction: undefined }, settlement)).toThrow(/outcome/);
+      expect(() => copilotDeniedIssueOutcome(task, f.issue, { ...settlement, runStop: { ...settlement.runStop, incompleteRecovery: undefined } })).toThrow(/outcome/);
+    }
   });
   it("retains bound incomplete recovery observed before Stop after natural denial completion", () => {
     const f = blockedNaturalFixture();

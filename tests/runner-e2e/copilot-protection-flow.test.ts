@@ -26,12 +26,12 @@ function projected(name: string, target = "copilot-denied-nonce.txt") {
 describe("Copilot Product protection integration", () => {
   it("registers two explicit cases on both environments with honest terminal expectations", () => {
     const cells = runnerMatrix.filter(x => x.suite.id === "copilot-protection");
-    expect(cells[0]!.suite.definitionMetadata).toMatchObject({ version: 23, titleCreation: "explicit-search-composer", taskBinding: "browser-creation-response-id", naturalSettlementObservationMs: 2000, denialTerminal: "correlated-provider-settlement-and-audited-run-stop",
+    expect(cells[0]!.suite.definitionMetadata).toMatchObject({ version: 24, denialIssueOutcome: "in-progress-or-proven-blocked-recovery", titleCreation: "explicit-search-composer", taskBinding: "browser-creation-response-id", naturalSettlementObservationMs: 2000, denialTerminal: "correlated-provider-settlement-and-audited-run-stop",
       denialSettlementEvidence: "paperclip.e2e.copilot-denial-settlement.v4", activeTurnCancellation: "not-implied-by-completed-provider-turn" });
     expect(suiteDefinitionHash(cells[0]!.suite)).not.toBe(suiteDefinitionHash({ ...cells[0]!.suite, definitionMetadata: { version: 2 } }));
     expect(cells).toHaveLength(4); expect(new Set(cells.map(c => c.environment.id))).toEqual(new Set(["local", "daytona"]));
     expect(cells.every(c => c.profile.qualificationCandidate === "copilot" && c.task.expectedRunCount === 1)).toBe(true);
-    expect(cells.find(c => c.task.id === "native-permission-deny-write")!.task.expectedTerminalState).toEqual({ issue: "in_progress", run: "cancelled" });
+    expect(cells.find(c => c.task.id === "native-permission-deny-write")!.task.expectedTerminalState).toEqual({ issue: "in_progress", alternativeIssue: "blocked", run: "cancelled" });
     expect(selectRunnerExecutions(parseRunnerSelectors(["--all"])).some(x => x.suite.id === "copilot-protection")).toBe(false);
   });
   it.each(["copilot-denied-nonce.txt", "pc-denied-ABC123/copilot-denied-nonce.txt"])("feeds native denied-edit wire through canonical persistence and exact target oracle: %s", target => {

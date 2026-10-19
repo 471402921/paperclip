@@ -1,6 +1,6 @@
 import { assertRemoteNativeEvidencePrerequisites } from "./prerequisites.js";
 import { describe, expect, it } from "vitest";
-import { runnerMatrix, runnerSuites, extendedHarnessProfiles, extendedHarnessFileTask, daytonaWarmContinuityTask } from "./catalog.js";
+import { runnerMatrix, runnerSuites, suiteDefinitionHash, extendedHarnessProfiles, extendedHarnessFileTask, daytonaWarmContinuityTask } from "./catalog.js";
 import { buildRunnerE2EProcessEnvironment, buildPaperclipServerEnvironment } from "./harness-env.js";
 import { parseRunnerSelectors, selectRunnerExecutions } from "./selectors.js";
 import { findSecretLeak, redactText } from "./redaction.js";
@@ -11,6 +11,17 @@ import { spawnSync } from "node:child_process";
 
 const selected = runnerMatrix.filter(cell => cell.suite.id === "extended-harnesses");
 describe("extended ACP harness qualification", () => {
+  it("does not reuse the pre-validation-prompt suite identity", () => {
+    const suite = runnerSuites.find(suite => suite.id === "extended-harnesses")!;
+    const { copilotFileValidation: _copilotPrompt, ...historical } = suite.definitionMetadata as Record<string, unknown>;
+    expect(suiteDefinitionHash(suite)).not.toBe(suiteDefinitionHash({
+      ...suite, definitionMetadata: { ...historical, version: 5 },
+    }));
+    const file = selected.find(cell => cell.profile.qualificationCandidate === "copilot" && cell.task.id === "file-edit-validate")!;
+    expect(file.task.buildPrompt("nonce")).toContain("Exact read-only validation command:");
+    expect(file.task.buildMatchers("nonce", file)).toContainEqual({ kind: "file_exact", path: "extended-nonce.txt", expected: "verified-nonce\n" });
+  });
+
   it("has exactly five real product journeys per provider in both environments, excluded from all", () => {
     expect(selected).toHaveLength(30);
     expect(new Set(selected.map(cell => cell.environment.id))).toEqual(new Set(["local", "daytona"]));

@@ -11,9 +11,9 @@ import { copilotAttachedFinishReady, copilotFinishAttemptBeforeCommandExit, only
 import { copilotOrigin, readCopilotToolEvidence, type CopilotToolNotice } from "./copilot-evidence.js";
 import { createAttachedCommandFixture, createDeniedTargetFixture, bindDeniedTargetPrompt, exists, observeRunProcesses, retainRunProcessIdentity } from "./copilot-local-fixtures.js";
 import { gradeCopilotAttachedSettlement, gradeCopilotDeniedWrite, type CopilotDeniedWriteEvidence } from "./copilot-protection-cases.js";
-import { findCopilotFixtureCommand, observeCopilotPreStop, type CopilotPreStopObservation, readCopilotDeniedEdit, copilotDenialSampleCursor, readCopilotDenialSettlement, observeCopilotFixtureCommand, readCopilotRemoteMarkerAfterRetirement, prepareCopilotRemoteAction, assertCopilotRemoteRetirement, assertCopilotRemoteAttached, copilotRemoteDeniedSample, copilotActionNotices, type CopilotRemoteBootstrap, type CopilotRemoteFixture, type CopilotRemoteSnapshot, countCopilotToolOrigins, countCopilotEditOriginsForTarget } from "./copilot-protection-evidence.js";
+import { validCopilotDenialSettlement, type CopilotDenialSettlement, findCopilotFixtureCommand, observeCopilotPreStop, type CopilotPreStopObservation, readCopilotDeniedEdit, copilotDenialSampleCursor, readCopilotDenialSettlement, observeCopilotFixtureCommand, readCopilotRemoteMarkerAfterRetirement, prepareCopilotRemoteAction, assertCopilotRemoteRetirement, assertCopilotRemoteAttached, copilotRemoteDeniedSample, copilotActionNotices, type CopilotRemoteBootstrap, type CopilotRemoteFixture, type CopilotRemoteSnapshot, countCopilotToolOrigins, countCopilotEditOriginsForTarget } from "./copilot-protection-evidence.js";
 import type { LiveFixtureValues } from "./live-fixtures.js";
-import type { MatrixExecution } from "./types.js";
+import type { MatrixExecution, RunnerTaskFixture } from "./types.js";
 type Row = Record<string, any>;
 type Check = { id: string; passed: boolean; detail: string };
 /** Each persistence barrier reloads durable rows. Stop cannot overtake the
@@ -96,6 +96,20 @@ export async function settleCopilotDeniedRun(input: {
   return readCopilotDenialSettlement({ ...await input.load(), request: input.request, preStop, stopDispatchMonotonicNs, stopAcknowledgement });
 }
 
+/** The alternative is an evidenced recovery outcome, never an arbitrary unfinished task. */
+export function copilotDeniedIssueOutcome(task: RunnerTaskFixture, issue: Row, settlement: CopilotDenialSettlement) {
+  const issueStatus = settlement.runStop.issueStatus;
+  if (task.flow !== "copilot_protection" || task.id !== "native-permission-deny-write"
+    || !validCopilotDenialSettlement(settlement)
+    || issue.id !== settlement.runStop.issueId || issue.companyId !== settlement.runStop.companyId
+    || issue.status !== issueStatus || ![task.expectedTerminalState.issue, task.expectedTerminalState.alternativeIssue].includes(issueStatus)
+    || (issueStatus === "blocked" && issue.activeRecoveryAction?.id !== settlement.runStop.incompleteRecovery?.actionId)) {
+    throw new Error("Copilot denial task outcome does not match its verified settlement");
+  }
+  const label = issueStatus === "blocked" ? "Blocked" : "In Progress";
+  return { issueStatus, statusControl: { name: `Change status (current: ${label}${issueStatus === "blocked" ? "" : ")"}`, exact: issueStatus !== "blocked" } };
+}
+
 export async function runCopilotProtectionFlow(input: {
   page: Page; api: RunnerApi; fixtures: LiveFixtureValues; execution: MatrixExecution; nonce: string; workspacePath: string; deadlineAt: number;
   remoteBootstrap?: CopilotRemoteBootstrap;
@@ -109,6 +123,7 @@ export async function runCopilotProtectionFlow(input: {
   const deny = execution.task.id === "native-permission-deny-write";
   if (!deny && execution.task.id !== "attached-async-settlement") throw new Error("Unknown Copilot protection case");
   const checks: Check[] = []; let issue: Row = {}, runs: Row[] = [], runEvents: Row[] = [];
+  let denialSettlement: CopilotDenialSettlement | undefined;
   let notices: CopilotToolNotice[] = [];
   const processObserver = remote ? undefined : observeRunProcesses();
   let processes: { captured: boolean; live: number[]; identityChanged?: boolean } = processObserver?.sample() ?? { captured: false, live: [] };
@@ -239,6 +254,7 @@ export async function runCopilotProtectionFlow(input: {
       });
       watchReceipt = remote ? { startedAtMs: baseline!.observedAtMs, endedAtMs: sealed!.observedAtMs, complete: sealed!.watcher.complete, targetMutationCount: sealed!.watcher.targetMutationCount } : watcher!.finish();
       const toolResult = notices.find(n => n.stage === "tool" && n.toolCallId === request.toolCallId && n.status === "failed")!;
+      denialSettlement = settlement;
       await input.evidence("copilot-denial-settlement.json", settlement);
       check("correlated-provider-settlement", true, `Exact provider settlement (${settlement.branch}) and audited run Stop; completed does not cover active-turn cancellation`);
       const terminalAt = settlement.providerTerminal.emittedAtMs;
@@ -255,7 +271,7 @@ export async function runCopilotProtectionFlow(input: {
       };
       await input.evidence("copilot-denial-proof.json", { evidence, processes, notices });
       const grade = gradeCopilotDeniedWrite(evidence); check("denial-without-side-effects", grade.passed, grade.failures.join(", ") || "Exact browser denial, explicit cancellation and absence through process cleanup");
-      check("negative-task-unfinished", issue.status === "in_progress", "The negative test does not claim the task is done");
+      check("negative-task-unfinished", copilotDeniedIssueOutcome(execution.task, issue, settlement).issueStatus === issue.status, "The negative test does not claim the task is done");
       check("no-extra-native-operation", countCopilotToolOrigins(copilotActionNotices(notices, notices.find(n => n.stage === "tool" && n.toolCallId === request.toolCallId)!, remoteFixture ? { actionFile: remoteFixture.actionFile, events: runEvents } : undefined, runEvents)) === 1, "No alternate native edit, command or delegated operation is permitted");
     } else {
       let finishOrigin: CopilotToolNotice | undefined;
@@ -306,8 +322,9 @@ export async function runCopilotProtectionFlow(input: {
     const comments = await api.get<Row[]>(`/api/issues/${issue.id}/comments`), interactions = await api.get<Row[]>(`/api/issues/${issue.id}/interactions`);
     await input.evidence("api-state.json", { issue, run: runs[0], runs, comments, interactions, checks, runEvents, runEventsByRun: [{ runId: runs[0]!.id, events: runEvents }] });
     await page.reload();
-    const label = deny ? "In Progress" : "Done";
-    await expect(page.getByTestId("issue-detail-header").getByRole("button", { name: `Change status (current: ${label})`, exact: true })).toBeVisible();
+    const statusControl = deny ? copilotDeniedIssueOutcome(execution.task, issue, denialSettlement!).statusControl
+      : { name: "Change status (current: Done)", exact: true };
+    await expect(page.getByTestId("issue-detail-header").getByRole("button", statusControl)).toBeVisible();
     if (!deny) check("exact-completion-marker", comments.filter(c => c.authorAgentId === fixtures.agent.id && c.body?.trim() === execution.task.buildVisibleMarker(nonce)).length === 1, "The successful attached task has exactly one terminal marker");
     await input.capture("final-state", "Copilot protection outcome", "final-state.png");
     return { issue, runs, checks };

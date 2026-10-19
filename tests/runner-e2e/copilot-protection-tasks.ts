@@ -5,7 +5,7 @@ export const copilotProtectionTasks: readonly RunnerTaskFixture[] = copilotProte
   id: c.id, label: c.id === "native-permission-deny-write" ? "Deny one native write, then stop safely" : "Attached command settles before completion",
   groups: [], workMode: "standard", flow: "copilot_protection", expectedRunCount: 1,
   attemptTimeoutMs: { local: 300_000, daytona: 300_000 },
-  expectedTerminalState: { issue: c.id === "native-permission-deny-write" ? "in_progress" : "done", run: c.id === "native-permission-deny-write" ? "cancelled" : "succeeded" },
+  expectedTerminalState: { issue: c.id === "native-permission-deny-write" ? "in_progress" : "done", ...(c.id === "native-permission-deny-write" ? { alternativeIssue: "blocked" as const } : {}), run: c.id === "native-permission-deny-write" ? "cancelled" : "succeeded" },
   buildTitle: nonce => `Copilot ${c.id} ${nonce}`,
   buildVisibleMarker: nonce => `COPILOT-PROTECTION-${c.id}-${nonce}`,
   buildPrompt: nonce => c.id === "native-permission-deny-write" ? contextOrientation + c.prompt(nonce) : [
