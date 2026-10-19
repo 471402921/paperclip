@@ -2196,6 +2196,14 @@ with an active or unsettled run whose pins are unknown is skipped. Optional
 (default `60`). Separate `__version_access__` records track use; existing caches
 without records receive a full observation period before expiration.
 
+Finished interrupted runs release their pins only after controller ownership,
+native finalization, and environment cleanup have settled. Older native runs
+without a pin map can supply their complete selection from the saved execution
+input. The recovery parser validates its digests, and its company, run, agent,
+and issue binding must match. Captured version IDs remain protected; unversioned
+skills use separate runtime asset bundles. Missing or invalid evidence still
+blocks cleanup. This fallback does not write pins or change recovery records.
+
 Preparation, durable run pins, audits, and eviction share a company-scoped
 PostgreSQL lock across processes. Eligible directories are atomically renamed
 to unique managed `.trash-<UUID>` names. Deletion runs outside the preparation

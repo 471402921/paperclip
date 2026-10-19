@@ -211,6 +211,20 @@ repair, record the compared branches/revisions and preserve uncommitted work;
 confirm the repair's actual result before resuming. Check the denied and stale
 action paths. A changed card label is insufficient proof of workspace integrity.
 
+For graceful legacy shutdown, interrupt a disposable sandbox run while file
+export is in flight. Delay settlement past the first 30-second wait. Confirm
+the lease stays available, no repair hold or successor appears before export,
+and the finalizer drain waits for the same owner. After export, confirm saved
+files, successful lease cleanup, and one bounded continuation. Reload before
+checking the successor. Repeat with controller loss: the expired fence must
+retain the exact source and require repair, never claim restored files or start
+a second executor. The database-backed
+[shutdown regression](../../server/src/__tests__/heartbeat-process-recovery.test.ts)
+checks finalizer joining, release order, durable retry uniqueness, and reload.
+The [settlement regressions](../../server/src/services/heartbeat/recovery.test.ts)
+cover other-controller fencing and owner loss. Provider boundaries are controlled
+in these tests; they do not qualify a live sandbox export.
+
 For an abandoned native controller, follow the [stop-verification procedure](../../doc/native-workspace-finalization-recovery.md)
 with a disposable deployment. A new platform-bound owner recovers automatically
 only after the harness signs proof that the exact deployment fully stopped.
