@@ -8,7 +8,10 @@ import type {
   NativeCodexApprovalPolicy,
   NativeExecutionInputV5,
   NativeExecutionInputV6,
+  NativeExecutionInputV8,
+  MuseBindingSnapshot,
   DotBindingSnapshot,
+  NativeExecutionInputV7,
   NativeCompletionSource,
   NativeInteractionResponseEnvelope,
   NativeOpenCodePermissionMode,
@@ -56,6 +59,8 @@ export interface BuildNativeExecutionInput {
   wakePayload?: unknown;
   /** Additive source ownership emitted by the server task/wake builders. */
   turnContext?: unknown;
+  /** Skill keys selected from the admitted, manager-authored GitHub configuration. */
+  githubInstructionSkillKeys?: readonly string[];
   resumedSession?: boolean;
   previousTurn?: { runId: string; task: { title: string; description: string | null } } | null;
   conversationMode?: boolean;
@@ -69,9 +74,11 @@ export interface BuildNativeExecutionInput {
     branchName: string | null;
   };
   normalizedSessionId: string | null;
-  provider?: "codex" | "opencode" | "claude_managed" | "aws_agentcore" | "acpx" | "openai_dot";
+  provider?: "codex" | "opencode" | "claude_managed" | "aws_agentcore" | "acpx" | "openai_dot" | "grok_bot" | "muse";
+  museBinding?: MuseBindingSnapshot;
   dotBinding?: DotBindingSnapshot;
   acpxAgent?: NativeAcpxAgent;
+  homeMode?: "isolated" | "preconfigured";
   codexApprovalPolicy?: NativeCodexApprovalPolicy;
   codexReasoningEffort?: string;
   opencodePermissionMode?: NativeOpenCodePermissionMode;
@@ -106,10 +113,11 @@ export interface BuildNativeExecutionInput {
   };
   runtimeContext: NativeRuntimeContextSnapshot;
 }
-export function buildNativeExecutionInput(input: BuildNativeExecutionInput & { provider: "openai_dot"; dotBinding: DotBindingSnapshot }): NativeExecutionInputV6;
-export function buildNativeExecutionInput(input: BuildNativeExecutionInput & { provider?: Exclude<BuildNativeExecutionInput["provider"], "openai_dot"> }): NativeExecutionInputV5;
-export function buildNativeExecutionInput(input: BuildNativeExecutionInput): NativeExecutionInputV5 | NativeExecutionInputV6;
-export function buildNativeExecutionInput(input: BuildNativeExecutionInput): NativeExecutionInputV5 | NativeExecutionInputV6 {
+export function buildNativeExecutionInput(input: BuildNativeExecutionInput & { provider: "muse"; museBinding: MuseBindingSnapshot }): NativeExecutionInputV8;
+export function buildNativeExecutionInput(input: BuildNativeExecutionInput & { provider: "openai_dot" | "grok_bot"; dotBinding: DotBindingSnapshot }): NativeExecutionInputV6;
+export function buildNativeExecutionInput(input: BuildNativeExecutionInput & { provider?: Exclude<BuildNativeExecutionInput["provider"], "openai_dot" | "grok_bot" | "muse"> }): NativeExecutionInputV5 | NativeExecutionInputV7;
+export function buildNativeExecutionInput(input: BuildNativeExecutionInput): NativeExecutionInputV5 | NativeExecutionInputV6 | NativeExecutionInputV7 | NativeExecutionInputV8;
+export function buildNativeExecutionInput(input: BuildNativeExecutionInput): NativeExecutionInputV5 | NativeExecutionInputV6 | NativeExecutionInputV7 | NativeExecutionInputV8 {
   if (input.issue.workMode !== "standard" && input.issue.workMode !== "planning" && input.issue.workMode !== "ask") {
     throw new Error("native_execution_input_invalid: issue work mode must be standard, planning, or ask");
   }
@@ -184,6 +192,15 @@ export function buildNativeExecutionInput(input: BuildNativeExecutionInput): Nat
   const externalChatTurn =
     isPaperclipExternalChatContractTurn(wakePayload) ||
     isPaperclipExternalChatQuestionResponseTurn(wakePayload);
+  const configuredGitHubSkillKeys = new Set(input.githubInstructionSkillKeys ?? []);
+  const configuredGitHubSkills = externalChatTurn && wake?.externalChatProvider === "github"
+    ? input.runtimeContext.skills.filter((skill) => configuredGitHubSkillKeys.has(skill.key))
+    : [];
+  // Native skill invocation reads task.description. Project only verified skill
+  // names here; never restore the first provider message or scan untrusted text.
+  const externalChatSkillDescription = configuredGitHubSkills.length > 0
+    ? `Configured GitHub instruction skills:\n${configuredGitHubSkills.map((skill) => `/${skill.runtimeName}`).join("\n")}`
+    : null;
   const taskPrompt = [
     wakePrompt,
     // Durable task questions must survive the current provider turn.
@@ -200,7 +217,8 @@ export function buildNativeExecutionInput(input: BuildNativeExecutionInput): Nat
     ? verifiedCompletionSources(input.turnContext, input.completionContract.sources ?? [])
     : [];
   const prepared = {
-    schema: "paperclip.native-execution-input.v5",
+    schema: input.homeMode === "preconfigured" ? "paperclip.native-execution-input.v7" : "paperclip.native-execution-input.v5",
+    ...(input.homeMode === "preconfigured" ? { homeMode: input.homeMode } : {}),
     ...((input.initialCommunicationGuidance || input.freshSessionHandoff) ? {
       initialCommunicationGuidance: [input.initialCommunicationGuidance, input.freshSessionHandoff].filter(Boolean).join("\n\n"),
     } : {}),
@@ -232,7 +250,7 @@ export function buildNativeExecutionInput(input: BuildNativeExecutionInput): Nat
       // explicitly labeled background, but give authenticated external-chat
       // turns neutral structured fields.
       title: externalChatTurn ? "External chat follow-up" : input.issue.title,
-      description: externalChatTurn ? null : input.issue.description,
+      description: externalChatTurn ? externalChatSkillDescription : input.issue.description,
       prompt: taskPrompt,
       workMode: input.issue.workMode,
     },
@@ -319,11 +337,15 @@ export function buildNativeExecutionInput(input: BuildNativeExecutionInput): Nat
     credentialBindings: [],
     runtimeContext: input.runtimeContext,
   };
-  return parseNativeExecutionInput(input.provider === "openai_dot" ? { ...prepared,
-    schema: "paperclip.native-execution-input.v6", provider: { kind: "openai_dot", model: null, binding: input.dotBinding },
+  return parseNativeExecutionInput(input.provider === "muse" ? { ...prepared,
+    schema: "paperclip.native-execution-input.v8", provider: { kind: "muse", model: null, binding: input.museBinding, bridgeRevision: "muse-v1" },
     workspace: { access: "none", cwd: null, repoUrl: null, repoRef: null, branchName: null },
-    session: { ...prepared.session, driverKind: "openai_dot_mcp", lifecyclePolicy: { mode: "per_turn", idleTimeoutMs: null } }
-  } : prepared) as NativeExecutionInputV5 | NativeExecutionInputV6;
+    session: { ...prepared.session, driverKind: "muse_external", lifecyclePolicy: { mode: "per_turn", idleTimeoutMs: null } }
+  } : ["openai_dot", "grok_bot"].includes(input.provider ?? "") ? { ...prepared,
+    schema: "paperclip.native-execution-input.v6", provider: { kind: input.provider, model: null, binding: input.dotBinding },
+    workspace: { access: "none", cwd: null, repoUrl: null, repoRef: null, branchName: null },
+    session: { ...prepared.session, driverKind: input.provider === "grok_bot" ? "grok_bot_mcp" : "openai_dot_mcp", lifecyclePolicy: { mode: "per_turn", idleTimeoutMs: null } }
+  } : prepared) as NativeExecutionInputV5 | NativeExecutionInputV6 | NativeExecutionInputV7 | NativeExecutionInputV8;
 }
 
 

@@ -406,6 +406,10 @@ const paperclipRunnerAdapter: ServerAdapterModule = {
         }],
       };
     }
+    if (profile.provider === "muse") {
+      return { adapterType: "paperclip_runner", status: "warn" as const, testedAt: new Date().toISOString(),
+        checks: [{ code: "muse_background_test_required", level: "warn" as const, message: "Muse manages its model and billing. Verify the paired receiver and independent background reply in Paperclip; this read-only check does not wake Muse." }] };
+    }
     if (profile.provider === "openai_dot") {
       return { adapterType: "paperclip_runner", status: "warn" as const, testedAt: new Date().toISOString(),
         checks: [{ code: "dot_event_test_required", level: "warn" as const, message: "Dot manages its model and billing. Validate the dedicated agent binding and event round trip in Paperclip; this read-only check does not wake the Dot." }] };
@@ -461,7 +465,12 @@ const paperclipRunnerAdapter: ServerAdapterModule = {
         }
         return {
           adapterType: "paperclip_runner", status: "fail" as const, testedAt: new Date().toISOString(),
-          checks: [{ code: "acpx_runtime_unavailable", level: "error" as const, message: error instanceof Error ? error.message : "ACPX Claude runtime could not be verified." }],
+          checks: [{
+            code: error instanceof Error && "code" in error && error.code === "ACPX_RUNTIME_PACKAGE_MISSING"
+              ? "acpx_runtime_package_missing" : "acpx_runtime_unavailable",
+            level: "error" as const,
+            message: error instanceof Error ? error.message : "The ACPX runtime could not be verified.",
+          }],
         };
       }
     }
@@ -497,9 +506,11 @@ const paperclipRunnerAdapter: ServerAdapterModule = {
         }],
       };
     }
-    const result = profile.provider === "opencode"
-      ? await openCodeTestEnvironment(context)
-      : await codexTestEnvironment(context);
+    if (profile.provider === "codex") {
+      const { testNativeRunnerAuthentication } = await import("../services/native-runtime/setup-readiness.js");
+      return testNativeRunnerAuthentication(context, "codex", profile.model);
+    }
+    const result = await openCodeTestEnvironment(context);
     return { ...result, adapterType: "paperclip_runner" };
   },
   listSkills: listCodexSkills,
@@ -1189,6 +1200,12 @@ export function setOverridePaused(type: string, paused: boolean): boolean {
 /** Check whether the external override for a builtin type is currently paused. */
 export function isOverridePaused(type: string): boolean {
   return pausedOverrides.has(type);
+}
+
+export function hasActiveAdapterOverride(type: string): boolean {
+  const registered = adaptersByType.get(type);
+  return builtinFallbacks.has(type) && registered !== undefined
+    && registered !== builtinFallbacks.get(type) && !pausedOverrides.has(type);
 }
 
 /** Get the set of types whose overrides are currently paused. */

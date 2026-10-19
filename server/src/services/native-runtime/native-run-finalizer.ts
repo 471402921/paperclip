@@ -1,10 +1,11 @@
+import { reconcileMuseNativeTerminalRun } from "./muse-terminal-reconciliation.js";
 import { eligibleIssueMonitorWait } from "../issue-monitors.js";
 import { isNativePlanWaitResult, readNativePlanWait } from "./native-plan-wait.js";
 import { activeIssueInteractionCondition } from "../issue-question-context.js";
 import { hasPendingNativeChildCompletion } from "./native-child-completion-delivery.js";
-import { settleSlackConversation } from "../slack-conversation-lifecycle.js";
+import { settleExternalConversation } from "../slack-conversation-lifecycle.js";
 import { executionFailureRetryCount } from "../execution-recovery-attempt.js";
-import { readPersistedNativeProviderFailure } from "./native-provider-failure-evidence.js";
+import { readPersistedNativeFailureEvidence } from "./native-provider-failure-evidence.js";
 import { dismissAutomaticCompletionReviews } from "./automatic-completion-reviews.js";
 import { getNativeReviewAssignment, readNativeReviewAssignmentContext } from "./native-review-participant.js";
 import { conversationNativeDecision, isConversation } from "../agent-conversations.js";
@@ -607,7 +608,10 @@ async function resolveCommittedFinalizationRecovery(db: Db, run: typeof heartbea
     eq(issueRecoveryActions.companyId, run.companyId), eq(issueRecoveryActions.sourceIssueId, issueId),
     eq(issueRecoveryActions.kind, "active_run_watchdog"), inArray(issueRecoveryActions.status, ["active", "escalated"]),
     sql`${issueRecoveryActions.evidence}->>'runId' = ${run.id}`,
-    sql`${issueRecoveryActions.wakePolicy}->>'kind' = 'resume_native_run'`,
+    or(
+      sql`${issueRecoveryActions.wakePolicy}->>'kind' = 'resume_native_run'`,
+      eq(issueRecoveryActions.cause, "native_workspace_finalization_owner_unverified"),
+    ),
   ));
   for (const action of actions) await issueRecoveryActionService(db).resolveActiveForIssue({
     companyId: run.companyId, sourceIssueId: issueId, actionId: action.id,
@@ -983,7 +987,7 @@ export async function repairCommittedNativeChatResponse(
           }),
         });
         if (!finalAgentMessage) return false;
-        const comments = await tx.select({ id: issueComments.id, body: issueComments.body })
+        const comments = await tx.select({ id: issueComments.id, body: issueComments.body, presentation: issueComments.presentation })
           .from(issueComments).where(and(
             eq(issueComments.companyId, input.companyId),
             eq(issueComments.issueId, input.issueId),
@@ -1176,11 +1180,15 @@ export async function finalizeNativeRun(input: {
         runId: run.id,
       });
     if (input.projectRunStatus) {
-      await settleSlackConversation(input.db, run.companyId, coordinator.issueId).catch((err) => {
+      await settleExternalConversation(input.db, run.companyId, coordinator.issueId).catch((err) => {
         logger.warn({ err, runId: run.id }, "Slack conversation settlement deferred to reconciliation");
       });
     }
     await resolveCommittedFinalizationRecovery(input.db, run, coordinator.issueId);
+    if (input.projectRunStatus) {
+      const [projectedRun] = await input.db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, run.id));
+      if (projectedRun) await reconcileMuseNativeTerminalRun(input.db, projectedRun);
+    }
     return coordinator;
   }
   const [resultRow, contractRow] = await Promise.all([
@@ -1341,7 +1349,7 @@ export async function finalizeNativeRun(input: {
         (!planWait || nativeSha256(planWait.result) !== nativeSha256(result))) {
       throw new Error("native_plan_wait_authority_lost");
     }
-    const providerFailure = await readPersistedNativeProviderFailure(
+    const { providerFailure, turnFailure } = await readPersistedNativeFailureEvidence(
       input.db, run, resultRow.turnId, envelope.terminal as PrpTerminalState,
     );
     const ownsProviderFailureDecision =
@@ -1501,6 +1509,7 @@ export async function finalizeNativeRun(input: {
       const clearExecutionFailure = input.projectRunStatus && finalizationPhase === "committed" && terminalState === "succeeded";
       const finalizationMetadata = {
         ...(providerFailure ? { nativeProviderFailure: providerFailure.diagnostic } : {}),
+        ...(turnFailure ? { nativeTurnFailure: turnFailure } : {}),
         finalizationPhase,
         ...(finalizationPhase === "committed" ? { failureCode: null, originalFailureCode: null, nextAttemptAt: null } : {}),
         assessmentId: assessmentRow.id,
@@ -1581,11 +1590,12 @@ export async function finalizeNativeRun(input: {
           runId: run.id,
         });
       if (input.projectRunStatus && finalizationPhase === "committed") {
-        await settleSlackConversation(input.db, run.companyId, coordinator.issueId).catch((err) => {
+        await settleExternalConversation(input.db, run.companyId, coordinator.issueId).catch((err) => {
           logger.warn({ err, runId: run.id }, "Slack conversation settlement deferred to reconciliation");
         });
       }
       if (finalizationPhase === "committed") await resolveCommittedFinalizationRecovery(input.db, run, coordinator.issueId);
+      if (input.projectRunStatus && updatedRun) await reconcileMuseNativeTerminalRun(input.db, updatedRun);
       return {
         ...coordinator,
         phase: finalizationPhase,
