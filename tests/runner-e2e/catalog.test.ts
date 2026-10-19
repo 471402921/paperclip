@@ -301,6 +301,14 @@ describe("runner E2E catalog", () => {
     ).not.toBe(suiteDefinitionHash(suite));
   });
 
+  it("gives repaired LF warm prompts a distinct definition from retained results", () => {
+    for (const [id, priorHash, version] of [["rich-acp-warm-continuity", "331b88d9538a132670789fb7864df7df5f4bf294ae19b62f53d8a02f901774f0", 3], ["daytona-journal-continuity", "8713942d662d4013f59ce57ec9497d890e37c08888a8edbb4a610dd82e65bc9e", 6]] as const) {
+      const suite = runnerSuites.find(candidate => candidate.id === id)!;
+      expect(suite.definitionMetadata).toMatchObject({ version, warmPromptDigest: expect.stringMatching(/^[a-f0-9]{64}$/u) });
+      expect(suiteDefinitionHash(suite)).not.toBe(priorHash);
+    }
+  });
+
   it("keeps large-journal stress explicit-only and uses the ordinary warm workflow", () => {
     const suite = runnerSuites.find((candidate) => candidate.id === "daytona-journal-continuity")!;
     expect(suite.manualOnly).toBe(true);

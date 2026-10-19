@@ -966,6 +966,10 @@ function warmTurnInstructions(turn: 1 | 2 | 3, nonce: string) {
   ].join("\n");
 }
 
+const warmTurnDefinitionDigest = createHash("sha256").update(JSON.stringify(
+  ([1, 2, 3] as const).map(turn => warmTurnInstructions(turn, "definition")),
+)).digest("hex");
+
 function managedWarmTurnInstructions(turn: 1 | 2 | 3, nonce: string) {
   return [warmTurnInstructions(turn, nonce),
     "Also update your personal AGENT_HOME with ordinary filesystem tools. Do not edit the loaded AGENTS.md instructions and do not use an API to save these files.",
@@ -1210,7 +1214,7 @@ export const runnerSuites: readonly RunnerSuiteFixture[] = [
       buildFollowupMessages: nonce => [warmTurnInstructions(2, nonce), warmTurnInstructions(3, nonce)],
       turnTimeoutMs: 120_000, attemptTimeoutMs: { local: 420_000, daytona: 420_000 } }],
     expectedMatrixSize: 6,
-    definitionMetadata: { version: 2, qualification: "pending", scheduling: "explicit-only", identity: "native-session-runner-provider-session-process-start", agentFiles: "unchanged-home-process-continuity" },
+    definitionMetadata: { version: 3, warmPromptDigest: warmTurnDefinitionDigest, qualification: "pending", scheduling: "explicit-only", identity: "native-session-runner-provider-session-process-start", agentFiles: "unchanged-home-process-continuity" },
   },
   {
     id: "public-mcp", label: "Paperclip through an assistant", manualOnly: true,
@@ -1640,7 +1644,7 @@ export const runnerSuites: readonly RunnerSuiteFixture[] = [
     environments: [daytonaWarmEnvironment],
     tasks: [daytonaLargeJournalTask],
     expectedMatrixSize: 1,
-    definitionMetadata: { version: 5, nativeInstructions: "fixed-external", journalMinimumBytes: 2 * 1024 * 1024, toolInvocations: 240, outputBytesPerInvocation: 65020, scheduling: "explicit-only" },
+    definitionMetadata: { version: 6, warmPromptDigest: warmTurnDefinitionDigest, nativeInstructions: "fixed-external", journalMinimumBytes: 2 * 1024 * 1024, toolInvocations: 240, outputBytesPerInvocation: 65020, scheduling: "explicit-only" },
   },
   {
     id: "daytona-git-streaming",
