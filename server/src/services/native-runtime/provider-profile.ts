@@ -196,7 +196,7 @@ export function validatePaperclipRunnerGrokConfig(config: Record<string, unknown
 
 /** A task may change a local Runner model (and Codex effort), but not provider identity. */
 export function projectPaperclipRunnerTaskConfig(
-  backend: "codex_app_server" | "opencode_server",
+  backend: "codex_app_server" | "opencode_server" | "acpx_runtime",
   agentConfig: unknown,
   taskOverrides: unknown,
   managedModel?: string,
