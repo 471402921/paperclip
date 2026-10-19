@@ -79,14 +79,50 @@ export async function probeCopilotMetadata(token: string, model?: string): Promi
     return { status: "failed", ...failure, promptSent: false };
   } finally {
     if (deadline) clearTimeout(deadline);
-    if (child && closed) {
-      child.stdin.end();
-      const term = setTimeout(() => child?.kill("SIGTERM"), 500);
-      const kill = setTimeout(() => child?.kill("SIGKILL"), 2_000);
-      await closed;
-      clearTimeout(term); clearTimeout(kill);
+    let providerRetired = child === undefined;
+    try {
+      try {
+        if (child && closed) {
+          await stopMetadataChild(child, closed);
+          providerRetired = true;
+        }
+      } finally {
+        try { await lease?.close(); }
+        finally { if (providerRetired && root) await rm(root, { recursive: true, force: true }); }
+      }
+    } catch {
+      // Unconfirmed execution retains its private home; never report verified
+      // metadata or expose paths/provider text after incomplete retirement.
+      console.warn("Copilot metadata verification failed", JSON.stringify({ phase: "cleanup", code: "COPILOT_REQUEST_FAILED", cause: "shutdown-incomplete" }));
+      return { status: "failed", code: "COPILOT_REQUEST_FAILED", message: "Copilot metadata verification failed.", promptSent: false };
     }
-    try { await lease?.close(); } finally { if (root) await rm(root, { recursive: true, force: true }); }
+  }
+}
+
+async function stopMetadataChild(child: ChildProcessWithoutNullStreams, closed: Promise<void>): Promise<void> {
+  let retired = false;
+  const observed = closed.then(() => { retired = true; });
+  const signal = (value: NodeJS.Signals) => {
+    if (retired) return;
+    try {
+      // Verified command leases create a private detached POSIX group. Native
+      // descendants inherit it and its output pipes, so close (not just the
+      // launcher's exit) proves retirement before we release the snapshot.
+      if (process.platform !== "win32" && child.pid !== undefined) process.kill(-child.pid, value);
+      else child.kill(value);
+    } catch { /* The bounded close observation below remains authoritative. */ }
+  };
+  const term = setTimeout(() => signal("SIGTERM"), 500);
+  const kill = setTimeout(() => signal("SIGKILL"), 2_000);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    child.stdin.end();
+    await Promise.race([observed, new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => reject(new Error("Copilot metadata cleanup timed out")), 3_000);
+    })]);
+  } finally {
+    clearTimeout(term); clearTimeout(kill);
+    if (timeout) clearTimeout(timeout);
   }
 }
 

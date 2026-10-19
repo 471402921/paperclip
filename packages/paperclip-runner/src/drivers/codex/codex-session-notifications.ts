@@ -8,7 +8,7 @@ import { isPrpAuthCredentialsUpdated, validatePrpStructuredRunResult } from "../
 import type { CodexRpcNotification, CodexTraceInterpretation } from "./app-server-transport.js";
 import { redactCodexDiagnostic } from "./app-server-transport.js";
 import { boundedCodexPayload as boundedPayload, boundedCodexValue, isRetainableCodexPayload } from "./codex-boundaries.js";
-import { runtimeRequestResponse } from "./codex-question-adapter.js";
+import { runtimeRequestProtocolPayload, runtimeRequestResponse } from "./codex-question-adapter.js";
 import {
   isSupportedCodexNotificationMethod,
   codexThreadLineage as lineageFromThread,
@@ -155,7 +155,8 @@ async function mapNotificationBody(state: CodexSessionState, notification: Codex
       const requestId = text(payload.requestId);
       const pending = state.pendingRuntimeRequestMap.get(requestId);
       if (pending === undefined) return;
-      if (pending.request.turnId !== turnId || payload.requestKind !== pending.request.requestKind
+      const expected = runtimeRequestProtocolPayload(pending.request);
+      if (pending.request.turnId !== turnId || payload.requestKind !== expected.requestKind
         || payload.requestType !== (pending.request.input === undefined ? "permission" : "input")
         || payload.replayAllowed !== false || typeof payload.reason !== "string" || !payload.reason) {
         state.failProtocol("turn_binding_mismatch", "Canonical request expiry changed its callback binding.");
