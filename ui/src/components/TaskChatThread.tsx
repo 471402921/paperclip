@@ -5,6 +5,7 @@ import {
 } from "@/lib/issue-detail-performance";
 import { hasWorkspaceRestoreFailure } from "@paperclipai/shared";
 import { workspaceRestoreMarkerDetail } from "@/lib/workspace-restore-marker";
+import { credentialAccessNotice } from "@/lib/credential-access-notice";
 import type { ActivityEvent, IssueQueuedCommentQueue, TaskBrowser } from "@paperclipai/shared";
 import { useProjectCreatedItems } from "@/hooks/useProjectCreatedItems";
 import { skillCreatedItems } from "@/components/task-chat/skill-created-items";
@@ -526,6 +527,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     conversationMode,
     reassignOptions,
     currentAssigneeValue,
+    suggestedAssigneeValue,
     assigneeAdapterOverrides,
     issueStatus,
     issueAssigneeAgentId = null,
@@ -587,6 +589,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
       ) return false;
       return [
         "working",
+        "waiting_for_provider",
         "retry_scheduled",
         "reconnecting",
         "finishing",
@@ -603,12 +606,15 @@ export function TaskChatThread(props: TaskChatThreadProps) {
   const [pendingComposerAssignee, setPendingComposerAssignee] = useState<
     string | null
   >(null);
-  const effectiveGoalAgentId =
-    pendingComposerAssignee === null
-      ? issueAssigneeAgentId
-      : pendingComposerAssignee.startsWith("agent:")
-        ? pendingComposerAssignee.slice("agent:".length) || null
-        : null;
+  const composerSuggestedAssignee = currentUserId && currentAssigneeValue === `user:${currentUserId}`
+    ? suggestedAssigneeValue
+    : undefined;
+  const effectiveComposerAssignee = pendingComposerAssignee ?? composerSuggestedAssignee;
+  const effectiveGoalAgentId = effectiveComposerAssignee === undefined
+    ? issueAssigneeAgentId
+    : effectiveComposerAssignee.startsWith("agent:")
+      ? effectiveComposerAssignee.slice("agent:".length) || null
+      : null;
   const runnerGoal = useRunnerGoalControl(issueId, effectiveGoalAgentId);
 
   useEffect(() => {
@@ -864,6 +870,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
       commentsToTaskChatItems(projectedComments, {
         agentMap,
         userLabelMap,
+        userProfileMap,
         currentUserId,
         issueAssigneeAgentId,
         verificationCaveatsByRunId,
@@ -872,6 +879,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
       projectedComments,
       agentMap,
       userLabelMap,
+      userProfileMap,
       currentUserId,
       issueAssigneeAgentId,
       verificationCaveatsByRunId,
@@ -1508,6 +1516,10 @@ export function TaskChatThread(props: TaskChatThreadProps) {
       if (liveRun && source.id === liveRun.id) continue;
       const entries = transcriptByRun.get(source.id) ?? [];
       const meta = linkedRunMetaById.get(source.id);
+      const credentialAccess = credentialAccessNotice(meta ? {
+        ...meta,
+        agentName: meta.agentName || agentMap?.get(meta.agentId)?.name,
+      } : undefined, currentUserId, userLabelMap);
       const historical = statusRelevance.isHistoricalRun(source.id);
       // A workspace admission attempt never started provider work. Its live
       // successor owns the waiting indicator; retain this attempt in the run log.
@@ -1639,7 +1651,9 @@ export function TaskChatThread(props: TaskChatThreadProps) {
             ? "native_runner_timed_out"
             : "native_runner_process_exited");
         const label =
-          code === "native_provider_model_rejected" && source.status === "failed"
+          code === "native_provider_runtime_missing" && source.status === "failed"
+            ? "Runtime missing"
+            : code === "native_provider_model_rejected" && source.status === "failed"
             ? "Model unavailable"
             : code === "native_provider_approval_required" && source.status === "failed"
             ? "Approval required"
@@ -1660,6 +1674,8 @@ export function TaskChatThread(props: TaskChatThreadProps) {
             ? `The run was cancelled${responseBoundary}.`
             : source.status === "interrupted"
               ? `The run was interrupted${responseBoundary}.`
+              : code === "native_provider_runtime_missing"
+                ? "The selected provider runtime is missing a required package. Reinstall or rebuild Paperclip with its bundled provider dependencies, restart the server, then test the agent's runtime before retrying."
               : code === "native_provider_approval_required"
                 ? "This operation requires approval, but this runner has no interactive approval handler. Review the operation and update the agent's permission setting before retrying."
                 : code === "native_provider_model_rejected"
@@ -1690,6 +1706,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
             label,
             detail,
             retryable: code !== "native_session_cleanup_quarantined",
+            ...(credentialAccess ? { credentialAccess, retryable: false } : {}),
             collapsible: true,
             runId: source.id,
             createdAtIso: finishedAt
@@ -1697,7 +1714,9 @@ export function TaskChatThread(props: TaskChatThreadProps) {
               : undefined,
             runHref: runAgent
               ? `/agents/${encodeURIComponent(runAgent.urlKey)}/runs/${encodeURIComponent(source.id)}`
-              : undefined,
+              : credentialAccess && meta?.agentId
+                ? `/agents/${encodeURIComponent(meta.agentId)}/runs/${encodeURIComponent(source.id)}`
+                : undefined,
           },
         });
       }
@@ -1716,11 +1735,14 @@ export function TaskChatThread(props: TaskChatThreadProps) {
             ? "You can retry this message now."
             : "Your message is preserved.";
         const restoreFailed = hasWorkspaceRestoreFailure(meta?.resultJson);
+        const branchUnavailable = (meta?.resultJson?.configurationIncomplete as Record<string, unknown> | undefined)?.reason === "workspace_base_ref_unresolved";
         const savedPlan = Boolean(planDocument && (meta?.resultJson?.savedPlanRevisionId === planDocument.latestRevisionId || interactions?.some((interaction) =>
           interaction.sourceRunId === source.id && interactionTargetsPlanRevision(interaction, planDocument),
         )));
         const aiRequest = interactions?.find((interaction) => interaction.kind === "connection_intent" && interaction.payload.purpose === "ai" && interaction.sourceRunId === source.id);
-        const detail = restoreFailed
+        const detail = branchUnavailable
+          ? "Repair the starting branch below before retrying."
+          : restoreFailed
           ? workspaceRestoreMarkerDetail({ result: meta?.resultJson, savedPlan, hasResponse: sourceHasPresentationComment || Boolean(acceptedSummary) })
           : aiRequest
           ? aiRequest.status === "pending"
@@ -1744,14 +1766,19 @@ export function TaskChatThread(props: TaskChatThreadProps) {
             id,
             kind: "marker",
             variant: "interrupted",
-            label: restoreFailed ? "Workspace restore failed" : aiRequest?.status === "pending" ? "AI connection needed" : source.status === "cancelled" ? (meta?.startedAt ? "Stopped" : "Couldn't start") : "Run failed",
+            label: branchUnavailable ? "Starting branch unavailable" : restoreFailed ? "Workspace restore failed" : aiRequest?.status === "pending" ? "AI connection needed" : source.status === "cancelled" ? (meta?.startedAt ? "Stopped" : "Couldn't start") : "Run failed",
             runId: source.status === "cancelled" ? undefined : source.id,
-            ...(aiRequest?.status === "pending" ? { retryable: false } : {}),
+            ...(branchUnavailable || aiRequest?.status === "pending" ? { retryable: false } : {}),
             ...(restoreFailed ? {
               retryable: meta?.resultJson?.workspaceRestoreFailure !== "restore_unsafe_archive",
               collapsible: true,
               runHref: meta?.agentId ? `/agents/${encodeURIComponent(agentMap?.get(meta.agentId)?.urlKey ?? meta.agentId)}/runs/${encodeURIComponent(source.id)}` : undefined,
               planHref: savedPlan ? "#document-plan" : undefined,
+            } : {}),
+            ...(credentialAccess ? {
+              credentialAccess,
+              retryable: false,
+              runHref: `/agents/${encodeURIComponent(meta?.agentId ?? "")}/runs/${encodeURIComponent(source.id)}`,
             } : {}),
             tone: source.status === "cancelled" || aiRequest?.status === "pending" ? "neutral" : "error",
             detail,
@@ -2152,6 +2179,8 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     planDocumentSourceRunId,
     planTurnItem,
     agentMap,
+    currentUserId,
+    userLabelMap,
   ]);
 
   // Hand off once the settled turn or its reply comment is in the thread; a
@@ -2636,6 +2665,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
       return (
         <TaskChatBubbleActions
           copyText={item.text}
+          fastResponse={item.origin === "fast_response"}
           feedback={
             onVote
               ? {
@@ -3215,6 +3245,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                       modelAgents={agentMap}
                       userProfileMap={userProfileMap}
                       currentAssigneeValue={currentAssigneeValue}
+                      suggestedAssigneeValue={composerSuggestedAssignee}
                       companyId={companyId}
                       assigneeAdapterOverrides={assigneeAdapterOverrides}
                       onPendingAssigneeChange={setPendingComposerAssignee}

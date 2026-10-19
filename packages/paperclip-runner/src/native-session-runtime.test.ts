@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { resolveQualifiedAcpxProfile } from "./drivers/acpx/qualified-profiles.js";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ControlPlanePort } from "./contracts/control-plane-port.js";
@@ -5004,7 +5005,19 @@ describe("executeNativeSession recovery", () => {
     expect(attachRun).not.toHaveBeenCalled();
   });
 
-  it("quarantines a retained session when attachment partially mutates then fails", async () => {
+  it.each(["codex", "copilot"] as const)("quarantines a retained %s session when attachment partially mutates then fails", async (provider) => {
+    const qualified = resolveQualifiedAcpxProfile("copilot", "selected-model");
+    const executionInput: NativeExecutionInputV1 = provider === "copilot" ? {
+      ...input,
+      session: { ...input.session, driverKind: "acpx_runtime" },
+      provider: { kind: "acpx", agent: "copilot", model: "selected-model", permissionPolicy: "interactive", profile: {
+        driverKind: qualified.driverKind, protocolVersion: qualified.protocolVersion, acpxVersion: qualified.acpxVersion,
+        agent: qualified.agent, agentProfileVersion: qualified.agentProfileVersion,
+        agentServerPackage: qualified.agentServerPackage, agentServerVersion: qualified.agentServerVersion,
+        agentRuntimePackage: qualified.agentRuntimePackage, agentRuntimeVersion: qualified.agentRuntimeVersion,
+        commandDigest: qualified.commandDigest,
+      } },
+    } : input;
     const attachmentFailure = new Error("provider attachment failed");
     const openRun = vi.fn(async () => undefined);
     let retainedIdentity = { ...identity, runId: "run-previous" };
@@ -5041,7 +5054,7 @@ describe("executeNativeSession recovery", () => {
       async descriptor() {
         return {
           kind: "mock",
-          name: "attachment-failure-backend",
+          name: `attachment-failure-backend-${provider}`,
           version: "1",
           capabilities: {
             resume: true,
@@ -5069,7 +5082,7 @@ describe("executeNativeSession recovery", () => {
 
     await expect(
       executeNativeSession({
-        input,
+        input: executionInput,
         backend,
         controlPlane: port,
         runnerInstanceId: "runner-recovery",
@@ -5078,7 +5091,9 @@ describe("executeNativeSession recovery", () => {
         onSession,
       }),
     ).rejects.toBe(attachmentFailure);
-    expect(attachRun).toHaveBeenCalledWith({ identity });
+    expect(attachRun).toHaveBeenCalledWith(provider === "copilot"
+      ? { identity, currentRunGrant: { runtimeContext: null, instructions: expect.any(String) } }
+      : { identity });
     expect(retainedIdentity).toEqual(identity);
     expect(onSession).toHaveBeenCalledOnce();
     expect(onSession).toHaveBeenCalledWith(null);
@@ -7355,6 +7370,59 @@ describe("executeNativeSession recovery", () => {
     expect(completeRun).toHaveBeenCalledOnce();
   });
 
+  it.each([false, true])("confirms a redacted completion after a lost acknowledgement (conflict: %s)", async conflict => {
+    vi.useFakeTimers();
+    try {
+      const completion = { ...result, summary: JSON.stringify({ operationId: "call_api", data: "private-fixture-value" }) };
+      const history: PrpEvent[] = [];
+      const normalize = (payload: PrpEvent["payload"]): PrpEvent["payload"] =>
+        JSON.parse(JSON.stringify(payload).replaceAll("private-fixture-value", "***REDACTED***"));
+      let committed!: () => void;
+      const saved = new Promise<void>(resolve => { committed = resolve; });
+      let lostAcknowledgement = false;
+      const completeRun = vi.fn(async () => undefined);
+      const session: NativeSession = {
+        identity: () => identity,
+        async capabilities() { return { resume: true, typedEvents: true, steering: false, interruption: true, structuredResult: true }; },
+        async startTurn() { return { turnId: "turn-recovery" }; },
+        async *events() { yield runnerEvent(1, "turn.completed"); },
+        async result() { return { result: completion, terminal, turnId: "turn-recovery" }; },
+        async snapshot() { return { backendKind: "mock", sessionId: identity.sessionId, identity, activeTurnId: null }; },
+        async close() {},
+      };
+      const port: ControlPlanePort = {
+        async openRun() {}, async checkpointSession() {}, normalizeReplayPayload: normalize, completeRun,
+        async appendEvent(event) {
+          const row = event as PrpEvent;
+          history.push({ ...row, payload: normalize(row.payload) });
+          if (row.eventType === "run.result.accepted" && !lostAcknowledgement) {
+            lostAcknowledgement = true;
+            if (conflict) history.at(-1)!.payload = { ...history.at(-1)!.payload, changed: true };
+            committed();
+            return await new Promise<never>(() => undefined);
+          }
+          return { cursor: history.length, highestContiguousSourceSeq: row.sourceSeq, disposition: "committed" };
+        },
+        async replayEvents(request) {
+          const events = history.filter(row => row.sourceInstanceId === request.sourceInstanceId && row.sourceSeq > request.afterSourceSeq);
+          return { events, highestContiguousSourceSeq: events.at(-1)?.sourceSeq ?? request.afterSourceSeq };
+        },
+      };
+      const execution = executeNativeSession({ input, backend: {
+        async descriptor() { return { kind: "mock", name: "redacted-completion", version: "1", capabilities: await session.capabilities() }; },
+        async openSession() { return session; },
+      }, controlPlane: port, runnerInstanceId: "runner-recovery", controlPlaneInstanceId: "control-recovery", timeoutMs: 20 });
+      const outcome = conflict ? expect(execution).rejects.toThrow("native_control_event_replay_conflict:1")
+        : expect(execution).resolves.toMatchObject({ result: completion });
+      await saved;
+      await vi.advanceTimersByTimeAsync(25);
+      await outcome;
+      expect(completeRun).toHaveBeenCalledTimes(conflict ? 0 : 1);
+      expect(JSON.stringify(history)).not.toContain("private-fixture-value");
+      expect(history.filter(event => event.eventType === "run.result.accepted")).toHaveLength(1);
+    } finally { vi.useRealTimers(); }
+  });
+
   it("keeps a reconstructed semantic result on its matched terminal turn", async () => {
     const semanticFingerprint = canonicalTestJson(result);
     const checkpoint: PersistedNativeSession = {
@@ -8797,4 +8865,32 @@ describe("executeNativeSession recovery", () => {
       timeoutSpy.mockRestore();
     }
   });
+});
+
+
+it("fails preconfigured recovery without replacing a missing provider session", async () => {
+  const checkpoint: PersistedNativeSession = {
+    backendKind: "mock", sessionId: "driver-preconfigured", identity,
+    providerSessionId: "provider-missing", providerRecoveryPolicy: "allow_replacement_after_resume_failure",
+    cursor: "0", activeTurnId: null, pendingRuntimeRequests: [], lineage: [],
+  };
+  const openSession = vi.fn();
+  const openReplacementSession = vi.fn();
+  const backend: NativeSessionBackend = {
+    descriptor: async () => ({ kind: "mock", name: "preconfigured", version: "1",
+      runtimeContextCapabilities: { instructions: "native", skills: "native", mcp: "native" },
+      capabilities: { resume: true, typedEvents: true, steering: false, interruption: true } }),
+    openSession, openReplacementSession,
+    recoverSession: async () => ({ recovered: false, reason: "provider history is missing" }),
+  };
+  const port: ControlPlanePort = {
+    openRun: vi.fn(), appendEvent: vi.fn(), completeRun: vi.fn(),
+    replayEvents: async () => ({ events: [], highestContiguousSourceSeq: 0 }),
+  };
+  await expect(executeNativeSession({
+    input: { ...preparedInput(), schema: "paperclip.native-execution-input.v7", homeMode: "preconfigured" },
+    backend, controlPlane: port, runnerInstanceId: "runner-preconfigured", persistedSession: checkpoint,
+  })).rejects.toThrow("native_session_recovery_failed: provider history is missing");
+  expect(openSession).not.toHaveBeenCalled();
+  expect(openReplacementSession).not.toHaveBeenCalled();
 });

@@ -155,6 +155,7 @@ export class HarnessDriverBackend implements NativeSessionBackend {
     };
     const recoveryOptions: HarnessSessionRecoveryOptions = {
       signal: options.signal,
+      normalizeReplayPayload: options.normalizeReplayPayload,
     };
     const recovered = await this.#driver.recoverSession(
       persisted,
@@ -377,11 +378,12 @@ function assertProviderSessionIdentity(
   stage: "session.open" | "session.recover",
 ): void {
   const ids = session.ids();
+  const external = provider === "openai_dot_mcp" || provider === "grok_bot_mcp" || provider === "muse_external";
   if (
     typeof ids.driverSessionId !== "string" ||
     ids.driverSessionId.trim().length === 0 ||
-    (provider !== "openai_dot_mcp" && (typeof ids.providerSessionId !== "string" || ids.providerSessionId.trim().length === 0))
-    || (provider === "openai_dot_mcp" && ids.providerSessionId !== null)
+    (!external && (typeof ids.providerSessionId !== "string" || ids.providerSessionId.trim().length === 0))
+    || (external && ids.providerSessionId !== null)
   ) {
     throw new Error(
       `provider_initialize_protocol_error: provider=${provider} stage=${stage} missing durable provider session identity`,
@@ -455,6 +457,7 @@ class HarnessNativeSession implements NativeSession {
     return {
       resume: true,
       typedEvents: true,
+      perTurnReasoning: this.#session.supportsTurnReasoning?.() === true,
       steering: (negotiated?.steering ?? this.#steeringSupported) && this.#session.steer !== undefined,
       queuedFollowUp: negotiated?.queuedFollowUp === true && this.#session.steer !== undefined,
       interruption: this.#session.interrupt !== undefined,
@@ -714,6 +717,9 @@ class HarnessNativeSession implements NativeSession {
     // The provider has no active turn to interrupt yet. Do not launch work
     // whose events cancellation would suppress and leave the owner waiting.
     if (this.#explicitlyCancelled) throw new Error("native_session_cancelled");
+    if (input.reasoningMode !== undefined && this.#session.supportsTurnReasoning?.() !== true) {
+      throw new Error("Per-turn reasoning is not supported by this provider");
+    }
     this.#terminal = null;
     try {
       const started = await this.#session.startTurn(input);
@@ -773,6 +779,7 @@ class HarnessNativeSession implements NativeSession {
   }
 
   resolveRuntimeRequest(input: {
+    commandId?: string;
     requestId: string;
     turnId: string;
     resolution: Parameters<
