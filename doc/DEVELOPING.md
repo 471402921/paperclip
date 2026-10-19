@@ -669,6 +669,10 @@ receipt file cannot be written, its full contents are printed as incomplete
 evidence. The provider's child handle is optional diagnostic evidence; when it
 is unavailable (including early initdb failures), the fixture records an unknown
 identity. Matching OS users or PIDs alone do not establish test ownership.
+An older segment can retain a creator PID that the OS later assigns to a live
+test child. The collector therefore keeps segment test ownership unknown even
+when the creator PID matches that child; these snapshots cannot bind a segment
+to the current startup attempt.
 Zero attachments do not establish that a segment can be removed. The snapshots
 are not atomic; a complete receipt does not establish a product failure or
 authorize cleanup.

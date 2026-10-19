@@ -131,12 +131,14 @@ describe("macOS embedded PostgreSQL failure diagnostics", () => {
     },
   );
 
-  it("keeps complete evidence, attachment counts, limits, process identities and the original failure", async () => {
+  it("keeps allocation evidence and the original failure with explicit unknown ownership", async () => {
     const input = failure();
     const { receipt, result, runCommand } = await capture(input);
-    expect(result).toBe("complete diagnostics: /saved/receipt.json");
-    expect(receipt.completeness).toBe("complete");
-    expect(receipt.incompleteReasons).toEqual([]);
+    expect(result).toBe("incomplete diagnostics: /saved/receipt.json");
+    expect(receipt.completeness).toBe("incomplete");
+    expect(receipt.incompleteReasons).toEqual([
+      "segment 17: test ownership unknown; OS owner or creator PID is not lifecycle ownership",
+    ]);
     const originalError = input.error as Error;
     expect(receipt.originalFailure).toEqual({
       name: "Error",
@@ -156,7 +158,7 @@ describe("macOS embedded PostgreSQL failure diagnostics", () => {
       attachments: 2,
       creatorPid: 300,
       lastPid: 300,
-      testOwnership: "recorded-live-child",
+      testOwnership: "unknown",
     });
     expect(receipt.processes[1].executable).toBe("/path with spaces/postgres");
     expect(receipt.commands).toHaveLength(3);
@@ -291,6 +293,44 @@ describe("macOS embedded PostgreSQL failure diagnostics", () => {
     const exited = await capture(input);
     expect(exited.receipt.completeness).toBe("incomplete");
     expect(exited.receipt.segments[0].testOwnership).toBe("unknown");
+  });
+
+  it("does not attribute an old segment to a live child that reused its creator PID", async () => {
+    const { receipt } = await capture(
+      failure(),
+      probes({
+        "/usr/bin/ipcs": {
+          stdout: ipc.replace(
+            "12:00:01 no-entry 12:00:01",
+            "11:00:00 no-entry 11:00:00",
+          ),
+        },
+      }),
+    );
+    expect(receipt.recordedProcess).toMatchObject({
+      postgresPid: 300,
+      exitCode: null,
+      signalCode: null,
+    });
+    expect(
+      receipt.processes.find((entry: { pid: number }) => entry.pid === 300),
+    ).toMatchObject({
+      ppid: 200,
+      uid: 501,
+      startedAt: "Sun Oct 18 12:00:01 2026",
+    });
+    expect(receipt.segments[0]).toMatchObject({
+      creatorPid: 300,
+      testOwnership: "unknown",
+    });
+    expect(receipt.completeness).toBe("incomplete");
+    expect(receipt.incompleteReasons.join(" ")).toContain(
+      "test ownership unknown",
+    );
+    expect(receipt.allocation).toMatchObject({
+      allocatedSegments: 1,
+      attachments: 2,
+    });
   });
 
   it("recognizes an empty host without claiming allocation pressure", async () => {

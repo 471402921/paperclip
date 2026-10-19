@@ -293,21 +293,16 @@ export async function captureMacPostgresDiagnostics(
     if (!processes.has(recorded.harnessPid))
       reasons.push("harness process state unknown");
     const segments = parsed.segments.map((segment) => {
-      const ownership =
-        liveChildVerified && segment.creatorPid === recorded.postgresPid
-          ? "recorded-live-child"
-          : "unknown";
-      if (ownership === "unknown")
-        reasons.push(
-          `segment ${segment.id}: test ownership unknown; OS owner is not lifecycle ownership`,
-        );
+      reasons.push(
+        `segment ${segment.id}: test ownership unknown; OS owner or creator PID is not lifecycle ownership`,
+      );
       for (const pid of new Set([segment.creatorPid, segment.lastPid])) {
         if (pid > 0 && !processes.has(pid))
           reasons.push(
             `segment ${segment.id}: process ${pid} state unknown (absent from snapshot)`,
           );
       }
-      return { ...segment, testOwnership: ownership };
+      return { ...segment, testOwnership: "unknown" };
     });
     const allocationsKnown = ipc.status === "ok" && parsed.complete;
     const allocatedSegments = allocationsKnown ? segments.length : null;
