@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { QUALIFIED_ACPX_PROFILE_DATA } from "./generated-profiles.js";
 import { isSupportedAcpxProfileVersion } from "./profile-compatibility.js";
@@ -34,6 +35,15 @@ describe("historical ACPX profile decoding", () => {
       expect(isSupportedAcpxProfileVersion(agent, 25)).toBe(false);
       expect(isSupportedAcpxProfileVersion(agent, 26)).toBe(false);
       expect(isSupportedAcpxProfileVersion(agent, 27)).toBe(false);
+    }
+  });
+  it("decodes every retained Copilot identity so saved runs can reach recovery", () => {
+    const root = new URL("../../../test/fixtures/", import.meta.url);
+    const files = readdirSync(root).filter(name => /^copilot-profile-v\d+.*-identity\.json$/u.test(name));
+    expect(files.length).toBeGreaterThan(30);
+    for (const file of files) {
+      const identity = JSON.parse(readFileSync(new URL(file, root), "utf8"));
+      expect(isSupportedAcpxProfileVersion("copilot", identity.declaration.agentProfileVersion), file).toBe(true);
     }
   });
   it.each([0, 1.5, "11", null, undefined, NaN])("rejects invalid revisions: %s", version => {
