@@ -16,7 +16,7 @@ on:
         type: boolean
         default: false
       publish_copilot_v46_artifact:
-        description: "Publish only the scanned OCI artifact from run 39301442988 without rebuilding"
+        description: "Publish only the reviewed OCI artifact from run 39325870619 without rebuilding"
         type: boolean
         default: false
       verify_source:
@@ -106,7 +106,7 @@ jobs:
           echo "target_sha=$target_sha" >> "$GITHUB_OUTPUT"
 
   publish_copilot_v46_artifact:
-    name: Publish exact scanned Copilot artifact
+    name: Publish exact reviewed Copilot artifact
     if: inputs.publish_copilot_v46_artifact
     needs: authorize_manual
     runs-on: ubuntu-latest
@@ -122,23 +122,24 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          gh api "repos/$REPOSITORY/actions/runs/39301442988" \
+          gh api "repos/$REPOSITORY/actions/runs/39325870619" \
             --jq '{head_sha, conclusion, event, path}' > build-run.json
-          jq -e '.head_sha == "f1e4d852d32a7756ece224bfafc9b2b40a6e2056" and
+          jq -e '.head_sha == "cc7061a78381a79ced1675df99ef16014984d285" and
             .conclusion == "success" and .event == "workflow_dispatch" and
             .path == ".github/workflows/docker-runner-check.yml"' build-run.json
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: grok-remote-verification-39301442988
-          run-id: 39301442988
+          name: grok-remote-verification-39325870619
+          run-id: 39325870619
           github-token: ${{ github.token }}
           path: retained-image
-      - name: Verify the exact scanned bytes
+      - name: Verify the exact reviewed bytes
         run: |
           set -euo pipefail
-          test "$(cat retained-image/source.txt)" = f1e4d852d32a7756ece224bfafc9b2b40a6e2056
-          printf '%s  %s\n' b5d7ae07fe45567df9f2ff7b4e8f1940638c6217ed4a39fa60812767abb5d10c retained-image/image.oci.tar | sha256sum -c -
-          test "$(jq -r '."containerimage.digest"' retained-image/image.json)" = sha256:0ab1f867577a4c2d1adab20cb1273ebcdbe177807dcc4d1be8fafa2f886f1066
+          test "$(cat retained-image/source.txt)" = cc7061a78381a79ced1675df99ef16014984d285
+          test "$(cat retained-image/content-id.txt)" = 357c644cf26b4fdccf34e0d3a2b351f82aa0642a12277ebac9f3576e80b98e39
+          printf '%s  %s\n' 6119d14dcb7ad4bbeeebccc342362daf97fce80c6e11ae91bb734aa8aedf5f18 retained-image/image.oci.tar | sha256sum -c -
+          test "$(jq -r '."containerimage.digest"' retained-image/image.json)" = sha256:86c3c9d673572763cbc98827a1eb9cf5b869e9c84b3f740544a5f40c094aedc1
       - name: Install the OCI copy tool
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y skopeo
       - name: Publish unchanged OCI bytes and verify anonymous access
@@ -152,8 +153,8 @@ jobs:
           printf '%s' "$GH_TOKEN" | skopeo login --authfile "$REGISTRY_AUTH_FILE" --username "$REGISTRY_USER" --password-stdin ghcr.io
           unset GH_TOKEN
           mkdir publication-receipt
-          image=ghcr.io/paperclipai/paperclip-daytona-runner:qualification-f1e4d852d32a7756ece224bfafc9b2b40a6e2056-39301442988
-          digest=sha256:0ab1f867577a4c2d1adab20cb1273ebcdbe177807dcc4d1be8fafa2f886f1066
+          image=ghcr.io/paperclipai/paperclip-daytona-runner:qualification-cc7061a78381a79ced1675df99ef16014984d285-39325870619
+          digest=sha256:86c3c9d673572763cbc98827a1eb9cf5b869e9c84b3f740544a5f40c094aedc1
           skopeo copy --all --preserve-digests --authfile "$REGISTRY_AUTH_FILE" --digestfile publication-receipt/published.digest \
             oci-archive:retained-image/image.oci.tar "docker://$image"
           test "$(cat publication-receipt/published.digest)" = "$digest"
@@ -163,7 +164,7 @@ jobs:
           echo "Published and anonymously verified: ${image%:*}@$digest" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: copilot-v46-ui1-publication-receipt
+          name: copilot-v46-ui2-publication-receipt
           path: publication-receipt
           if-no-files-found: error
           retention-days: 30
