@@ -41,7 +41,23 @@ it("admits existing Codex onboarding, useful-file revision and restart journeys 
   for (const id of ["first-task.legacy-codex.local.task-card-accept", "first-task.runner-codex.local.interview-first-response", "everyday-workflows.runner-codex.daytona.build-revise"]) {
     const cell = runnerMatrix.find(e => e.id === id)!;
     expect(cell).toBeDefined();
-    expect(() => assertInstalledCliSelection(env, [cell])).toThrow("explicit supported Pi or Codex");
+    expect(() => assertInstalledCliSelection(env, [cell])).toThrow("explicit supported Pi, Codex, or Copilot");
+  }
+});
+it("admits only the 20 agreed Copilot cells through normal installed resolution with no qualification override", async () => {
+  const { env, server } = await fixture();
+  const selected = runnerMatrix.filter(e => e.profile.id === "runner-acpx-copilot");
+  expect(selected).toHaveLength(20);
+  expect(selected.filter(e => e.environment.id === "local")).toHaveLength(10);
+  expect(selected.filter(e => e.environment.id === "daytona")).toHaveLength(10);
+  for (const cell of selected) {
+    expect(await verifyInstalledCli(env, [cell])).toMatchObject({ serverRoot: server, defaultRuntimeResolution: true, qualificationOverride: false });
+    const child = buildRunnerE2EProcessEnvironment(env, [cell]);
+    expect(child.PAPERCLIP_RUNNER_ACPX_QUALIFICATION).toBeUndefined();
+    for (const key of ["PAPERCLIP_RUNNER_BINARY", "PAPERCLIP_RUNNER_REMOTE_BINARY_PATH", "PAPERCLIP_RUNNER_ACPX_QUALIFICATION", "NODE_PATH"]) {
+      expect(() => assertInstalledCliSelection({ ...env, [key]: "foreign" }, [cell])).toThrow("forbids");
+    }
+    expect(() => assertInstalledCliSelection(env, [{ ...cell, id: `${cell.id}-unreviewed` }])).toThrow("explicit supported");
   }
 });
 it("qualified providers drop ambient admission while pending Copilot retains its exact gate", () => {
