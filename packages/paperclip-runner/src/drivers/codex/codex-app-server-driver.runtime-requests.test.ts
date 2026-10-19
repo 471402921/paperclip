@@ -84,6 +84,34 @@ it("preserves runnerd permission expiry before a failed provider terminal and re
   expect(validatePrpEvent(settlements[0]!)).toMatchObject({ ok: true });
 });
 
+it("preserves canonical question expiry after provider loss and refuses late answers", async () => {
+  const transport = new FakeCodexTransport();
+  const session = await makeDriver([transport]).openSession({ runId: "question-expiry", normalizedSessionId: "question-expiry", workingDirectory: WORKSPACE });
+  const events: PrpEvent[] = [];
+  const consume = (async () => { for await (const event of session.events()) events.push(event); })();
+  const { turnId } = await session.startTurn({ message: { role: "user", text: "Ask before changing files." } });
+  const pending = transport.invoke({ id: "native-question", method: "item/tool/requestUserInput", params: {
+    threadId: "thread-1", turnId, itemId: "question-item", questions: [{ id: "environment", header: "Environment", question: "Where should we deploy?", options: [{ label: "Staging" }, { label: "Production" }] }],
+  } });
+  await vi.waitFor(() => expect(session.pendingRuntimeRequests?.()).toHaveLength(1));
+  const request = session.pendingRuntimeRequests!()[0]!;
+  expect(request.requestKind).toBe("user_input");
+  const payload = { requestId: "native-question", requestKind: "runtime", requestType: "input", replayAllowed: false, reason: "provider_process_lost" };
+  const expiry = runnerdRuntimeRequestExpiryNotification("runtime_request.expired", payload, "thread-1", turnId)!;
+  transport.push(expiry.method, expiry.params);
+  transport.push(expiry.method, expiry.params);
+  await pending;
+  expect(session.pendingRuntimeRequests?.()).toEqual([]);
+  await expect(session.resolveRuntimeRequest?.({ requestId: "native-question", turnId, resolution: { action: "accept" } })).rejects.toThrow();
+  transport.push("turn/completed", { threadId: "thread-1", turn: { id: turnId, status: "failed", error: { code: "ACPX_PROVIDER_PROCESS_LOST", message: "Provider died" } } });
+  await vi.waitFor(() => expect(events.some(event => event.eventType === "turn.failed" || event.eventType === "session.failed")).toBe(true));
+  await session.close(); await consume;
+  expect(events.filter(event => event.eventType === "runtime_request.expired")).toHaveLength(1);
+  expect(events.find(event => event.eventType === "runtime_request.expired")).toMatchObject({ turnId, itemId: "question-item", payload });
+  expect(events.some(event => event.eventType === "session.failed" && event.payload.code === "turn_binding_mismatch")).toBe(false);
+  expect(events.some(event => event.eventType === "runtime_request.cancelled" || event.eventType === "runtime_request.resolved")).toBe(false);
+});
+
 it.each(["turn", "kind", "type", "replay"])("refuses canonical permission expiry with a changed %s binding", async kind => {
   const transport = new FakeCodexTransport();
   const session = await makeDriver([transport]).openSession({ runId: "expiry-bound", normalizedSessionId: "expiry-bound", workingDirectory: WORKSPACE });
