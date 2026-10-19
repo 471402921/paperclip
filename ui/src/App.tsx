@@ -7,7 +7,6 @@ import { Layout } from "./components/Layout";
 import { Layout as ProductionLayout } from "./components/Layout.production";
 import { ConferenceRoomChatGate } from "./components/ConferenceRoomChatGate";
 import { TaskChatLab } from "./pages/TaskChatLab";
-import { PipelinesExperimentalGate } from "./components/PipelinesExperimentalGate";
 import { CasesExperimentalGate } from "./components/CasesExperimentalGate";
 import { StatusCardsExperimentalGate } from "./components/StatusCardsExperimentalGate";
 import { CloudManagedPageGate } from "./components/CloudManagedPageGate";
@@ -40,8 +39,6 @@ import { AgentChats } from "./pages/AgentChats";
 import { AgentChat } from "./pages/AgentChat";
 import { IssueChatLongThreadPerf } from "./pages/IssueChatLongThreadPerf";
 import { Routines } from "./pages/Routines";
-import { Learnings, PipelineItemDetail, PipelineItemLegacyRedirect, Pipelines, ReviewQueue } from "./pages/Pipelines";
-import { PipelineSettings } from "./pages/PipelineSettings";
 import { StatusCards } from "./pages/StatusCards";
 import { RoutineDetail } from "./pages/RoutineDetail";
 import { UserProfile } from "./pages/UserProfile";
@@ -357,38 +354,6 @@ function boardRoutes(streamlinedUiEnabled: boolean, combinedInboxTasksEnabled: b
       {/* Back-compat: the board lived at /status-cards before PAP-15223. */}
       <Route path="status-cards" element={<StatusCardsLegacyRedirect />} />
       <Route path="status-cards/:cardId" element={<StatusCardsLegacyRedirect />} />
-      <Route
-        path="review-queue"
-        element={<PipelinesExperimentalGate><ReviewQueue /></PipelinesExperimentalGate>}
-      />
-      <Route
-        path="learnings"
-        element={<PipelinesExperimentalGate><Learnings /></PipelinesExperimentalGate>}
-      />
-      <Route
-        path="pipelines"
-        element={<PipelinesExperimentalGate><Pipelines /></PipelinesExperimentalGate>}
-      />
-      <Route
-        path="pipelines/:pipelineId"
-        element={<PipelinesExperimentalGate><Pipelines /></PipelinesExperimentalGate>}
-      />
-      <Route
-        path="pipelines/:pipelineId/add"
-        element={<PipelinesExperimentalGate><Pipelines /></PipelinesExperimentalGate>}
-      />
-      <Route
-        path="pipelines/:pipelineId/settings"
-        element={<PipelinesExperimentalGate><PipelineSettings /></PipelinesExperimentalGate>}
-      />
-      <Route
-        path="pipelines/:pipelineId/items/:caseId"
-        element={<PipelinesExperimentalGate><PipelineItemDetail /></PipelinesExperimentalGate>}
-      />
-      <Route
-        path="pipelines/:pipelineId/cases/:caseId"
-        element={<PipelinesExperimentalGate><PipelineItemLegacyRedirect /></PipelinesExperimentalGate>}
-      />
       <Route path="routines/:routineId" element={streamlinedUiEnabled ? <RoutineDetail /> : <ProductionSurface><ProductionRoutineDetail /></ProductionSurface>} />
       <Route path="routines/:routineId/:section" element={streamlinedUiEnabled ? <RoutineDetail /> : <ProductionSurface><ProductionRoutineDetail /></ProductionSurface>} />
       <Route element={<IsolatedWorkspacesRouteGate />}>
@@ -834,20 +799,12 @@ export function App() {
           <Route path="issues/:issueId" element={<UnprefixedBoardRedirect />} />
           <Route path="routines" element={<UnprefixedBoardRedirect />} />
           <Route path="routines/:routineId" element={<UnprefixedBoardRedirect />} />
-          <Route path="review-queue" element={<UnprefixedBoardRedirect />} />
-          <Route path="learnings" element={<UnprefixedBoardRedirect />} />
           <Route path="cases" element={<UnprefixedBoardRedirect />} />
           <Route path="cases/:caseIdentifier" element={<UnprefixedBoardRedirect />} />
           <Route path="status" element={<UnprefixedBoardRedirect />} />
           <Route path="status/:cardId" element={<UnprefixedBoardRedirect />} />
           <Route path="status-cards" element={<UnprefixedBoardRedirect />} />
           <Route path="status-cards/:cardId" element={<UnprefixedBoardRedirect />} />
-          <Route path="pipelines" element={<UnprefixedBoardRedirect />} />
-          <Route path="pipelines/:pipelineId" element={<UnprefixedBoardRedirect />} />
-          <Route path="pipelines/:pipelineId/add" element={<UnprefixedBoardRedirect />} />
-          <Route path="pipelines/:pipelineId/settings" element={<UnprefixedBoardRedirect />} />
-          <Route path="pipelines/:pipelineId/items/:caseId" element={<UnprefixedBoardRedirect />} />
-          <Route path="pipelines/:pipelineId/cases/:caseId" element={<UnprefixedBoardRedirect />} />
           <Route path="artifacts" element={<UnprefixedBoardRedirect />} />
           <Route path="audit" element={<UnprefixedBoardRedirect />} />
           {streamlinedUiEnabled ? (

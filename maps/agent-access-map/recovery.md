@@ -36,6 +36,11 @@ Older unmarked preparations do not qualify for this automatic path during an
 upgrade. The fencing marker comes from fresh server-owned identity creation;
 caller profile data cannot upgrade an existing preparation.
 
+Remote process-health reads retry within a bounded budget. An unavailable probe
+cannot authorize replacement or erase the original ownership marker. This is
+internal supervision; it grants no new agent recovery action. Existing task,
+company, process-identity and workspace-recovery checks remain required.
+
 Evidence: `source-only` — [implementation](../../server/src/routes/issues.ts#L9478) at
 the reviewed commit above.
 

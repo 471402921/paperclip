@@ -110,6 +110,13 @@ provider restart. For that journey, interrupt a disposable deployment after
 workspace preparation and before its first executor claim, then confirm one
 provider turn starts on the original run through the normal admission gates.
 
+Active remote process supervision distinguishes a failed health read from a
+confirmed exit. The [executor tests](../../server/src/services/native-runtime/native-session-executor.test.ts)
+exercise timeout recovery with a real listening process, unchanged ownership,
+and rejected identity evidence. The Runner restart tests require positive exit
+evidence before replacement. This coverage does not prove recovery of a
+historical retained sandbox or behavior during a live provider outage.
+
 The same database suite pauses an original preparation while recovery claims
 the remote run. It then verifies that the old preparation yields without opening
 a provider or changing the recovery owner, for both live and expired leases.

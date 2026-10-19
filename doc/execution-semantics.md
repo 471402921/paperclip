@@ -1551,6 +1551,15 @@ its active readers before closing the manifest and publishes no success receipt.
 
 ### Warm sandbox continuity
 
+An active remote runner's health probe is an observation, not an exit receipt.
+Timed-out or rejected read-only probes retry within the existing 30-second
+budget. A successful probe keeps the same runner and turn; no provider work is
+replayed. Monitoring checks the saved process generation when available.
+Only a matching ownership marker and confirmed process exit permit automatic
+replacement. Missing or conflicting identity evidence, failed reads, and an
+exhausted probe budget retain the existing ownership and recovery safeguards.
+They must not launch a competing listener or overwrite the original marker.
+
 Healthy native warm turns retain their runner and provider processes. After a
 controller crash, continuation can recover a completed remote session from its
 saved checkpoint and exact sandbox process identity. The prior controller must

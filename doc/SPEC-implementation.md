@@ -651,7 +651,7 @@ conversation lifecycles, and protection against replaying superseded requests.
 
 Human invitations default to the Operator role. Its default grants allow agent
 creation and configuration, skill editing, environment management, invitations,
-task assignment, pipeline editing, connection and tool management/use, and tool
+task assignment, connection and tool management/use, and tool
 and agent-action audit views. Operators do not receive `joins:approve` or
 `users:manage_permissions`. Explicit invitation grants remain authoritative.
 Creating a human invitation also requires any of these two membership powers
@@ -2306,3 +2306,10 @@ reservation per attempt. Failed downloads and package fallback keep the full
 reservation. Successfully linked small imports refund unused measured work.
 Completed bindings do not reset company credits; waiting jobs retry on refill.
 The company_skill_import_budgets table stores no credentials or source contents.
+
+### Retired Pipelines experiment (2026-10-19)
+
+Pipelines, its review queue and learnings, stage automation, REST API, CLI commands,
+and experimental setting are removed. Existing database tables and records remain
+for data preservation; there is no migration that drops or rewrites them. The
+independent Cases and Routines features remain available.
