@@ -285,9 +285,10 @@ release_info "==> Step 2/7: Building workspace artifacts..."
 cd "$REPO_ROOT"
 pnpm build
 if [ -n "${PAPERCLIP_RELEASE_RUNNER_ARTIFACTS_DIR:-}" ]; then
-  node "$REPO_ROOT/packages/paperclip-runner/scripts/stage-release-runner-binaries.mjs" \
-    assemble-daemons "$PAPERCLIP_RELEASE_RUNNER_ARTIFACTS_DIR" "$(git rev-parse HEAD)"
-  cp -R "$REPO_ROOT/packages/paperclip-runner/dist/bin/." "$REPO_ROOT/server/dist/vendor/paperclip-runner/bin/"
+  if [ -z "${PAPERCLIP_RELEASE_RUNNER_PROVIDER_PACK_MANIFEST:-}" ]; then
+    release_fail "Public releases require the matching Linux provider-pack authority."
+  fi
+  node "$REPO_ROOT/scripts/assemble-release-runner-inputs.mjs" "$PAPERCLIP_RELEASE_RUNNER_ARTIFACTS_DIR" "$(git rev-parse HEAD)" "$PAPERCLIP_RELEASE_RUNNER_PROVIDER_PACK_MANIFEST"
 elif [ "$dry_run" = false ]; then
   release_fail "Public releases require the four hosted runner daemon artifacts; use the supported Release workflow."
 fi

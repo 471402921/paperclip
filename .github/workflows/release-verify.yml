@@ -12,11 +12,18 @@ on:
         required: false
         default: false
         type: boolean
+      include_remote_provider_pack:
+        description: Export the pinned Linux image authority for complete remote release packages
+        required: false
+        default: false
+        type: boolean
     outputs:
       runner_artifact_prefix:
         value: ${{ jobs.runner_binaries.outputs.artifact_prefix }}
       native_consumer_matrix:
         value: ${{ jobs.runner_binary_targets.outputs.native_consumers }}
+      provider_pack_artifact:
+        value: ${{ jobs.runner_binaries.outputs.provider_pack_artifact }}
 
 # Caller-provided refs may name unmerged PR code. AWS is eligible only when
 # the caller runs on canonical master and verifies that event's exact SHA.
@@ -600,6 +607,7 @@ jobs:
       matrix: ${{ fromJSON(needs.runner_binary_targets.outputs.matrix) }}
     outputs:
       artifact_prefix: ${{ steps.identity.outputs.artifact_prefix }}
+      provider_pack_artifact: ${{ steps.identity.outputs.provider_pack_artifact }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -622,6 +630,7 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]] || exit 1
           [[ "$(node -p 'process.platform + "-" + process.arch')" == "$TARGET" ]] || exit 1
           echo "artifact_prefix=runner-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+          echo "provider_pack_artifact=runner-provider-pack-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
       - name: Pin native Cargo workspace and toolchain
         id: native_rust_workspace
         working-directory: packages/paperclip-runner
@@ -694,6 +703,29 @@ jobs:
         run: |
           node packages/paperclip-runner/scripts/stage-release-runner-binaries.mjs record "$SOURCE_SHA" "$TARGET" \
             packages/paperclip-runner/dist/bin/paperclip-runnerd "$RUNNER_TEMP/runner-release/$TARGET"
+      - name: Checkout trusted provider-pack build tooling
+        if: inputs.include_remote_provider_pack && matrix.target == 'linux-x64'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .release-tooling
+          sparse-checkout: scripts/build-release-provider-pack-manifest.mjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Export exact-source Linux image provider-pack authority
+        if: inputs.include_remote_provider_pack && matrix.target == 'linux-x64'
+        env:
+          SOURCE_SHA: ${{ inputs.ref }}
+        run: node .release-tooling/scripts/build-release-provider-pack-manifest.mjs "$SOURCE_SHA" "$RUNNER_TEMP/release-provider-pack"
+      - name: Retain Linux provider-pack authority separately from daemon receipts
+        if: inputs.include_remote_provider_pack && matrix.target == 'linux-x64'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ steps.identity.outputs.provider_pack_artifact }}
+          path: ${{ runner.temp }}/release-provider-pack/
+          if-no-files-found: error
+          retention-days: 14
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ steps.identity.outputs.artifact_prefix }}-${{ matrix.target }}

@@ -817,8 +817,18 @@ test("release daemon production uses exact-source native hosts and no publisher 
     assert.match(block, /PAPERCLIP_RELEASE_RUNNER_ARTIFACTS_DIR/);
   }
   const script = readFileSync(path.join(repoRoot, 'scripts/release.sh'), 'utf8');
-  assert.ok(script.indexOf('assemble-daemons "$PAPERCLIP_RELEASE_RUNNER_ARTIFACTS_DIR"') < script.indexOf('scripts/build-standalone-public-packages.mjs'));
-  assert.match(script, /cp -R .*paperclip-runner\/dist\/bin\/\." .*server\/dist\/vendor\/paperclip-runner\/bin\//);
+  const assembly = script.indexOf('scripts/assemble-release-runner-inputs.mjs');
+  assert.ok(assembly >= 0 && assembly < script.indexOf('scripts/build-standalone-public-packages.mjs'));
+  assert.match(script, /PAPERCLIP_RELEASE_RUNNER_PROVIDER_PACK_MANIFEST/);
+  const assembler = readFileSync(path.join(repoRoot, 'scripts/assemble-release-runner-inputs.mjs'), 'utf8');
+  assert.match(assembler, /for \(const directory of \['bin', 'remote-provider-packs'\]\)/);
+  assert.match(assembler, /server\/dist\/vendor\/paperclip-runner/);
+  assert.match(assembler, /verifyReleaseProviderPack\(JSON.parse\(bytes\), sourceRevision\)/);
+  for (const job of ["publish_canary", "publish_nightly", "publish_beta", "preview_stable", "publish_stable"]) {
+    const block = release.split(`  ${job}:\n`)[1].split(/\n  [a-z_]+:\n/)[0];
+    assert.match(block, /needs.release_runner_binaries.outputs.provider_pack_artifact/);
+    assert.match(block, /PAPERCLIP_RELEASE_RUNNER_PROVIDER_PACK_MANIFEST/);
+  }
   assert.match(script, /elif \[ "\$dry_run" = false \]; then[\s\S]*?release_fail "Public releases require/);
 });
 
@@ -1204,13 +1214,14 @@ test("historical promotion sources keep their packaging path while new sources r
     const tools = path.join(root, 'tools'); mkdirSync(tools);
     writeFileSync(path.join(tools, 'git'), '#!/bin/sh\ncase "$1" in\nrev-parse) printf "%s\\n" "$FIXTURE_HEAD";;\nshow) cat "$FIXTURE_SOURCE";;\n*) exit 3;;\nesac\n', { mode: 0o755 });
     const source = path.join(root, 'release.sh'), output = path.join(root, 'outputs');
-    for (const [contents, required] of [['pnpm build\n', false], ['assemble-daemons "$PAPERCLIP_RELEASE_RUNNER_ARTIFACTS_DIR" "$SOURCE_SHA"\n', true]]) {
+    for (const [contents, required] of [['pnpm build\n', false], ['assemble-daemons "$PAPERCLIP_RELEASE_RUNNER_ARTIFACTS_DIR" "$SOURCE_SHA"\n', true], ['node "$REPO_ROOT/scripts/assemble-release-runner-inputs.mjs"\n', true]]) {
       writeFileSync(source, contents); writeFileSync(output, '');
       const result = spawnSync('bash', ['-euo', 'pipefail', '-c', script], { encoding: 'utf8', env: {
         PATH: `${tools}:/usr/bin:/bin`, SOURCE_SHA: 'a'.repeat(40), FIXTURE_HEAD: 'a'.repeat(40), FIXTURE_SOURCE: source, GITHUB_OUTPUT: output,
       } });
       assert.equal(result.status, 0, result.stderr);
       assert.match(readFileSync(output, 'utf8'), new RegExp(`required=${required}`));
+      assert.match(readFileSync(output, 'utf8'), new RegExp(`provider_pack_required=${contents.includes('scripts/assemble-release-runner-inputs.mjs')}`));
     }
     const result = spawnSync('bash', ['-euo', 'pipefail', '-c', script], { encoding: 'utf8', env: {
       PATH: `${tools}:/usr/bin:/bin`, SOURCE_SHA: 'a'.repeat(40), FIXTURE_HEAD: 'b'.repeat(40), FIXTURE_SOURCE: source, GITHUB_OUTPUT: output,
