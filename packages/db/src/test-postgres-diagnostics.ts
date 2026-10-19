@@ -1,5 +1,3 @@
-// Test-fixture diagnostics only. Nothing here changes PostgreSQL configuration,
-// retries, deadlines, or resource ownership.
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -38,9 +36,6 @@ export type DiagnosticCommandReceipt = {
   } | null;
 };
 
-// Run all three probes concurrently; each has a 1s bound and a 1 MiB output
-// bound. SIGKILL applies only to the diagnostic utility we start, never a
-// database or a process discovered in its output. No shell or full argv dump.
 export function runDiagnosticCommand(
   command: string,
   args: string[],
@@ -140,8 +135,6 @@ function parseSegments(output: string) {
     }
     segments.push(segment);
   }
-  // Reject unexpected data rather than interpreting a changed format as an
-  // empty host. Apple's ipcs prints its header before "Shared Memory:".
   if (
     lines.some(
       (line) =>
@@ -167,8 +160,6 @@ function parseProcesses(output: string) {
     }
   >();
   for (const line of output.split(/\r?\n/).filter((line) => line.trim())) {
-    // lstart is five fields in the C locale. comm contains no environment or
-    // command arguments; paths with spaces remain intact.
     const match = line.match(
       /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+\s+\S+\s+\d+\s+\d+:\d+:\d+\s+\d+)\s+(.+?)\s*$/,
     );
@@ -186,8 +177,6 @@ function parseProcesses(output: string) {
 }
 
 function writeReceipt(receipt: unknown): string {
-  // Kept outside the disposable database directory so existing cleanup cannot
-  // erase it. mkdtemp creates a private directory; receipt files are 0600.
   const dir = fs.mkdtempSync(
     path.join(os.tmpdir(), "paperclip-postgres-diagnostics-"),
   );
@@ -213,9 +202,6 @@ export function isMacPostgresSharedMemoryFailure(
   );
 }
 
-// "complete" describes evidence, never a passing test or authority to clean up.
-// A PID or matching OS user alone does not prove that this harness owns a
-// segment. Only a still-live child handle with a matching parent/uid does.
 export async function captureMacPostgresDiagnostics(
   input: Failure,
   dependencies: {
@@ -237,7 +223,6 @@ export async function captureMacPostgresDiagnostics(
     try {
       (dependencies.emit ?? console.warn)(message);
     } catch {
-      /* Keep the original failure authoritative. */
     }
   };
   const run = dependencies.runCommand ?? runDiagnosticCommand;
@@ -398,7 +383,6 @@ export async function captureMacPostgresDiagnostics(
     );
     return `${receipt.completeness} diagnostics: ${location}`;
   } catch (error) {
-    // Diagnostics must never replace the original rejection or skip cleanup.
     emit(
       `[embedded-postgres] macOS shared-memory diagnostics incomplete: ${String(error)}; original failure: ${String(input.error)}; logs: ${input.recentLogs.join("\n")}`,
     );

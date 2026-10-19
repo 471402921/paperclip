@@ -147,9 +147,6 @@ async function createEmbeddedPostgresTestInstanceAt(dataDir: string) {
   };
   let instance: EmbeddedPostgresInstance | undefined;
   const recordProcess = () => {
-    // Diagnostic-only inspection of the provider's private child handle. A
-    // future provider without this field yields incomplete evidence, never an
-    // inferred PID from a system-wide process scan.
     const child = instance && Reflect.get(instance, "process");
     if (!child || !Number.isSafeInteger(child.pid) || child.pid <= 0) return;
     recordedProcess.postgresPid = child.pid;
@@ -191,9 +188,6 @@ async function describeStartupFailure(
   const recentLogs = created?.getRecentLogs() ?? [];
   const formatted = formatEmbeddedPostgresError(error, { fallbackMessage, recentLogs });
   if (!created) return formatted;
-  // Capture before the existing stop/data-directory cleanup, on fresh starts,
-  // template builds, template copies, and support probes alike. Emitting each
-  // receipt keeps failed attempts visible even when a later attempt succeeds.
   const diagnostics = await captureMacPostgresDiagnostics({
     error,
     recentLogs,

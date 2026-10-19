@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   captureMacPostgresDiagnostics,
@@ -5,7 +7,6 @@ import {
   type DiagnosticCommandReceipt,
 } from "./test-postgres-diagnostics.js";
 
-// Column order and empty-table format follow Apple's file_cmds/ipcs/ipcs.c.
 const header =
   "IPC status from <running system> as of Sun Oct 18 12:00:02 UTC 2026\n" +
   "T ID KEY MODE OWNER GROUP CREATOR CGROUP NATTCH SEGSZ CPID LPID ATIME DTIME CTIME\nShared Memory:\n";
@@ -72,6 +73,63 @@ async function capture(input = failure(), runCommand = probes()) {
 
 describe("macOS embedded PostgreSQL failure diagnostics", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it.skipIf(process.platform !== "darwin")(
+    "runs actual macOS utility probes after a controlled startup failure",
+    async () => {
+      const input = failure();
+      input.error = new Error(
+        "controlled startup failure for live utility verification",
+      );
+      input.recordedProcess = {
+        harnessPid: process.pid,
+        harnessParentPid: process.ppid,
+        harnessUid: process.getuid?.() ?? null,
+        postgresPid: null,
+        exitCode: null,
+        signalCode: null,
+      };
+      const result = await captureMacPostgresDiagnostics(input);
+      expect(result).toMatch(/^incomplete diagnostics: /);
+      const filename = result!.slice("incomplete diagnostics: ".length);
+      try {
+        const raw = fs.readFileSync(filename, "utf8");
+        const evidenceDir =
+          process.env.PAPERCLIP_TEST_POSTGRES_DIAGNOSTIC_EVIDENCE_DIR;
+        if (evidenceDir) {
+          fs.mkdirSync(evidenceDir, { recursive: true });
+          fs.writeFileSync(
+            path.join(evidenceDir, "live-macos-receipt.json"),
+            raw,
+            { mode: 0o600 },
+          );
+        }
+        const receipt = JSON.parse(raw);
+        expect(receipt.originalFailure.message).toContain(
+          "controlled startup failure",
+        );
+        expect(receipt.commands).toHaveLength(3);
+        for (const command of receipt.commands) {
+          expect(command.status, JSON.stringify(command)).toBe("ok");
+        }
+        expect(receipt.allocation.allocatedSegments).toBeTypeOf("number");
+        expect(receipt.allocation.attachments).toBeTypeOf("number");
+        for (const limit of Object.values(receipt.allocation.limits)) {
+          expect(limit).toBeTypeOf("number");
+        }
+        expect(
+          receipt.processes.some(
+            (entry: { pid: number }) => entry.pid === process.pid,
+          ),
+        ).toBe(true);
+        expect(receipt.incompleteReasons).toContain(
+          "PostgreSQL child identity was not recorded (for example, initdb failed before start)",
+        );
+      } finally {
+        fs.rmSync(path.dirname(filename), { recursive: true, force: true });
+      }
+    },
+  );
 
   it("keeps complete evidence, attachment counts, limits, process identities and the original failure", async () => {
     const input = failure();

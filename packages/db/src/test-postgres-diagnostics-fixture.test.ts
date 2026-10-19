@@ -65,7 +65,6 @@ function fakeCtor(failures: number, initialiseFails = false) {
       }
     }
     async stop() {
-      // The receipt must already be on disk before existing cleanup starts.
       const receipts = paths.flatMap((dir) =>
         fs.existsSync(dir) ? fs.readdirSync(dir) : [],
       );

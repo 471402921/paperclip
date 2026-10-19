@@ -692,6 +692,15 @@ See [PostgreSQL kernel resource guidance](https://www.postgresql.org/docs/18/ker
 for the meaning of the limits. Lifecycle cleanup work such as
 [issue #7756](https://github.com/paperclipai/paperclip/issues/7756) is separate.
 
+The `PostgreSQL macOS diagnostics` CI workflow runs the fixture tests on a hosted
+Mac. One Mac-only test supplies a controlled startup failure and executes the
+actual `ipcs`, `sysctl`, and `ps` probes. It does not exhaust host resources.
+The job retains the live utility receipt and test log as an artifact. Linux
+fixture results and this controlled live-Mac probe result are separate evidence;
+neither establishes that a real Mac experienced resource exhaustion. To retain
+that probe receipt during a local Mac test run, set
+`PAPERCLIP_TEST_POSTGRES_DIAGNOSTIC_EVIDENCE_DIR` to an output directory.
+
 #### Reused Runner build in the server build
 
 The server build vendors `packages/paperclip-runner/dist`, so its
