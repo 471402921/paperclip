@@ -2,6 +2,8 @@
 
 Product map: [Runs, harnesses, and model accounts](../feature-map/runs-adapters.md).
 
+Feature ID: `runs-adapters`.
+
 Review date: 2026-10-12. Source commit: `58e16dbddfc9c8d0cf60867f9d9847f0feda055b`.
 Native REST transport reconciled in this change; see the
 [shared transport contract](README.md#native-rest-transport).
@@ -22,6 +24,8 @@ shutdown/readiness ordering. The original baseline and review depth remain for
 unrelated operations; no live provider or agent authorization is claimed.
 
 ## `availability`
+
+Capability ID: `runs-adapters/availability`.
 
 Review: `baseline`.
 
@@ -44,6 +48,11 @@ credentials/run context; inspect its result and applicable persistence/attributi
 Assert the relevant denied actor, owner, company or mode from Policy. Review the
 remaining operations before qualifying the whole capability.
 
+Runner discovery exposes `supportedRunners` and `defaultRunner`; it describes
+qualified selection, not successful authentication or task execution. Native
+Claude retains existing account grants and company/responsible-user boundaries.
+Source: [adapter discovery](../../server/src/adapters/registry.ts).
+
 Gaps: Raw instance adapter listing requires board, while company model discovery exists
 for eligible agents.
 
@@ -52,7 +61,7 @@ reports supported runners/effective default for the selected company/environment
 [selection policy](../../server/src/services/agent-runner-selection.ts) reads
 server-owned immutable sandbox facts without provisioning. New Codex defaults
 and explicit overrides follow the [shared runner contract](../../packages/shared/src/agent-runner.ts);
-other harness defaults remain unchanged. The board inventory does not grant a
+Claude follows its qualified rollout described above. The board inventory does not grant a
 native agent an equivalent discovery binding. See
 [probe restrictions](./execution-environments.md#probe) for acquiring qualification.
 An absent forced-Kubernetes environment is an unqualified sandbox target, never
@@ -62,6 +71,8 @@ The existing execution path owns lazy environment creation. Saved runners remain
 unchanged. This is source/control evidence, not live Kubernetes qualification.
 
 ## `validation`
+
+Capability ID: `runs-adapters/validation`.
 
 Review: `baseline`.
 
@@ -96,6 +107,24 @@ or Legacy CLI check cannot replace that runtime evidence. Missing dependencies,
 credentials, invalid models and incompatible settings fail without silently
 changing runners. Account login remains board/owner-bound.
 
+Scoped artifact-preparation source evidence: [native preparation](../../server/src/services/native-runtime/native-session-executor.ts)
+can overlap runner and default image-harness work only when the selected command
+runner declares concurrent sync support. Current executable hash, metadata,
+transport, and final-path checks still precede dispatch. The caller waits for
+both operations on failure. Explicit harness uploads and npm installs remain
+serial. This changes no API or agent grant. The
+[real-shell controls](../../server/src/services/native-runtime/native-artifact-preparation.test.ts)
+do not qualify the whole validation capability or a live response-time target.
+
+Scoped backend-preparation source evidence: remote native Codex can prepare its
+managed GitHub transport during fresh assigned-MCP discovery. The session claim,
+wake binding, review assignment and complete gateway launch binding checks still
+precede that work. Provider startup waits for both results. Failures drain both
+operations before the existing run cleanup releases any created GitHub access.
+No grant, token, authority cache or provider dispatch bypass is added. The
+[executor controls](../../server/src/services/native-runtime/native-session-executor.test.ts)
+remain separate from live latency and permitted/denied agent acceptance.
+
 For a linked Codex subscription with server-resolved managed credential provenance,
 setup checks the resolved owner and stages a private probe copy before local or
 remote isolation. Without a selected API key, an unbound linked `CODEX_HOME` is
@@ -123,6 +152,8 @@ caller's runtime; do not assume its binding accepts arbitrary runner or account
 settings. See [creation access](./agents.md#hire).
 
 ## `runs`
+
+Capability ID: `runs-adapters/runs`.
 
 Review: `baseline`.
 
@@ -181,6 +212,8 @@ session-control access. Deployed diagnostic usefulness remains unverified.
 
 ## `session`
 
+Capability ID: `runs-adapters/session`.
+
 Review: `baseline`.
 
 API: `present` — representative operation IDs:
@@ -221,6 +254,13 @@ is suppressed for the validated report; process-death and controller/native
 ownership checks still apply. No agent gains session or recovery control.
 PostgreSQL regressions cover valid native/Legacy callbacks and rejected bindings;
 revised live execution and actor authorization remain `not-run`.
+
+Scoped source-only evidence: [configuration changes](../../server/src/services/agent-configuration.ts)
+and [native execution/recovery](../../server/src/services/native-runtime/native-session-executor.ts)
+retain existing execution on unrelated edits and use recorded run configuration
+for active/recovered runs. Explicit runner changes use revisions and session
+invalidation. Verify saved configuration, current versus historical run identity,
+restart and follow-up without granting session-reset authority to an agent.
 
 Scoped Evidence: `source-only` — the
 [native transport](../../packages/paperclip-runner/src/live/runnerd-codex-transport.ts)

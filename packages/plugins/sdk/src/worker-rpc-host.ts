@@ -1,3 +1,4 @@
+import { environmentTaskOperationSchema, parseEnvironmentTaskResult, type PluginEnvironmentTaskParams } from "./environment-tasks.js";
 import type { AgentLifecycleRequest, AgentLifecycleResult } from "@paperclipai/shared";
 import type { AiConnectionRouterRequest, AiConnectionRouterResult } from "@paperclipai/shared";
 import { environmentCreationCleanupErrorData } from "./environment-creation-cleanup.js";
@@ -93,6 +94,7 @@ import type {
   RefreshExternalObjectsParams,
   PluginEnvironmentAcquireLeaseParams,
   PluginEnvironmentDestroyLeaseParams,
+  PluginEnvironmentInspectLeaseParams,
   PluginEnvironmentExecuteParams,
   PluginEnvironmentRunnerIngressEndpointParams,
   PluginEnvironmentSyncInParams,
@@ -1681,6 +1683,13 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       case "environmentValidateConfig":
         return handleEnvironmentValidateConfig(params as PluginEnvironmentValidateConfigParams);
 
+      case "environmentTask": {
+        if (!plugin.definition.onEnvironmentTask) throw methodNotImplemented("environmentTask");
+        const input = params as PluginEnvironmentTaskParams;
+        const operation = environmentTaskOperationSchema.parse(input.operation);
+        return parseEnvironmentTaskResult(operation, input.taskId, await plugin.definition.onEnvironmentTask({ ...input, operation }));
+      }
+
       case "environmentProbe":
         return handleEnvironmentProbe(params as PluginEnvironmentProbeParams);
 
@@ -1698,6 +1707,10 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
 
       case "environmentDestroyLease":
         return handleEnvironmentDestroyLease(params as PluginEnvironmentDestroyLeaseParams);
+
+      case "environmentInspectLease":
+        if (!plugin.definition.onEnvironmentInspectLease) throw methodNotImplemented("environmentInspectLease");
+        return plugin.definition.onEnvironmentInspectLease(params as PluginEnvironmentInspectLeaseParams);
 
       case "environmentRealizeWorkspace":
         return handleEnvironmentRealizeWorkspace(params as PluginEnvironmentRealizeWorkspaceParams);
@@ -1796,12 +1809,14 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     if (plugin.definition.onResolveExternalObject) supportedMethods.push("resolveExternalObject");
     if (plugin.definition.onRefreshExternalObjects) supportedMethods.push("refreshExternalObjects");
     if (plugin.definition.onEnvironmentValidateConfig) supportedMethods.push("environmentValidateConfig");
+    if (plugin.definition.onEnvironmentTask) supportedMethods.push("environmentTask");
     if (plugin.definition.onEnvironmentProbe) supportedMethods.push("environmentProbe");
     if (plugin.definition.onEnvironmentAcquireLease) supportedMethods.push("environmentAcquireLease");
     if (plugin.definition.onEnvironmentResumeLease) supportedMethods.push("environmentResumeLease");
     if (plugin.definition.onEnvironmentReleaseLease) supportedMethods.push("environmentReleaseLease");
     if (plugin.definition.onEnvironmentStopLease) supportedMethods.push("environmentStopLease");
     if (plugin.definition.onEnvironmentDestroyLease) supportedMethods.push("environmentDestroyLease");
+    if (plugin.definition.onEnvironmentInspectLease) supportedMethods.push("environmentInspectLease");
     if (plugin.definition.onEnvironmentRealizeWorkspace) supportedMethods.push("environmentRealizeWorkspace");
     if (plugin.definition.onEnvironmentExecute) supportedMethods.push("environmentExecute");
     if (plugin.definition.onEnvironmentRunnerIngressEndpoint) {
