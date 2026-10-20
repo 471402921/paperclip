@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { isNotebookApplicationKey } from "@paperclipai/shared";
+import { isNotebookApplicationKey, readNotebookPublicationResult } from "@paperclipai/shared";
 import { PaperclipApiClient, ApiRequestError } from "../../client/http.js";
 import { publishLocal, publishingApiFromTools, type PublishLocalOptions } from "../../client/notebook-publish.js";
 import { addCommonClientOptions, handleCommandError, printOutput, resolveCommandContext, type BaseClientOptions } from "./common.js";
@@ -36,7 +36,7 @@ export async function publishNotebookFromRun(api: GatewayApi, options: NotebookP
           ? { idempotencyKey: `notebook:${options.connection}:${input.arguments.idempotencyKey}` } : {}),
       });
       if (!result || !["completed", "replayed"].includes(result.status)) throw new Error("Notebook publication has not completed. Inspect the tool action before continuing.");
-      if (result.status === "replayed" && !recovering) {
+      if (result.status === "replayed" && !recovering && !readNotebookPublicationResult(input.name, result.result)) {
         // Gateway audit summaries may be truncated. Retrieve the complete,
         // owner-authorized receipt from Notebook through the same action gateway.
         const kind = input.name === "notebook_create_page" ? "create_page" : input.name === "notebook_begin_upload" ? "begin_upload" : undefined;

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Db } from "@paperclipai/db";
-import { isNotebookApplicationKey } from "@paperclipai/shared";
+import { isNotebookApplicationKey, readNotebookPublicationResult } from "@paperclipai/shared";
 import { deduplicateToolDescriptors, ToolGatewayHttpError, type ToolGatewayDescriptor, type ToolGatewayService } from "../tool-gateway.js";
 
 type WorkMode = "standard" | "planning" | "ask";
@@ -184,6 +184,8 @@ export async function createAssignedMcpTools(input: {
         tool: tool.name, parameters: argumentsValue });
       if (result.status !== "completed" && result.status !== "replayed") throw new Error("assigned_mcp_tool_execution_incomplete");
       if (result.status === "replayed") {
+        const complete = readNotebookPublicationResult(upstreamToolName, result.result);
+        if (complete) return complete;
         // A replay can contain only the gateway's shortened audit summary.
         // Recover complete domain receipts under the selected connection's policy.
         const kind = upstreamToolName === "notebook_create_page" ? "create_page" : upstreamToolName === "notebook_begin_upload" ? "begin_upload" : undefined;

@@ -16,7 +16,7 @@ const checksum = (bytes: Uint8Array) => createHash("sha256").update(bytes).diges
 describe("Notebook local publication through the active run gateway", { timeout: 15_000 }, () => {
   let directory: string, server: Server, origin: string;
   let calls: { tool: string; parameters: Record<string, any>; idempotencyKey: string }[];
-  let uploads: Map<string, Buffer>, revoked: number, redirectsFollowed: number, mode: "allow" | "off" | "ask" | "wrong-connection" | "redirect" | "receipt-replay";
+  let uploads: Map<string, Buffer>, revoked: number, redirectsFollowed: number, mode: "allow" | "off" | "ask" | "wrong-connection" | "redirect" | "receipt-replay" | "intact-replay";
   let failedUploads: number, dropCreateResponse: boolean;
   let receipts: Map<string, unknown>;
   beforeEach(async () => {
@@ -49,7 +49,7 @@ describe("Notebook local publication through the active run gateway", { timeout:
       expect(req.headers.authorization).toBeUndefined();
       if (url.pathname === "/api/tool-gateway/tools") {
         if (mode === "redirect") { res.writeHead(302, { location: `${origin}/redirected` }); res.end(); return; }
-        reply([...names, "notebook_get_operation"].map(name => ({ name: `gateway:${name}`, upstreamToolName: name, applicationKey, connectionId: mode === "wrong-connection" ? "another-notebook" : connection }))); return;
+        reply([...names, ...(mode === "intact-replay" ? [] : ["notebook_get_operation"])].map(name => ({ name: `gateway:${name}`, upstreamToolName: name, applicationKey, connectionId: mode === "wrong-connection" ? "another-notebook" : connection }))); return;
       }
       if (url.pathname === "/api/tool-gateway/tools/call") {
         const body = JSON.parse(bytes.toString()); calls.push(body);
@@ -78,7 +78,7 @@ describe("Notebook local publication through the active run gateway", { timeout:
         }
         receipts.set(p.idempotencyKey, result);
         if (body.tool.endsWith("notebook_create_page") && dropCreateResponse) { dropCreateResponse = false; res.destroy(); return; }
-        reply(completed(result)); return;
+        reply({ ...completed(result), status: mode === "intact-replay" ? "replayed" : "completed" }); return;
       }
       reply({}, 404);
     });
@@ -109,6 +109,12 @@ describe("Notebook local publication through the active run gateway", { timeout:
     mode = "off";
     await expect(publishNotebookFromRun(api(), options())).rejects.toMatchObject({ status: 403 });
     expect(uploads.size).toBe(0); expect(calls).toHaveLength(1); expect(revoked).toBe(1);
+  });
+  it("uses intact replayed results without requiring an extra status action", async () => {
+    mode = "intact-replay";
+    await expect(publishNotebookFromRun(api(), options())).resolves.toMatchObject({ pageId: "page", operation: { status: "validating" } });
+    expect(calls.map(call => call.tool)).toEqual(names.map(name => `gateway:${name}`));
+    expect(uploads.size).toBe(2);
   });
   it("resumes a failed upload with complete owner-scoped receipts instead of shortened audit summaries", async () => {
     failedUploads = 1;

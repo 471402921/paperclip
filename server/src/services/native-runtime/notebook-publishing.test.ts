@@ -48,6 +48,16 @@ describe("native Notebook workspace publication", () => {
     expect(readRemoteWorkspaceFile).toHaveBeenCalledWith({ contentRef: "index.html", byteSize: body.length, sha256: digest(body), allowEmpty: true });
     await expect(publishNotebookWorkspaceFiles({ ...f, arguments: arguments_(), workspaceRoot: root, executionTargetKind: "remote" })).rejects.toThrow("remote_workspace_unavailable");
   });
+  it("uses intact replayed results when the status action is unavailable", async () => {
+    const f = await fixture();
+    const execute = f.executeTool.getMockImplementation()!;
+    f.executeTool.mockImplementation(async call => ({ ...await execute(call), status: "replayed" }));
+    const listed = await f.gateway.listToolsForNamedGateway({ gatewayPublicId: "selected-gateway", bearerToken: "controller-only-credential" });
+    vi.mocked(f.gateway.listToolsForNamedGateway).mockResolvedValue(listed.filter(tool => tool.upstreamToolName !== "notebook_get_operation"));
+    await expect(publishNotebookWorkspaceFiles({ ...f, arguments: arguments_(), workspaceRoot: root })).resolves.toMatchObject({ status: "ready" });
+    expect(f.executeTool.mock.calls.map(([call]) => call.tool)).toEqual(["gateway:notebook_create_page", "gateway:notebook_begin_upload", "gateway:notebook_finalize_upload"]);
+    expect(f.uploaded).toEqual([body]);
+  });
   it.each(["approval_required", "policy_deny", "connection_revoked"])("preserves %s and sends no bytes without gateway authorization", async reason => {
     const f = await fixture(), error = new ToolGatewayHttpError(403, "Denied", reason);
     f.executeTool.mockRejectedValue(error);
