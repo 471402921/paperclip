@@ -30,8 +30,13 @@ export async function publishNotebookFromRun(api: GatewayApi, options: NotebookP
       if (!current?.some(candidate => candidate.name === tool && candidate.connectionId === options.connection && isNotebookApplicationKey(candidate.applicationKey))) {
         throw new Error("Notebook publication tool is unavailable on the selected connection.");
       }
-      const result = await gateway.post<{ status: string; result?: unknown }>("/api/tool-gateway/tools/call", {
+      const uploadTransport = input.name === "notebook_begin_upload" || input.name === "notebook_get_operation"
+        && !!input.arguments.receipt && typeof input.arguments.receipt === "object" && "kind" in input.arguments.receipt
+        && input.arguments.receipt.kind === "begin_upload";
+      const result = await gateway.post<{ status: string; result?: unknown }>(uploadTransport
+        ? "/api/tool-gateway/notebook/uploads/call" : "/api/tool-gateway/tools/call", {
         tool, parameters: input.arguments,
+        ...(uploadTransport ? { connectionId: options.connection } : {}),
         ...(typeof input.arguments.idempotencyKey === "string"
           ? { idempotencyKey: `notebook:${options.connection}:${input.arguments.idempotencyKey}` } : {}),
       });

@@ -59,6 +59,7 @@ import { createAssignedMcpTools } from "../services/native-runtime/assigned-mcp-
 import { publishNotebookWorkspaceFiles } from "../services/native-runtime/notebook-publishing.js";
 import { toolAccessPolicyService } from "../services/tool-access-policy.js";
 import { toolAccessRoutes } from "../routes/tool-access.js";
+import { toolGatewayRoutes } from "../routes/tool-gateway.js";
 import { errorHandler } from "../middleware/index.js";
 import { createHttpLogger } from "../middleware/logger.js";
 import { HTTP_LOG_REDACT_PATHS } from "../middleware/http-log-redaction.js";
@@ -636,7 +637,11 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
       const page = { id: pageId, version: 1 };
       const ready = { operationId: deploymentId, status: "ready", pageId, shareUrl: "https://notebook.fixture.test/p/report", audience: { mode: "private" } };
       const plan = { deploymentId, status: "uploading", uploads: files.map(file => ({ path: file.path,
-        url: `https://quarantine.s3.us-east-1.amazonaws.com/${file.path}?upload=${"x".repeat(350)}` })) };
+        url: `https://quarantine.s3.us-east-1.amazonaws.com/${file.path}?${new URLSearchParams({
+          "X-Amz-Algorithm": "AWS4-HMAC-SHA256", "X-Amz-Credential": "ASIAFIXTUREEXAMPLE/20261020/us-east-1/s3/aws4_request",
+          "X-Amz-Date": "20261020T170000Z", "X-Amz-Expires": "900", "X-Amz-Security-Token": `IQoJb3JpZ2luX2VjE${"x".repeat(350)}`,
+          "X-Amz-SignedHeaders": "host;x-amz-checksum-sha256", "X-Amz-Signature": createHash("sha256").update(`ticket:${file.path}`).digest("hex"),
+        })}`, headers: { "content-length": String(file.size), "x-amz-checksum-sha256": Buffer.from(file.sha256, "hex").toString("base64") } })) };
       expect(Buffer.byteLength(JSON.stringify(plan))).toBeGreaterThan(4096);
       const receipts = new Map<string, unknown>();
       const mutationCalls: string[] = [], receiptCalls: string[] = [];
@@ -707,6 +712,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
           files: files.map(({ bytes: _bytes, ...file }) => file) },
         upload: async (url, init) => {
           uploadAttempts += 1;
+          expect(url.href).toBe(plan.uploads.find(ticket => ticket.path === url.pathname.slice(1))!.url);
           if (lostResponse === "upload response" && !droppedUploadResponse) { droppedUploadResponse = true; return new Response(null, { status: 503 }); }
           uploaded.set(url.pathname.slice(1), Buffer.from(init.body as Uint8Array));
           return new Response(null, { status: 200 });
@@ -738,6 +744,31 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
         expect(Buffer.byteLength(JSON.stringify(replay.result))).toBeLessThan(Buffer.byteLength(JSON.stringify(plan)));
       }
       const listed = await gateway.listToolsForNamedGateway({ gatewayPublicId: named.gatewayPublicId, bearerToken: token.token });
+      const receiptTool = listed.find(tool => tool.upstreamToolName === "notebook_get_operation")!;
+      const chunks: Buffer[] = [];
+      const logStream = new Writable({ write(chunk, _encoding, done) { chunks.push(Buffer.from(chunk)); done(); } });
+      const app = express().use(express.json()).use(createHttpLogger(pino({ redact: [...HTTP_LOG_REDACT_PATHS] }, logStream)))
+        .use("/api", toolGatewayRoutes(db, gateway));
+      const body = { tool: receiptTool.name, parameters: { receipt: { kind: "begin_upload", idempotencyKey: "gateway-receipt:upload" } } };
+      const modelResult = await request(app).post("/api/tool-gateway/tools/call").set("x-paperclip-tool-gateway-token", token.token)
+        .send({ ...body, notebookUploadTransport: { connectionId: connected.connectionId } }).expect(200);
+      const transported = await request(app).post("/api/tool-gateway/notebook/uploads/call").set("x-paperclip-tool-gateway-token", token.token)
+        .send({ ...body, connectionId: connected.connectionId }).expect("Cache-Control", "no-store").expect(200);
+      expect(transported.body.result.data.structuredContent.uploads).toEqual(plan.uploads);
+      await request(app).post("/api/tool-gateway/notebook/uploads/call").set("x-paperclip-tool-gateway-token", token.token)
+        .send({ ...body, connectionId: randomUUID() }).expect(403);
+      await request(app).post("/api/tool-gateway/notebook/uploads/call").set("x-paperclip-tool-gateway-token", token.token)
+        .send({ ...body, parameters: { operationId: deploymentId }, connectionId: connected.connectionId }).expect(403);
+      await request(app).post("/api/tool-gateway/notebook/uploads/call").send({ ...body, connectionId: connected.connectionId }).expect(401);
+      const recorded = JSON.stringify({ modelResult: modelResult.body, httpLogs: Buffer.concat(chunks).toString("utf8"), invocations: await db.select().from(toolInvocations),
+        audit: await db.select().from(toolAccessAuditEvents), events: await db.select().from(toolCallEvents), activity: await db.select().from(activityLog) });
+      for (const ticket of plan.uploads) {
+        expect(recorded).not.toContain(ticket.url);
+        expect(recorded).not.toContain(new URL(ticket.url).searchParams.get("X-Amz-Signature"));
+      }
+      expect(recorded).not.toContain("ASIAFIXTUREEXAMPLE");
+      expect(recorded).not.toContain("IQoJb3JpZ2luX2VjE");
+      expect(Buffer.concat(chunks).toString("utf8")).not.toContain(token.token);
       const begin = listed.find(tool => tool.upstreamToolName === "notebook_begin_upload")!;
       const upstreamCalls = mutationCalls.length;
       await configure(true, false);
@@ -751,6 +782,9 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
       const attemptsBeforeOffReplay = uploadAttempts;
       await expect(publish()).rejects.toThrow();
       expect(uploadAttempts).toBe(attemptsBeforeOffReplay);
+      await db.update(heartbeatRuns).set({ status: "succeeded" }).where(eq(heartbeatRuns.id, run!.id));
+      await request(app).post("/api/tool-gateway/notebook/uploads/call").set("x-paperclip-tool-gateway-token", token.token)
+        .send({ ...body, connectionId: connected.connectionId }).expect(401);
     } finally { await rm(workspace, { recursive: true, force: true }); }
   });
 

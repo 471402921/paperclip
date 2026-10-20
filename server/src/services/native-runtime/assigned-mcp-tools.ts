@@ -181,7 +181,9 @@ export async function createAssignedMcpTools(input: {
         bearerToken: input.bearerToken })).find(candidate => candidate.name === tool.name);
       if (!fresh || !permits(fresh) || !permits(fresh, currentWorkMode)) throw new Error("assigned_notebook_tool_unavailable");
       const result = await input.gateway.executeTool({ gatewayPublicId: input.gatewayPublicId, sessionToken: input.bearerToken,
-        tool: tool.name, parameters: argumentsValue });
+        tool: tool.name, parameters: argumentsValue,
+        ...(upstreamToolName === "notebook_begin_upload" || upstreamToolName === "notebook_get_operation"
+          && object(argumentsValue.receipt ?? {}).kind === "begin_upload" ? { notebookUploadTransport: { connectionId } } : {}) });
       if (result.status !== "completed" && result.status !== "replayed") throw new Error("assigned_mcp_tool_execution_incomplete");
       if (result.status === "replayed") {
         const complete = readNotebookPublicationResult(upstreamToolName, result.result);

@@ -37,7 +37,7 @@ describe("native Notebook workspace publication", () => {
     expect(result).toMatchObject({ status: "ready", audience: { mode: "private" } });
     expect(f.uploaded).toEqual([body]);
     expect(f.executeTool.mock.calls.map(([call]) => call.tool)).toEqual(["gateway:notebook_create_page", "gateway:notebook_begin_upload", "gateway:notebook_finalize_upload"]);
-    expect(f.executeTool.mock.calls[1][0]).toMatchObject({ gatewayPublicId: "selected-gateway", sessionToken: "controller-only-credential", parameters: { assets: [{ path: "index.html", size: body.length, sha256: digest(body) }] } });
+    expect(f.executeTool.mock.calls[1][0]).toMatchObject({ gatewayPublicId: "selected-gateway", sessionToken: "controller-only-credential", notebookUploadTransport: { connectionId: "notebook" }, parameters: { assets: [{ path: "index.html", size: body.length, sha256: digest(body) }] } });
     expect(f.upload.mock.calls[0][1]).toMatchObject({ method: "PUT", headers: { "x-upload-checksum": digest(body) }, redirect: "error", credentials: "omit" });
     expect(JSON.stringify(result)).not.toMatch(/temporary|controller-only|s3\.us-east/);
   });

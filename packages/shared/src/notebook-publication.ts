@@ -2,6 +2,11 @@ function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
 const identifier = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 256;
+const uploadUrl = (value: unknown): value is string => {
+  if (typeof value !== "string" || !value) return false;
+  try { const url = new URL(value); return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password; }
+  catch { return false; }
+};
 
 /** Read intact MCP data, never the gateway's shortened audit summary. */
 export function readNotebookPublicationResult(tool: string, response: unknown): Record<string, unknown> | undefined {
@@ -22,7 +27,7 @@ export function readNotebookPublicationResult(tool: string, response: unknown): 
       || value.status !== undefined && !identifier(value.status)) return;
     return value.uploads.every(candidate => {
       const ticket = record(candidate);
-      return ticket && typeof ticket.path === "string" && ticket.path.length > 0 && typeof ticket.url === "string" && ticket.url.length > 0
+      return ticket && typeof ticket.path === "string" && ticket.path.length > 0 && uploadUrl(ticket.url)
         && (ticket.method === undefined || ticket.method === "PUT")
         && (ticket.headers === undefined || !!record(ticket.headers) && Object.values(record(ticket.headers)!).every(header => typeof header === "string"));
     }) ? value : undefined;
