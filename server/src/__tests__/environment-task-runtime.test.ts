@@ -42,6 +42,37 @@ describe("plugin-provided Runner execution", () => {
       expect(environmentTaskOperationSchema.safeParse({ kind }).success).toBe(false);
     }
   });
+  it("prepares configuration under the same active company, run, and project authority", async () => {
+    const operation = { kind: "prepare" as const, projectIds: [projectId], requirements: {
+      schema: "paperclip.runner.launch-requirements.v1" as const,
+      identity: { runnerInstanceId: "runner", environmentLeaseId: leaseId, runId: "run",
+        normalizedSessionId: "session", turnId: "turn", itemId: "item" },
+      provider: "codex" as const, model: "selected", instructions: "Core instructions", runtimeContext: null,
+      settings: {}, approvalPolicy: "on-request" as const, readOnly: false,
+      preparedConversation: false, includeCollaborationModeInstructions: true,
+    } };
+    const result = { kind: "prepared", taskId: "attempt-1", launch: { configurationId: "configuration-1",
+      requirementsDigest: `sha256:${"a".repeat(64)}`, provider: { kind: "codex" } } };
+    const workers = worker(result);
+    await expect(executeEnvironmentTask(database().db, workers as never, { companyId: "company", leaseId, operation }))
+      .resolves.toEqual(result);
+    expect(workers.call).toHaveBeenCalledWith("original", "environmentTask", expect.objectContaining({
+      companyId: "company", runId: "run", agentId: "agent", projectIds: [projectId], operation,
+    }), 15_000);
+    const denied = worker(result);
+    const inactive = row(); inactive.lease.status = "released";
+    for (const value of [null, inactive]) {
+      await expect(executeEnvironmentTask(database(value).db, denied as never, { companyId: "company", leaseId, operation })).rejects.toThrow();
+    }
+    await expect(executeEnvironmentTask(database().db, denied as never, { companyId: "company", leaseId,
+      operation: { ...operation, requirements: { ...operation.requirements, identity: { ...operation.requirements.identity, runId: "other" } } } }))
+      .rejects.toThrow("identity mismatch");
+    await expect(executeEnvironmentTask(database(row(), []).db, denied as never, { companyId: "company", leaseId, operation }))
+      .rejects.toThrow("project unavailable");
+    expect(denied.call).not.toHaveBeenCalled();
+    expect(() => parseEnvironmentTaskResult(operation, "attempt-1", { ...result, taskId: "other" })).toThrow();
+    expect(environmentTaskOperationSchema.safeParse({ ...operation, command: "sh" }).success).toBe(false);
+  });
   it("allows only the private, unexpired setup identity on an ad-hoc lease", async () => {
     const value = row();
     Object.assign(value.lease, { heartbeatRunId: null, issueId: null }); value.run = null;

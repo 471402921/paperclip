@@ -12,6 +12,7 @@ import {
 } from "./services/native-runtime/native-harness-backup-expiration.js";
 import { subscribeAllCompanyLiveEvents } from "./services/live-events.js";
 import { DELIVERY_QUEUES } from "./services/delivery-work-notifications.js";
+import { caseHandoffDeliveryService } from "./services/case-handoff-delivery.js";
 import { registerScheduledWork } from "./services/scheduled-work.js";
 import type { createDeliveryWorkCoordinator } from "./services/delivery-work-coordinator.js";
 import { registerTerminalWorkspaceWork, TERMINAL_WORKSPACE_RETRY_MS } from "./services/terminal-workspace-work.js";
@@ -1353,6 +1354,12 @@ async function startServerWithDatabaseTeardown(
     resolveNativeQuestion: (interaction) => deliverNativeQuestionResponse(db as any, interaction),
   });
   const deliveryWork = app.locals.deliveryWork as ReturnType<typeof createDeliveryWorkCoordinator>;
+  const caseHandoffDeliveries = caseHandoffDeliveryService(db as any, { heartbeat: environmentLeaseCleanupHeartbeat });
+  deliveryWork.register(DELIVERY_QUEUES.caseHandoffs, {
+    retryMs: 5_000,
+    run: signal => caseHandoffDeliveries.sweepPending(signal),
+    hasPending: () => caseHandoffDeliveries.hasPending(),
+  });
   let unregisterTerminalWorkspaceProbe: (() => void) | undefined;
   const fastResponses = app.locals.fastResponses as ReturnType<typeof import("./services/fast-responses.js").fastResponseService>;
   const fastResponseWorker = deliveryWork.register(DELIVERY_QUEUES.fastResponse, {

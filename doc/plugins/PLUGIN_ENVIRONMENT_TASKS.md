@@ -32,6 +32,7 @@ See [the schemas](../../packages/plugins/sdk/src/environment-tasks.ts) for all f
 | Operation | Result | Required behavior |
 | --- | --- | --- |
 | `describe` | `description` | Return the installed Runner version and SHA-256 digest. |
+| `prepare` | `prepared` | Prepare the provider configuration for the exact Core requirements. Do not start a process. |
 | `submit` | `accepted` | Start the same opaque task at most once. Use the structured launch inputs. |
 | `connection` | `connection` | Return an authenticated WSS endpoint and its generation. |
 | `status` | `status` | Report the phase and observed process termination. |
@@ -48,13 +49,42 @@ authorized project IDs, and optional launch limits. It can also contain a saved
 task ID for session reuse and a typed Codex or Claude credential. Core does not
 supply an executable command or a guest path.
 
+## Launch preparation
+
+A provider can return `launchPreparationVersion: 1` from `describe`.
+Core can then send the `prepare` operation before `submit`.
+
+The requirements contain the provider, model, policy, run identity, instructions,
+and runtime context. They do not contain provider credentials or executable
+choices. Resource paths identify source locations. The plugin must resolve them
+for its execution environment.
+
+The result contains a configuration ID, requirements digest, and provider
+descriptor. The schema is `paperclip.runner.launch-requirements.v1`.
+The digest is SHA-256 over the requirements JSON. Sort object keys in lexical
+order at every level. Keep array order. Omit absent optional fields.
+The execution owner must preserve Core policy and resource assignments.
+
+Preparation must be idempotent for the task and requirements. The plugin owns
+configuration storage and cleanup. A late preparation result must not authorize
+execution after cancellation. The `submit` operation can reference the saved
+configuration with `preparedLaunchId`.
+
+Recovery can supply the prior prepared result. Recovery within the same run
+must use the same configuration. A different run supplies its current
+requirements. A saved task ID in `resumeFrom` requires the same retained-session
+authority as submission.
+
+This API defines the preparation exchange. Runner transport integration is a
+separate change.
+
 ## Lease authority
 
 Core calls `environmentRuntimeService.task` with a company ID, a saved lease ID,
 and an operation. It derives the plugin and driver from the lease. A change to
 the environment configuration cannot redirect cleanup to a new provider.
 
-Before submission, Core checks the active lease, run, issue, and every project
+Before preparation or submission, Core checks the active lease, run, issue, and every project
 in the company. It checks the submitting run ID separately from a retained PRP
 identity. Session reuse requires the same agent, environment, workspace, and
 provider. It also requires a retained source task and proof of termination.

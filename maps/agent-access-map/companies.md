@@ -2,6 +2,8 @@
 
 Product map: [Companies and portability](../feature-map/companies.md).
 
+Feature ID: `companies`.
+
 Review date: 2026-10-12. Source commit: `58e16dbddfc9c8d0cf60867f9d9847f0feda055b`.
 Native REST transport reconciled in this change; see the
 [shared transport contract](README.md#native-rest-transport).
@@ -12,6 +14,8 @@ qualified. No live agent execution is claimed. Follow the [map contract](../READ
 for format, permission checks, evidence and maintenance.
 
 ## `selection`
+
+Capability ID: `companies/selection`.
 
 Review: `baseline`.
 
@@ -40,6 +44,8 @@ selection is local state.
 
 ## `identity`
 
+Capability ID: `companies/identity`.
+
 Review: `baseline`.
 
 API: `present` — representative operation IDs:
@@ -64,6 +70,8 @@ Gaps: The CEO restriction is a real policy, not a missing API; ordinary employee
 denial evidence.
 
 ## `archive`
+
+Capability ID: `companies/archive`.
 
 Review: `baseline`.
 
@@ -91,6 +99,8 @@ equivalence rather than declaring all archival human-only.
 
 ## `portability`
 
+Capability ID: `companies/portability`.
+
 Review: `baseline`.
 
 API: `present` — representative operation IDs:
@@ -117,6 +127,8 @@ Gaps: Exports use inline credential delivery and encrypted mutation receipts.
 New-company/ZIP import flows retain their board and transport constraints.
 
 ## `decision-models`
+
+Capability ID: `companies/decision-models`.
 
 Review: `baseline`.
 
@@ -152,6 +164,8 @@ Live native and agent-credential reads remain unverified.
 
 ## `fast-responses`
 
+Capability ID: `companies/fast-responses`.
+
 Review: `baseline`.
 
 API: `present` — GET and PUT /api/companies/{companyId}/fast-response;
@@ -186,6 +200,8 @@ work. Live native, provider and agent access remain unverified.
 
 ## `agent-observability`
 
+Capability ID: `companies/agent-observability`.
+
 Review: `baseline`.
 
 API: `present` — representative operation IDs:
@@ -207,6 +223,8 @@ Verification: `not-run` — exercise board management, restricted board, agent d
 Gaps: Direct agent management and independent personal harness enrollment are outside v1.
 
 ## `prompt-injection-prevention`
+
+Capability ID: `companies/prompt-injection-prevention`.
 
 Review: `baseline`.
 

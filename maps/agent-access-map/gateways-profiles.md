@@ -2,6 +2,8 @@
 
 Product map: [Tool gateways and access profiles](../feature-map/gateways-profiles.md).
 
+Feature ID: `gateways-profiles`.
+
 Review date: 2026-10-12. Source commit: `58e16dbddfc9c8d0cf60867f9d9847f0feda055b`.
 Native REST transport reconciled in this change; see the
 [shared transport contract](README.md#native-rest-transport).
@@ -12,6 +14,8 @@ qualified. No live agent execution is claimed. Follow the [map contract](../READ
 for format, permission checks, evidence and maintenance.
 
 ## `gateway`
+
+Capability ID: `gateways-profiles/gateway`.
 
 Review: `baseline`.
 
@@ -35,6 +39,8 @@ own policy and access review.
 Gaps: No agent named-gateway management path; assigned tool use exists separately.
 
 ## `profiles`
+
+Capability ID: `gateways-profiles/profiles`.
 
 Review: `baseline`.
 
@@ -64,6 +70,8 @@ runtime assignment. Batched validation retains the checks before profile and
 entry writes. It grants no profile-management authority to agents.
 
 ## `client-connect`
+
+Capability ID: `gateways-profiles/client-connect`.
 
 Review: `baseline`.
 
@@ -133,6 +141,8 @@ server, not a live external provider or all client surfaces.
 
 ## `tokens`
 
+Capability ID: `gateways-profiles/tokens`.
+
 Review: `baseline`.
 
 API: `present` — representative operation IDs:
@@ -157,6 +167,8 @@ A grant to use an app does not create this authority; native `call_api` preserve
 the denial.
 
 ## `activity`
+
+Capability ID: `gateways-profiles/activity`.
 
 Review: `baseline`.
 

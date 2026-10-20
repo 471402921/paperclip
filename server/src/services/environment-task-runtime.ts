@@ -41,22 +41,29 @@ export async function executeEnvironmentTask(db: Db, workers: PluginWorkerManage
   const activeProbe = lease.heartbeatRunId === null && lease.issueId === null && probe
     && typeof probe.runId === "string" && typeof probe.sessionId === "string"
     && typeof probe.expiresAtMs === "number" && probe.expiresAtMs > Date.now();
-  if ((operation.kind === "describe" || operation.kind === "submit" || operation.kind === "connection") &&
+  if ((operation.kind === "describe" || operation.kind === "prepare" || operation.kind === "submit" || operation.kind === "connection") &&
       (metadata.runnerTaskRetiring === true || !environment || (!activeProbe && run?.status !== "running") || lease.status !== "active" || (lease.expiresAt && lease.expiresAt.getTime() <= Date.now()))) throw new Error("Plugin-provided Runner execution lease is not active");
-  if (operation.kind === "submit" && (operation.runner.runId !== (activeProbe ? probe.runId : run?.id) || (!operation.resumeFrom && operation.runner.leaseId !== lease.id)
-    || (activeProbe && (operation.runner.sessionId !== probe.sessionId || operation.projectIds.length > 0)))) {
+  const runner = operation.kind === "submit" ? operation.runner : operation.kind === "prepare" ? {
+    runnerId: operation.requirements.identity.runnerInstanceId,
+    leaseId: operation.requirements.identity.environmentLeaseId,
+    runId: operation.requirements.identity.runId, sessionId: operation.requirements.identity.normalizedSessionId,
+  } : null;
+  const launches = operation.kind === "submit" || operation.kind === "prepare";
+  const resumeFrom = launches ? operation.resumeFrom : undefined;
+  if (runner && (runner.runId !== (activeProbe ? probe.runId : run?.id) || (!resumeFrom && runner.leaseId !== lease.id)
+    || (activeProbe && (runner.sessionId !== probe.sessionId || (launches && operation.projectIds.length > 0))))) {
     throw new Error("Plugin-provided Runner execution identity mismatch");
   }
-  if (operation.kind === "submit" && operation.resumeFrom) {
+  if (runner && resumeFrom) {
     const sources = await db.select({ runId: environmentLeases.heartbeatRunId }).from(environmentLeases).where(and(
       eq(environmentLeases.companyId, input.companyId), eq(environmentLeases.provider, lease.provider!),
-      eq(environmentLeases.providerLeaseId, operation.resumeFrom),
+      eq(environmentLeases.providerLeaseId, resumeFrom),
     )).limit(2);
     const priorRunId = sources.length === 1 ? sources[0]!.runId : null;
-    if (activeProbe || !priorRunId || operation.resumeFrom !== await resolvePluginTaskResume(db, {
+    if (activeProbe || !priorRunId || resumeFrom !== await resolvePluginTaskResume(db, {
       companyId: input.companyId, leaseId: lease.id,
-      priorIdentity: { runnerInstanceId: operation.runner.runnerId, environmentLeaseId: operation.runner.leaseId,
-        runId: priorRunId, normalizedSessionId: operation.runner.sessionId },
+      priorIdentity: { runnerInstanceId: runner.runnerId, environmentLeaseId: runner.leaseId,
+        runId: priorRunId, normalizedSessionId: runner.sessionId },
     })) throw new Error("Plugin Runner resume identity mismatch");
   }
   if (metadata.driver !== "plugin" || typeof metadata.pluginId !== "string" || typeof metadata.driverKey !== "string") {
@@ -69,10 +76,10 @@ export async function executeEnvironmentTask(db: Db, workers: PluginWorkerManage
       !workers.getWorker(plugin.id)?.supportedMethods.includes("environmentTask")) {
     throw new Error("Plugin-provided Runner execution provider unavailable");
   }
-  const issue = operation.kind === "submit" && lease.issueId ? await db.select({ id: issues.id }).from(issues)
+  const issue = launches && lease.issueId ? await db.select({ id: issues.id }).from(issues)
     .where(and(eq(issues.id, lease.issueId), eq(issues.companyId, input.companyId))).limit(1).then(rows => rows[0]) : null;
-  if (operation.kind === "submit" && lease.issueId && !issue) throw new Error("Plugin-provided Runner execution issue unavailable");
-  const projectIds = operation.kind === "submit" ? operation.projectIds : [];
+  if (launches && lease.issueId && !issue) throw new Error("Plugin-provided Runner execution issue unavailable");
+  const projectIds = launches ? operation.projectIds : [];
   if (projectIds.length > 0) {
     const authorizedProjects = await db.select({ id: projects.id }).from(projects)
       .where(and(eq(projects.companyId, input.companyId), inArray(projects.id, projectIds)));

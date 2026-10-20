@@ -14,6 +14,7 @@ const ROUTES_DIR = path.resolve(__dirname, "../routes");
 
 const apiPrefixes: Record<string, string> = {
   "cases.ts": "/api",
+  "case-handoffs.ts": "/api",
   "smoke-lab.ts": "/api",
   "access.ts": "/api",
   "activity.ts": "/api",
@@ -314,8 +315,16 @@ describe("openapi routes", () => {
   it("removes Pipelines discovery while retaining Cases and Routines", () => {
     const spec = buildOpenApiSpec() as any;
     const paths = Object.keys(spec.paths);
-    expect(paths.filter((path) => /pipelines|review-cases|case-events|\{caseId\}/.test(path))).toEqual([]);
+    expect(paths.filter((path) => /pipelines|review-cases|case-events/.test(path))).toEqual([]);
+    // Standalone handoffs also use caseId; that parameter name no longer
+    // identifies a removed Pipeline operation. Retain only their live paths.
+    expect(paths.filter((path) => path.startsWith("/api/cases/{caseId}")).sort()).toEqual([
+      "/api/cases/{caseId}/handoffs",
+      "/api/cases/{caseId}/handoffs/{handoffId}/cancel",
+      "/api/cases/{caseId}/handoffs/{handoffId}/retry",
+    ]);
     expect(spec.paths["/api/companies/{companyId}/cases"].post).toBeDefined();
+    expect(spec.paths["/api/companies/{companyId}/case-handoffs"].post).toBeDefined();
     expect(spec.paths["/api/cases/{id}"].get).toBeDefined();
     expect(spec.paths["/api/routines/{id}/run"].post).toBeDefined();
   });
