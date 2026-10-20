@@ -42,6 +42,15 @@ describe("native Notebook workspace publication", () => {
     expect(f.upload.mock.calls[0][1]).toMatchObject({ method: "PUT", headers: { "x-upload-checksum": digest(body) }, redirect: "error", credentials: "omit" });
     expect(JSON.stringify(result)).not.toMatch(/temporary|controller-only|s3\.us-east/);
   });
+  it("denies a pinned native helper before reading bytes after Notebook disappears from the current gateway", async () => {
+    const f = await fixture(), readRemoteWorkspaceFile = vi.fn();
+    vi.mocked(f.gateway.listToolsForNamedGateway).mockResolvedValue([]);
+    await expect(publishNotebookWorkspaceFiles({ ...f, arguments: arguments_(), workspaceRoot: "/runtime-only",
+      executionTargetKind: "remote", readRemoteWorkspaceFile })).rejects.toThrow("assigned_notebook_tool_unavailable");
+    expect(readRemoteWorkspaceFile).not.toHaveBeenCalled();
+    expect(f.executeTool).not.toHaveBeenCalled();
+    expect(f.upload).not.toHaveBeenCalled();
+  });
   it("reads remote bytes only with the existing server-bound reader", async () => {
     const f = await fixture(), readRemoteWorkspaceFile = vi.fn(async () => body);
     await publishNotebookWorkspaceFiles({ ...f, arguments: arguments_(), workspaceRoot: "/not-controller-workspace", executionTargetKind: "remote", readRemoteWorkspaceFile });

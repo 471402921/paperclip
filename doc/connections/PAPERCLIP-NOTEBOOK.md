@@ -4,6 +4,12 @@ Paperclip Notebook uses the standard remote HTTP MCP connection, authorization-c
 
 The Notebook service belongs to the Paperclip Cloud repository and authenticates users with Cloud. A Notebook OAuth grant authorizes resource operations; it is separate from the user's Cloud browser session.
 
+## Internal experimental rollout
+
+The curated Notebook connector is off by default behind `enablePaperclipNotebook`. This internal flag has no control in Settings, including developer mode. Paperclip operators can enable it through the existing managed configuration (`PAPERCLIP_MANAGED_CONFIG`, `features.enablePaperclipNotebook: true`); self-hosted operators can use the existing instance experimental-settings API. Ordinary Cloud tenant settings writes remain protected by the fleet's hidden-settings policy, and the flag is excluded from staging tenant opt-ins.
+
+While disabled, Notebook is absent from Browse and agent connection discovery. New setup, resume, reconnect, OAuth completion, and connection finalization are denied. Existing Notebook tools and both local publishing helpers stop through the current server gateway checks; already open native runs cannot use a pinned catalog to continue publishing. Removal, grant revocation, and revocation cleanup remain available. This gate applies to the curated Notebook connector and its helper, and does not restrict independent generic remote MCP endpoints.
+
 ## Deployment configuration
 
 Notebook defaults to `https://notebook.paperclip.app/mcp` on hosted and self-hosted Paperclip. No per-instance registration or endpoint configuration is required for that service. Operators may override it with `PAPERCLIP_NOTEBOOK_MCP_URL` for staging or development. Invalid overrides make setup unavailable. Local development additionally accepts a loopback HTTP URL; the instance's remote-network policy still applies. The catalog describes connection support; it is not a live service health check. Deploy and verify the canonical service before release. Uploaded applications use the isolated `paperclipnotebook.com` content domain.

@@ -1,4 +1,4 @@
-import { NOTEBOOK_APP_SLUG, notebookAppConfiguration, notebookAccountIdentity, revokeNotebookToken } from "./notebook-connection.js";
+import { NOTEBOOK_APP_SLUG, isNotebookConnection, notebookAppConfiguration, notebookAccountIdentity, revokeNotebookToken } from "./notebook-connection.js";
 import { stableHash, descriptorHash } from "./tool-catalog-hash.js";
 import { assertProfileEntryInputs } from "./tool-profile-entry-validation.js";
 import { DAYTONA_TOOLS, daytonaClient, daytonaRisk, isDaytonaConnection, isDaytonaToolName } from "./daytona.js";
@@ -12550,10 +12550,24 @@ export function toolAccessService(
   }
 
   async function assertExperimentalConnectorSetupEnabled(provider: unknown, existing = false) {
+    if (provider === NOTEBOOK_APP_SLUG
+      && !(await instanceSettingsService(db).getExperimental()).enablePaperclipNotebook) {
+      throw forbidden("Paperclip Notebook is unavailable on this instance", { code: "paperclip_notebook_disabled" });
+    }
     if (!existing && isMemoryConnectorId(provider)
       && !(await instanceSettingsService(db).getExperimental()).enableMemoryConnectors) {
       throw forbidden("Enable memory connectors in Settings → Experimental to set up this connection", { code: "memory_connectors_disabled" });
     }
+  }
+
+  async function assertNotebookConnectionSetupEnabled(connection: Parameters<typeof isNotebookConnection>[0] & { applicationId?: string; companyId?: string }, applicationKey?: unknown) {
+    // Config is editable. A saved curated application retains its identity even
+    // if an older client clears or relabels the connection's template marker.
+    if (!isNotebookConnection(connection, applicationKey) && applicationKey === undefined
+      && connection.applicationId && connection.companyId) {
+      applicationKey = (await assertApplication(connection.companyId, connection.applicationId)).applicationKey;
+    }
+    if (isNotebookConnection(connection, applicationKey)) await assertExperimentalConnectorSetupEnabled(NOTEBOOK_APP_SLUG);
   }
 
   async function connectGalleryApp(
@@ -12678,6 +12692,7 @@ export function toolAccessService(
       }
     }
 
+    await assertNotebookConnectionSetupEnabled(requestedResumeConnection ?? {}, existingApplication?.applicationKey);
     const requestedName =
       input.name ??
       existingApplication?.name ??
@@ -14182,6 +14197,7 @@ export function toolAccessService(
     actor?: ActorInfo,
   ): Promise<FinishToolAppResult> {
     const connection = await getConnectionRow(connectionId, companyId);
+    await assertNotebookConnectionSetupEnabled(connection);
     if (connection.status === "archived")
       throw conflict("Archived app connections cannot be finished");
     if (connection.config.mcpPreserveAccess === true && isRemoteMcpConnectorMethod(connection.config.sourceTemplateKey, connection.config.connectionMethodKey)) {
@@ -14677,6 +14693,7 @@ export function toolAccessService(
   ): Promise<ToolConnectionHealthCheckResult> {
     const connection = await getConnectionRow(connectionId, companyId);
     assertSupportedConnection(connection);
+    await assertNotebookConnectionSetupEnabled(connection);
     await assertExperimentalConnectorSetupEnabled(connection.config.sourceTemplateKey, connection.status !== "draft");
     if (connection.status === "archived")
       throw conflict("Archived app connections cannot be reconnected");
@@ -14861,6 +14878,7 @@ export function toolAccessService(
   ): Promise<ToolOAuthStartResult> {
     let connection = await getConnectionRow(connectionId, companyId);
     assertSupportedConnection(connection);
+    await assertNotebookConnectionSetupEnabled(connection);
     if (connection.config.notebookRevocationPending === true) throw conflict("Notebook authorization revocation is still pending. It will retry automatically.", { code: "notebook_revocation_pending" });
     await assertExperimentalConnectorSetupEnabled(connection.config.sourceTemplateKey, connection.status !== "draft");
     if (connection.status === "archived")
@@ -16488,6 +16506,7 @@ export function toolAccessService(
       status: connection.status,
       enabled: connection.enabled,
     };
+    await assertNotebookConnectionSetupEnabled(connection);
     const sourceTemplateKey =
       typeof connection.config.sourceTemplateKey === "string"
         ? connection.config.sourceTemplateKey
@@ -18604,6 +18623,7 @@ export function toolAccessService(
       const config = normalizeGoogleSheetsConnectionConfig(
         input.config ?? input.transportConfig ?? {},
       );
+      await assertNotebookConnectionSetupEnabled({ config }, applicationNamespace);
       // Validate company-scoped references before touching a caller-supplied
       // network endpoint. Besides failing fast, this keeps cross-company
       // authorization errors from being masked by DNS or SSRF validation.
@@ -18619,6 +18639,7 @@ export function toolAccessService(
       if (applicationId) {
         const app = await assertApplication(companyId, applicationId);
         applicationNamespace = app.applicationKey ?? app.name;
+        await assertNotebookConnectionSetupEnabled({ config }, applicationNamespace);
         if (
           (transport === "mcp_remote" && app.type !== "mcp_http") ||
           (transport === "local_stdio" && app.type !== "mcp_stdio")

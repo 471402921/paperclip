@@ -84,6 +84,8 @@ export interface InstanceExperimentalSettings {
   enableMcpAggregators: boolean;
   /** Show experimental memory connection setup. Existing connections remain usable. */
   enableMemoryConnectors: boolean;
+  /** Allow Paperclip Notebook setup and use. Managed rollout; no settings-page control. */
+  enablePaperclipNotebook: boolean;
   enableCases: boolean;
   enableAgentChat: boolean;
   /** Reorganized left nav, Inbox-as-Tasks-views, and the chat agent rail + task cards. */

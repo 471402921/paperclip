@@ -832,7 +832,7 @@ describe("PaperclipRunnerToolAuthority", () => {
     const authority = new PaperclipRunnerToolAuthority(db, {
       companyId, agentId, issueId, runId,
       assignedMcpTools: { definitions: () => [tool], has: (name) => name === tool.name, execute,
-        notebookConnectionIds: () => [], executeNotebookTool: vi.fn() },
+        notebookConnectionIds: () => [], assertNotebookConnectionAvailable: async () => undefined, executeNotebookTool: vi.fn() },
     });
     expect(authority.definitions()).toContainEqual(tool);
     const call = { tool: tool.name, callId: "assigned-mcp", arguments: { query: "compass" } };

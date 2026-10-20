@@ -1,8 +1,15 @@
-import type { AppDefinition } from "@paperclipai/shared";
+import { isNotebookApplicationKey, type AppDefinition } from "@paperclipai/shared";
 import { HttpError, unprocessable } from "../errors.js";
 import { initializeMcpHttpSession, mcpHttpRequestHeaders, readMcpHttpResponse } from "./mcp-http.js";
 
 export const NOTEBOOK_APP_SLUG = "paperclip-notebook";
+
+/** Recognize the curated connector, without restricting independent generic MCP endpoints. */
+export function isNotebookConnection(connection: { config?: Record<string, unknown>; transportConfig?: Record<string, unknown> }, applicationKey?: unknown): boolean {
+  return connection.config?.sourceTemplateKey === NOTEBOOK_APP_SLUG
+    || connection.transportConfig?.sourceTemplateKey === NOTEBOOK_APP_SLUG
+    || isNotebookApplicationKey(applicationKey);
+}
 
 export function notebookAppConfiguration(app: AppDefinition, configuredUrl = process.env.PAPERCLIP_NOTEBOOK_MCP_URL
   ?? app.methods.find(method => method.transport === "mcp_remote")?.defaults?.serverUrl): AppDefinition {

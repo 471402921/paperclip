@@ -1,4 +1,4 @@
-import { notebookAppConfiguration } from "../services/notebook-connection.js";
+import { NOTEBOOK_APP_SLUG, notebookAppConfiguration } from "../services/notebook-connection.js";
 import { isCrossSiteOAuthCallbackNavigation, oauthCallbackInterstitialHtml } from "../lib/oauth-browser-return.js";
 import { aiConnectionRouterPluginKey } from "@paperclipai/shared";
 import { aiConnectionRouterService } from "../services/ai-connection-router.js";
@@ -820,7 +820,7 @@ function connectorEnrollmentPrincipal(req: Request): string {
         ? await options.paperclipCloudConnector.getCapabilities()
         : [];
     const vercelConnect = vercelConnectIntegrationStatus();
-    const { enableMemoryConnectors } = await instanceSettingsService(db).getExperimental();
+    const { enableMemoryConnectors, enablePaperclipNotebook } = await instanceSettingsService(db).getExperimental();
     let oauthCallbackUrl: string | undefined;
     try {
       // Setup must display the callback used by its initiating POST. Provider
@@ -851,7 +851,8 @@ function connectorEnrollmentPrincipal(req: Request): string {
             : "Vercel Connect setup is disabled on this Paperclip instance.",
         },
       },
-      apps: [...APP_STORE_DEFINITIONS.filter((app) => (enableMemoryConnectors || !isMemoryConnectorId(app.slug))).map((app) =>
+      apps: [...APP_STORE_DEFINITIONS.filter((app) => (enableMemoryConnectors || !isMemoryConnectorId(app.slug))
+        && (enablePaperclipNotebook || app.slug !== NOTEBOOK_APP_SLUG)).map((app) =>
         appWithPaperclipCloudConnectorAvailability(notebookAppConfiguration(app), advertisedProfiles)
       ), ...await aiConnectionRouterService(db).catalog()],
     });

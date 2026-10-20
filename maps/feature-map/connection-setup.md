@@ -99,6 +99,8 @@ saved connection. Run a permitted read-only action with an eligible agent and
 verify its useful result. Try an ineligible agent and confirm denial. Repeat
 with a user who cannot install company-wide; the UI must not imply broad access.
 
+Notebook is internally gated by `enablePaperclipNotebook` (default off, no settings toggle). Disabled instances hide setup/discovery and deny curated Notebook dispatch and publishing; removal and revocation remain available.
+
 Paperclip Notebook uses the same personal-account MCP OAuth setup and defaults
 to `https://notebook.paperclip.app/mcp`. Operators can override it with
 `PAPERCLIP_NOTEBOOK_MCP_URL` for staging or development. Sign in through Cloud,

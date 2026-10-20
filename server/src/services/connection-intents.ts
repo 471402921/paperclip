@@ -1,4 +1,4 @@
-import { notebookAppConfiguration } from "./notebook-connection.js";
+import { isNotebookConnection, notebookAppConfiguration } from "./notebook-connection.js";
 import { updateAgentConfigurationInTransaction } from "./agent-configuration-transaction.js";
 import { emailChannelService } from "./email-channels.js";
 import { emailConnectionService } from "./email-connections.js";
@@ -365,6 +365,9 @@ export function connectionIntentService(db: Db) {
     if (!service.startsWith("connection:")) {
       const definition = getAppStoreDefinition(service);
       if (!definition) throw notFound("Connection service was not found");
+      if (service === "paperclip-notebook" && !(await instanceSettingsService(db).getExperimental()).enablePaperclipNotebook) {
+        throw notFound("Connection service was not found");
+      }
       const app = notebookAppConfiguration(definition);
       if (purpose === "channel" && service !== "agentmail") {
         throw unprocessable("This email connection is not available");
@@ -391,6 +394,10 @@ export function connectionIntentService(db: Db) {
       || (grant.kind === "agent" && grant.subjectAgentId === agentId)
     ))) throw notFound("Configured connection was not found");
     const application = await access.getApplication(connection.applicationId, companyId);
+    if (isNotebookConnection(connection, application.applicationKey)
+      && !(await instanceSettingsService(db).getExperimental()).enablePaperclipNotebook) {
+      throw notFound("Configured connection was not found");
+    }
     return {
       slug: service, name: connection.name, description: application.description, searchCapabilities: "",
       branding: { logoUrl: undefined, darkLogoUrl: undefined },
@@ -415,7 +422,8 @@ export function connectionIntentService(db: Db) {
     const discoveryMethods = (app: (typeof APP_STORE_DEFINITIONS)[number]) => getAvailableConnectionMethods(app)
       .filter(method => method.purpose !== "channel" || app.slug === "agentmail"
         || (method.provider === "github" ? settings.enableGitHubReviewBots : settings.enableChatConnectors));
-    const services = [...APP_STORE_DEFINITIONS.filter(app => discoveryMethods(app).length).map((app) => app.slug),
+    const services = [...APP_STORE_DEFINITIONS.filter(app => (settings.enablePaperclipNotebook || app.slug !== "paperclip-notebook")
+      && discoveryMethods(app).length).map((app) => app.slug),
       ...inventory.connections.filter((connection) =>
         sourceSlugForConnection(connection, inventory.applicationsById)?.startsWith("connection:")
         && connection.status !== "archived").map((connection) => `connection:${connection.id}`)];

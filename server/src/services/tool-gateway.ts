@@ -30,6 +30,8 @@ import { resolveManagedGitHubIdentitySelection } from "./git-credentials.js";
 import { extractRemoteMcpPending } from "./remote-mcp-pending.js";
 import { logger } from "../middleware/logger.js";
 import { isNotebookUploadRequest, prepareNotebookUploadResult, restoreNotebookUploadTickets, type NotebookUploadTickets } from "./notebook-upload-transport.js";
+import { isNotebookConnection } from "./notebook-connection.js";
+import { instanceSettingsService } from "./instance-settings.js";
 import { spawn } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -1441,8 +1443,11 @@ export function createToolGatewayService(
       return connectionRow ? [{ catalogEntry, ...connectionRow }] : [];
     });
 
+    const notebookEnabled = !connectionRows.some(({ connection, application }) => isNotebookConnection(connection, application.applicationKey))
+      || (await instanceSettingsService(db).getExperimental()).enablePaperclipNotebook;
     const eligibleRows = rows.filter(
       ({ catalogEntry, connection, application }) =>
+        (notebookEnabled || !isNotebookConnection(connection, application.applicationKey)) &&
         !isRetiredComposioConnection(connection) &&
         !(isDaytonaConnection(connection) && !isCurrentDaytonaCatalogEntry(catalogEntry)) &&
         !(isRailwayEndpoint(connection.config.url) && (isRailwayToolBlocked(catalogEntry.toolName) || (normalizeRailwayToolName(catalogEntry.toolName).startsWith(RAILWAY_TOOL_PREFIX) && connection.config.railwayApiStatus !== "available"))) &&
@@ -6043,6 +6048,12 @@ export function createToolGatewayService(
       session,
       tool,
     );
+    // Approved executions also reach this path directly. Check the current
+    // rollout before resolving any credential or contacting Notebook.
+    if (isNotebookConnection(connection, tool.applicationKey)
+      && !(await instanceSettingsService(db).getExperimental()).enablePaperclipNotebook) {
+      throw new ToolGatewayHttpError(403, "Paperclip Notebook is unavailable on this instance.", "paperclip_notebook_disabled");
+    }
     // Recheck immediately before dispatch, including previously approved calls
     // and connections whose stored grant/catalog predates scope reduction.
     assertGoogleChatToolArgumentsSupported(connection, entry.toolName, parameters);

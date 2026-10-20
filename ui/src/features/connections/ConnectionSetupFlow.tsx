@@ -7,6 +7,7 @@ import { connectionInstructionsConfig, defaultConnectionAgentInstructions, type 
 import { RemoteMcpProductionSetup } from "./remote-mcp/RemoteMcpProductionSetup";
 import { findAggregatorApp } from "@paperclipai/shared/aggregator-app-catalog";
 import { useMemoryConnectorsEnabled } from "@/hooks/useMemoryConnectorsEnabled";
+import { usePaperclipNotebookEnabled } from "@/hooks/usePaperclipNotebookEnabled";
 import { AiConnectionCredentialStep } from "@/components/ai-connections/AiConnectionCredentialStep";
 import { ConnectionChoiceList } from "./ConnectionChoiceList";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
@@ -584,8 +585,9 @@ export function ConnectionSetupFlow(props: ConnectionSetupFlowProps = {}) {
   const params = useParams<{ appKey?: string }>();
   const { selectedCompanyId } = useCompany();
   const memory = useMemoryConnectorsEnabled();
+  const notebook = usePaperclipNotebookEnabled();
   const interactionId = props.interactionId || searchParams.get("intent") || undefined;
-  const source = props.serviceSlug || searchParams.get("source") || params.appKey || searchParams.get("appKey");
+  const source = (props.serviceSlug || searchParams.get("source") || params.appKey || searchParams.get("appKey"))?.trim() || undefined;
   const draftId = useMemo(() => {
     if (interactionId && isRemoteMcpConnectorId(source)) {
       try { return sessionStorage.getItem(`paperclip:mcp-intent-draft:${selectedCompanyId}:${interactionId}`); } catch { /* Storage may be disabled. */ }
@@ -593,12 +595,17 @@ export function ConnectionSetupFlow(props: ConnectionSetupFlowProps = {}) {
     return null;
   }, [interactionId, selectedCompanyId, source]);
   const existingId = props.configuredConnection?.id || searchParams.get("resume") || searchParams.get("reconnect") || draftId;
-  const lookup = Boolean(existingId && (!source || isRemoteMcpConnectorId(source) || isMemoryConnectorId(source)));
+  const lookup = Boolean(existingId && (!source || isRemoteMcpConnectorId(source) || isMemoryConnectorId(source) || source === "paperclip-notebook"));
   const existing = useQuery({ queryKey: ["tools", "connection", existingId], queryFn: () => toolsApi.getConnection(existingId!), enabled: lookup });
   const provider = source || existing.data?.config?.sourceTemplateKey;
   const method = searchParams.get("method") || existing.data?.config?.connectionMethodKey;
   if (lookup && existing.isPending) return <p className="p-6 text-sm text-muted-foreground">Loading connection…</p>;
   if (lookup && existing.isError) return <div role="alert" className="space-y-3 p-6"><p>Could not load this connection. Your saved access and credentials have not changed.</p><Button variant="outline" onClick={() => void existing.refetch()}>Try again</Button></div>;
+  if (provider === "paperclip-notebook" || existing.data?.config?.sourceTemplateKey === "paperclip-notebook") {
+    if (!notebook.loaded) return <p role="status" className="p-6 text-sm text-muted-foreground">Loading connection settings…</p>;
+    if (notebook.failed) return <p role="alert" className="p-6 text-sm text-destructive">Could not load Notebook availability. Refresh to try again.</p>;
+    if (!notebook.enabled) return <p role="status" className="p-6 text-sm text-muted-foreground">Paperclip Notebook is not available on this instance.</p>;
+  }
   if (isMemoryConnectorId(provider) && !(existing.data && existing.data.status !== "draft" && existing.data.config?.sourceTemplateKey === provider)) {
     if (!memory.loaded) return <p className="p-6 text-sm text-muted-foreground">Loading connection settings…</p>;
     if (!memory.enabled) return <p role="status" className="p-6 text-sm text-muted-foreground">Enable memory connectors in Settings → Experimental to set up this connection.</p>;
@@ -648,6 +655,7 @@ function StandardConnectionSetupFlow({
   const { selectedCompany, selectedCompanyId } = useCompany();
   const { enabled: chatConnectorsEnabled, githubEnabled } = useChatConnectorsEnabled();
   const { enabled: memoryConnectorsEnabled } = useMemoryConnectorsEnabled();
+  const { enabled: notebookEnabled } = usePaperclipNotebookEnabled();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToast();
   const [searchParams] = useSearchParams();
@@ -1038,12 +1046,13 @@ function StandardConnectionSetupFlow({
   // Use the same visible catalog for cards and every branded URL shortcut.
   // Generic custom URLs remain usable without selecting a hidden provider.
   const visibleGalleryApps = useMemo(
-    () => (galleryQuery.data?.apps ?? []).filter((app) => memoryConnectorsEnabled || !isMemoryConnectorId(app.slug)).filter((app) =>
+    () => (galleryQuery.data?.apps ?? []).filter((app) => (memoryConnectorsEnabled || !isMemoryConnectorId(app.slug))
+      && (notebookEnabled || app.slug !== "paperclip-notebook")).filter((app) =>
       chatProviderVisible(app.slug, chatConnectorsEnabled, githubEnabled) ||
       !app.methods.some((method) => method.purpose === "channel") ||
       appSupportsToolCatalogSetup(app),
     ),
-    [galleryQuery.data, chatConnectorsEnabled, githubEnabled, memoryConnectorsEnabled],
+    [galleryQuery.data, chatConnectorsEnabled, githubEnabled, memoryConnectorsEnabled, notebookEnabled],
   );
   const fullRequestedDefinition = requestedAppKey
     ? getConnectableAppDefinition(requestedAppKey)

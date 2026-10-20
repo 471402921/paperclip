@@ -160,6 +160,17 @@ export async function createAssignedMcpTools(input: {
   }
 
   return {
+    async assertNotebookConnectionAvailable(connectionId: string): Promise<void> {
+      const current = await input.gateway.listToolsForNamedGateway({
+        gatewayPublicId: input.gatewayPublicId, bearerToken: input.bearerToken,
+      });
+      const names = new Set(current.filter(tool => tool.connectionId === connectionId
+        && isNotebookApplicationKey(tool.applicationKey) && tools.has(assignedToolName(tool.name)) && permits(tool))
+        .map(tool => tool.upstreamToolName));
+      if (!names.has("notebook_begin_upload") || !names.has("notebook_finalize_upload")) {
+        throw new Error("assigned_notebook_tool_unavailable");
+      }
+    },
     notebookConnectionIds(): string[] {
       const connections = new Map<string, Set<string>>();
       for (const tool of tools.values()) {

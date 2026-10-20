@@ -43,6 +43,8 @@ remaining operations before qualifying the whole capability.
 Gaps: Runtime tool broker searches available services without granting connection
 administration.
 
+Notebook is internally gated by `enablePaperclipNotebook` (default off, no settings toggle). Disabled instances hide setup/discovery and deny curated Notebook dispatch and publishing; removal and revocation remain available.
+
 Notebook source addition: `paperclip-notebook` is discoverable through
 `connections_search` and requestable through `connection_request`. Its standard
 personal authorization requests read, write, share, and delete scopes. Notebook

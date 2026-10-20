@@ -1,9 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import { getConnectableAppDefinition } from "@paperclipai/shared";
-import { notebookAccountIdentity, notebookAppConfiguration, revokeNotebookToken } from "../services/notebook-connection.js";
+import { isNotebookConnection, notebookAccountIdentity, notebookAppConfiguration, revokeNotebookToken } from "../services/notebook-connection.js";
 
 describe("Notebook connection", () => {
   const app = getConnectableAppDefinition("paperclip-notebook")!;
+
+  it("recognizes curated Notebook identity without blacklisting independent MCP endpoints", () => {
+    expect(isNotebookConnection({ config: { sourceTemplateKey: "paperclip-notebook" } })).toBe(true);
+    expect(isNotebookConnection({ transportConfig: { sourceTemplateKey: "paperclip-notebook" } })).toBe(true);
+    expect(isNotebookConnection({}, "app-gallery:paperclip-notebook:44444444-4444-4444-8444-444444444444")).toBe(true);
+    expect(isNotebookConnection({ config: { url: "https://notebook.paperclip.app/mcp" } }, "custom-mcp")).toBe(false);
+    expect(isNotebookConnection({}, "paperclip-notebook-lookalike")).toBe(false);
+  });
 
   it("uses the canonical service by default and retains direct OAuth scopes for overrides", () => {
     vi.stubEnv("PAPERCLIP_NOTEBOOK_MCP_URL", undefined);

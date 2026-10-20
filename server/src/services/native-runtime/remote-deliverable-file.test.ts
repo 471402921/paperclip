@@ -224,7 +224,7 @@ describe.skipIf(!hasLinuxNode)("remote deliverable real Linux descriptor reads",
     const executeNotebookTool = vi.fn(async (_connection: string, name: string) => name === "notebook_create_page" ? { id: "page", version: 1 }
       : name === "notebook_begin_upload" ? { deploymentId: "deployment", uploads: [{ path: "report.html", url: "https://quarantine.example/report" }] }
       : { operationId: "deployment", status: "ready" });
-    const tools = { notebookConnectionIds: () => ["notebook"], executeNotebookTool } as unknown as Parameters<typeof publishNotebookWorkspaceFiles>[0]["tools"];
+    const tools = { notebookConnectionIds: () => ["notebook"], assertNotebookConnectionAvailable: async () => undefined, executeNotebookTool } as unknown as Parameters<typeof publishNotebookWorkspaceFiles>[0]["tools"];
     const upload = vi.fn(async (_url: URL, init: RequestInit) => {
       expect(Buffer.from(init.body as Uint8Array).equals(maximum)).toBe(true);
       return new Response(null, { status: 200 });

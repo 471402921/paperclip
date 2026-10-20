@@ -33,6 +33,7 @@ export async function publishNotebookWorkspaceFiles(input: {
   if (new Set(args.files.map(file => file.path)).size !== args.files.length || !args.files.some(file => file.path === args.entryFile)
     || args.files.reduce((sum, file) => sum + file.size, 0) > MAX_BYTES) throw new Error("notebook_manifest_invalid");
   if (!input.tools.notebookConnectionIds().includes(args.connectionId)) throw new Error("assigned_notebook_tool_unavailable");
+  await input.tools.assertNotebookConnectionAvailable(args.connectionId);
   for (const file of args.files) assertRunnerWorkspacePathAllowed(file.source);
   const call = async <T>(name: string, parameters: Record<string, unknown>): Promise<T> => {
     await input.authorize();
