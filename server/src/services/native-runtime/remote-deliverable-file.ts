@@ -9,6 +9,8 @@ const MAX_NOTEBOOK_REMOTE_BYTES = 25 * 1024 * 1024;
 // Notebook's 25 MiB decoded ceiling exceeds existing command output buffers
 // once base64 encoded. Keep every response below the 4 MiB capture ceiling.
 const NOTEBOOK_READ_CHUNK_BYTES = 2 * 1024 * 1024;
+const MAX_NOTEBOOK_READ_CHUNKS = 256;
+const NOTEBOOK_READ_TIMEOUT_MS = 120_000;
 const PREFIX = "paperclip_runner_file_handoff_";
 const READ_TIMEOUT_MS = 10_000;
 
@@ -104,18 +106,31 @@ export async function readVerifiedRemoteWorkspaceFile(input: {
   const sha256 = typeof input.sha256 === "string" ? input.sha256.trim().toLowerCase() : "";
   if (!/^[a-f0-9]{64}$/u.test(sha256)) throw new Error(`${PREFIX}invalid_sha256`);
   const chunks: Buffer[] = [];
-  const chunkSize = input.maxBytes === undefined ? Math.max(1, byteSize) : NOTEBOOK_READ_CHUNK_BYTES;
+  let chunkSize = Math.max(1, byteSize);
+  let deadline: number | undefined;
+  if (input.maxBytes !== undefined) {
+    const encodedBudget = 4 * Math.ceil(MAX_REMOTE_DELIVERABLE_BYTES / 3);
+    chunkSize = Math.min(NOTEBOOK_READ_CHUNK_BYTES, Math.max(1, Math.floor(MAX_REMOTE_DELIVERABLE_BYTES)));
+    if (byteSize > 0 && (!Number.isFinite(encodedBudget) || encodedBudget < 4 ||
+        4 * Math.ceil(Math.min(byteSize, chunkSize) / 3) > encodedBudget) ||
+        Math.ceil(byteSize / chunkSize) > MAX_NOTEBOOK_READ_CHUNKS) {
+      throw new Error(`${PREFIX}capture_limit`);
+    }
+    deadline = performance.now() + NOTEBOOK_READ_TIMEOUT_MS;
+  }
   for (let offset = 0; offset < byteSize || offset === 0; offset += chunkSize) {
     const length = Math.min(chunkSize, byteSize - offset);
+    const remaining = deadline === undefined ? READ_TIMEOUT_MS : deadline - performance.now();
+    if (remaining < 1) throw new Error(`${PREFIX}remote_read_timeout`);
     const result = await input.runner.execute({
       command: "node",
       args: ["--input-type=commonjs", "-e", READ_REMOTE_FILE, JSON.stringify({ workspaceRoot, contentRef: relative, byteSize, sha256, offset, length })],
       cwd: workspaceRoot,
       env: { NODE_OPTIONS: "", NODE_PATH: "" },
-      timeoutMs: READ_TIMEOUT_MS,
+      timeoutMs: Math.min(READ_TIMEOUT_MS, Math.floor(remaining)),
       bypassSession: true,
     }).catch(() => { throw new Error(`${PREFIX}remote_read_failed`); });
-    if (result.timedOut) throw new Error(`${PREFIX}remote_read_timeout`);
+    if (result.timedOut || deadline !== undefined && performance.now() >= deadline) throw new Error(`${PREFIX}remote_read_timeout`);
     if (result.exitCode !== 0) {
       const code = result.stderr.trim();
       throw new Error(/^paperclip_runner_file_handoff_(path_denied|symlink_denied|file_changed|hash_mismatch)$/u.test(code)
@@ -132,5 +147,6 @@ export async function readVerifiedRemoteWorkspaceFile(input: {
   // hash passes, including replacements between separate descriptor reads.
   const body = Buffer.concat(chunks, byteSize);
   if (createHash("sha256").update(body).digest("hex") !== sha256) throw new Error(`${PREFIX}hash_mismatch`);
+  if (deadline !== undefined && performance.now() >= deadline) throw new Error(`${PREFIX}remote_read_timeout`);
   return body;
 }

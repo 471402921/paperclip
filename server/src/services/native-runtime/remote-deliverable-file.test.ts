@@ -14,6 +14,12 @@ const hasLinuxNode = process.platform === "linux" || spawnSync("docker", ["image
 const body = Buffer.from("newsletter checklist\n");
 const request = { workspaceRoot: "/workspace", contentRef: "checklist.md", byteSize: body.length, sha256: digest(body) };
 const success = { pid: null, startedAt: "2026-09-12T00:00:00Z", exitCode: 0, signal: null, timedOut: false, stdout: body.toString("base64"), stderr: "" };
+async function readerForAttachmentLimit(limit: number) {
+  vi.stubEnv("PAPERCLIP_ATTACHMENT_MAX_BYTES", String(limit));
+  vi.resetModules();
+  try { return (await import("./remote-deliverable-file.js")).readVerifiedRemoteWorkspaceFile; }
+  finally { vi.unstubAllEnvs(); vi.resetModules(); }
+}
 
 describe("remote deliverable admission", () => {
   it.each([
@@ -67,6 +73,32 @@ describe("remote deliverable admission", () => {
       vi.unstubAllEnvs();
       vi.resetModules();
     }
+  });
+
+  it.each([1, -1, Number.MAX_VALUE])("rejects an unusable Notebook capture budget %j before dispatch", async ceiling => {
+    const read = await readerForAttachmentLimit(ceiling), execute = vi.fn();
+    await expect(read({ ...request, byteSize: 1024, maxBytes: 25 * 1024 * 1024, runner: { execute } })).rejects.toThrow("capture_limit");
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("fits base64 padding at a sub-byte configured capture ceiling", async () => {
+    const read = await readerForAttachmentLimit(0.5), execute = vi.fn().mockResolvedValue({ ...success, stdout: "YQ==" });
+    await expect(read({ ...request, byteSize: 1, sha256: digest(Buffer.from("a")), maxBytes: 25 * 1024 * 1024, runner: { execute } })).resolves.toEqual(Buffer.from("a"));
+  });
+
+  it("bounds a whole Notebook read and each remaining command without waiting for the deadline", async () => {
+    let elapsed = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => elapsed);
+    const bytes = Buffer.alloc(3 * 1024 * 1024, 65);
+    const execute = vi.fn(async (input: Parameters<CommandManagedRuntimeRunner["execute"]>[0]) => {
+      elapsed += 119_999;
+      const { length } = JSON.parse(input.args!.at(-1)!);
+      return { ...success, stdout: Buffer.alloc(length, 65).toString("base64") };
+    });
+    try {
+      await expect(readVerifiedRemoteWorkspaceFile({ ...request, byteSize: bytes.length, sha256: digest(bytes), maxBytes: 25 * 1024 * 1024, runner: { execute } })).rejects.toThrow("remote_read_timeout");
+      expect(execute.mock.calls.map(([input]) => input.timeoutMs)).toEqual([10_000, 1]);
+    } finally { clock.mockRestore(); }
   });
 
   it.each([
@@ -181,9 +213,13 @@ describe.skipIf(!hasLinuxNode)("remote deliverable real Linux descriptor reads",
     expect(result.equals(maximum)).toBe(true);
   }, 20_000);
 
-  it("publishes a 12 MiB remote Notebook asset without raising command capture limits", async () => {
-    captureLimit = 4 * 1024 * 1024;
-    const maximum = Buffer.alloc(12 * 1024 * 1024, 39);
+  it.each([{ sizeMiB: 12, attachmentMiB: 10 }, { sizeMiB: 12, attachmentMiB: 1 }])("publishes a remote Notebook asset without raising command capture limits: %j", async ({ sizeMiB, attachmentMiB }) => {
+    let reader = readVerifiedRemoteWorkspaceFile;
+    if (attachmentMiB !== 10) {
+      reader = await readerForAttachmentLimit(attachmentMiB * 1024 * 1024);
+    }
+    captureLimit = Math.min(4 * 1024 * 1024, 4 * Math.ceil(attachmentMiB * 1024 * 1024 / 3));
+    const maximum = Buffer.alloc(sizeMiB * 1024 * 1024, 39);
     await writeFile(join(workspaceRoot, "report.html"), maximum);
     const executeNotebookTool = vi.fn(async (_connection: string, name: string) => name === "notebook_create_page" ? { id: "page", version: 1 }
       : name === "notebook_begin_upload" ? { deploymentId: "deployment", uploads: [{ path: "report.html", url: "https://quarantine.example/report" }] }
@@ -194,28 +230,29 @@ describe.skipIf(!hasLinuxNode)("remote deliverable real Linux descriptor reads",
       return new Response(null, { status: 200 });
     });
     const read = { contentRef: "report.html", byteSize: maximum.length, sha256: digest(maximum) };
-    await expect(readVerifiedRemoteWorkspaceFile({ runner, workspaceRoot, ...read })).rejects.toThrow("size_denied");
+    await expect(reader({ runner, workspaceRoot, ...read })).rejects.toThrow("size_denied");
     expect(runner.execute).not.toHaveBeenCalled();
     await expect(publishNotebookWorkspaceFiles({ tools, upload, authorize: async () => undefined, workspaceRoot,
-      executionTargetKind: "remote", readRemoteWorkspaceFile: file => readVerifiedRemoteWorkspaceFile({ runner, workspaceRoot, ...file }),
+      executionTargetKind: "remote", readRemoteWorkspaceFile: file => reader({ runner, workspaceRoot, ...file }),
       arguments: { connectionId: "notebook", idempotencyKey: "large-remote", entryFile: "report.html",
         files: [{ path: "report.html", source: read.contentRef, size: read.byteSize, sha256: read.sha256 }] },
     })).resolves.toMatchObject({ status: "ready" });
     expect(upload).toHaveBeenCalledOnce();
     expect(executeNotebookTool.mock.calls.map(([, name]) => name)).toEqual(["notebook_create_page", "notebook_begin_upload", "notebook_finalize_upload"]);
-    expect(runner.execute).toHaveBeenCalledTimes(12);
+    expect(runner.execute).toHaveBeenCalledTimes(2 * Math.ceil(sizeMiB / Math.min(2, attachmentMiB)));
   }, 60_000);
 
-  it("reads the exact 25 MiB Notebook ceiling through bounded command responses", async () => {
-    captureLimit = 4 * 1024 * 1024;
+  it.each([10, 1])("reads the exact 25 MiB Notebook ceiling at a configured %i MiB capture ceiling", async attachmentMiB => {
+    const reader = attachmentMiB === 10 ? readVerifiedRemoteWorkspaceFile : await readerForAttachmentLimit(attachmentMiB * 1024 * 1024);
+    captureLimit = Math.min(4 * 1024 * 1024, 4 * Math.ceil(attachmentMiB * 1024 * 1024 / 3));
     const maximum = Buffer.alloc(25 * 1024 * 1024, 41);
     await writeFile(join(workspaceRoot, "maximum.bin"), maximum);
-    const result = await readVerifiedRemoteWorkspaceFile({ runner, workspaceRoot, contentRef: "maximum.bin", byteSize: maximum.length, sha256: digest(maximum), maxBytes: maximum.length });
+    const result = await reader({ runner, workspaceRoot, contentRef: "maximum.bin", byteSize: maximum.length, sha256: digest(maximum), maxBytes: maximum.length });
     expect(result.equals(maximum)).toBe(true);
-    expect(runner.execute).toHaveBeenCalledTimes(13);
+    expect(runner.execute).toHaveBeenCalledTimes(Math.ceil(25 / Math.min(2, attachmentMiB)));
     for (const [input] of vi.mocked(runner.execute).mock.calls) {
       const payload = JSON.parse(input.args!.at(-1)!);
-      expect(payload.length).toBeLessThanOrEqual(2 * 1024 * 1024);
+      expect(payload.length).toBeLessThanOrEqual(Math.min(2, attachmentMiB) * 1024 * 1024);
     }
   }, 60_000);
 

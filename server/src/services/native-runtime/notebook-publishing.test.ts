@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { publishNotebookWorkspaceFiles } from "./notebook-publishing.js";
 import { createAssignedMcpTools } from "./assigned-mcp-tools.js";
 import { ToolGatewayHttpError, type ToolGatewayDescriptor, type ToolGatewayService } from "../tool-gateway.js";
+import type { CommandManagedRuntimeRunner } from "@paperclipai/adapter-utils/command-managed-runtime";
 
 const pageId = "44444444-4444-4444-8444-444444444444";
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -66,6 +67,20 @@ describe("native Notebook workspace publication", () => {
     expect(readRemoteWorkspaceFile).not.toHaveBeenCalled();
     expect(f.executeTool).not.toHaveBeenCalled();
     expect(f.upload).not.toHaveBeenCalled();
+  });
+  it("rejects an unusable remote capture budget before a page action or remote command", async () => {
+    const f = await fixture(), execute = vi.fn<CommandManagedRuntimeRunner["execute"]>();
+    vi.stubEnv("PAPERCLIP_ATTACHMENT_MAX_BYTES", "1");
+    vi.resetModules();
+    try {
+      const { readVerifiedRemoteWorkspaceFile } = await import("./remote-deliverable-file.js");
+      await expect(publishNotebookWorkspaceFiles({ ...f, arguments: arguments_(), workspaceRoot: "/workspace", executionTargetKind: "remote",
+        readRemoteWorkspaceFile: file => readVerifiedRemoteWorkspaceFile({ ...file, workspaceRoot: "/workspace", runner: { execute } }),
+      })).rejects.toThrow("capture_limit");
+      expect(execute).not.toHaveBeenCalled();
+      expect(f.executeTool).not.toHaveBeenCalled();
+      expect(f.upload).not.toHaveBeenCalled();
+    } finally { vi.unstubAllEnvs(); vi.resetModules(); }
   });
   it.each(["approval_required", "policy_deny", "connection_revoked"])("preserves %s and sends no bytes without gateway authorization", async reason => {
     const f = await fixture(), error = new ToolGatewayHttpError(403, "Denied", reason);
