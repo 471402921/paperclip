@@ -2,6 +2,7 @@ import { constants } from "node:fs";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
+import { guardedRemoteHttpFetch } from "@paperclipai/server/remote-http-fetch";
 
 export interface ManifestFile {
   path: string;
@@ -282,14 +283,24 @@ export async function publishLocal(
       throw new Error(
         "A file changed after preparing the manifest. Start a new publication.",
       );
-    const response = await fetcher(url, {
+    const request: RequestInit = {
       method: "PUT",
       headers: ticket.headers ?? { "Content-Type": file.contentType },
       body: new Uint8Array(bytes),
       signal: options.signal,
       redirect: "error",
       credentials: "omit",
-    });
+    };
+    // Only the explicit local HTTP fixture path bypasses public-only DNS
+    // pinning. Server-supplied HTTPS tickets cannot reach private addresses.
+    const response = options.allowLoopbackUploads && loopback && url.protocol === "http:"
+      ? await fetcher(url, request)
+      : await guardedRemoteHttpFetch(url, request, {
+        allowPrivateNetwork: false,
+        error: () => new Error("Notebook upload destination denied."),
+        unpinnedFetch: fetcher,
+      });
+    await response.body?.cancel();
     if (!response.ok)
       throw new Error(
         `An upload failed (${response.status}). Retry the publication with the same idempotency key.`,

@@ -13,11 +13,16 @@
   },
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./remote-http-fetch": "./src/services/remote-http-fetch.ts"
   },
   "publishConfig": {
     "access": "public",
     "exports": {
+      "./remote-http-fetch": {
+        "types": "./dist/services/remote-http-fetch.d.ts",
+        "import": "./dist/services/remote-http-fetch.js"
+      },
       ".": {
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
