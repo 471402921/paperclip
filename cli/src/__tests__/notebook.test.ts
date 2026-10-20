@@ -12,7 +12,8 @@ const connection = "selected-notebook";
 const applicationKey = "app-gallery:paperclip-notebook:44444444-4444-4444-8444-444444444444";
 const names = ["notebook_create_page", "notebook_begin_upload", "notebook_finalize_upload"];
 const checksum = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
-describe("Notebook local publication through the active run gateway", () => {
+// Real filesystem and loopback uploads share CI workers with other workspaces.
+describe("Notebook local publication through the active run gateway", { timeout: 15_000 }, () => {
   let directory: string, server: Server, origin: string;
   let calls: { tool: string; parameters: Record<string, any>; idempotencyKey: string }[];
   let uploads: Map<string, Buffer>, revoked: number, redirectsFollowed: number, mode: "allow" | "off" | "ask" | "wrong-connection" | "redirect" | "receipt-replay";
