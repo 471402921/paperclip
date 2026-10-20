@@ -51,6 +51,24 @@ describe("remote deliverable admission", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
+  it("preserves an operator-configured ordinary attachment ceiling", async () => {
+    vi.stubEnv("PAPERCLIP_ATTACHMENT_MAX_BYTES", String(32 * 1024 * 1024));
+    vi.resetModules();
+    try {
+      const { readVerifiedRemoteWorkspaceFile: read } = await import("./remote-deliverable-file.js");
+      const execute = vi.fn().mockResolvedValue({ ...success, timedOut: true });
+      const large = { ...request, byteSize: 26 * 1024 * 1024, runner: { execute } };
+      await expect(read(large)).rejects.toThrow("remote_read_timeout");
+      expect(execute).toHaveBeenCalledOnce();
+      execute.mockClear();
+      await expect(read({ ...large, maxBytes: 25 * 1024 * 1024 })).rejects.toThrow("size_denied");
+      expect(execute).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
+  });
+
   it.each([
     { stdout: "" }, { stdout: success.stdout + "\n" }, { stdout: "?".repeat(success.stdout.length) },
     { stdout: Buffer.alloc(body.length, 65).toString("base64") }, { timedOut: true }, { exitCode: 1, stderr: "/private/provider/details" },

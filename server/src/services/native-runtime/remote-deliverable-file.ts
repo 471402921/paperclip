@@ -96,8 +96,9 @@ export async function readVerifiedRemoteWorkspaceFile(input: {
   const relative = posix.normalize(contentRef);
   if (relative === "." || relative === ".." || relative.startsWith("../")) throw new Error(`${PREFIX}path_denied`);
   const maxBytes = input.maxBytes === undefined ? MAX_REMOTE_DELIVERABLE_BYTES : input.maxBytes;
-  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_NOTEBOOK_REMOTE_BYTES ||
-      !Number.isSafeInteger(byteSize) || byteSize < (input.allowEmpty ? 0 : 1) || byteSize > maxBytes) {
+  const invalidNotebookAllowance = input.maxBytes !== undefined &&
+    (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_NOTEBOOK_REMOTE_BYTES);
+  if (invalidNotebookAllowance || !Number.isSafeInteger(byteSize) || byteSize < (input.allowEmpty ? 0 : 1) || byteSize > maxBytes) {
     throw new Error(`${PREFIX}size_denied`);
   }
   const sha256 = typeof input.sha256 === "string" ? input.sha256.trim().toLowerCase() : "";
