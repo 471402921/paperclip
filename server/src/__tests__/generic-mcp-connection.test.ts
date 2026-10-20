@@ -7,6 +7,9 @@ import pino from "pino";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
+  EMBEDDED_POSTGRES_TEST_TIMEOUT_MS,
+  applyPendingMigrations,
+  closeRegisteredClients,
   activityLog,
   agents,
   authUsers,
@@ -35,7 +38,7 @@ import {
   toolProfiles,
   toolRuntimeSlots,
 } from "@paperclipai/db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { APP_DEFINITIONS, MCP_CONFIG_HELP_PROMPT } from "@paperclipai/shared";
 import {
   getEmbeddedPostgresTestSupport,
@@ -52,7 +55,8 @@ import { createHttpLogger } from "../middleware/logger.js";
 import { HTTP_LOG_REDACT_PATHS } from "../middleware/http-log-redaction.js";
 import { startOAuthRefreshFixture } from "../../../scripts/mcp-fixtures/servers/oauth-refresh-fixture.mjs";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
+const externalTestDatabaseUrl = process.env.PAPERCLIP_TEST_DATABASE_URL?.trim();
+const embeddedPostgresSupport = externalTestDatabaseUrl ? { supported: true } : await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
 
 /**
@@ -81,6 +85,10 @@ const FIXTURE_TOOLS = [
 ];
 
 type FixtureOptions = {
+  notebookAccount?: { id: string; email: string; emailVerified: boolean };
+  revocationStatus?: () => number;
+  dropFirstRefreshResponse?: boolean;
+  scopes?: string[];
   /** How the MCP endpoint authenticates. */
   auth?: "public" | "oauth" | "header";
   /** For `auth: "header"`, the header the endpoint requires and its value. */
@@ -169,6 +177,8 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
   const requests: FixtureRequest[] = [];
   const issuedCodes = new Map<string, { codeChallenge: string; resource: string | null }>();
   let accessToken: string | null = null;
+  let refreshResponseDropped = false;
+  const refreshReceipts = new Map<string, Record<string, unknown>>();
   const tools = options.tools ?? FIXTURE_TOOLS;
   const resourceMetadataUrl = `${MCP_ORIGIN}/.well-known/oauth-protected-resource/mcp`;
 
@@ -180,7 +190,7 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
     ...(options.cimd ? { client_id_metadata_document_supported: true } : {}),
     code_challenge_methods_supported: ["S256"],
     token_endpoint_auth_methods_supported: options.tokenEndpointAuthMethods ?? ["none"],
-    scopes_supported: ["mcp:read", "mcp:write"],
+    scopes_supported: options.scopes ?? ["mcp:read", "mcp:write"],
   });
 
   const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
@@ -204,6 +214,13 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
         if (supplied !== options.requiredHeader.value) return unauthorizedMcpResponse(resourceMetadataUrl);
       }
       const rpc = parsedBody as Record<string, unknown>;
+      if (options.notebookAccount && rpc.method === "initialize") {
+        return jsonResponse({ jsonrpc: "2.0", id: rpc.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "Notebook fixture", version: "1" } } });
+      }
+      if (options.notebookAccount && rpc.method === "notifications/initialized") return jsonResponse({}, 202);
+      if (options.notebookAccount && rpc.method === "tools/call" && (rpc.params as Record<string, unknown>)?.name === "notebook_get_account") {
+        return jsonResponse({ jsonrpc: "2.0", id: rpc.id, result: { structuredContent: options.notebookAccount, content: [] } });
+      }
       if (rpc.method === "tools/call") {
         return jsonResponse({ jsonrpc: "2.0", id: rpc.id, result: {
           content: [{ type: "text", text: "Fixture meeting data" }],
@@ -224,6 +241,10 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
     const oidcSuffixUrl = `${ISSUER}/.well-known/oauth-authorization-server`;
     const servedMetadataUrl = options.wellKnownStyle === "oidc-suffix" ? oidcSuffixUrl : rfc8414Url;
     if (href === servedMetadataUrl) return jsonResponse(authorizationServerMetadata());
+
+    if (href === `${MCP_ORIGIN}/oauth/revoke` && method === "POST" && options.notebookAccount) {
+      return jsonResponse({}, options.revocationStatus?.() ?? 200);
+    }
 
     if (href === `${ISSUER}/register` && method === "POST") {
       if (options.registrationFailure) {
@@ -254,14 +275,22 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
         const issued = issuedCodes.get(body.get("code") ?? "");
         if (!issued) return jsonResponse({ error: "invalid_grant" }, 400);
       }
+      const receiptKey = grantType === "refresh_token" && options.notebookAccount ? headers["idempotency-key"] : null;
+      if (receiptKey && refreshReceipts.has(receiptKey)) return jsonResponse(refreshReceipts.get(receiptKey));
       accessToken = `fixture-access-${randomUUID()}`;
-      return jsonResponse({
+      const tokenResponse = {
         access_token: accessToken,
         refresh_token: "fixture-refresh",
         expires_in: 3600,
         token_type: "Bearer",
-        scope: "mcp:read",
-      });
+        scope: options.scopes?.join(" ") ?? "mcp:read",
+      };
+      if (receiptKey) refreshReceipts.set(receiptKey, tokenResponse);
+      if (receiptKey && options.dropFirstRefreshResponse && !refreshResponseDropped) {
+        refreshResponseDropped = true;
+        throw new TypeError("Fixture dropped a committed refresh response");
+      }
+      return jsonResponse(tokenResponse);
     }
 
     // 404 rather than throw: discovery legitimately probes several well-known
@@ -341,9 +370,14 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
+    if (externalTestDatabaseUrl) {
+      await applyPendingMigrations(externalTestDatabaseUrl);
+      db = createDb(externalTestDatabaseUrl);
+      return;
+    }
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-generic-mcp-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  }, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS);
 
   afterEach(async () => {
     vi.restoreAllMocks();
@@ -376,6 +410,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
   });
 
   afterAll(async () => {
+    if (externalTestDatabaseUrl) await closeRegisteredClients(externalTestDatabaseUrl);
     await tempDb?.cleanup();
   });
 
@@ -396,6 +431,83 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     }
     return false;
   }
+
+  it("connects Notebook directly with personal identity and preserves agent policies across reconnect and remote-revocation recovery", async () => {
+    vi.stubEnv("PAPERCLIP_NOTEBOOK_MCP_URL", MCP_URL);
+    const scopes = ["notebook:read", "notebook:write", "notebook:share", "notebook:delete"];
+    let revocationStatus = 503;
+    const fixture = installMcpOAuthFixture({ auth: "oauth", scopes, dropFirstRefreshResponse: true, notebookAccount: { id: "cloud-owner", email: "owner@example.test", emailVerified: true },
+      revocationStatus: () => revocationStatus,
+      tools: [
+        { name: "notebook_get_account", annotations: { readOnlyHint: true } },
+        { name: "notebook_list_pages", annotations: { readOnlyHint: true } },
+        { name: "notebook_publish", annotations: { readOnlyHint: false } },
+        { name: "notebook_set_sharing", annotations: { readOnlyHint: false } },
+        { name: "notebook_delete_page", annotations: { readOnlyHint: false, destructiveHint: true } },
+      ] });
+    const company = await createCompany(db);
+    const service = toolAccessService(db, { paperclipCloudConnector: null });
+    const actor = { actorType: "user" as const, actorId: "board-user" };
+    const connected = await service.connectGalleryApp(company.id, { galleryKey: "paperclip-notebook", grantKind: "user" }, actor);
+    const authorize = async () => {
+      const start = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+      expect(start.registrationSource).toBe("dcr");
+      const authorization = new URL(start.authorizationUrl);
+      expect(authorization.searchParams.get("resource")).toBe(MCP_URL);
+      expect(authorization.searchParams.get("code_challenge_method")).toBe("S256");
+      expect(authorization.searchParams.get("scope")?.split(" ")).toEqual(scopes);
+      return service.completeOAuthCallback({ state: authorization.searchParams.get("state")!, code: fixture.issueAuthorizationCode(start.authorizationUrl),
+        iss: ISSUER, redirectUri: REDIRECT_URI, actor });
+    };
+    const completed = await authorize();
+    expect(completed.connection.name).toBe("Paperclip Notebook · owner@example.test");
+    expect(completed.connection.credentialPolicy).toBe("per_user");
+    expect(completed.catalog).toHaveLength(5);
+    expect(completed.catalog.every(entry => entry.status === "active")).toBe(true);
+    const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
+    expect(grant).toMatchObject({ kind: "user", subjectUserId: "board-user", providerTenant: { name: "owner@example.test", externalId: "cloud-owner" } });
+    const stored = await db.select().from(companySecrets).where(inArray(companySecrets.id, grant!.credentialSecretRefs.map(ref => ref.secretId)));
+    expect(stored).toHaveLength(2);
+    expect(stored.every(secret => secret.scope === "user" && secret.ownerUserId === "board-user")).toBe(true);
+    expect(JSON.stringify(completed)).not.toContain("fixture-access-");
+    await db.update(connectionGrants).set({ providerTenant: { ...grant!.providerTenant, oauth: {
+      ...grant!.providerTenant?.oauth, accessTokenExpiresAt: new Date(0).toISOString(),
+    } } }).where(eq(connectionGrants.id, grant!.id));
+    await service.refreshCatalog(connected.connectionId, actor);
+    const refreshRequests = fixture.requestsTo("/token").filter(request => (request.body as URLSearchParams).get("grant_type") === "refresh_token");
+    expect(refreshRequests).toHaveLength(2);
+    expect(refreshRequests[0]!.headers["idempotency-key"]).toMatch(/^[a-f0-9]{64}$/);
+    expect(refreshRequests[0]!.headers["idempotency-key"]).toBe(refreshRequests[1]!.headers["idempotency-key"]);
+    const [agent] = await db.insert(agents).values({ companyId: company.id, name: "Notebook author", role: "engineer", status: "active", adapterType: "process", adapterConfig: {}, runtimeConfig: {} }).returning();
+    const [unassigned] = await db.insert(agents).values({ companyId: company.id, name: "Unassigned", role: "engineer", status: "active", adapterType: "process", adapterConfig: {}, runtimeConfig: {} }).returning();
+    await service.finishGalleryAppConnection(company.id, connected.connectionId, {
+      enabledCatalogEntryIds: completed.catalog.filter(entry => entry.toolName !== "notebook_delete_page").map(entry => entry.id),
+      askFirstCatalogEntryIds: completed.catalog.filter(entry => entry.toolName === "notebook_set_sharing").map(entry => entry.id), access: { agentIds: [agent!.id] },
+    }, actor);
+    await authorize();
+    const policy = toolAccessPolicyService(db);
+    const decision = (name: string, agentId = agent!.id) => {
+      const entry = completed.catalog.find(entry => entry.toolName === name)!;
+      return policy.decide({ companyId: company.id, actor: { actorType: "agent", actorId: agentId, agentId },
+        request: { connectionId: connected.connectionId, catalogEntryId: entry.id, toolName: name } });
+    };
+    await expect(decision("notebook_publish")).resolves.toMatchObject({ allowed: true });
+    await expect(decision("notebook_set_sharing")).resolves.toMatchObject({ allowed: false, decision: "require_approval" });
+    await expect(decision("notebook_delete_page")).resolves.toMatchObject({ allowed: false, decision: "deny" });
+    await expect(decision("notebook_publish", unassigned!.id)).resolves.toMatchObject({ allowed: false });
+    const removed = await service.archiveConnection(connected.connectionId, company.id, actor);
+    expect(removed.removal.notebookRevocationPending).toBe(true);
+    expect(removed.connection.status).toBe("archived");
+    await expect(decision("notebook_publish")).resolves.toMatchObject({ allowed: false });
+    const [pendingGrant] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
+    expect(pendingGrant!.status).toBe("revoked");
+    expect(pendingGrant!.credentialSecretRefs).toHaveLength(2);
+    revocationStatus = 200;
+    await expect(service.sweepNotebookRevocations()).resolves.toEqual({ checked: 1, pending: 0 });
+    const [clearedGrant] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
+    expect(clearedGrant!.credentialSecretRefs).toEqual([]);
+    expect(fixture.requestsTo("/oauth/revoke")).toHaveLength(2);
+  });
 
   it.each(["mcp-oauth", "mcp-api-key"])("connects Fireflies through %s with vaulted credentials and its stable meeting tools", async (methodKey) => {
     // Keep the real catalog method and governance identity; redirect only its
@@ -1332,7 +1444,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
   it("completes organization OAuth with a single database connection", async () => {
     const fixture = installMcpOAuthFixture({ auth: "oauth" });
     const company = await createCompany(db);
-    const callbackDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
+    const callbackDb = createDb((externalTestDatabaseUrl ?? tempDb!.connectionString), { maxConnections: 1 });
     const service = toolAccessService(callbackDb);
     let deadline: ReturnType<typeof setTimeout> | null = null;
 
@@ -1416,8 +1528,8 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
   it("serializes organization OAuth completion behind membership revocation", async () => {
     const fixture = installMcpOAuthFixture({ auth: "oauth" });
     const company = await createCompany(db);
-    const callbackDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
-    const removalDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
+    const callbackDb = createDb((externalTestDatabaseUrl ?? tempDb!.connectionString), { maxConnections: 1 });
+    const removalDb = createDb((externalTestDatabaseUrl ?? tempDb!.connectionString), { maxConnections: 1 });
     const service = toolAccessService(callbackDb);
     const actor = { actorType: "user" as const, actorId: "board-user" };
     let releaseRemoval!: () => void;
@@ -2187,7 +2299,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
       // serialize the two callbacks and prove nothing. With two connections both
       // callbacks can read a live state row before either deletes it, so the
       // atomic `DELETE … RETURNING` is what picks the winner.
-      const otherDb = createDb(tempDb!.connectionString);
+      const otherDb = createDb((externalTestDatabaseUrl ?? tempDb!.connectionString));
       const otherService = toolAccessService(otherDb);
       let settled: PromiseSettledResult<unknown>[];
       try {

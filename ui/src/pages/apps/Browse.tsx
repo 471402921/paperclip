@@ -468,7 +468,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
         if (!target.poolRevision) throw new Error("Open the confirmation again before removing this pool.");
         await aiConnectionPoolsApi.remove(selectedCompanyId!, target.id, target.poolRevision);
       } else {
-        await toolsApi.archiveConnection(target.id);
+        return toolsApi.archiveConnection(target.id);
       }
     },
     onSuccess: (_connection, target) => {
@@ -488,7 +488,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
       pushToast({
         title: "Connection removed",
         body:
-          target.pool ? "The connections in the pool are kept." : target.kind === "chat"
+          _connection?.removal?.notebookRevocationPending ? "Notebook is disconnected here. Remote authorization revocation is pending and will retry automatically." : target.pool ? "The connections in the pool are kept." : target.kind === "chat"
             ? `${target.providerName} is disconnected. Existing Paperclip tasks remain available.`
             : target.remainingConnectionCount > 0
             ? `${target.providerName} still has ${target.remainingConnectionCount} active ${target.remainingConnectionCount === 1 ? "connection" : "connections"} available to agents.`

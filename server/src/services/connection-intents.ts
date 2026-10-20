@@ -1,3 +1,4 @@
+import { notebookAppConfiguration } from "./notebook-connection.js";
 import { updateAgentConfigurationInTransaction } from "./agent-configuration-transaction.js";
 import { emailChannelService } from "./email-channels.js";
 import { emailConnectionService } from "./email-connections.js";
@@ -362,8 +363,9 @@ export function connectionIntentService(db: Db) {
 
   async function resolveService(service: string, companyId: string, userId: string, agentId: string, purpose?: "ai" | "channel") {
     if (!service.startsWith("connection:")) {
-      const app = getAppStoreDefinition(service);
-      if (!app) throw notFound("Connection service was not found");
+      const definition = getAppStoreDefinition(service);
+      if (!definition) throw notFound("Connection service was not found");
+      const app = notebookAppConfiguration(definition);
       if (purpose === "channel" && service !== "agentmail") {
         throw unprocessable("This email connection is not available");
       }

@@ -1,3 +1,4 @@
+import { notebookAppConfiguration } from "../services/notebook-connection.js";
 import { isCrossSiteOAuthCallbackNavigation, oauthCallbackInterstitialHtml } from "../lib/oauth-browser-return.js";
 import { aiConnectionRouterPluginKey } from "@paperclipai/shared";
 import { aiConnectionRouterService } from "../services/ai-connection-router.js";
@@ -851,7 +852,7 @@ function connectorEnrollmentPrincipal(req: Request): string {
         },
       },
       apps: [...APP_STORE_DEFINITIONS.filter((app) => (enableMemoryConnectors || !isMemoryConnectorId(app.slug))).map((app) =>
-        appWithPaperclipCloudConnectorAvailability(app, advertisedProfiles)
+        appWithPaperclipCloudConnectorAvailability(notebookAppConfiguration(app), advertisedProfiles)
       ), ...await aiConnectionRouterService(db).catalog()],
     });
   });

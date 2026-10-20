@@ -370,6 +370,7 @@ vi.mock("../services/index.js", () => ({
       needsAttention: 0,
       failed: 0,
     })),
+    sweepNotebookRevocations: vi.fn(async () => ({ checked: 0, pending: 0 })),
     sweepGitHubConnectionContinuity: vi.fn(async () => ({
       checked: 0,
       due: 0,

@@ -410,6 +410,7 @@ export interface ToolConnectionRemovalSummary {
   gatewayTokensRevoked: number;
   gatewaySessionsRevoked: number;
   applicationArchived: boolean;
+  notebookRevocationPending?: boolean;
   externalCredentialCleanup?: {
     provider: "vercel_connect";
     userSubjectsAttempted: number;

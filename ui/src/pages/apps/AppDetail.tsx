@@ -277,7 +277,8 @@ function StandardAppDetail({ renderActions, renderAgentSettings, renderConnectio
   const agents = agentsQuery.data ?? [];
   const disconnectRemote = useMutation({
     mutationFn: () => toolsApi.archiveConnection(connectionId),
-    onSuccess: () => {
+    onSuccess: (result) => {
+      if (result?.removal?.notebookRevocationPending) pushToast({ title: "Notebook disconnected", body: "Remote authorization revocation is pending and will retry automatically.", tone: "info" });
       queryClient.invalidateQueries({ queryKey: queryKeys.tools.connections(selectedCompanyId!) });
       queryClient.invalidateQueries({ queryKey: queryKeys.tools.connection(connectionId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.tools.applications(selectedCompanyId!) });

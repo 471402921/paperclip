@@ -39,6 +39,17 @@ remaining operations before qualifying the whole capability.
 Gaps: Runtime tool broker searches available services without granting connection
 administration.
 
+Notebook source addition: configured `paperclip-notebook` is discoverable through
+`connections_search` and requestable through `connection_request`. Its standard
+personal authorization requests read, write, share, and delete scopes. Notebook
+page ownership remains enforced by the remote service; a client-supplied agent
+label grants no authority. The direct MCP connection requires no Cloud instance
+enrollment. Notebook fixture evidence: `verified` against disposable PostgreSQL 18
+with controlled MCP responses — [Notebook integration](../../doc/connections/PAPERCLIP-NOTEBOOK.md)
+and [generic OAuth fixture](../../server/src/__tests__/generic-mcp-connection.test.ts).
+Live run-bound publication and hosted/self-hosted OAuth remain release checks.
+
+
 ## `identity-and-access`
 
 Review: `baseline`.
