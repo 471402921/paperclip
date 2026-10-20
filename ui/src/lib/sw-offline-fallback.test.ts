@@ -63,31 +63,39 @@ async function respondTo(
   return await captured;
 }
 
+async function loadOfflinePlayback({
+  reducedMotion = false,
+  play = async () => {},
+}: { reducedMotion?: boolean; play?: () => Promise<void> } = {}) {
+  const listener = loadServiceWorkerFetchListener({
+    fetch: () => Promise.reject(new TypeError("network down")),
+    cachesMatch: async () => undefined,
+  });
+  const response = await respondTo(listener, {
+    method: "GET", url: "https://app.example.com/settings/instance", mode: "navigate",
+  });
+  const script = (await response!.text()).match(/<script>([\s\S]*?)<\/script>/)![1];
+  const events = new Map<string, () => void>();
+  const video = {
+    src: "", pause: vi.fn(), play: vi.fn(play),
+    hasAttribute: () => Boolean(video.src),
+    addEventListener: (name: string, handler: () => void) => events.set(name, handler),
+  };
+  const classList = { add: vi.fn(), remove: vi.fn() };
+  const motion = {
+    matches: reducedMotion,
+    addEventListener: (_name: string, handler: () => void) => events.set("motion", handler),
+  };
+  new Function("document", "window", script)(
+    { querySelector: () => ({ classList, querySelector: () => video }) },
+    { matchMedia: () => motion },
+  );
+  return { video, classList, motion, events };
+}
+
 describe("sw.js offline fallback", () => {
   it("keeps the still for reduced motion and starts playback when the preference changes", async () => {
-    const listener = loadServiceWorkerFetchListener({
-      fetch: () => Promise.reject(new TypeError("network down")),
-      cachesMatch: async () => undefined,
-    });
-    const response = await respondTo(listener, {
-      method: "GET", url: "https://app.example.com/settings/instance", mode: "navigate",
-    });
-    const script = (await response!.text()).match(/<script>([\s\S]*?)<\/script>/)![1];
-    const events = new Map<string, () => void>();
-    const video = {
-      src: "", pause: vi.fn(), play: vi.fn(async () => {}),
-      hasAttribute: () => Boolean(video.src),
-      addEventListener: (name: string, handler: () => void) => events.set(name, handler),
-    };
-    const classList = { add: vi.fn(), remove: vi.fn() };
-    const motion = {
-      matches: true,
-      addEventListener: (_name: string, handler: () => void) => events.set("motion", handler),
-    };
-    new Function("document", "window", script)(
-      { querySelector: () => ({ classList, querySelector: () => video }) },
-      { matchMedia: () => motion },
-    );
+    const { video, classList, motion, events } = await loadOfflinePlayback({ reducedMotion: true });
     expect(video.src).toBe("");
     expect(video.play).not.toHaveBeenCalled();
     motion.matches = false;
@@ -100,6 +108,24 @@ describe("sw.js offline fallback", () => {
     events.get("motion")!();
     expect(video.pause).toHaveBeenCalledTimes(2);
     expect(classList.remove).toHaveBeenLastCalledWith("is-playing");
+  });
+
+  it("keeps the still when the browser rejects playback", async () => {
+    const { video, classList } = await loadOfflinePlayback({
+      play: async () => { throw new Error("autoplay blocked"); },
+    });
+    expect(video.play).toHaveBeenCalledOnce();
+    expect(classList.add).not.toHaveBeenCalled();
+    expect(classList.remove).toHaveBeenCalledExactlyOnceWith("is-playing");
+  });
+
+  it("restores the still when media fails after playback starts", async () => {
+    const { classList, events } = await loadOfflinePlayback();
+    events.get("playing")!();
+    expect(classList.add).toHaveBeenCalledWith("is-playing");
+    expect(classList.remove).not.toHaveBeenCalled();
+    events.get("error")!();
+    expect(classList.remove).toHaveBeenCalledExactlyOnceWith("is-playing");
   });
 
   it("serves an uncached retry page for a failed navigation with an empty cache", async () => {
