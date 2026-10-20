@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { embedServiceWorkerOfflineStyles } from "./vite-sw-build-id";
+import { embedServiceWorkerOfflineAnimation, embedServiceWorkerOfflineStyles } from "./vite-sw-build-id";
 
 const uiRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
@@ -32,10 +32,10 @@ function loadServiceWorkerFetchListener(overrides: {
   };
   // Offline fallback belongs to a stamped production build. Development
   // leaves Vite requests to the browser instead of intercepting them.
-  const code = embedServiceWorkerOfflineStyles(
+  const code = embedServiceWorkerOfflineAnimation(embedServiceWorkerOfflineStyles(
     readFileSync(resolve(uiRoot, "public/sw.js"), "utf8"),
     readFileSync(resolve(uiRoot, "src/index.css"), "utf8"),
-  )
+  ), readFileSync(resolve(uiRoot, "src/assets/offline-character.webm")))
     .replace("__PAPERCLIP_BUILD_ID__", "fixture-production");
   new Function("self", "caches", "fetch", "Response", "URL", code)(
     swSelf,
@@ -64,6 +64,44 @@ async function respondTo(
 }
 
 describe("sw.js offline fallback", () => {
+  it("keeps the still for reduced motion and starts playback when the preference changes", async () => {
+    const listener = loadServiceWorkerFetchListener({
+      fetch: () => Promise.reject(new TypeError("network down")),
+      cachesMatch: async () => undefined,
+    });
+    const response = await respondTo(listener, {
+      method: "GET", url: "https://app.example.com/settings/instance", mode: "navigate",
+    });
+    const script = (await response!.text()).match(/<script>([\s\S]*?)<\/script>/)![1];
+    const events = new Map<string, () => void>();
+    const video = {
+      src: "", pause: vi.fn(), play: vi.fn(async () => {}),
+      hasAttribute: () => Boolean(video.src),
+      addEventListener: (name: string, handler: () => void) => events.set(name, handler),
+    };
+    const classList = { add: vi.fn(), remove: vi.fn() };
+    const motion = {
+      matches: true,
+      addEventListener: (_name: string, handler: () => void) => events.set("motion", handler),
+    };
+    new Function("document", "window", script)(
+      { querySelector: () => ({ classList, querySelector: () => video }) },
+      { matchMedia: () => motion },
+    );
+    expect(video.src).toBe("");
+    expect(video.play).not.toHaveBeenCalled();
+    motion.matches = false;
+    events.get("motion")!();
+    expect(video.src).toMatch(/^data:video\/webm;base64,/);
+    expect(video.play).toHaveBeenCalledOnce();
+    events.get("playing")!();
+    expect(classList.add).toHaveBeenCalledWith("is-playing");
+    motion.matches = true;
+    events.get("motion")!();
+    expect(video.pause).toHaveBeenCalledTimes(2);
+    expect(classList.remove).toHaveBeenLastCalledWith("is-playing");
+  });
+
   it("serves an uncached retry page for a failed navigation with an empty cache", async () => {
     const listener = loadServiceWorkerFetchListener({
       fetch: () => Promise.reject(new TypeError("network down")),
@@ -88,6 +126,8 @@ describe("sw.js offline fallback", () => {
     expect(body).toContain("<style>");
     expect(body).toContain(".paperclip-offline");
     expect(body).toContain("<svg");
+    expect(body).toContain("data:video/webm;base64,");
+    expect(body).toContain("loop muted playsinline");
     expect(body).not.toMatch(/__PAPERCLIP_|<link|\bsrc=/);
     expect(body).not.toContain("<html>app shell</html>");
   });
