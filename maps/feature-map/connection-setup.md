@@ -97,9 +97,10 @@ saved connection. Run a permitted read-only action with an eligible agent and
 verify its useful result. Try an ineligible agent and confirm denial. Repeat
 with a user who cannot install company-wide; the UI must not imply broad access.
 
-Paperclip Notebook uses the same personal-account MCP OAuth setup. The instance
-operator configures `PAPERCLIP_NOTEBOOK_MCP_URL`; the catalog explains when it is
-unavailable. Sign in through Cloud, assign agents, and verify the account label.
+Paperclip Notebook uses the same personal-account MCP OAuth setup and defaults
+to `https://notebook.paperclip.app/mcp`. Operators can override it with
+`PAPERCLIP_NOTEBOOK_MCP_URL` for staging or development. Sign in through Cloud,
+assign agents, and verify the account label.
 Reconnect must preserve agent assignments and Allowed / Ask first / Off choices.
 Removal closes local access immediately; an upstream outage displays pending
 revocation and retries automatically. Native workspace runs can publish local

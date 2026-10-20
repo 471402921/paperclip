@@ -5,14 +5,17 @@ import { notebookAccountIdentity, notebookAppConfiguration, revokeNotebookToken 
 describe("Notebook connection", () => {
   const app = getConnectableAppDefinition("paperclip-notebook")!;
 
-  it("requires explicit deployment configuration and retains direct OAuth scopes", () => {
+  it("uses the canonical service by default and retains direct OAuth scopes for overrides", () => {
+    vi.stubEnv("PAPERCLIP_NOTEBOOK_MCP_URL", undefined);
+    expect(notebookAppConfiguration(app).methods[0]?.defaults?.serverUrl).toBe("https://notebook.paperclip.app/mcp");
     expect(notebookAppConfiguration(app, "").availability?.available).toBe(false);
     const configured = notebookAppConfiguration(app, "https://notebook.example.test/mcp");
     expect(configured.availability?.available).toBe(true);
     expect(configured.methods[0]).toMatchObject({ auth: "oauth", ownershipModes: ["dcr"], grantKinds: ["user"],
       defaults: { serverUrl: "https://notebook.example.test/mcp", scopesHint: ["notebook:read", "notebook:write", "notebook:share", "notebook:delete"] } });
     expect(configured.methods[0]?.oauthStrategy).toBeUndefined();
-    expect(app.availability?.available).toBe(false);
+    expect(app.availability?.available).toBe(true);
+    vi.unstubAllEnvs();
   });
 
   it.each(["https://user:password@example.test/mcp", "http://example.test/mcp", "https://example.test/mcp?token=secret", "https://example.test/mcp#secret", "https://example.test/"])("rejects invalid deployment endpoint %s", endpoint => {

@@ -39,7 +39,7 @@ remaining operations before qualifying the whole capability.
 Gaps: Runtime tool broker searches available services without granting connection
 administration.
 
-Notebook source addition: configured `paperclip-notebook` is discoverable through
+Notebook source addition: `paperclip-notebook` is discoverable through
 `connections_search` and requestable through `connection_request`. Its standard
 personal authorization requests read, write, share, and delete scopes. Notebook
 page ownership remains enforced by the remote service; a client-supplied agent

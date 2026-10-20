@@ -6,7 +6,7 @@ The Notebook service belongs to the Paperclip Cloud repository and authenticates
 
 ## Deployment configuration
 
-Set `PAPERCLIP_NOTEBOOK_MCP_URL` to the deployed Notebook HTTPS `/mcp` endpoint on the Paperclip server. The app stays unavailable until this is configured. No production hostname is assumed. Local development additionally accepts a loopback HTTP URL; the instance's remote-network policy still applies.
+Notebook defaults to `https://notebook.paperclip.app/mcp` on hosted and self-hosted Paperclip. No per-instance registration or endpoint configuration is required for that service. Operators may override it with `PAPERCLIP_NOTEBOOK_MCP_URL` for staging or development. Invalid overrides make setup unavailable. Local development additionally accepts a loopback HTTP URL; the instance's remote-network policy still applies. The catalog describes connection support; it is not a live service health check. Deploy and verify the canonical service before release. Uploaded applications use the isolated `paperclipnotebook.com` content domain.
 
 The endpoint must provide OAuth discovery, registration, code exchange, refresh, and `/oauth/revoke`. Its requesting client needs no pre-created secret. Discovery never expands the reviewed scope set:
 

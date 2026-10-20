@@ -4,7 +4,8 @@ import { initializeMcpHttpSession, mcpHttpRequestHeaders, readMcpHttpResponse } 
 
 export const NOTEBOOK_APP_SLUG = "paperclip-notebook";
 
-export function notebookAppConfiguration(app: AppDefinition, configuredUrl = process.env.PAPERCLIP_NOTEBOOK_MCP_URL): AppDefinition {
+export function notebookAppConfiguration(app: AppDefinition, configuredUrl = process.env.PAPERCLIP_NOTEBOOK_MCP_URL
+  ?? app.methods.find(method => method.transport === "mcp_remote")?.defaults?.serverUrl): AppDefinition {
   if (app.slug !== NOTEBOOK_APP_SLUG) return app;
   let endpoint: URL;
   try {
