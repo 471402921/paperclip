@@ -614,6 +614,27 @@ describe("openapi routes", () => {
     ).not.toContain("sessionToken");
   });
 
+  it("documents the private run-bound Notebook upload transport", () => {
+    const { spec } = loadSpecRoutes();
+    const operation = spec.paths["/api/tool-gateway/notebook/uploads/call"].post;
+    expect(operation.security).toEqual([{ NotebookUploadGatewayAuth: [] }]);
+    expect(spec.components.securitySchemes.NotebookUploadGatewayAuth).toMatchObject({
+      type: "apiKey", in: "header", name: "x-paperclip-tool-gateway-token",
+    });
+    expect(operation["x-paperclip-authorization"]).toEqual({
+      actor: "agent", heartbeatBound: true, selectedConnectionBound: true,
+    });
+    expect(operation.requestBody.content["application/json"].schema).toMatchObject({
+      required: ["tool", "connectionId"],
+      properties: { connectionId: { type: "string", format: "uuid" } },
+    });
+    for (const status of ["200", "400", "401", "403", "404", "409"]) {
+      expect(operation.responses[status].headers["Cache-Control"].schema.enum).toEqual(["no-store"]);
+    }
+    expect(operation.description).toContain("Allowed / Ask first / Off");
+    expect(operation.description).toContain("audit logs remain redacted");
+  });
+
   it("publishes the complete board contract for chat channels", () => {
     const { spec } = loadSpecRoutes();
     const boardSecurity = [{ BoardSessionAuth: [] }, { BoardApiKeyAuth: [] }];

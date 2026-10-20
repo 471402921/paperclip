@@ -1314,6 +1314,7 @@ const BOARD_API_KEY_AUTH_SCHEME = "BoardApiKeyAuth";
 const AGENT_BEARER_AUTH_SCHEME = "AgentBearerAuth";
 const AGENT_RUN_AUTH_SCHEME = "AgentRunAuth";
 const RUNTIME_TOOLS_BEARER_AUTH_SCHEME = "RuntimeToolsBearerAuth";
+const NOTEBOOK_UPLOAD_AUTH_SCHEME = "NotebookUploadGatewayAuth";
 
 function securityRequirement(name: string): Record<string, string[]> {
   return { [name]: [] };
@@ -1833,6 +1834,12 @@ function applyDocumentFixups(document: any): any {
       bearerFormat: "Task-bound agent JWT",
       description: "Paperclip-issued JWT bound to an active task run. Agent API keys, board sessions, and connection-only tokens are rejected.",
     },
+    [NOTEBOOK_UPLOAD_AUTH_SCHEME]: {
+      type: "apiKey",
+      in: "header",
+      name: "x-paperclip-tool-gateway-token",
+      description: "Tool gateway session token bound to the selected agent and its active run. Create it using the normal agent run credential at /api/tool-gateway/sessions.",
+    },
   };
   document.security = AUTHENTICATED_SECURITY;
 
@@ -1873,6 +1880,10 @@ function applyDocumentFixups(document: any): any {
       if (isVoiceSessionOperation(path)) {
         operation.security = [{[BOARD_SESSION_AUTH_SCHEME]: []}];
         operation["x-paperclip-authorization"] = {actor: "board", sessionBound: true};
+      }
+      if (method === "post" && path === "/api/tool-gateway/notebook/uploads/call") {
+        operation.security = [securityRequirement(NOTEBOOK_UPLOAD_AUTH_SCHEME)];
+        operation["x-paperclip-authorization"] = { actor: "agent", heartbeatBound: true, selectedConnectionBound: true };
       }
 
       const key = operationKey(method, path);
@@ -12447,6 +12458,22 @@ registerCurrentRoute({
     401: r.unauthorized,
     403: r.forbidden,
   },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/tool-gateway/notebook/uploads/call",
+  tags: ["tool-gateway"],
+  summary: "Execute an assigned Notebook upload action for the local-file publisher",
+  description: "Requires the normal gateway session for an active agent run, the selected Notebook connection ID, current agent assignment, and ordinary Allowed / Ask first / Off action policy. Accepts only notebook_begin_upload or an owner-scoped notebook_get_operation begin_upload receipt. The private response preserves validated signed upload URLs for local file transfer; ordinary MCP/model responses and audit logs remain redacted. Every response is Cache-Control: no-store. This endpoint does not grant new filesystem access or bypass approval.",
+  request: { body: jsonBody(toolGatewayCallSchema.extend({ connectionId: z.string().uuid() })) },
+  responses: Object.fromEntries(Object.entries({
+    200: r.ok(), 400: r.badRequest, 401: r.unauthorized,
+    403: r.forbidden, 404: r.notFound, 409: r.conflict,
+  }).map(([status, response]) => [status, {
+    ...response,
+    headers: { "Cache-Control": { schema: { type: "string", enum: ["no-store"] } } },
+  }])),
 });
 
 registerCurrentRoute({
