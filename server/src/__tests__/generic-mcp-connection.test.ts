@@ -88,6 +88,7 @@ type FixtureOptions = {
   notebookAccount?: { id: string; email: string; emailVerified: boolean };
   revocationStatus?: () => number;
   dropFirstRefreshResponse?: boolean;
+  dropFirstRefreshResponseBody?: boolean;
   scopes?: string[];
   /** How the MCP endpoint authenticates. */
   auth?: "public" | "oauth" | "header";
@@ -290,6 +291,12 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
         refreshResponseDropped = true;
         throw new TypeError("Fixture dropped a committed refresh response");
       }
+      if (receiptKey && options.dropFirstRefreshResponseBody && !refreshResponseDropped) {
+        refreshResponseDropped = true;
+        const response = jsonResponse(tokenResponse);
+        response.json = async () => { throw new TypeError("Fixture dropped the committed refresh response body"); };
+        return response;
+      }
       return jsonResponse(tokenResponse);
     }
 
@@ -432,11 +439,13 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     return false;
   }
 
-  it("connects Notebook directly with personal identity and preserves agent policies across reconnect and remote-revocation recovery", async () => {
+  it.each(["headers", "body"])("connects Notebook directly and preserves policies across reconnect, refresh %s loss, and revocation recovery", async (responseLoss) => {
     vi.stubEnv("PAPERCLIP_NOTEBOOK_MCP_URL", MCP_URL);
     const scopes = ["notebook:read", "notebook:write", "notebook:share", "notebook:delete"];
     let revocationStatus = 503;
-    const fixture = installMcpOAuthFixture({ auth: "oauth", scopes, dropFirstRefreshResponse: true, notebookAccount: { id: "cloud-owner", email: "owner@example.test", emailVerified: true },
+    const fixture = installMcpOAuthFixture({ auth: "oauth", scopes,
+      dropFirstRefreshResponse: responseLoss === "headers", dropFirstRefreshResponseBody: responseLoss === "body",
+      notebookAccount: { id: "cloud-owner", email: "owner@example.test", emailVerified: true },
       revocationStatus: () => revocationStatus,
       tools: [
         { name: "notebook_get_account", annotations: { readOnlyHint: true } },
@@ -446,7 +455,9 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
         { name: "notebook_delete_page", annotations: { readOnlyHint: false, destructiveHint: true } },
       ] });
     const company = await createCompany(db);
-    const service = toolAccessService(db, { paperclipCloudConnector: null });
+    const serviceDb = responseLoss === "body"
+      ? createDb(externalTestDatabaseUrl ?? tempDb!.connectionString, { maxConnections: 1 }) : db;
+    const service = toolAccessService(serviceDb, { paperclipCloudConnector: null });
     const actor = { actorType: "user" as const, actorId: "board-user" };
     const connected = await service.connectGalleryApp(company.id, { galleryKey: "paperclip-notebook", grantKind: "user" }, actor);
     const authorize = async () => {
@@ -507,6 +518,89 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     const [clearedGrant] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
     expect(clearedGrant!.credentialSecretRefs).toEqual([]);
     expect(fixture.requestsTo("/oauth/revoke")).toHaveLength(2);
+    await service.connectGalleryApp(company.id, { galleryKey: "paperclip-notebook", applicationId: connected.application.id, grantKind: "user" }, actor);
+    await authorize();
+    const [renewedGrant] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
+    const renewedSecretIds = renewedGrant!.credentialSecretRefs.map(ref => ref.secretId);
+    expect(renewedSecretIds).toHaveLength(2);
+    await service.revokeConnectionGrant(connected.connectionId, grant!.id, actor);
+    const [revokedGrant] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
+    expect(revokedGrant).toMatchObject({ status: "revoked", credentialSecretRefs: [] });
+    const deletedSecrets = await db.select().from(companySecrets).where(inArray(companySecrets.id, renewedSecretIds));
+    expect(deletedSecrets).toEqual([]);
+    const [revokedConnection] = await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId));
+    expect(revokedConnection!.config.notebookRevocationPending).toBe(false);
+  });
+
+  it("does not let a stale Notebook revocation sweep remove a reconnected account", async () => {
+    vi.stubEnv("PAPERCLIP_NOTEBOOK_MCP_URL", MCP_URL);
+    let revocationStatus = 503;
+    const fixture = installMcpOAuthFixture({ auth: "oauth", notebookAccount: { id: "cloud-owner", email: "owner@example.test", emailVerified: true },
+      revocationStatus: () => revocationStatus });
+    const company = await createCompany(db);
+    const actor = { actorType: "user" as const, actorId: "board-user" };
+    const service = toolAccessService(db, { paperclipCloudConnector: null });
+    const connected = await service.connectGalleryApp(company.id, { galleryKey: "paperclip-notebook", grantKind: "user" }, actor);
+    const authorize = async () => {
+      const start = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+      return service.completeOAuthCallback({ state: new URL(start.authorizationUrl).searchParams.get("state")!,
+        code: fixture.issueAuthorizationCode(start.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor });
+    };
+    await authorize();
+    await service.archiveConnection(connected.connectionId, company.id, actor);
+    revocationStatus = 200;
+    let releaseStaleSweep!: () => void;
+    let selectedStaleRow!: () => void;
+    const staleSweepPaused = new Promise<void>(resolve => { selectedStaleRow = resolve; });
+    const staleSweepReleased = new Promise<void>(resolve => { releaseStaleSweep = resolve; });
+    const transaction = db.transaction.bind(db);
+    vi.spyOn(db, "transaction").mockImplementationOnce(async (...args) => {
+      selectedStaleRow();
+      await staleSweepReleased;
+      return transaction(...args);
+    });
+    const staleSweep = service.sweepNotebookRevocations();
+    try {
+      await staleSweepPaused;
+      const otherService = toolAccessService(db, { paperclipCloudConnector: null });
+      await expect(otherService.sweepNotebookRevocations()).resolves.toEqual({ checked: 1, pending: 0 });
+      await otherService.connectGalleryApp(company.id, { galleryKey: "paperclip-notebook", applicationId: connected.application.id, grantKind: "user" }, actor);
+      await authorize();
+    } finally { releaseStaleSweep(); }
+    await expect(staleSweep).resolves.toEqual({ checked: 1, pending: 0 });
+    const [current] = await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId));
+    const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
+    expect(current).toMatchObject({ status: "active", enabled: true });
+    expect(grant).toMatchObject({ status: "active" });
+    expect(grant!.credentialSecretRefs).toHaveLength(2);
+    expect(fixture.requestsTo("/oauth/revoke")).toHaveLength(2);
+    await expect(service.refreshCatalog(connected.connectionId, actor)).resolves.toMatchObject({ connection: { status: "active" } });
+  });
+
+  it("does not let an earlier Notebook sign-in reactivate a successfully revoked grant", async () => {
+    vi.stubEnv("PAPERCLIP_NOTEBOOK_MCP_URL", MCP_URL);
+    const fixture = installMcpOAuthFixture({ auth: "oauth", notebookAccount: { id: "cloud-owner", email: "owner@example.test", emailVerified: true } });
+    const company = await createCompany(db);
+    const actor = { actorType: "user" as const, actorId: "board-user" };
+    const service = toolAccessService(db, { paperclipCloudConnector: null });
+    const connected = await service.connectGalleryApp(company.id, { galleryKey: "paperclip-notebook", grantKind: "user" }, actor);
+    const start = () => service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+    const finish = (authorizationUrl: string) => service.completeOAuthCallback({ state: new URL(authorizationUrl).searchParams.get("state")!,
+      code: fixture.issueAuthorizationCode(authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor });
+    await finish((await start()).authorizationUrl);
+    const staleSignIn = await start();
+    const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
+    await service.revokeConnectionGrant(connected.connectionId, grant!.id, actor);
+    const [connection] = await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId));
+    expect(connection).toMatchObject({ status: "active", config: { notebookRevocationPending: false } });
+    await expect(finish(staleSignIn.authorizationUrl)).rejects.toMatchObject({ details: { code: "notebook_authorization_revoked" } });
+    const [revoked] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
+    expect(revoked).toMatchObject({ status: "revoked", credentialSecretRefs: [] });
+    // A new sign-in started after revocation is an intentional reconnect.
+    await expect(finish((await start()).authorizationUrl)).resolves.toMatchObject({ connection: { status: "active" } });
+    const [reconnected] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
+    expect(reconnected).toMatchObject({ status: "active" });
+    expect(reconnected!.credentialSecretRefs).toHaveLength(2);
   });
 
   it.each(["mcp-oauth", "mcp-api-key"])("connects Fireflies through %s with vaulted credentials and its stable meeting tools", async (methodKey) => {

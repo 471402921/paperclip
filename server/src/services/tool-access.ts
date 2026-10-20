@@ -6368,6 +6368,7 @@ export function toolAccessService(
   async function classifyConnectionSecrets(
     connection: typeof toolConnections.$inferSelect,
     secretIds: string[],
+    database = db,
   ): Promise<{ owned: string[]; retained: string[] }> {
     const unique = [
       ...new Set(
@@ -6376,7 +6377,7 @@ export function toolAccessService(
     ];
     if (unique.length === 0) return { owned: [], retained: [] };
 
-    const secretRows = await db
+    const secretRows = await database
       .select({
         id: companySecrets.id,
         key: companySecrets.key,
@@ -6392,8 +6393,8 @@ export function toolAccessService(
       );
     const byId = new Map(secretRows.map((row) => [row.id, row]));
 
-    const referencedElsewhere = await connectionSecretsUsedByOtherConsumers(db, unique);
-    const foreignBindings = await db
+    const referencedElsewhere = await connectionSecretsUsedByOtherConsumers(database, unique);
+    const foreignBindings = await database
       .select({ secretId: companySecretBindings.secretId })
       .from(companySecretBindings)
       .where(
@@ -6408,7 +6409,7 @@ export function toolAccessService(
     // Bindings are the authority, but read the sibling refs too: a row written
     // before `syncCredentialBindings` existed — or by hand — can reference a
     // secret with no binding to prove it.
-    const siblingConnections = await db
+    const siblingConnections = await database
       .select({
         credentialRefs: toolConnections.credentialRefs,
         credentialSecretRefs: toolConnections.credentialSecretRefs,
@@ -6426,7 +6427,7 @@ export function toolAccessService(
       for (const ref of row.credentialSecretRefs ?? [])
         referencedElsewhere.add(ref.secretId);
     }
-    const siblingGrants = await db
+    const siblingGrants = await database
       .select({ credentialSecretRefs: connectionGrants.credentialSecretRefs })
       .from(connectionGrants)
       .where(
@@ -6441,10 +6442,10 @@ export function toolAccessService(
     }
 
     const definitionIds = secretRows.flatMap((row) => row.userSecretDefinitionId ? [row.userSecretDefinitionId] : []);
-    const definitions = definitionIds.length ? await db.select().from(userSecretDefinitions)
+    const definitions = definitionIds.length ? await database.select().from(userSecretDefinitions)
       .where(and(eq(userSecretDefinitions.companyId, connection.companyId), inArray(userSecretDefinitions.id, definitionIds))) : [];
     const dedicatedDefinitions = new Set(definitions.filter((row) => row.key.startsWith(CONNECTION_OWNED_SECRET_KEY_PREFIX) || row.key.startsWith(`tool_oauth.${connection.id}.`)).map((row) => row.id));
-    const foreignDeclarations = definitionIds.length ? await db.select().from(userSecretDeclarations).where(and(
+    const foreignDeclarations = definitionIds.length ? await database.select().from(userSecretDeclarations).where(and(
       inArray(userSecretDeclarations.userSecretDefinitionId, definitionIds),
       sql`not (${userSecretDeclarations.targetType} = 'tool_connection' and ${userSecretDeclarations.targetId} = ${connection.id})`,
     )) : [];
@@ -6470,16 +6471,18 @@ export function toolAccessService(
     return { owned, retained };
   }
 
-  async function revokeNotebookGrants(connection: typeof toolConnections.$inferSelect, grantIds: string[]) {
+  async function revokeNotebookGrants(connection: typeof toolConnections.$inferSelect, grantIds: string[], database = db) {
     const pending = new Set<string>();
     if (connection.config.sourceTemplateKey !== NOTEBOOK_APP_SLUG) return pending;
     for (const grantId of grantIds) {
-      const grant = await getOAuthGrantRow({ companyId: connection.companyId, connectionId: connection.id, grantId });
+      const [grant] = await database.select().from(connectionGrants).where(and(eq(connectionGrants.companyId, connection.companyId),
+        eq(connectionGrants.connectionId, connection.id), eq(connectionGrants.id, grantId)));
+      if (!grant || grant.status !== "revoked") continue;
       const ref = grant.credentialSecretRefs.find(ref => ref.configPath === "oauth.refresh_token")
         ?? grant.credentialSecretRefs.find(ref => ref.configPath === "oauth.access_token");
       if (!ref) continue;
       try {
-        const resolved = await resolveConnectionGrantSecret(db, connection, grant, ref, {
+        const resolved = await resolveConnectionGrantSecret(database, connection, grant, ref, {
           consumerType: "tool_connection", consumerId: connection.id, actorType: "system", actorId: "notebook-revocation",
         });
         const clientId = oauthConfig(connection).clientId;
@@ -6493,6 +6496,42 @@ export function toolAccessService(
     return pending;
   }
 
+  async function finishNotebookGrantRevocations(connection: typeof toolConnections.$inferSelect,
+    grants: typeof connectionGrants.$inferSelect[], pendingIds: Set<string>, database = db) {
+    const successful = grants.filter(grant => !pendingIds.has(grant.id));
+    const { owned } = await classifyConnectionSecrets(connection, successful.flatMap(grant => grant.credentialSecretRefs.map(ref => ref.secretId)), database);
+    const secretClient = database === db ? secrets : secretService(database);
+    for (const secretId of owned) await secretClient.remove(secretId);
+    if (successful.length > 0) await database.update(connectionGrants).set({ credentialSecretRefs: [], updatedAt: now() })
+      .where(and(inArray(connectionGrants.id, successful.map(grant => grant.id)), eq(connectionGrants.status, "revoked")));
+    await database.update(toolConnections).set({
+      config: sql`${toolConnections.config} || ${JSON.stringify({ notebookRevocationPending: pendingIds.size > 0 })}::jsonb`,
+      transportConfig: sql`${toolConnections.transportConfig} || ${JSON.stringify({ notebookRevocationPending: pendingIds.size > 0 })}::jsonb`,
+      updatedAt: now(),
+    }).where(eq(toolConnections.id, connection.id));
+  }
+
+  // The claim is shared across processes, and the row locks fence reconnects.
+  // Only revoked credentials are retried here; ordinary dispatch stays closed.
+  async function withNotebookRevocationClaim(connectionId: string, companyId: string,
+    operation: (connection: typeof toolConnections.$inferSelect, transaction: DbTransaction) => Promise<boolean>) {
+    return db.transaction(async tx => {
+      const result = await tx.execute<{ claimed: boolean }>(sql`SELECT pg_try_advisory_xact_lock(hashtextextended(${"paperclip.notebook_revocation:" + connectionId}, 0)) AS claimed`);
+      if (!result[0]?.claimed) return null;
+      await tx.select({ id: connectionGrants.id }).from(connectionGrants)
+        .where(and(eq(connectionGrants.companyId, companyId), eq(connectionGrants.connectionId, connectionId)))
+        .orderBy(connectionGrants.id).for("update");
+      await tx.select({ id: toolApplications.id }).from(toolApplications)
+        .innerJoin(toolConnections, eq(toolConnections.applicationId, toolApplications.id))
+        .where(and(eq(toolConnections.id, connectionId), eq(toolConnections.companyId, companyId)))
+        .for("update", { of: toolApplications });
+      const [connection] = await tx.select().from(toolConnections)
+        .where(and(eq(toolConnections.id, connectionId), eq(toolConnections.companyId, companyId))).for("update");
+      if (!connection || connection.config.sourceTemplateKey !== NOTEBOOK_APP_SLUG || connection.config.notebookRevocationPending !== true) return false;
+      return operation(connection, tx);
+    });
+  }
+
   let nextNotebookRevocationSweepAt = 0;
   async function sweepNotebookRevocations() {
     if (now().getTime() < nextNotebookRevocationSweepAt) return { checked: 0, pending: 0 };
@@ -6502,24 +6541,22 @@ export function toolAccessService(
       sql`${toolConnections.config} ->> 'notebookRevocationPending' = 'true'`,
     )).orderBy(asc(toolConnections.updatedAt)).limit(2);
     let pending = 0;
-    for (const connection of rows) {
+    for (const selected of rows) {
       try {
-        if (connection.status === "archived") {
-          const result = await removeConnectionUnlocked(connection.id, connection.companyId, { actorType: "system", actorId: "notebook-revocation" });
-          if (result.removal.notebookRevocationPending) pending += 1;
-          continue;
-        }
-        const grants = await db.select().from(connectionGrants).where(and(eq(connectionGrants.connectionId, connection.id),
-          eq(connectionGrants.companyId, connection.companyId), eq(connectionGrants.status, "revoked")));
-        const pendingIds = await revokeNotebookGrants(connection, grants.map(grant => grant.id));
-        for (const grant of grants) {
-          if (pendingIds.has(grant.id)) continue;
-          for (const ref of grant.credentialSecretRefs) await secrets.remove(ref.secretId);
-          await db.update(connectionGrants).set({ credentialSecretRefs: [], updatedAt: now() }).where(eq(connectionGrants.id, grant.id));
-        }
-        const config = { ...connection.config, notebookRevocationPending: pendingIds.size > 0 };
-        await db.update(toolConnections).set({ config, transportConfig: config, updatedAt: now() }).where(eq(toolConnections.id, connection.id));
-        if (pendingIds.size > 0) pending += 1;
+        const stillPending = await withNotebookRevocationClaim(selected.id, selected.companyId, async (connection, tx) => {
+          if (connection.status === "archived") {
+            const result = await toolAccessService(tx as unknown as Db, options).archiveConnection(connection.id, connection.companyId,
+              { actorType: "system", actorId: "notebook-revocation" });
+            return result.removal.notebookRevocationPending === true;
+          }
+          const database = tx as unknown as Db;
+          const grants = await tx.select().from(connectionGrants).where(and(eq(connectionGrants.connectionId, connection.id),
+            eq(connectionGrants.companyId, connection.companyId), eq(connectionGrants.status, "revoked")));
+          const pendingIds = await revokeNotebookGrants(connection, grants.map(grant => grant.id), database);
+          await finishNotebookGrantRevocations(connection, grants, pendingIds, database);
+          return pendingIds.size > 0;
+        });
+        if (stillPending !== false) pending += 1;
       } catch { pending += 1; }
     }
     return { checked: rows.length, pending };
@@ -10848,15 +10885,21 @@ export function toolAccessService(
       ).toString("base64")}`;
     }
     if (input.idempotencyKey) headers["Idempotency-Key"] = input.idempotencyKey;
-    const sendTokenRequest = () => fetchRemoteHttpUrl(tokenUrl, { method: "POST", headers, body,
-      ...(input.idempotencyKey ? { signal: AbortSignal.timeout(10_000) } : {}) });
-    let response: Response;
-    try { response = await sendTokenRequest(); }
+    const sendTokenRequest = async () => {
+      const response = await fetchRemoteHttpUrl(tokenUrl, { method: "POST", headers, body,
+        ...(input.idempotencyKey ? { signal: AbortSignal.timeout(10_000) } : {}) });
+      // The provider may have committed rotation before headers arrive or while
+      // the body is being read. Both failures must replay the same receipt key.
+      const payload: unknown = input.idempotencyKey ? await response.json() : await response.json().catch(() => ({}));
+      return { response, payload };
+    };
+    let exchanged: Awaited<ReturnType<typeof sendTokenRequest>>;
+    try { exchanged = await sendTokenRequest(); }
     catch (error) {
       if (!input.idempotencyKey) throw error;
-      response = await sendTokenRequest();
+      exchanged = await sendTokenRequest();
     }
-    const payload = (await response.json().catch(() => ({}))) as unknown;
+    const { response, payload } = exchanged;
     const record = asRecord(payload);
     if (!response.ok || record.ok === false) {
       const providerError = normalizeOAuthProviderError(record.error);
@@ -16542,12 +16585,19 @@ export function toolAccessService(
           )
           .limit(1)
           .for("update");
+        if (sourceTemplateKey === NOTEBOOK_APP_SLUG && existingUserGrant?.status === "revoked"
+          && existingUserGrant.revokedAt && existingUserGrant.revokedAt >= stateRow.createdAt) {
+          throw conflict("Notebook authorization was revoked after this sign in began. Start sign in again.", { code: "notebook_authorization_revoked" });
+        }
         await tx.select({ id: toolApplications.id }).from(toolApplications)
           .where(and(eq(toolApplications.id, connection.applicationId), eq(toolApplications.companyId, connection.companyId)))
           .for("update");
-        await tx.select({ id: toolConnections.id }).from(toolConnections)
+        const [lockedConnection] = await tx.select({ id: toolConnections.id, status: toolConnections.status, config: toolConnections.config }).from(toolConnections)
           .where(and(eq(toolConnections.id, connection.id), eq(toolConnections.companyId, connection.companyId)))
           .for("update");
+        if (sourceTemplateKey === NOTEBOOK_APP_SLUG && (!lockedConnection || lockedConnection.status === "archived" || lockedConnection.config.notebookRevocationPending === true)) {
+          throw conflict("Notebook authorization was removed while sign in was in progress. Reconnect after revocation finishes.", { code: "notebook_revocation_pending" });
+        }
         const subjectCredentialSecretRefs =
           existingUserGrant?.credentialSecretRefs ?? [];
         const accessRef = await createOrRotateOAuthSecret(
@@ -19228,10 +19278,15 @@ export function toolAccessService(
       });
       if (!grant) throw notFound("Connection grant not found");
       if (connection.config.sourceTemplateKey === NOTEBOOK_APP_SLUG) {
-        const pendingIds = await revokeNotebookGrants(connection, [grant.id]);
-        providerRevocation = pendingIds.size > 0 ? "pending" : "success";
-        const config = { ...connection.config, notebookRevocationPending: pendingIds.size > 0 };
-        await db.update(toolConnections).set({ config, transportConfig: config, updatedAt: now() }).where(eq(toolConnections.id, connection.id));
+        const stillPending = await withNotebookRevocationClaim(connection.id, connection.companyId, async (current, tx) => {
+          const database = tx as unknown as Db;
+          const grants = await tx.select().from(connectionGrants).where(and(eq(connectionGrants.connectionId, connection.id),
+            eq(connectionGrants.companyId, connection.companyId), eq(connectionGrants.status, "revoked")));
+          const pendingIds = await revokeNotebookGrants(current, grants.map(row => row.id), database);
+          await finishNotebookGrantRevocations(current, grants, pendingIds, database);
+          return pendingIds.size > 0;
+        });
+        providerRevocation = stillPending === false ? "success" : "pending";
       }
       await db.insert(toolAccessAuditEvents).values({
         companyId: connection.companyId,
