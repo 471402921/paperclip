@@ -81,6 +81,22 @@ Manual: Filter by status and assignee, change grouping/sort, open a task, and re
 
 Automated: [task detail](../../ui/src/pages/IssueDetail.test.tsx) covers component behavior, while [issue service](../../server/src/__tests__/issues-service.test.ts) covers server contracts.
 
+Failure markers have no dashed divider rules. An adjacent run error and
+no-live-execution-path notice show only the last error, with its details and
+retry action, including a permitted legacy run retry carried onto a later
+recovery notice. Intervening messages, unrelated system notices that quote error
+text, and credential-access denials stay visible. Explicit non-recovery titles
+stop grouping. Saved stranded-recovery action metadata plus a known recovery
+statement also identify recovery notices with a default or source-run title.
+Only known recovery statements use the legacy text fallback.
+[Grouping tests](../../ui/src/components/task-chat/adjacent-errors.test.ts) and
+[marker tests](../../ui/src/components/task-chat/TaskChatMarker.test.tsx) cover
+the presentation. The [Failure notices stories](../../ui/storybook/stories/tasks/failure-notices.stories.tsx)
+mount the production thread view with fixture data. The focused
+[browser suite](../../tests/storybook-visual/failure-notices.spec.ts) checks
+play assertions, disclosure, retry callbacks, themes and phone width. These
+checks do not dispatch a real retry or change stored run history.
+
 Automated: [paused assignee relevance](../../tests/e2e/completed-task-paused-assignee.spec.ts)
 uses a real disposable server and paused process agent, with no inference, to
 check both task interfaces. Done and cancelled tasks hide the paused-agent

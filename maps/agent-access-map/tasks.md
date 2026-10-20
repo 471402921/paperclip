@@ -326,6 +326,11 @@ Gaps: Private-task denial must be proved, not invented. Trace/report/export belo
 
 Capability ID: `tasks/completion`.
 
+Task chat may group adjacent run and recovery errors for display. The API
+retains all run and comment records. This presentation does not change retry,
+approval, checkout or company access. See the
+[presentation coverage](../feature-map/tasks.md#task-detail).
+
 Review: `operation-reviewed`.
 
 Separate status/report acceptance, versioned start, follow-up, checkout/release and deletion; accepted provider report is not final task state.
