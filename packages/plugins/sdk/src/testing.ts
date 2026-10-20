@@ -749,6 +749,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
     throw new Error(`Plugin may only use originKind values under ${defaultPluginOriginKind}`);
   }
 
+  const privateSecrets = new Map<string, { version: number; value: string | null }>();
   const ctx: PluginContext = {
     manifest,
     config: {
@@ -951,6 +952,18 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       },
     },
     secrets: {
+      async getPrivate(input) {
+        requireCapability(manifest, capabilitySet, "secrets.manage-private");
+        return structuredClone(privateSecrets.get(JSON.stringify([input.companyId, input.key])) ?? { version: 0, value: null });
+      },
+      async setPrivate(input) {
+        requireCapability(manifest, capabilitySet, "secrets.manage-private");
+        const key = JSON.stringify([input.companyId, input.key]);
+        if ((privateSecrets.get(key)?.version ?? 0) !== input.expectedVersion) throw new Error("Private plugin secret version changed");
+        const version = input.expectedVersion + 1;
+        privateSecrets.set(key, { version, value: input.value });
+        return { version };
+      },
       async resolve(secretRef) {
         requireCapability(manifest, capabilitySet, "secrets.read-ref");
         return `resolved:${secretRef}`;

@@ -435,3 +435,24 @@ describe("agent runtime reader", () => {
     expect(getRuntime).toHaveBeenCalledOnce();
   });
 });
+
+describe("plugin-private credential host calls", () => {
+  it("requires the capability and a valid matching company invocation", async () => {
+    const getPrivate = vi.fn(async () => ({ version: 1, value: "private" }));
+    const setPrivate = vi.fn(async () => ({ version: 2 }));
+    const services = { secrets: { getPrivate, setPrivate } } as unknown as HostServices;
+    const context = { invocationScope: { companyId: "company-a" } };
+    for (const method of ["secrets.getPrivate", "secrets.setPrivate"] as const) {
+      const input = { companyId: "company-a", key: "mounts:project", value: "private", expectedVersion: 1 };
+      const denied = createHostClientHandlers({ pluginId: "plugin", capabilities: [], services });
+      await expect(denied[method](input, context)).rejects.toBeInstanceOf(CapabilityDeniedError);
+      const handlers = createHostClientHandlers({ pluginId: "plugin", capabilities: ["secrets.manage-private"], services });
+      for (const scope of [undefined, { invocationScope: { companyId: "company-b" } }, { invalidInvocationScope: true }]) {
+        await expect(handlers[method](input, scope)).rejects.toBeInstanceOf(InvocationScopeDeniedError);
+      }
+      expect(method === "secrets.getPrivate" ? getPrivate : setPrivate).not.toHaveBeenCalled();
+      await handlers[method](input, context);
+    }
+    expect(getPrivate).toHaveBeenCalledOnce(); expect(setPrivate).toHaveBeenCalledOnce();
+  });
+});

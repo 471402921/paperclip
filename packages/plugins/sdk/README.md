@@ -1373,3 +1373,19 @@ other Core-host filesystem operations are unavailable for managed storage.
 
 Use `createWorkspaceProviderHarness` from `@paperclipai/plugin-sdk/testing` to
 validate hook inputs and outputs without allocating an execution environment.
+
+### Private credentials issued to plugins
+
+Declare `secrets.manage-private` to use `ctx.secrets.getPrivate({ companyId, key })`
+and `ctx.secrets.setPrivate({ companyId, key, value, expectedVersion })`. These
+worker-only calls are scoped to the invoking company and installed plugin. Core
+encrypts values using its tenant-local `local_encrypted` provider; they are not
+company secret references and never appear in plugin state or secret catalogs.
+Keep the secrets master key with backups. Never forward these values through UI,
+logs or ordinary state. Resolve configured secret references with `resolve` as before.
+
+Read the current version before writing; an absent entry has version 0. Passing
+`null` erases encrypted material while retaining its version, so delayed writes
+cannot resurrect a deleted credential. Stale writes fail without changing storage.
+Save credentials successfully before acknowledging the lifecycle event that issued
+them. A failed write must leave that event available for retry.

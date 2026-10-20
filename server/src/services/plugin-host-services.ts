@@ -1,3 +1,4 @@
+import { pluginPrivateSecretService } from "./plugin-private-secrets.js";
 import { pluginAgentRuntimeState } from "./plugin-agent-runtime-state.js";
 import { createAgentLifecycle } from "./agent-lifecycle.js";
 import type { Db } from "@paperclipai/db";
@@ -1743,6 +1744,8 @@ export function buildHostServices(
     },
 
     secrets: {
+      async getPrivate(params) { return pluginPrivateSecretService(db, pluginId).get(params); },
+      async setPrivate(params) { return pluginPrivateSecretService(db, pluginId).set(params); },
       async resolve(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
