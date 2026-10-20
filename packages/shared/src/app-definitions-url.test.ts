@@ -45,12 +45,20 @@ describe("tool app gallery URL matching", () => {
     ]);
   });
 
-  it("keeps tool gallery entries reachable through at least one pattern", () => {
+  it("keeps configured tool gallery entries reachable through at least one pattern", () => {
     for (const app of CONNECTABLE_APP_DEFINITIONS.filter((app) => app.methods.some((method) => method.purpose !== "channel" && method.purpose !== "ai"))) {
+      if (app.availability?.available === false && app.urlPatterns.length === 0) continue;
       const example = app.urlPatterns[0]?.replace("*", "example");
       expect(example, `${app.slug} has a pattern`).toBeTruthy();
       expect(getAppDefinitionForUrl(example!)?.slug).toBe(app.slug);
     }
+  });
+
+  it("leaves Notebook unavailable until the instance operator configures its endpoint", () => {
+    const notebook = CONNECTABLE_APP_DEFINITIONS.find((app) => app.slug === "paperclip-notebook");
+    expect(notebook?.availability?.available).toBe(false);
+    expect(notebook?.urlPatterns).toEqual([]);
+    expect(notebook?.methods[0]?.defaults?.serverUrl).toBeUndefined();
   });
 
   it("offers region and custom model connections without claiming arbitrary URLs", () => {
