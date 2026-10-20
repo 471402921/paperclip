@@ -6473,7 +6473,7 @@ export function toolAccessService(
 
   async function revokeNotebookGrants(connection: typeof toolConnections.$inferSelect, grantIds: string[], database = db) {
     const pending = new Set<string>();
-    if (connection.config.sourceTemplateKey !== NOTEBOOK_APP_SLUG) return pending;
+    if (!await isSavedNotebookConnection(connection, database)) return pending;
     for (const grantId of grantIds) {
       const [grant] = await database.select().from(connectionGrants).where(and(eq(connectionGrants.companyId, connection.companyId),
         eq(connectionGrants.connectionId, connection.id), eq(connectionGrants.id, grantId)));
@@ -6527,7 +6527,8 @@ export function toolAccessService(
         .for("update", { of: toolApplications });
       const [connection] = await tx.select().from(toolConnections)
         .where(and(eq(toolConnections.id, connectionId), eq(toolConnections.companyId, companyId))).for("update");
-      if (!connection || connection.config.sourceTemplateKey !== NOTEBOOK_APP_SLUG || connection.config.notebookRevocationPending !== true) return false;
+      if (!connection || connection.config.notebookRevocationPending !== true
+        || !await isSavedNotebookConnection(connection, tx as unknown as Db)) return false;
       return operation(connection, tx);
     });
   }
@@ -6536,12 +6537,20 @@ export function toolAccessService(
   async function sweepNotebookRevocations() {
     if (now().getTime() < nextNotebookRevocationSweepAt) return { checked: 0, pending: 0 };
     nextNotebookRevocationSweepAt = now().getTime() + 60_000;
-    const rows = await db.select().from(toolConnections).where(and(
-      sql`${toolConnections.config} ->> 'sourceTemplateKey' = ${NOTEBOOK_APP_SLUG}`,
-      sql`${toolConnections.config} ->> 'notebookRevocationPending' = 'true'`,
-    )).orderBy(asc(toolConnections.updatedAt)).limit(2);
+    const rows = await db.select({ connection: toolConnections }).from(toolConnections)
+      .innerJoin(toolApplications, and(eq(toolApplications.id, toolConnections.applicationId), eq(toolApplications.companyId, toolConnections.companyId)))
+      .where(and(
+        or(
+          sql`${toolConnections.config} ->> 'sourceTemplateKey' = ${NOTEBOOK_APP_SLUG}`,
+          sql`${toolConnections.transportConfig} ->> 'sourceTemplateKey' = ${NOTEBOOK_APP_SLUG}`,
+          eq(toolApplications.applicationKey, NOTEBOOK_APP_SLUG),
+          sql`${toolApplications.applicationKey} ~* ${"^app-gallery:paperclip-notebook:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"}`,
+        ),
+        sql`${toolConnections.config} ->> 'notebookRevocationPending' = 'true'`,
+      )).orderBy(asc(toolConnections.updatedAt)).limit(2);
+
     let pending = 0;
-    for (const selected of rows) {
+    for (const { connection: selected } of rows) {
       try {
         const stillPending = await withNotebookRevocationClaim(selected.id, selected.companyId, async (connection, tx) => {
           if (connection.status === "archived") {
@@ -6600,6 +6609,7 @@ export function toolAccessService(
 
   async function removeConnectionUnlocked(connectionId: string, companyId?: string, actor?: ActorInfo): Promise<ToolConnectionRemovalResult> {
     const connection = await getConnectionRow(connectionId, companyId);
+    const notebook = await isSavedNotebookConnection(connection);
     forgetMcpHttpSessions(connection.id);
     const now = new Date();
     const binding = actorBinding(actor);
@@ -6898,7 +6908,7 @@ export function toolAccessService(
       const [updatedConnection] = await tx
         .update(toolConnections)
         .set({ status: "archived", enabled: false, updatedAt: now,
-          ...(connection.config.sourceTemplateKey === NOTEBOOK_APP_SLUG ? { config: { ...connection.config, notebookRevocationPending: true } } : {}) })
+          ...(notebook ? { config: { ...connection.config, notebookRevocationPending: true } } : {}) })
         .where(eq(toolConnections.id, connection.id))
         .returning();
       if (!updatedConnection) throw notFound("Tool connection not found");
@@ -6972,8 +6982,8 @@ export function toolAccessService(
       .set({
         credentialRefs: [],
         credentialSecretRefs: [],
-        config: { ...withoutInlineOAuthTokens(connection.config), ...(connection.config.sourceTemplateKey === NOTEBOOK_APP_SLUG ? { notebookRevocationPending: pendingNotebookGrantIds.size > 0 } : {}) },
-        transportConfig: { ...withoutInlineOAuthTokens(connection.transportConfig), ...(connection.config.sourceTemplateKey === NOTEBOOK_APP_SLUG ? { notebookRevocationPending: pendingNotebookGrantIds.size > 0 } : {}) },
+        config: { ...withoutInlineOAuthTokens(connection.config), ...(notebook ? { notebookRevocationPending: pendingNotebookGrantIds.size > 0 } : {}) },
+        transportConfig: { ...withoutInlineOAuthTokens(connection.transportConfig), ...(notebook ? { notebookRevocationPending: pendingNotebookGrantIds.size > 0 } : {}) },
         updatedAt: now,
       })
       .where(eq(toolConnections.id, connection.id))
@@ -7013,7 +7023,7 @@ export function toolAccessService(
         gatewaySessionsRevoked,
         applicationArchived: archived.applicationArchived,
         externalCredentialCleanup,
-        ...(connection.config.sourceTemplateKey === NOTEBOOK_APP_SLUG ? { notebookRevocationPending: pendingNotebookGrantIds.size > 0 } : {}),
+        ...(notebook ? { notebookRevocationPending: pendingNotebookGrantIds.size > 0 } : {}),
       },
     };
   }
@@ -7281,6 +7291,7 @@ export function toolAccessService(
     unavailableServices: string[] = [],
   ): Promise<McpToolDescriptor[]> {
     assertSupportedConnection(connection);
+    await assertNotebookConnectionSetupEnabled(connection);
     let headers = credentialHeaders ?? {
       ...projectedConnectionHeaders(connection),
       ...(await resolveCredentialHeaders(connection, actor)),
@@ -7660,6 +7671,7 @@ export function toolAccessService(
     unavailableServices: string[] = [],
   ): Promise<McpToolDescriptor[]> {
     assertSupportedConnection(connection);
+    await assertNotebookConnectionSetupEnabled(connection);
     if (connection.connectionPurpose === "ai") throw unprocessable("AI connections provide runtime authentication, not tool actions");
     if (isDaytonaConnection(connection)) {
       const headers = credentialHeaders ?? await resolveCredentialHeaders(connection, actor);
@@ -7780,6 +7792,7 @@ export function toolAccessService(
   ): Promise<ToolConnectionHealthCheckResult> {
     const connection = await getConnectionRow(connectionId);
     if (connection.connectionPurpose === "ai") return { connection: toConnection(connection), runtimeSlot: null };
+    await assertNotebookConnectionSetupEnabled(connection);
     const unavailableServices: string[] = [];
     try {
       assertSupportedConnection(connection);
@@ -7927,6 +7940,7 @@ export function toolAccessService(
   ): Promise<ToolCatalogRefreshResult> {
     const connection = await getConnectionRow(connectionId);
     if (connection.connectionPurpose === "ai") throw unprocessable("AI connections do not have a tool catalog");
+    await assertNotebookConnectionSetupEnabled(connection);
     const refreshedAt = now();
     const unavailableServices: string[] = [];
     let descriptors: McpToolDescriptor[];
@@ -11823,6 +11837,9 @@ export function toolAccessService(
       return initialGrant;
     }
 
+    // Resolve identity before taking the refresh lease or entering any locked
+    // write, including deployments with a one-connection database pool.
+    const notebook = await isSavedNotebookConnection(connection);
     return singleFlight(oauthGrantRefreshFlights, initialGrant.id, async () => {
       const lease = await acquireOAuthGrantRefreshLease(
         connection,
@@ -11884,7 +11901,7 @@ export function toolAccessService(
                   ? normalizeOauthScopes(oauth.scopes)
                   : normalizeOauthScopes(oauth.scope),
             refreshToken: refreshSecret.value,
-            ...(connection.config.sourceTemplateKey === NOTEBOOK_APP_SLUG
+            ...(notebook
               ? { idempotencyKey: createHash("sha256").update(refreshSecret.value).digest("hex") } : {}),
             resource:
               typeof oauth.resource === "string" && oauth.resource
@@ -12560,14 +12577,20 @@ export function toolAccessService(
     }
   }
 
-  async function assertNotebookConnectionSetupEnabled(connection: Parameters<typeof isNotebookConnection>[0] & { applicationId?: string; companyId?: string }, applicationKey?: unknown) {
+  async function isSavedNotebookConnection(connection: Parameters<typeof isNotebookConnection>[0] & { applicationId?: string; companyId?: string }, database = db, applicationKey?: unknown): Promise<boolean> {
+    if (isNotebookConnection(connection, applicationKey)) return true;
     // Config is editable. A saved curated application retains its identity even
     // if an older client clears or relabels the connection's template marker.
-    if (!isNotebookConnection(connection, applicationKey) && applicationKey === undefined
-      && connection.applicationId && connection.companyId) {
-      applicationKey = (await assertApplication(connection.companyId, connection.applicationId)).applicationKey;
+    if (applicationKey === undefined && connection.applicationId && connection.companyId) {
+      const [application] = await database.select({ applicationKey: toolApplications.applicationKey }).from(toolApplications)
+        .where(and(eq(toolApplications.companyId, connection.companyId), eq(toolApplications.id, connection.applicationId))).limit(1);
+      applicationKey = application?.applicationKey;
     }
-    if (isNotebookConnection(connection, applicationKey)) await assertExperimentalConnectorSetupEnabled(NOTEBOOK_APP_SLUG);
+    return isNotebookConnection(connection, applicationKey);
+  }
+
+  async function assertNotebookConnectionSetupEnabled(connection: Parameters<typeof isNotebookConnection>[0] & { applicationId?: string; companyId?: string }, applicationKey?: unknown) {
+    if (await isSavedNotebookConnection(connection, db, applicationKey)) await assertExperimentalConnectorSetupEnabled(NOTEBOOK_APP_SLUG);
   }
 
   async function connectGalleryApp(
@@ -16507,6 +16530,7 @@ export function toolAccessService(
       enabled: connection.enabled,
     };
     await assertNotebookConnectionSetupEnabled(connection);
+    const notebook = await isSavedNotebookConnection(connection);
     const sourceTemplateKey =
       typeof connection.config.sourceTemplateKey === "string"
         ? connection.config.sourceTemplateKey
@@ -16556,7 +16580,7 @@ export function toolAccessService(
       token.scope = googleWorkspaceEffectiveScopes(authorizedScopes, normalizeOauthScopes(token.scope)).join(" ");
       if (!token.scope) throw unprocessable("Google did not grant any selected service permissions", { code: "oauth_scope_grant_invalid" });
     }
-    const notebookAccount = sourceTemplateKey === NOTEBOOK_APP_SLUG
+    const notebookAccount = notebook
       ? await notebookAccountIdentity(await resolvedRemoteEndpoint(connection, input.actor), token.accessToken, requestRemoteHttpEndpoint)
       : null;
     const connectedAt = now();
@@ -16604,7 +16628,7 @@ export function toolAccessService(
           )
           .limit(1)
           .for("update");
-        if (sourceTemplateKey === NOTEBOOK_APP_SLUG && existingUserGrant?.status === "revoked"
+        if (notebook && existingUserGrant?.status === "revoked"
           && existingUserGrant.revokedAt && existingUserGrant.revokedAt >= stateRow.createdAt) {
           throw conflict("Notebook authorization was revoked after this sign in began. Start sign in again.", { code: "notebook_authorization_revoked" });
         }
@@ -16614,7 +16638,7 @@ export function toolAccessService(
         const [lockedConnection] = await tx.select({ id: toolConnections.id, status: toolConnections.status, config: toolConnections.config }).from(toolConnections)
           .where(and(eq(toolConnections.id, connection.id), eq(toolConnections.companyId, connection.companyId)))
           .for("update");
-        if (sourceTemplateKey === NOTEBOOK_APP_SLUG && (!lockedConnection || lockedConnection.status === "archived" || lockedConnection.config.notebookRevocationPending === true)) {
+        if (notebook && (!lockedConnection || lockedConnection.status === "archived" || lockedConnection.config.notebookRevocationPending === true)) {
           throw conflict("Notebook authorization was removed while sign in was in progress. Reconnect after revocation finishes.", { code: "notebook_revocation_pending" });
         }
         const subjectCredentialSecretRefs =
@@ -19236,7 +19260,9 @@ export function toolAccessService(
         // provider-level disconnect must warn that it removes every profile.
         providerRevocation = "local_only_shared_client";
       }
+      let notebook = false;
       const grant = await db.transaction(async (tx) => {
+        notebook = await isSavedNotebookConnection(connection, tx as unknown as Db);
         const [lockedGrant] = await tx.select({ id: connectionGrants.id }).from(connectionGrants)
           .where(and(eq(connectionGrants.id, grantId), eq(connectionGrants.companyId, connection.companyId), eq(connectionGrants.connectionId, connection.id)))
           .for("update");
@@ -19292,13 +19318,13 @@ export function toolAccessService(
             })),
           );
         }
-        if (connection.config.sourceTemplateKey === NOTEBOOK_APP_SLUG) {
+        if (notebook) {
           await tx.update(toolConnections).set({ config: sql`${toolConnections.config} || '{"notebookRevocationPending":true}'::jsonb`, updatedAt: now() }).where(eq(toolConnections.id, connection.id));
         }
         return updated;
       });
       if (!grant) throw notFound("Connection grant not found");
-      if (connection.config.sourceTemplateKey === NOTEBOOK_APP_SLUG) {
+      if (notebook) {
         const stillPending = await withNotebookRevocationClaim(connection.id, connection.companyId, async (current, tx) => {
           const database = tx as unknown as Db;
           const grants = await tx.select().from(connectionGrants).where(and(eq(connectionGrants.connectionId, connection.id),
