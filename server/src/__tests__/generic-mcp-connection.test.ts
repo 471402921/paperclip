@@ -1,4 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { Writable } from "node:stream";
@@ -20,6 +23,7 @@ import {
   companySecrets,
   companySecretVersions,
   createDb,
+  heartbeatRuns,
   issueThreadInteractions,
   issues,
   principalPermissionGrants,
@@ -27,6 +31,9 @@ import {
   toolAccessAuditEvents,
   toolCallEvents,
   toolInvocations,
+  toolGatewaySessions,
+  toolMcpGateways,
+  toolMcpGatewayTokens,
   toolActionRequests,
   toolApplications,
   toolCatalogEntries,
@@ -48,6 +55,8 @@ import { toolAccessService } from "../services/tool-access.js";
 import { ComposioApiError, type ComposioClient } from "../services/composio.js";
 import { createComposioSessionManager } from "../services/composio-session-manager.js";
 import { createToolGatewayService } from "../services/tool-gateway.js";
+import { createAssignedMcpTools } from "../services/native-runtime/assigned-mcp-tools.js";
+import { publishNotebookWorkspaceFiles } from "../services/native-runtime/notebook-publishing.js";
 import { toolAccessPolicyService } from "../services/tool-access-policy.js";
 import { toolAccessRoutes } from "../routes/tool-access.js";
 import { errorHandler } from "../middleware/index.js";
@@ -86,6 +95,7 @@ const FIXTURE_TOOLS = [
 
 type FixtureOptions = {
   notebookAccount?: { id: string; email: string; emailVerified: boolean };
+  notebookToolResult?: (name: string, arguments_: Record<string, unknown>) => unknown | Promise<unknown>;
   revocationStatus?: () => number;
   dropFirstRefreshResponse?: boolean;
   dropFirstRefreshResponseBody?: boolean;
@@ -221,6 +231,11 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
       if (options.notebookAccount && rpc.method === "notifications/initialized") return jsonResponse({}, 202);
       if (options.notebookAccount && rpc.method === "tools/call" && (rpc.params as Record<string, unknown>)?.name === "notebook_get_account") {
         return jsonResponse({ jsonrpc: "2.0", id: rpc.id, result: { structuredContent: options.notebookAccount, content: [] } });
+      }
+      if (options.notebookToolResult && rpc.method === "tools/call") {
+        const params = rpc.params as { name: string; arguments: Record<string, unknown> };
+        const result = await options.notebookToolResult(params.name, params.arguments);
+        return jsonResponse({ jsonrpc: "2.0", id: rpc.id, result: { structuredContent: result, content: [] } });
       }
       if (rpc.method === "tools/call") {
         return jsonResponse({ jsonrpc: "2.0", id: rpc.id, result: {
@@ -399,6 +414,9 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     await db.delete(companySecrets);
     await db.delete(activityLog);
     await db.delete(toolAccessAuditEvents);
+    await db.delete(toolGatewaySessions);
+    await db.delete(toolMcpGatewayTokens);
+    await db.delete(toolMcpGateways);
     await db.delete(toolRuntimeSlots);
     await db.delete(toolConnectionInstalls);
     await db.delete(toolProfileBindings);
@@ -408,6 +426,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     await db.delete(toolConnections);
     await db.delete(toolApplications);
     await db.delete(issueThreadInteractions);
+    await db.delete(heartbeatRuns);
     await db.delete(issues);
     await db.delete(principalPermissionGrants);
     await db.delete(companyMemberships);
@@ -601,6 +620,138 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     const [reconnected] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
     expect(reconnected).toMatchObject({ status: "active" });
     expect(reconnected!.credentialSecretRefs).toHaveLength(2);
+  });
+
+  it.each(["create response", "upload response", "approval result"])("recovers complete Notebook publication receipts through the real gateway after a lost %s", async (lostResponse) => {
+    vi.stubEnv("PAPERCLIP_NOTEBOOK_MCP_URL", MCP_URL);
+    const workspace = await mkdtemp(join(tmpdir(), "notebook-gateway-replay-"));
+    try {
+      const pageId = randomUUID(), deploymentId = randomUUID();
+      const files = Array.from({ length: 20 }, (_, index) => {
+        const path = index === 0 ? "index.html" : `asset-${index}.txt`;
+        const bytes = Buffer.from(`<p>Notebook file ${index}</p>`);
+        return { path, source: path, bytes, size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+      });
+      await Promise.all(files.map(file => writeFile(join(workspace, file.path), file.bytes)));
+      const page = { id: pageId, version: 1 };
+      const ready = { operationId: deploymentId, status: "ready", pageId, shareUrl: "https://notebook.fixture.test/p/report", audience: { mode: "private" } };
+      const plan = { deploymentId, status: "uploading", uploads: files.map(file => ({ path: file.path,
+        url: `https://quarantine.s3.us-east-1.amazonaws.com/${file.path}?upload=${"x".repeat(350)}` })) };
+      expect(Buffer.byteLength(JSON.stringify(plan))).toBeGreaterThan(4096);
+      const receipts = new Map<string, unknown>();
+      const mutationCalls: string[] = [], receiptCalls: string[] = [];
+      const uploaded = new Map<string, Buffer>();
+      const names = ["notebook_create_page", "notebook_begin_upload", "notebook_finalize_upload", "notebook_get_operation"];
+      const fixture = installMcpOAuthFixture({ auth: "oauth", notebookAccount: { id: "cloud-owner", email: "owner@example.test", emailVerified: true },
+        tools: names.map(name => ({ name, inputSchema: { type: "object", additionalProperties: true }, annotations: { readOnlyHint: name === "notebook_get_operation" } })),
+        notebookToolResult(name, arguments_) {
+          if (name === "notebook_get_operation") {
+            if (arguments_.operationId === deploymentId) return ready;
+            const receipt = arguments_.receipt as { kind: string; idempotencyKey: string };
+            receiptCalls.push(receipt.kind);
+            const result = receipts.get(`${receipt.kind}:${receipt.idempotencyKey}`);
+            if (!result) throw new Error("Receipt does not exist");
+            return result;
+          }
+          mutationCalls.push(name);
+          if (name === "notebook_create_page") { receipts.set(`create_page:${arguments_.idempotencyKey}`, page); return page; }
+          if (name === "notebook_begin_upload") { receipts.set(`begin_upload:${arguments_.idempotencyKey}`, plan); return plan; }
+          expect(name).toBe("notebook_finalize_upload");
+          expect(arguments_.deploymentId).toBe(deploymentId);
+          for (const file of files) expect(uploaded.get(file.path)).toEqual(file.bytes);
+          return ready;
+        } });
+      const company = await createCompany(db);
+      const actor = { actorType: "user" as const, actorId: "board-user" };
+      const service = toolAccessService(db, { paperclipCloudConnector: null });
+      const connected = await service.connectGalleryApp(company.id, { galleryKey: "paperclip-notebook", grantKind: "user" }, actor);
+      const start = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+      const completed = await service.completeOAuthCallback({ state: new URL(start.authorizationUrl).searchParams.get("state")!,
+        code: fixture.issueAuthorizationCode(start.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor });
+      const [agent] = await db.insert(agents).values({ companyId: company.id, name: "Notebook publisher", role: "engineer", status: "active", adapterType: "process", adapterConfig: {}, runtimeConfig: {} }).returning();
+      const [issue] = await db.insert(issues).values({ companyId: company.id, title: "Publish Notebook report", status: "in_progress", assigneeAgentId: agent!.id }).returning();
+      const [run] = await db.insert(heartbeatRuns).values({ companyId: company.id, agentId: agent!.id, invocationSource: "assignment", status: "running",
+        responsibleUserId: "board-user", contextSnapshot: { issueId: issue!.id } }).returning();
+      const configure = (ask: boolean, off: boolean) => service.finishGalleryAppConnection(company.id, connected.connectionId, {
+        enabledCatalogEntryIds: completed.catalog.filter(entry => !off || entry.toolName !== "notebook_begin_upload").map(entry => entry.id),
+        askFirstCatalogEntryIds: ask ? completed.catalog.filter(entry => entry.toolName === "notebook_begin_upload").map(entry => entry.id) : [], access: { agentIds: [agent!.id] },
+      }, actor);
+      await configure(lostResponse === "approval result", false);
+      const [profile] = await db.select().from(toolProfiles).where(eq(toolProfiles.profileKey, `app:${connected.connectionId}`));
+      const gateway = createToolGatewayService(db, { toolActionSigningSecret: "notebook-gateway-replay-fixture" });
+      const named = await gateway.createNamedGateway({ companyId: company.id, body: { name: "Notebook publication", profileId: profile!.id, agentId: agent!.id, issueId: issue!.id } });
+      const token = await gateway.createNamedGatewayToken({ companyId: company.id, gatewayId: named.id, body: { name: "Publisher run", subjectType: "heartbeat_run", subjectId: run!.id } });
+      const descriptors = await gateway.listToolsForNamedGateway({ gatewayPublicId: named.gatewayPublicId, bearerToken: token.token });
+      const upstreamNames = new Map(descriptors.map(tool => [tool.name, tool.upstreamToolName]));
+      let droppedCreateResponse = false, droppedUploadResponse = false, uploadAttempts = 0;
+      const replays: { tool: string; result: unknown }[] = [];
+      const assigned = await createAssignedMcpTools({ gatewayPublicId: named.gatewayPublicId, bearerToken: token.token,
+        gateway: { ...gateway, async executeTool(input) {
+          // The CLI supplies an idempotency key to the same gateway. Exercise
+          // that storage boundary with the native adapter's receipt recovery.
+          const arguments_ = input.parameters as Record<string, unknown>;
+          const result = await gateway.executeTool({ ...input,
+            ...(lostResponse !== "approval result" && typeof arguments_.idempotencyKey === "string"
+              ? { idempotencyKey: `notebook:${connected.connectionId}:${arguments_.idempotencyKey}` } : {}) });
+          const upstreamName = upstreamNames.get(input.tool)!;
+          if (result.status === "replayed") replays.push({ tool: upstreamName!, result: result.result });
+          if (lostResponse === "create response" && upstreamName === "notebook_create_page" && !droppedCreateResponse) {
+            droppedCreateResponse = true;
+            throw new TypeError("Fixture lost the committed create response");
+          }
+          return result;
+        } } });
+      expect(assigned.notebookConnectionIds()).toContain(connected.connectionId);
+      const publish = () => publishNotebookWorkspaceFiles({ tools: assigned, workspaceRoot: workspace, authorize: async () => undefined,
+        arguments: { connectionId: connected.connectionId, title: "Report", idempotencyKey: "gateway-receipt", entryFile: "index.html",
+          files: files.map(({ bytes: _bytes, ...file }) => file) },
+        upload: async (url, init) => {
+          uploadAttempts += 1;
+          if (lostResponse === "upload response" && !droppedUploadResponse) { droppedUploadResponse = true; return new Response(null, { status: 503 }); }
+          uploaded.set(url.pathname.slice(1), Buffer.from(init.body as Uint8Array));
+          return new Response(null, { status: 200 });
+        } });
+      if (lostResponse === "approval result") {
+        await expect(publish()).rejects.toMatchObject({ reasonCode: "approval_required" });
+        expect(uploaded.size).toBe(0);
+        const [action] = await db.select().from(toolActionRequests).where(and(eq(toolActionRequests.companyId, company.id), eq(toolActionRequests.status, "pending")));
+        expect(action).toBeDefined();
+        await gateway.approveActionRequest({ companyId: company.id, actionRequestId: action!.id, actor: { userId: "board-user" } });
+        const [invocation] = await db.select().from(toolInvocations).where(eq(toolInvocations.id, action!.invocationId));
+        expect(invocation).toMatchObject({ status: "succeeded" });
+        expect(Buffer.byteLength(invocation!.resultSummary!.summary!)).toBeLessThan(Buffer.byteLength(JSON.stringify(plan)));
+      } else await expect(publish()).rejects.toThrow(lostResponse === "create response" ? "committed create" : "upload failed");
+      const result = await publish();
+      expect(result).toMatchObject({ status: "ready", pageId, audience: { mode: "private" } });
+      expect(uploaded.size).toBe(files.length);
+      expect(mutationCalls.filter(name => name === "notebook_create_page")).toHaveLength(1);
+      expect(mutationCalls.filter(name => name === "notebook_begin_upload")).toHaveLength(1);
+      if (lostResponse !== "approval result") {
+        expect(receiptCalls).toContain("create_page");
+        expect(replays.some(replay => replay.tool.includes("notebook_create_page"))).toBe(true);
+      }
+      if (lostResponse !== "create response") {
+        expect(receiptCalls).toContain("begin_upload");
+        const replay = replays.find(replay => replay.tool.includes("notebook_begin_upload"))!;
+        if (lostResponse === "upload response") expect(replay.result).toHaveProperty("summary");
+        expect(replay.result).not.toHaveProperty("structuredContent");
+        expect(Buffer.byteLength(JSON.stringify(replay.result))).toBeLessThan(Buffer.byteLength(JSON.stringify(plan)));
+      }
+      const listed = await gateway.listToolsForNamedGateway({ gatewayPublicId: named.gatewayPublicId, bearerToken: token.token });
+      const begin = listed.find(tool => tool.upstreamToolName === "notebook_begin_upload")!;
+      const upstreamCalls = mutationCalls.length;
+      await configure(true, false);
+      await expect(gateway.executeTool({ gatewayPublicId: named.gatewayPublicId, sessionToken: token.token, tool: begin.name,
+        parameters: { pageId, expectedVersion: 1, idempotencyKey: "approval-required" } })).rejects.toMatchObject({ reasonCode: "approval_required" });
+      expect(mutationCalls).toHaveLength(upstreamCalls);
+      await configure(false, true);
+      await expect(gateway.executeTool({ gatewayPublicId: named.gatewayPublicId, sessionToken: token.token, tool: begin.name,
+        parameters: { pageId, expectedVersion: 1, idempotencyKey: "off" } })).rejects.toThrow();
+      expect(mutationCalls).toHaveLength(upstreamCalls);
+      const attemptsBeforeOffReplay = uploadAttempts;
+      await expect(publish()).rejects.toThrow();
+      expect(uploadAttempts).toBe(attemptsBeforeOffReplay);
+    } finally { await rm(workspace, { recursive: true, force: true }); }
   });
 
   it.each(["mcp-oauth", "mcp-api-key"])("connects Fireflies through %s with vaulted credentials and its stable meeting tools", async (methodKey) => {

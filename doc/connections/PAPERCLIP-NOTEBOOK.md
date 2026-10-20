@@ -35,6 +35,8 @@ The CLI obtains its ordinary instance credential from `PAPERCLIP_API_KEY` or the
 
 Build client applications before publication. For an update, supply `--page-id` and `--expected-version`; the native tool accepts `pageId` and `expectedVersion`. Reuse a request key only for the same files and settings. When the gateway requests approval, stop and wait for the normal task approval result. Continue with the same request key after approval. A validating operation is not yet a successful publication; inspect it with `notebook_get_operation` before reporting a working share link.
 
+After a lost response, failed upload, or approved action, retrying can return a shortened gateway audit summary. The publisher recovers the complete page or upload receipt with `notebook_get_operation` through the selected connection and its current action policy. Notebook requires write scope and ownership for receipt recovery. The original creation version and upload manifest remain pinned; recovery does not adopt a newer page version or repeat an approved mutation. Expired upload tickets require a new publication attempt.
+
 ## Verification
 
 The generic OAuth fixture runs against real PostgreSQL with an in-process Notebook protocol fixture. It verifies client registration, PKCE/resource binding, account identity, tool discovery, personal vault ownership, agent assignment, reconnect policy preservation, rotating-token response-loss recovery, local removal, and failed upstream revocation followed by retry. The suite supports a disposable external database through `PAPERCLIP_TEST_DATABASE_URL` when embedded PostgreSQL is unavailable. These fixtures do not establish a deployed Notebook endpoint or live hosted/self-hosted browser acceptance. Record that evidence against the actual deployment before release.
@@ -42,6 +44,8 @@ The generic OAuth fixture runs against real PostgreSQL with an in-process Notebo
 Removal closes local access before calling Notebook. A failed remote revocation retains encrypted credentials only on the revoked grant, reports pending cleanup, and retries through server maintenance. Reconnect waits for that cleanup rather than replacing the credential needed to revoke the old authorization. Refresh calls send a stable idempotency key and retry one lost transport response with the same request.
 
 The local-transfer fixtures upload real 2 MiB bundles through a disposable HTTP gateway and upload origin. Native fixtures cover confined local bytes, a bound remote reader, selected connections, stopped-run authority, work modes, changed files, and gateway denial/approval propagation. These checks qualify the transfer path under controlled fixtures; they do not establish an actual deployed agent publication.
+
+The real PostgreSQL-backed gateway tests also publish twenty local files after losing a committed creation response, failing an upload, and approving an Ask first upload. They exercise catalog-created connection keys, normalized MCP responses, truncated upload-plan replay, and complete receipt recovery while retaining Ask first and Off enforcement.
 
 ## Artwork provenance
 

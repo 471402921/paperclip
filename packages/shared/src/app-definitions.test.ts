@@ -14,6 +14,7 @@ import {
   getConnectableAppDefinition,
   getAppStoreDefinition,
   getRecommendedConnectionMethod,
+  isNotebookApplicationKey,
   recommendedDefaultsForApp,
   resolveConnectionMethodServerUrl,
 } from "./app-definitions.js";
@@ -32,6 +33,14 @@ import { appDefinitionSchema, appDefinitionsSchema } from "./validators/app-defi
 
 const googleScope = (scope: string) =>
   `https://www.googleapis.com/auth/${scope}`;
+
+it("recognizes stored Notebook catalog keys without matching other providers", () => {
+  expect(isNotebookApplicationKey("paperclip-notebook")).toBe(true);
+  expect(isNotebookApplicationKey("app-gallery:paperclip-notebook:44444444-4444-4444-8444-444444444444")).toBe(true);
+  for (const value of [undefined, "app-gallery:another-notebook:44444444-4444-4444-8444-444444444444", "paperclip-notebook-custom", "app-gallery:paperclip-notebook:untrusted"]) {
+    expect(isNotebookApplicationKey(value)).toBe(false);
+  }
+});
 const GOOGLE_WORKSPACE_PROFILE_EXPECTATIONS = [
   {
     profile: "gmail.read",

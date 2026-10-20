@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { isNotebookApplicationKey } from "@paperclipai/shared";
 import { PaperclipApiClient, ApiRequestError } from "../../client/http.js";
 import { publishLocal, publishingApiFromTools, type PublishLocalOptions } from "../../client/notebook-publish.js";
 import { addCommonClientOptions, handleCommandError, printOutput, resolveCommandContext, type BaseClientOptions } from "./common.js";
@@ -16,22 +17,36 @@ export async function publishNotebookFromRun(api: GatewayApi, options: NotebookP
   try {
     const gateway = new PaperclipApiClient({ apiBase: api.apiBase, headers: { "x-paperclip-tool-gateway-token": session.token }, redirect: "error" });
     const tools = await gateway.get<GatewayTool[]>("/api/tool-gateway/tools");
-    const selected = tools?.filter(tool => tool.connectionId === options.connection && tool.applicationKey === "paperclip-notebook") ?? [];
+    const selected = tools?.filter(tool => tool.connectionId === options.connection && isNotebookApplicationKey(tool.applicationKey)) ?? [];
     const byName = new Map(selected.map(tool => [tool.upstreamToolName, tool.name]));
     for (const name of ["notebook_create_page", "notebook_begin_upload", "notebook_finalize_upload"]) {
       if ((!options.pageId || name !== "notebook_create_page") && !byName.has(name))
         throw new Error("The selected Notebook connection is unavailable or does not permit local publication. Check agent assignment and action permissions.");
     }
-    const publishing = publishingApiFromTools({ async callTool(input) {
+    async function callTool(input: { name: string; arguments: Record<string, unknown> }, recovering = false): Promise<unknown> {
       const tool = byName.get(input.name);
       if (!tool) throw new Error("Notebook publication tool is unavailable on the selected connection.");
+      const current = await gateway.get<GatewayTool[]>("/api/tool-gateway/tools");
+      if (!current?.some(candidate => candidate.name === tool && candidate.connectionId === options.connection && isNotebookApplicationKey(candidate.applicationKey))) {
+        throw new Error("Notebook publication tool is unavailable on the selected connection.");
+      }
       const result = await gateway.post<{ status: string; result?: unknown }>("/api/tool-gateway/tools/call", {
         tool, parameters: input.arguments,
-        idempotencyKey: `notebook:${options.connection}:${String(input.arguments.idempotencyKey)}`,
+        ...(typeof input.arguments.idempotencyKey === "string"
+          ? { idempotencyKey: `notebook:${options.connection}:${input.arguments.idempotencyKey}` } : {}),
       });
       if (!result || !["completed", "replayed"].includes(result.status)) throw new Error("Notebook publication has not completed. Inspect the tool action before continuing.");
-      return result.result;
-    } });
+      if (result.status === "replayed" && !recovering) {
+        // Gateway audit summaries may be truncated. Retrieve the complete,
+        // owner-authorized receipt from Notebook through the same action gateway.
+        const kind = input.name === "notebook_create_page" ? "create_page" : input.name === "notebook_begin_upload" ? "begin_upload" : undefined;
+        if (kind) return callTool({ name: "notebook_get_operation", arguments: { receipt: { kind, idempotencyKey: input.arguments.idempotencyKey } } }, true);
+        if (input.name === "notebook_finalize_upload") return callTool({ name: "notebook_get_operation", arguments: { operationId: input.arguments.deploymentId } }, true);
+      }
+      const payload = result.result;
+      return payload && typeof payload === "object" && "data" in payload && payload.data && typeof payload.data === "object" ? payload.data : payload;
+    }
+    const publishing = publishingApiFromTools({ callTool });
     return await publishLocal(publishing, options, fetcher);
   } catch (error) {
     // The normal gateway posts a human approval card and executes the approved

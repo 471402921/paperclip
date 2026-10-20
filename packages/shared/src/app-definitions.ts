@@ -3,6 +3,11 @@ import { SELF_SERVE_MCP_CANDIDATES } from "./self-serve-mcp-research.js";
 import type { AppDefinition, ConnectionMethodDef, FieldDef } from "./types/app-definition.js";
 import type { ToolConnectionOwnership } from "./types/tool-access.js";
 
+export function isNotebookApplicationKey(value: unknown): value is string {
+  return typeof value === "string" && (value === "paperclip-notebook"
+    || /^app-gallery:paperclip-notebook:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value));
+}
+
 export const CONNECTABLE_APP_SLUGS = new Set([
   "anthropic", "openai", "openrouter", "xai", "google", "bedrock",
   "responses-api", "messages-api", "chat-completions-api", "local",

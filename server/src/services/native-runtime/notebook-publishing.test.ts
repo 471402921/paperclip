@@ -17,14 +17,14 @@ describe("native Notebook workspace publication", () => {
     files: [{ path: "index.html", source: "index.html", size: body.length, sha256: digest(body) }] });
   async function fixture() {
     const descriptors = ["notebook_create_page", "notebook_begin_upload", "notebook_finalize_upload"].map(name => ({
-      name: `gateway:${name}`, upstreamToolName: name, applicationKey: "paperclip-notebook", connectionId: "notebook", risk: "write",
+      name: `gateway:${name}`, upstreamToolName: name, applicationKey: "app-gallery:paperclip-notebook:44444444-4444-4444-8444-444444444444", connectionId: "notebook", risk: "write",
       displayName: name, description: name, parametersSchema: { type: "object" }, providerType: "mcp_remote_http", pluginId: "fixture",
     } as ToolGatewayDescriptor));
     const uploaded: Buffer[] = [];
-    const executeTool = vi.fn(async (call: { tool: string; parameters: any }) => ({ status: "completed", result: { structuredContent:
+    const executeTool = vi.fn(async (call: { tool: string; parameters: any }) => ({ status: "completed", result: { content: "Tool result", data: { structuredContent:
       call.tool.endsWith("notebook_create_page") ? { id: pageId, version: 1 }
       : call.tool.endsWith("notebook_begin_upload") ? { deploymentId: "d", uploads: call.parameters.assets.map((file: { path: string }) => ({ path: file.path, url: `https://quarantine.s3.us-east-1.amazonaws.com/${file.path}?ticket=temporary`, headers: { "x-upload-checksum": digest(body) } })) }
-      : { operationId: "d", status: "ready", pageId, shareUrl: "https://notebook.example/p/page", audience: { mode: "private" } } } }));
+      : { operationId: "d", status: "ready", pageId, shareUrl: "https://notebook.example/p/page", audience: { mode: "private" } } } } }));
     const gateway = { listToolsForNamedGateway: vi.fn().mockResolvedValue(descriptors), executeTool } as unknown as ToolGatewayService;
     const tools = await createAssignedMcpTools({ gateway, gatewayPublicId: "selected-gateway", bearerToken: "controller-only-credential" });
     const authorize = vi.fn(async () => undefined);

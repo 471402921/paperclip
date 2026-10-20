@@ -286,6 +286,7 @@ export {
   isAppStoreVisibleSlug,
   recommendedDefaultsForApp,
   resolveConnectionMethodServerUrl,
+  isNotebookApplicationKey,
 } from "./app-definitions.js";
 export {
   connectionSetupStateForApp,
