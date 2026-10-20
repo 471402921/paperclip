@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CommandManagedRuntimeRunner } from "@paperclipai/adapter-utils/command-managed-runtime";
 import { MAX_REMOTE_DELIVERABLE_BYTES, readVerifiedRemoteWorkspaceFile } from "./remote-deliverable-file.js";
+import { publishNotebookWorkspaceFiles } from "./notebook-publishing.js";
 
 const digest = (body: Buffer) => createHash("sha256").update(body).digest("hex");
 const image = "node:24-bookworm-slim";
@@ -34,8 +35,20 @@ describe("remote deliverable admission", () => {
 
   it("permits an empty Notebook file only through the explicit server-owned opt-in", async () => {
     const execute = vi.fn().mockResolvedValue({ ...success, stdout: "" });
-    await expect(readVerifiedRemoteWorkspaceFile({ ...request, byteSize: 0, sha256: digest(Buffer.alloc(0)), allowEmpty: true, runner: { execute } })).resolves.toEqual(Buffer.alloc(0));
+    await expect(readVerifiedRemoteWorkspaceFile({ ...request, byteSize: 0, sha256: digest(Buffer.alloc(0)), allowEmpty: true, maxBytes: 25 * 1024 * 1024, runner: { execute } })).resolves.toEqual(Buffer.alloc(0));
     expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it.each([0, -1, 1.5, NaN, Infinity, 25 * 1024 * 1024 + 1])("rejects an invalid server byte allowance %j before dispatch", async maxBytes => {
+    const execute = vi.fn();
+    await expect(readVerifiedRemoteWorkspaceFile({ ...request, maxBytes, runner: { execute } })).rejects.toThrow("size_denied");
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("keeps the Notebook allowance bounded to 25 MiB before dispatch", async () => {
+    const execute = vi.fn();
+    await expect(readVerifiedRemoteWorkspaceFile({ ...request, byteSize: 25 * 1024 * 1024 + 1, maxBytes: 25 * 1024 * 1024, runner: { execute } })).rejects.toThrow("size_denied");
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -51,6 +64,7 @@ describe.skipIf(!hasLinuxNode)("remote deliverable real Linux descriptor reads",
   let root: string;
   let workspaceRoot: string;
   let preload: string | undefined;
+  let captureLimit: number;
   let runner: Pick<CommandManagedRuntimeRunner, "execute">;
 
   beforeEach(async () => {
@@ -59,6 +73,7 @@ describe.skipIf(!hasLinuxNode)("remote deliverable real Linux descriptor reads",
     await mkdir(workspaceRoot);
     await writeFile(join(workspaceRoot, "checklist.md"), body);
     preload = undefined;
+    captureLimit = 16 * 1024 * 1024;
     runner = { execute: vi.fn(async (input) => {
       const nodeArgs = [...(preload ? ["--require", preload] : []), ...(input.args ?? [])];
       const command = process.platform === "linux" ? process.execPath : "docker";
@@ -67,7 +82,7 @@ describe.skipIf(!hasLinuxNode)("remote deliverable real Linux descriptor reads",
         "-v", `${root}:${root}`, image, "node", ...nodeArgs,
       ];
       return await new Promise<Awaited<ReturnType<CommandManagedRuntimeRunner["execute"]>>>((resolve) => {
-        execFile(command, args, { encoding: "utf8", timeout: input.timeoutMs, maxBuffer: 16 * 1024 * 1024,
+        execFile(command, args, { encoding: "utf8", timeout: input.timeoutMs, maxBuffer: captureLimit,
           env: { ...process.env, NODE_OPTIONS: "", NODE_PATH: "" } }, (error, stdout, stderr) => resolve({
           pid: null, startedAt: new Date().toISOString(), exitCode: error ? 1 : 0,
           signal: null, timedOut: Boolean(error?.killed), stdout, stderr,
@@ -92,7 +107,7 @@ describe.skipIf(!hasLinuxNode)("remote deliverable real Linux descriptor reads",
     await writeFile(join(workspaceRoot, "bundle.js"), bytes);
     await expect(readVerifiedRemoteWorkspaceFile({ workspaceRoot, contentRef: "bundle.js", byteSize: bytes.length, sha256: digest(bytes), runner })).resolves.toEqual(bytes);
     await writeFile(join(workspaceRoot, "empty.txt"), Buffer.alloc(0));
-    await expect(readVerifiedRemoteWorkspaceFile({ workspaceRoot, contentRef: "empty.txt", byteSize: 0, sha256: digest(Buffer.alloc(0)), allowEmpty: true, runner })).resolves.toEqual(Buffer.alloc(0));
+    await expect(readVerifiedRemoteWorkspaceFile({ workspaceRoot, contentRef: "empty.txt", byteSize: 0, sha256: digest(Buffer.alloc(0)), allowEmpty: true, maxBytes: 25 * 1024 * 1024, runner })).resolves.toEqual(Buffer.alloc(0));
   });
 
   it("passes metacharacters as data, never shell syntax", async () => {
@@ -147,4 +162,58 @@ describe.skipIf(!hasLinuxNode)("remote deliverable real Linux descriptor reads",
     const result = await readVerifiedRemoteWorkspaceFile({ runner, workspaceRoot, contentRef: "maximum.bin", byteSize: maximum.length, sha256: digest(maximum) });
     expect(result.equals(maximum)).toBe(true);
   }, 20_000);
+
+  it("publishes a 12 MiB remote Notebook asset without raising command capture limits", async () => {
+    captureLimit = 4 * 1024 * 1024;
+    const maximum = Buffer.alloc(12 * 1024 * 1024, 39);
+    await writeFile(join(workspaceRoot, "report.html"), maximum);
+    const executeNotebookTool = vi.fn(async (_connection: string, name: string) => name === "notebook_create_page" ? { id: "page", version: 1 }
+      : name === "notebook_begin_upload" ? { deploymentId: "deployment", uploads: [{ path: "report.html", url: "https://quarantine.example/report" }] }
+      : { operationId: "deployment", status: "ready" });
+    const tools = { notebookConnectionIds: () => ["notebook"], executeNotebookTool } as unknown as Parameters<typeof publishNotebookWorkspaceFiles>[0]["tools"];
+    const upload = vi.fn(async (_url: URL, init: RequestInit) => {
+      expect(Buffer.from(init.body as Uint8Array).equals(maximum)).toBe(true);
+      return new Response(null, { status: 200 });
+    });
+    const read = { contentRef: "report.html", byteSize: maximum.length, sha256: digest(maximum) };
+    await expect(readVerifiedRemoteWorkspaceFile({ runner, workspaceRoot, ...read })).rejects.toThrow("size_denied");
+    expect(runner.execute).not.toHaveBeenCalled();
+    await expect(publishNotebookWorkspaceFiles({ tools, upload, authorize: async () => undefined, workspaceRoot,
+      executionTargetKind: "remote", readRemoteWorkspaceFile: file => readVerifiedRemoteWorkspaceFile({ runner, workspaceRoot, ...file }),
+      arguments: { connectionId: "notebook", idempotencyKey: "large-remote", entryFile: "report.html",
+        files: [{ path: "report.html", source: read.contentRef, size: read.byteSize, sha256: read.sha256 }] },
+    })).resolves.toMatchObject({ status: "ready" });
+    expect(upload).toHaveBeenCalledOnce();
+    expect(executeNotebookTool.mock.calls.map(([, name]) => name)).toEqual(["notebook_create_page", "notebook_begin_upload", "notebook_finalize_upload"]);
+    expect(runner.execute).toHaveBeenCalledTimes(12);
+  }, 60_000);
+
+  it("reads the exact 25 MiB Notebook ceiling through bounded command responses", async () => {
+    captureLimit = 4 * 1024 * 1024;
+    const maximum = Buffer.alloc(25 * 1024 * 1024, 41);
+    await writeFile(join(workspaceRoot, "maximum.bin"), maximum);
+    const result = await readVerifiedRemoteWorkspaceFile({ runner, workspaceRoot, contentRef: "maximum.bin", byteSize: maximum.length, sha256: digest(maximum), maxBytes: maximum.length });
+    expect(result.equals(maximum)).toBe(true);
+    expect(runner.execute).toHaveBeenCalledTimes(13);
+    for (const [input] of vi.mocked(runner.execute).mock.calls) {
+      const payload = JSON.parse(input.args!.at(-1)!);
+      expect(payload.length).toBeLessThanOrEqual(2 * 1024 * 1024);
+    }
+  }, 60_000);
+
+  it("rejects a Notebook file replaced between chunk reads before returning bytes", async () => {
+    captureLimit = 4 * 1024 * 1024;
+    const maximum = Buffer.alloc(3 * 1024 * 1024, 43);
+    await writeFile(join(workspaceRoot, "changing.bin"), maximum);
+    const execute = runner.execute;
+    const changingRunner = { execute: vi.fn(async (input: Parameters<CommandManagedRuntimeRunner["execute"]>[0]) => {
+      const result = await execute(input);
+      if (JSON.parse(input.args!.at(-1)!).offset === 0) {
+        await rm(join(workspaceRoot, "changing.bin"));
+        await writeFile(join(workspaceRoot, "changing.bin"), Buffer.alloc(maximum.length, 47));
+      }
+      return result;
+    }) };
+    await expect(readVerifiedRemoteWorkspaceFile({ runner: changingRunner, workspaceRoot, contentRef: "changing.bin", byteSize: maximum.length, sha256: digest(maximum), maxBytes: 25 * 1024 * 1024 })).rejects.toThrow("hash_mismatch");
+  }, 30_000);
 });

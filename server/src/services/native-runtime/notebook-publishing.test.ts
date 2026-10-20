@@ -45,7 +45,7 @@ describe("native Notebook workspace publication", () => {
     const f = await fixture(), readRemoteWorkspaceFile = vi.fn(async () => body);
     await publishNotebookWorkspaceFiles({ ...f, arguments: arguments_(), workspaceRoot: "/not-controller-workspace", executionTargetKind: "remote", readRemoteWorkspaceFile });
     expect(readRemoteWorkspaceFile).toHaveBeenCalledTimes(2);
-    expect(readRemoteWorkspaceFile).toHaveBeenCalledWith({ contentRef: "index.html", byteSize: body.length, sha256: digest(body), allowEmpty: true });
+    expect(readRemoteWorkspaceFile).toHaveBeenCalledWith({ contentRef: "index.html", byteSize: body.length, sha256: digest(body), allowEmpty: true, maxBytes: 25 * 1024 * 1024 });
     await expect(publishNotebookWorkspaceFiles({ ...f, arguments: arguments_(), workspaceRoot: root, executionTargetKind: "remote" })).rejects.toThrow("remote_workspace_unavailable");
   });
   it("uses intact replayed results when the status action is unavailable", async () => {
@@ -57,6 +57,15 @@ describe("native Notebook workspace publication", () => {
     await expect(publishNotebookWorkspaceFiles({ ...f, arguments: arguments_(), workspaceRoot: root })).resolves.toMatchObject({ status: "ready" });
     expect(f.executeTool.mock.calls.map(([call]) => call.tool)).toEqual(["gateway:notebook_create_page", "gateway:notebook_begin_upload", "gateway:notebook_finalize_upload"]);
     expect(f.uploaded).toEqual([body]);
+  });
+  it("rejects aggregate content above 25 MiB before reading or mutating", async () => {
+    const f = await fixture(), readRemoteWorkspaceFile = vi.fn();
+    const files = ["index.html", "large.bin"].map(path => ({ path, source: path, size: 13 * 1024 * 1024, sha256: digest(body) }));
+    await expect(publishNotebookWorkspaceFiles({ ...f, arguments: { ...arguments_(), files }, workspaceRoot: root,
+      executionTargetKind: "remote", readRemoteWorkspaceFile })).rejects.toThrow("manifest_invalid");
+    expect(readRemoteWorkspaceFile).not.toHaveBeenCalled();
+    expect(f.executeTool).not.toHaveBeenCalled();
+    expect(f.upload).not.toHaveBeenCalled();
   });
   it.each(["approval_required", "policy_deny", "connection_revoked"])("preserves %s and sends no bytes without gateway authorization", async reason => {
     const f = await fixture(), error = new ToolGatewayHttpError(403, "Denied", reason);

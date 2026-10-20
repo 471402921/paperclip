@@ -36,7 +36,11 @@ import { readProcessStartedAt } from "../hot-restart.js";
 import { issueService } from "../issues.js";
 import { getNativeReviewAssignment, readNativeReviewAssignmentContext } from "./native-review-participant.js";
 
-export type RemoteWorkspaceFileReader = (input: Pick<NativeRunnerFileHandoffInput, "contentRef" | "byteSize" | "sha256"> & { allowEmpty?: boolean }) => Promise<Buffer>;
+export type RemoteWorkspaceFileReader = (input: Pick<NativeRunnerFileHandoffInput, "contentRef" | "byteSize" | "sha256"> & {
+  allowEmpty?: boolean;
+  /** Server-owned Notebook allowance; ordinary attachment inputs cannot set it. */
+  maxBytes?: number;
+}) => Promise<Buffer>;
 
 export interface NativeRunnerFileHandoffBinding {
   readonly companyId: string;

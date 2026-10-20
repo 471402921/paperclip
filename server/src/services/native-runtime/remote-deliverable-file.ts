@@ -5,6 +5,10 @@ import type { CommandManagedRuntimeRunner } from "@paperclipai/adapter-utils/com
 import { MAX_ATTACHMENT_BYTES } from "../../attachment-types.js";
 
 export const MAX_REMOTE_DELIVERABLE_BYTES = MAX_ATTACHMENT_BYTES;
+const MAX_NOTEBOOK_REMOTE_BYTES = 25 * 1024 * 1024;
+// Notebook's 25 MiB decoded ceiling exceeds existing command output buffers
+// once base64 encoded. Keep every response below the 4 MiB capture ceiling.
+const NOTEBOOK_READ_CHUNK_BYTES = 2 * 1024 * 1024;
 const PREFIX = "paperclip_runner_file_handoff_";
 const READ_TIMEOUT_MS = 10_000;
 
@@ -46,22 +50,22 @@ async function noSymlinks(root, relative) {
     if (!before.isFile() || before.nlink !== 1n || before.size !== BigInt(input.byteSize) || !same(before, pathBefore)) fail('file_changed');
     const descriptor = await fs.realpath('/proc/self/fd/' + handle.fd);
     if (!within(root, descriptor) || descriptor !== canonical) fail('path_denied');
-    const body = Buffer.allocUnsafe(input.byteSize);
+    const body = Buffer.allocUnsafe(input.length);
     let offset = 0;
     while (offset < body.length) {
-      const { bytesRead } = await handle.read(body, offset, body.length - offset, offset);
+      const { bytesRead } = await handle.read(body, offset, body.length - offset, input.offset + offset);
       if (!bytesRead) break;
       offset += bytesRead;
     }
-    const overflow = await handle.read(Buffer.allocUnsafe(1), 0, 1, body.length);
+    const overflow = await handle.read(Buffer.allocUnsafe(1), 0, 1, input.byteSize);
     const after = await handle.stat({ bigint: true });
     const pathAfter = await fs.lstat(canonical, { bigint: true });
     const reopened = await fs.realpath(candidate);
     const rootAfter = await fs.realpath(input.workspaceRoot);
     await noSymlinks(root, relative);
     if (rootAfter !== root || descriptor !== reopened || after.nlink !== 1n || !same(before, after) ||
-        pathAfter.isSymbolicLink() || !same(after, pathAfter) || offset !== input.byteSize || overflow.bytesRead) fail('file_changed');
-    if (createHash('sha256').update(body).digest('hex') !== input.sha256) fail('hash_mismatch');
+        pathAfter.isSymbolicLink() || !same(after, pathAfter) || offset !== input.length || overflow.bytesRead) fail('file_changed');
+    if (input.offset === 0 && input.length === input.byteSize && createHash('sha256').update(body).digest('hex') !== input.sha256) fail('hash_mismatch');
     await new Promise((resolve, reject) => process.stdout.write(body.toString('base64'), error => error ? reject(error) : resolve()));
   } finally { await handle.close(); }
 })().catch(error => {
@@ -79,6 +83,8 @@ export async function readVerifiedRemoteWorkspaceFile(input: {
   byteSize: number;
   sha256: string;
   allowEmpty?: boolean;
+  /** Server-owned Notebook allowance. Never read from a tool/request payload. */
+  maxBytes?: number;
 }): Promise<Buffer> {
   const { workspaceRoot, contentRef, byteSize } = input;
   if (typeof workspaceRoot !== "string" || !posix.isAbsolute(workspaceRoot) || workspaceRoot.length > 4096 ||
@@ -89,29 +95,41 @@ export async function readVerifiedRemoteWorkspaceFile(input: {
   }
   const relative = posix.normalize(contentRef);
   if (relative === "." || relative === ".." || relative.startsWith("../")) throw new Error(`${PREFIX}path_denied`);
-  if (!Number.isSafeInteger(byteSize) || byteSize < (input.allowEmpty ? 0 : 1) || byteSize > MAX_REMOTE_DELIVERABLE_BYTES) {
+  const maxBytes = input.maxBytes === undefined ? MAX_REMOTE_DELIVERABLE_BYTES : input.maxBytes;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_NOTEBOOK_REMOTE_BYTES ||
+      !Number.isSafeInteger(byteSize) || byteSize < (input.allowEmpty ? 0 : 1) || byteSize > maxBytes) {
     throw new Error(`${PREFIX}size_denied`);
   }
   const sha256 = typeof input.sha256 === "string" ? input.sha256.trim().toLowerCase() : "";
   if (!/^[a-f0-9]{64}$/u.test(sha256)) throw new Error(`${PREFIX}invalid_sha256`);
-  const result = await input.runner.execute({
-    command: "node",
-    args: ["--input-type=commonjs", "-e", READ_REMOTE_FILE, JSON.stringify({ workspaceRoot, contentRef: relative, byteSize, sha256 })],
-    cwd: workspaceRoot,
-    env: { NODE_OPTIONS: "", NODE_PATH: "" },
-    timeoutMs: READ_TIMEOUT_MS,
-    bypassSession: true,
-  }).catch(() => { throw new Error(`${PREFIX}remote_read_failed`); });
-  if (result.timedOut) throw new Error(`${PREFIX}remote_read_timeout`);
-  if (result.exitCode !== 0) {
-    const code = result.stderr.trim();
-    throw new Error(/^paperclip_runner_file_handoff_(path_denied|symlink_denied|file_changed|hash_mismatch)$/u.test(code)
-      ? code : `${PREFIX}remote_read_failed`);
+  const chunks: Buffer[] = [];
+  const chunkSize = input.maxBytes === undefined ? Math.max(1, byteSize) : NOTEBOOK_READ_CHUNK_BYTES;
+  for (let offset = 0; offset < byteSize || offset === 0; offset += chunkSize) {
+    const length = Math.min(chunkSize, byteSize - offset);
+    const result = await input.runner.execute({
+      command: "node",
+      args: ["--input-type=commonjs", "-e", READ_REMOTE_FILE, JSON.stringify({ workspaceRoot, contentRef: relative, byteSize, sha256, offset, length })],
+      cwd: workspaceRoot,
+      env: { NODE_OPTIONS: "", NODE_PATH: "" },
+      timeoutMs: READ_TIMEOUT_MS,
+      bypassSession: true,
+    }).catch(() => { throw new Error(`${PREFIX}remote_read_failed`); });
+    if (result.timedOut) throw new Error(`${PREFIX}remote_read_timeout`);
+    if (result.exitCode !== 0) {
+      const code = result.stderr.trim();
+      throw new Error(/^paperclip_runner_file_handoff_(path_denied|symlink_denied|file_changed|hash_mismatch)$/u.test(code)
+        ? code : `${PREFIX}remote_read_failed`);
+    }
+    const encoded = result.stdout;
+    if (encoded.length !== 4 * Math.ceil(length / 3)) throw new Error(`${PREFIX}size_denied`);
+    const body = Buffer.from(encoded, "base64");
+    if (body.length !== length || body.toString("base64") !== encoded) throw new Error(`${PREFIX}size_denied`);
+    chunks.push(body);
+    if (byteSize === 0) break;
   }
-  const encoded = result.stdout;
-  if (encoded.length !== 4 * Math.ceil(byteSize / 3)) throw new Error(`${PREFIX}size_denied`);
-  const body = Buffer.from(encoded, "base64");
-  if (body.length !== byteSize || body.toString("base64") !== encoded) throw new Error(`${PREFIX}size_denied`);
+  // No chunk is returned to the publisher until the complete expected file
+  // hash passes, including replacements between separate descriptor reads.
+  const body = Buffer.concat(chunks, byteSize);
   if (createHash("sha256").update(body).digest("hex") !== sha256) throw new Error(`${PREFIX}hash_mismatch`);
   return body;
 }

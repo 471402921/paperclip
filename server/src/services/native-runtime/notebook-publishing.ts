@@ -41,7 +41,7 @@ export async function publishNotebookWorkspaceFiles(input: {
   const read = async (file: typeof args.files[number]) => {
     await input.authorize();
     const bytes = input.executionTargetKind === "remote"
-      ? await (input.readRemoteWorkspaceFile ?? (() => { throw new Error("notebook_remote_workspace_unavailable"); }))({ contentRef: file.source, byteSize: file.size, sha256: file.sha256, allowEmpty: true })
+      ? await (input.readRemoteWorkspaceFile ?? (() => { throw new Error("notebook_remote_workspace_unavailable"); }))({ contentRef: file.source, byteSize: file.size, sha256: file.sha256, allowEmpty: true, maxBytes: MAX_BYTES })
       : await readWorkspaceUploadFile(input.workspaceRoot, file.source, file.size);
     if (bytes.length !== file.size || createHash("sha256").update(bytes).digest("hex") !== file.sha256) throw new Error("notebook_workspace_file_changed");
     await input.authorize(); return bytes;
