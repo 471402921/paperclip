@@ -15,7 +15,7 @@ const checksum = (bytes: Uint8Array) => createHash("sha256").update(bytes).diges
 describe("Notebook local publication through the active run gateway", () => {
   let directory: string, server: Server, origin: string;
   let calls: { tool: string; parameters: Record<string, any>; idempotencyKey: string }[];
-  let uploads: Map<string, Buffer>, revoked: number, redirectsFollowed: number, mode: "allow" | "off" | "ask" | "wrong-connection" | "redirect";
+  let uploads: Map<string, Buffer>, revoked: number, redirectsFollowed: number, mode: "allow" | "off" | "ask" | "wrong-connection" | "redirect" | "receipt-replay";
   let failedUploads: number, dropCreateResponse: boolean;
   let receipts: Map<string, unknown>;
   beforeEach(async () => {
@@ -57,6 +57,9 @@ describe("Notebook local publication through the active run gateway", () => {
         const p = body.parameters;
         if (body.tool.endsWith("notebook_get_operation")) {
           expect(body.idempotencyKey).toBeUndefined();
+          if (mode === "receipt-replay" && p.receipt?.kind === "begin_upload") {
+            reply({ status: "replayed", result: "Truncated approved upload receipt" }); return;
+          }
           const full = p.receipt ? receipts.get(p.receipt.idempotencyKey) : { operationId: "deployment", pageId: "page", status: "validating" };
           reply(completed(full)); return;
         }
@@ -125,6 +128,14 @@ describe("Notebook local publication through the active run gateway", () => {
     await expect(publishNotebookFromRun(api(), options())).resolves.toMatchObject({ pageId: "page" });
     expect(calls.find(call => call.tool === "gateway:notebook_get_operation")?.parameters).toEqual({ receipt: { kind: "create_page", idempotencyKey: "report-2026:page" } });
     expect(calls.find(call => call.tool === "gateway:notebook_begin_upload")?.parameters.expectedVersion).toBe(7);
+  });
+  it("stops safely when status approval replay also shortened the recovery receipt", async () => {
+    failedUploads = 1;
+    await expect(publishNotebookFromRun(api(), options())).rejects.toThrow("upload failed (503)");
+    mode = "receipt-replay";
+    await expect(publishNotebookFromRun(api(), options())).rejects.toThrow("Set notebook_get_operation to Allowed for this recovery, then retry with the same publication key");
+    expect(calls.filter(call => call.tool === "gateway:notebook_get_operation")).toHaveLength(2);
+    expect(uploads.size).toBe(0); expect(revoked).toBe(2);
   });
   it("preserves Ask first instructions and the bounded session for automatic approval execution", async () => {
     mode = "ask";

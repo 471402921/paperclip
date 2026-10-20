@@ -194,12 +194,17 @@ export async function createAssignedMcpTools(input: {
           operationId: argumentsValue.deploymentId,
         }, currentWorkMode);
       }
+      const receiptRecoveryError = () => new Error("Notebook receipt recovery returned a shortened approval result. Set notebook_get_operation to Allowed for this recovery, then retry with the same publication key.");
+      if (result.status === "replayed" && upstreamToolName === "notebook_get_operation" && (!result.result || typeof result.result !== "object")) throw receiptRecoveryError();
       if (!result.result || typeof result.result !== "object" || "isError" in result.result && result.result.isError === true)
         throw new ToolGatewayHttpError(502, "Notebook returned an error.", "tool_error");
       const outer = result.result as { data?: unknown; structuredContent?: unknown };
       const payload = outer.data && typeof outer.data === "object" ? outer.data as { structuredContent?: unknown; isError?: boolean } : outer;
       if ("isError" in payload && payload.isError === true) throw new ToolGatewayHttpError(502, "Notebook returned an error.", "tool_error");
-      if (!payload.structuredContent || typeof payload.structuredContent !== "object") throw new Error("assigned_notebook_invalid_response");
+      if (!payload.structuredContent || typeof payload.structuredContent !== "object") {
+        if (result.status === "replayed" && upstreamToolName === "notebook_get_operation") throw receiptRecoveryError();
+        throw new Error("assigned_notebook_invalid_response");
+      }
       return payload.structuredContent;
     },
     definitions(fits?: (definitions: ToolDefinition[]) => boolean): ToolDefinition[] {

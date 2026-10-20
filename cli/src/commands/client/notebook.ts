@@ -44,7 +44,12 @@ export async function publishNotebookFromRun(api: GatewayApi, options: NotebookP
         if (input.name === "notebook_finalize_upload") return callTool({ name: "notebook_get_operation", arguments: { operationId: input.arguments.deploymentId } }, true);
       }
       const payload = result.result;
-      return payload && typeof payload === "object" && "data" in payload && payload.data && typeof payload.data === "object" ? payload.data : payload;
+      const response = payload && typeof payload === "object" && "data" in payload && payload.data && typeof payload.data === "object" ? payload.data : payload;
+      if (result.status === "replayed" && recovering && (!response || typeof response !== "object"
+        || !("structuredContent" in response) && !("content" in response && Array.isArray(response.content)))) {
+        throw new Error("Notebook receipt recovery returned a shortened approval result. Set notebook_get_operation to Allowed for this recovery, then retry with the same publication key.");
+      }
+      return response;
     }
     const publishing = publishingApiFromTools({ callTool });
     return await publishLocal(publishing, options, fetcher);

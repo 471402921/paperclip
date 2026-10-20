@@ -16,7 +16,7 @@ describe("native Notebook workspace publication", () => {
   const arguments_ = () => ({ connectionId: "notebook", title: "Report", idempotencyKey: "build-report", entryFile: "index.html",
     files: [{ path: "index.html", source: "index.html", size: body.length, sha256: digest(body) }] });
   async function fixture() {
-    const descriptors = ["notebook_create_page", "notebook_begin_upload", "notebook_finalize_upload"].map(name => ({
+    const descriptors = ["notebook_create_page", "notebook_begin_upload", "notebook_finalize_upload", "notebook_get_operation"].map(name => ({
       name: `gateway:${name}`, upstreamToolName: name, applicationKey: "app-gallery:paperclip-notebook:44444444-4444-4444-8444-444444444444", connectionId: "notebook", risk: "write",
       displayName: name, description: name, parametersSchema: { type: "object" }, providerType: "mcp_remote_http", pluginId: "fixture",
     } as ToolGatewayDescriptor));
@@ -52,6 +52,14 @@ describe("native Notebook workspace publication", () => {
     const f = await fixture(), error = new ToolGatewayHttpError(403, "Denied", reason);
     f.executeTool.mockRejectedValue(error);
     await expect(publishNotebookWorkspaceFiles({ ...f, arguments: arguments_(), workspaceRoot: root })).rejects.toBe(error);
+    expect(f.upload).not.toHaveBeenCalled();
+  });
+  it("stops without a loop or upload when status approval replay shortened the receipt", async () => {
+    const f = await fixture();
+    f.executeTool.mockImplementation(async () => ({ status: "replayed", result: "Truncated approved receipt" } as any));
+    await expect(publishNotebookWorkspaceFiles({ ...f, arguments: arguments_(), workspaceRoot: root }))
+      .rejects.toThrow("Set notebook_get_operation to Allowed for this recovery, then retry with the same publication key");
+    expect(f.executeTool.mock.calls.map(([call]) => call.tool)).toEqual(["gateway:notebook_create_page", "gateway:notebook_get_operation"]);
     expect(f.upload).not.toHaveBeenCalled();
   });
   it("stops when the run loses authority after upload, before finalization", async () => {

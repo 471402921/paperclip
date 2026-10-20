@@ -37,6 +37,8 @@ Build client applications before publication. For an update, supply `--page-id` 
 
 After a lost response, failed upload, or approved action, retrying can return a shortened gateway audit summary. The publisher recovers the complete page or upload receipt with `notebook_get_operation` through the selected connection and its current action policy. Notebook requires write scope and ownership for receipt recovery. The original creation version and upload manifest remain pinned; recovery does not adopt a newer page version or repeat an approved mutation. Expired upload tickets require a new publication attempt.
 
+Keep `notebook_get_operation` Allowed during recovery. If that status action is set to Ask first, its approved result can itself exceed the gateway's saved audit limit. Publication then stops with instructions to allow that recovery action and retry with the same key. It does not keep requesting approval or resend upload bytes. Other publishing actions can retain Ask first.
+
 ## Verification
 
 The generic OAuth fixture runs against real PostgreSQL with an in-process Notebook protocol fixture. It verifies client registration, PKCE/resource binding, account identity, tool discovery, personal vault ownership, agent assignment, reconnect policy preservation, rotating-token response-loss recovery, local removal, and failed upstream revocation followed by retry. The suite supports a disposable external database through `PAPERCLIP_TEST_DATABASE_URL` when embedded PostgreSQL is unavailable. These fixtures do not establish a deployed Notebook endpoint or live hosted/self-hosted browser acceptance. Record that evidence against the actual deployment before release.
