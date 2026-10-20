@@ -18,6 +18,13 @@ Agent access: [companion](../agent-access-map/cli-operations.md).
 - `run-controls`: invoke/inspect supported runs and observe actual outcomes.
 - `worktree-instances`: initialize, seed, diagnose, and clean up only an owned development instance.
 
+Notebook output transfer: `paperclipai notebook publish <source> --connection <id>
+--idempotency-key <key>` publishes an explicitly selected local file or built
+directory through the run's assigned Notebook connection. It requires the shell's
+existing approved filesystem access, Paperclip agent credential, and active run.
+Native provider shells use `publish_notebook_files` instead of receiving new
+credentials. See [Notebook publishing](../../doc/connections/PAPERCLIP-NOTEBOOK.md).
+
 ## How to get to it (user POV)
 
 ### `client-context`

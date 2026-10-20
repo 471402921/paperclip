@@ -78,6 +78,7 @@ export async function readVerifiedRemoteWorkspaceFile(input: {
   contentRef: string;
   byteSize: number;
   sha256: string;
+  allowEmpty?: boolean;
 }): Promise<Buffer> {
   const { workspaceRoot, contentRef, byteSize } = input;
   if (typeof workspaceRoot !== "string" || !posix.isAbsolute(workspaceRoot) || workspaceRoot.length > 4096 ||
@@ -88,7 +89,7 @@ export async function readVerifiedRemoteWorkspaceFile(input: {
   }
   const relative = posix.normalize(contentRef);
   if (relative === "." || relative === ".." || relative.startsWith("../")) throw new Error(`${PREFIX}path_denied`);
-  if (!Number.isSafeInteger(byteSize) || byteSize <= 0 || byteSize > MAX_REMOTE_DELIVERABLE_BYTES) {
+  if (!Number.isSafeInteger(byteSize) || byteSize < (input.allowEmpty ? 0 : 1) || byteSize > MAX_REMOTE_DELIVERABLE_BYTES) {
     throw new Error(`${PREFIX}size_denied`);
   }
   const sha256 = typeof input.sha256 === "string" ? input.sha256.trim().toLowerCase() : "";

@@ -102,7 +102,10 @@ operator configures `PAPERCLIP_NOTEBOOK_MCP_URL`; the catalog explains when it i
 unavailable. Sign in through Cloud, assign agents, and verify the account label.
 Reconnect must preserve agent assignments and Allowed / Ask first / Off choices.
 Removal closes local access immediately; an upstream outage displays pending
-revocation and retries automatically. See [Notebook](../../doc/connections/PAPERCLIP-NOTEBOOK.md)
+revocation and retries automatically. Native workspace runs can publish local
+files with `publish_notebook_files`. Approved shell runtimes with existing agent
+credentials can use `paperclipai notebook publish` for a built directory. Both
+paths use the selected connection's ordinary action gateway. See [Notebook](../../doc/connections/PAPERCLIP-NOTEBOOK.md)
 for the deployment contract and fixture coverage. Live Notebook qualification
 still requires a deployed service and both hosted and self-hosted clients.
 

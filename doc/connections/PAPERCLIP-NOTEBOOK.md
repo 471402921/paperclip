@@ -21,13 +21,27 @@ All four are requested by the standard connection. Sharing includes making a pag
 
 ## Publishing files
 
-Ordinary MCP clients can publish small inline files with `notebook_publish`. Large files use `notebook_begin_upload`, narrowly scoped upload tickets, and `notebook_finalize_upload`. The remote server cannot read local filesystem paths. The Notebook client helper must use the runtime's approved file access and the selected connection rather than project the OAuth token into an agent's environment. Agents with approved terminal/HTTP access can upload local files with the returned object tickets and then call finalization through the same MCP connection. Upload tickets authorize only the declared quarantine objects; they must not be treated as general account credentials.
+Ordinary MCP clients can publish small inline files with `notebook_publish`. Large files use `notebook_begin_upload`, narrowly scoped upload tickets, and `notebook_finalize_upload`. The remote server cannot read local filesystem paths. Upload tickets authorize only the declared quarantine objects; do not log them or treat them as account credentials.
+
+Native Paperclip Runner exposes `publish_notebook_files` when the run has an assigned Notebook connection, an approved workspace, and standard work mode. Its connection selector lists eligible connection IDs. The agent supplies each file's workspace-relative source, destination path, byte size and SHA-256 from its approved file tools. The controller reads through the existing confined local reader or the server-bound remote workspace reader. It sends each Notebook action through the assigned gateway and returns the final publication operation. The tool does not return file bytes, upload tickets, or OAuth credentials. Dot additionally requires its existing workspace-access grant. Runtimes without a workspace grant do not receive this tool.
+
+Agents running in an approved local shell with their existing Paperclip agent credential and active run header can also publish a file or built directory:
+
+```sh
+paperclipai notebook publish ./dist --connection CONNECTION_ID --title "Weekly report" --idempotency-key weekly-report-2026-10-20
+```
+
+The CLI obtains its ordinary instance credential from `PAPERCLIP_API_KEY` or the existing CLI credential options, and the active run from `PAPERCLIP_RUN_ID` or `--run-id`. It does not obtain Notebook OAuth credentials. Native provider shells do not automatically receive these credentials; use the native publishing tool there. The CLI reads only under the shell's existing filesystem permissions. It opens a bounded gateway session, checks the explicitly selected Notebook connection, and uses the normal action gateway for page creation, manifest preparation, and finalization. Upload requests contain only the object-specific ticket headers. Completed or failed CLI operations revoke the temporary gateway session; an approval-pending session remains available until its bounded expiry so the approved action can execute.
+
+Build client applications before publication. For an update, supply `--page-id` and `--expected-version`; the native tool accepts `pageId` and `expectedVersion`. Reuse a request key only for the same files and settings. When the gateway requests approval, stop and wait for the normal task approval result. Continue with the same request key after approval. A validating operation is not yet a successful publication; inspect it with `notebook_get_operation` before reporting a working share link.
 
 ## Verification
 
 The generic OAuth fixture runs against real PostgreSQL with an in-process Notebook protocol fixture. It verifies client registration, PKCE/resource binding, account identity, tool discovery, personal vault ownership, agent assignment, reconnect policy preservation, rotating-token response-loss recovery, local removal, and failed upstream revocation followed by retry. The suite supports a disposable external database through `PAPERCLIP_TEST_DATABASE_URL` when embedded PostgreSQL is unavailable. These fixtures do not establish a deployed Notebook endpoint or live hosted/self-hosted browser acceptance. Record that evidence against the actual deployment before release.
 
 Removal closes local access before calling Notebook. A failed remote revocation retains encrypted credentials only on the revoked grant, reports pending cleanup, and retries through server maintenance. Reconnect waits for that cleanup rather than replacing the credential needed to revoke the old authorization. Refresh calls send a stable idempotency key and retry one lost transport response with the same request.
+
+The local-transfer fixtures upload real 2 MiB bundles through a disposable HTTP gateway and upload origin. Native fixtures cover confined local bytes, a bound remote reader, selected connections, stopped-run authority, work modes, changed files, and gateway denial/approval propagation. These checks qualify the transfer path under controlled fixtures; they do not establish an actual deployed agent publication.
 
 ## Artwork provenance
 

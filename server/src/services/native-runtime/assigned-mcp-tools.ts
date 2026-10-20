@@ -159,6 +159,30 @@ export async function createAssignedMcpTools(input: {
   }
 
   return {
+    notebookConnectionIds(): string[] {
+      const connections = new Map<string, Set<string>>();
+      for (const tool of tools.values()) {
+        if (tool.applicationKey !== "paperclip-notebook" || !tool.connectionId || !permits(tool)) continue;
+        const names = connections.get(tool.connectionId) ?? new Set<string>();
+        names.add(tool.upstreamToolName ?? ""); connections.set(tool.connectionId, names);
+      }
+      return [...connections].filter(([, names]) => names.has("notebook_begin_upload") && names.has("notebook_finalize_upload")).map(([id]) => id);
+    },
+    async executeNotebookTool(connectionId: string, upstreamToolName: string, argumentsValue: Record<string, unknown>, currentWorkMode: WorkMode): Promise<unknown> {
+      const matches = [...tools.values()].filter(tool => tool.applicationKey === "paperclip-notebook"
+        && tool.connectionId === connectionId && tool.upstreamToolName === upstreamToolName);
+      if (matches.length !== 1) throw new Error("assigned_notebook_tool_unavailable");
+      const tool = matches[0]!;
+      if (!permits(tool) || !permits(tool, currentWorkMode)) throw new Error("paperclip_runner_tool_mode_denied");
+      const result = await input.gateway.executeTool({ gatewayPublicId: input.gatewayPublicId, sessionToken: input.bearerToken,
+        tool: tool.name, parameters: argumentsValue });
+      if (result.status !== "completed" && result.status !== "replayed") throw new Error("assigned_mcp_tool_execution_incomplete");
+      if (!result.result || typeof result.result !== "object" || "isError" in result.result && result.result.isError === true)
+        throw new ToolGatewayHttpError(502, "Notebook returned an error.", "tool_error");
+      const payload = result.result as { structuredContent?: unknown };
+      if (!payload.structuredContent || typeof payload.structuredContent !== "object") throw new Error("assigned_notebook_invalid_response");
+      return payload.structuredContent;
+    },
     definitions(fits?: (definitions: ToolDefinition[]) => boolean): ToolDefinition[] {
       const direct = [...tools].filter(([, tool]) => permits(tool)).map(([name, tool]) => definition(name, tool));
       if (!fits || fits(direct)) return direct;

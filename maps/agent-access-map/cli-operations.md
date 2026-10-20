@@ -84,6 +84,15 @@ remaining operations before qualifying the whole capability.
 Gaps: Binary transfers, document versions and work-product registration need distinct
 assertions.
 
+Notebook addition: `paperclipai notebook publish` uses the existing agent bearer
+and run header to create a bounded gateway session. It selects a Notebook
+connection explicitly and dispatches every publication action through that
+gateway. Object uploads carry only scoped ticket headers. The command grants no
+filesystem access or Notebook OAuth credential. A controlled local fixture
+verifies actual 2 MiB bytes, selected-connection checks, Off/Ask first behavior,
+and redirect rejection. Native runs use the bound `publish_notebook_files` tool.
+Live deployed agent publication remains unverified.
+
 ## `run-controls`
 
 Review: `baseline`.

@@ -1,0 +1,77 @@
+import { createHash } from "node:crypto";
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { publishNotebookWorkspaceFiles } from "./notebook-publishing.js";
+import { createAssignedMcpTools } from "./assigned-mcp-tools.js";
+import { ToolGatewayHttpError, type ToolGatewayDescriptor, type ToolGatewayService } from "../tool-gateway.js";
+
+const pageId = "44444444-4444-4444-8444-444444444444";
+const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+describe("native Notebook workspace publication", () => {
+  let root: string, body: Buffer;
+  beforeEach(async () => { root = await mkdtemp(join(tmpdir(), "native-notebook-")); body = Buffer.alloc(2 * 1024 * 1024, 65); await writeFile(join(root, "index.html"), body); });
+  afterEach(async () => { await rm(root, { recursive: true, force: true }); });
+  const arguments_ = () => ({ connectionId: "notebook", title: "Report", idempotencyKey: "build-report", entryFile: "index.html",
+    files: [{ path: "index.html", source: "index.html", size: body.length, sha256: digest(body) }] });
+  async function fixture() {
+    const descriptors = ["notebook_create_page", "notebook_begin_upload", "notebook_finalize_upload"].map(name => ({
+      name: `gateway:${name}`, upstreamToolName: name, applicationKey: "paperclip-notebook", connectionId: "notebook", risk: "write",
+      displayName: name, description: name, parametersSchema: { type: "object" }, providerType: "mcp_remote_http", pluginId: "fixture",
+    } as ToolGatewayDescriptor));
+    const uploaded: Buffer[] = [];
+    const executeTool = vi.fn(async (call: { tool: string; parameters: any }) => ({ status: "completed", result: { structuredContent:
+      call.tool.endsWith("notebook_create_page") ? { id: pageId, version: 1 }
+      : call.tool.endsWith("notebook_begin_upload") ? { deploymentId: "d", uploads: call.parameters.assets.map((file: { path: string }) => ({ path: file.path, url: `https://quarantine.s3.us-east-1.amazonaws.com/${file.path}?ticket=temporary`, headers: { "x-upload-checksum": digest(body) } })) }
+      : { operationId: "d", status: "ready", pageId, shareUrl: "https://notebook.example/p/page", audience: { mode: "private" } } } }));
+    const gateway = { listToolsForNamedGateway: vi.fn().mockResolvedValue(descriptors), executeTool } as unknown as ToolGatewayService;
+    const tools = await createAssignedMcpTools({ gateway, gatewayPublicId: "selected-gateway", bearerToken: "controller-only-credential" });
+    const authorize = vi.fn(async () => undefined);
+    const upload = vi.fn(async (_url: URL, init: RequestInit) => { uploaded.push(Buffer.from(init.body as Uint8Array)); return new Response(null, { status: 200 }); });
+    return { tools, gateway, executeTool, authorize, upload, uploaded };
+  }
+  it("reads real local bytes and sends each action through the selected assigned gateway", async () => {
+    const f = await fixture();
+    const result = await publishNotebookWorkspaceFiles({ ...f, arguments: arguments_(), workspaceRoot: root });
+    expect(result).toMatchObject({ status: "ready", audience: { mode: "private" } });
+    expect(f.uploaded).toEqual([body]);
+    expect(f.executeTool.mock.calls.map(([call]) => call.tool)).toEqual(["gateway:notebook_create_page", "gateway:notebook_begin_upload", "gateway:notebook_finalize_upload"]);
+    expect(f.executeTool.mock.calls[1][0]).toMatchObject({ gatewayPublicId: "selected-gateway", sessionToken: "controller-only-credential", parameters: { assets: [{ path: "index.html", size: body.length, sha256: digest(body) }] } });
+    expect(f.upload.mock.calls[0][1]).toMatchObject({ method: "PUT", headers: { "x-upload-checksum": digest(body) }, redirect: "error", credentials: "omit" });
+    expect(JSON.stringify(result)).not.toMatch(/temporary|controller-only|s3\.us-east/);
+  });
+  it("reads remote bytes only with the existing server-bound reader", async () => {
+    const f = await fixture(), readRemoteWorkspaceFile = vi.fn(async () => body);
+    await publishNotebookWorkspaceFiles({ ...f, arguments: arguments_(), workspaceRoot: "/not-controller-workspace", executionTargetKind: "remote", readRemoteWorkspaceFile });
+    expect(readRemoteWorkspaceFile).toHaveBeenCalledTimes(2);
+    expect(readRemoteWorkspaceFile).toHaveBeenCalledWith({ contentRef: "index.html", byteSize: body.length, sha256: digest(body), allowEmpty: true });
+    await expect(publishNotebookWorkspaceFiles({ ...f, arguments: arguments_(), workspaceRoot: root, executionTargetKind: "remote" })).rejects.toThrow("remote_workspace_unavailable");
+  });
+  it.each(["approval_required", "policy_deny", "connection_revoked"])("preserves %s and sends no bytes without gateway authorization", async reason => {
+    const f = await fixture(), error = new ToolGatewayHttpError(403, "Denied", reason);
+    f.executeTool.mockRejectedValue(error);
+    await expect(publishNotebookWorkspaceFiles({ ...f, arguments: arguments_(), workspaceRoot: root })).rejects.toBe(error);
+    expect(f.upload).not.toHaveBeenCalled();
+  });
+  it("stops when the run loses authority after upload, before finalization", async () => {
+    const f = await fixture(); let revoked = false;
+    f.authorize.mockImplementation(async () => { if (revoked) throw new Error("run_revoked"); });
+    f.upload.mockImplementation(async () => { revoked = true; return new Response(null, { status: 200 }); });
+    await expect(publishNotebookWorkspaceFiles({ ...f, arguments: arguments_(), workspaceRoot: root })).rejects.toThrow("run_revoked");
+    expect(f.executeTool).toHaveBeenCalledTimes(2);
+  });
+  it("rejects changed, escaped, instance-state, duplicate, or symbolic-link sources before publication", async () => {
+    const f = await fixture();
+    await expect(publishNotebookWorkspaceFiles({ ...f, arguments: { ...arguments_(), connectionId: "different" }, workspaceRoot: root })).rejects.toThrow("unavailable");
+    for (const source of ["../private", "/private", ".paperclip/config.json"]) {
+      await expect(publishNotebookWorkspaceFiles({ ...f, arguments: { ...arguments_(), files: [{ ...arguments_().files[0], source }] }, workspaceRoot: root })).rejects.toThrow();
+    }
+    await symlink(join(root, "index.html"), join(root, "link.html"));
+    await expect(publishNotebookWorkspaceFiles({ ...f, arguments: { ...arguments_(), files: [{ ...arguments_().files[0], source: "link.html" }] }, workspaceRoot: root })).rejects.toThrow("symlink");
+    await writeFile(join(root, "index.html"), "changed");
+    await expect(publishNotebookWorkspaceFiles({ ...f, arguments: arguments_(), workspaceRoot: root })).rejects.toThrow("file_changed");
+    await expect(publishNotebookWorkspaceFiles({ ...f, arguments: { ...arguments_(), files: [arguments_().files[0], arguments_().files[0]] }, workspaceRoot: root })).rejects.toThrow("manifest_invalid");
+    expect(f.executeTool).not.toHaveBeenCalled();
+  });
+});

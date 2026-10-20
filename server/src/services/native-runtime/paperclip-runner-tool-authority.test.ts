@@ -1,7 +1,7 @@
 import { connectorToolDefinitionsForSkills } from "../connector-runtime.js";
 import * as cloudIdentity from "../cloud-runtime-identity.js";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { LOW_TRUST_REVIEW_PRESET, upsertIssueDocumentSchema } from "@paperclipai/shared";
 import { and, eq, inArray } from "drizzle-orm";
 import {
@@ -26,7 +26,7 @@ import { issueService } from "../issues.js";
 import { PaperclipRunnerToolAuthority } from "./paperclip-runner-tool-authority.js";
 import { PaperclipRunnerSemanticAuthority } from "./runner-semantic-authority.js";
 import { createAssignedMcpTools } from "./assigned-mcp-tools.js";
-import type { ToolGatewayService } from "../tool-gateway.js";
+import type { ToolGatewayDescriptor, ToolGatewayService } from "../tool-gateway.js";
 import { READ_CURRENT_WAKE_COMMENTS_TOOL_NAME } from "./current-wake-comments.js";
 import { buildLowTrustSourceTrust, buildPromotedSourceTrust, LOW_TRUST_QUARANTINED_BODY } from "../source-trust.js";
 import { CAPABILITY_SEMANTIC_TOOL_CATALOG, runnerCodexDynamicToolsFit } from "../../vendor/paperclip-runner/index.js";
@@ -49,10 +49,9 @@ describe("PaperclipRunnerToolAuthority", () => {
   afterEach(() => vi.unstubAllEnvs());
 
   beforeAll(async () => {
-    temporary = await startEmbeddedPostgresTestDatabase(
-      "paperclip-runner-tools-",
-    );
-    db = createDb(temporary.connectionString);
+    const externalUrl = process.env.PAPERCLIP_TEST_DATABASE_URL;
+    if (!externalUrl) temporary = await startEmbeddedPostgresTestDatabase("paperclip-runner-tools-");
+    db = createDb(externalUrl ?? temporary!.connectionString);
     await db.insert(companies).values({
       id: companyId,
       name: "Runner tools",
@@ -832,7 +831,8 @@ describe("PaperclipRunnerToolAuthority", () => {
     const execute = vi.fn().mockResolvedValue({ content: "synthetic memory" });
     const authority = new PaperclipRunnerToolAuthority(db, {
       companyId, agentId, issueId, runId,
-      assignedMcpTools: { definitions: () => [tool], has: (name) => name === tool.name, execute },
+      assignedMcpTools: { definitions: () => [tool], has: (name) => name === tool.name, execute,
+        notebookConnectionIds: () => [], executeNotebookTool: vi.fn() },
     });
     expect(authority.definitions()).toContainEqual(tool);
     const call = { tool: tool.name, callId: "assigned-mcp", arguments: { query: "compass" } };
@@ -869,6 +869,39 @@ describe("PaperclipRunnerToolAuthority", () => {
     expect(authority.definitions().map((tool) => tool.name)).not.toContain(
       "set_dependencies",
     );
+  });
+
+  it("publishes Notebook files only from a bound standard-mode workspace and a selected assigned connection", async () => {
+    const content = Buffer.from("native artifact"), sha256 = createHash("sha256").update(content).digest("hex");
+    const executeTool = vi.fn(async ({ tool }: { tool: string }) => ({ status: "completed", result: { structuredContent:
+      tool.endsWith("notebook_create_page") ? { id: issueId, version: 1 }
+      : tool.endsWith("notebook_begin_upload") ? { deploymentId: "ready-deployment", status: "ready" }
+      : { operationId: "ready-deployment", status: "ready", audience: { mode: "private" } } } }));
+    const descriptors = ["notebook_create_page", "notebook_begin_upload", "notebook_finalize_upload"].map(name => ({
+      name: `notebook:${name}`, upstreamToolName: name, applicationKey: "paperclip-notebook", connectionId: "assigned-notebook",
+      risk: "write", providerType: "mcp_remote_http", displayName: name, description: name, pluginId: "fixture", parametersSchema: { type: "object" },
+    } as ToolGatewayDescriptor));
+    const assignedMcpTools = await createAssignedMcpTools({ gateway: { listToolsForNamedGateway: vi.fn().mockResolvedValue(descriptors), executeTool } as unknown as ToolGatewayService,
+      gatewayPublicId: "native-gateway", bearerToken: "controller-only-token" });
+    const readRemoteWorkspaceFile = vi.fn(async () => content);
+    const binding = { companyId, agentId, issueId, runId, assignedMcpTools, workspaceRoot: "/runtime-only",
+      executionTargetKind: "remote" as const, readRemoteWorkspaceFile };
+    const authority = new PaperclipRunnerToolAuthority(db, binding);
+    expect(authority.definitions().find(tool => tool.name === "publish_notebook_files")?.inputSchema).toMatchObject({ properties: { connectionId: { enum: ["assigned-notebook"] } } });
+    expect(new PaperclipRunnerToolAuthority(db, { ...binding, workMode: "planning" }).definitions().some(tool => tool.name === "publish_notebook_files")).toBe(false);
+    expect(new PaperclipRunnerToolAuthority(db, { ...binding, workspaceRoot: undefined }).definitions().some(tool => tool.name === "publish_notebook_files")).toBe(false);
+    const call = { tool: "publish_notebook_files", callId: "publish-native", arguments: { connectionId: "assigned-notebook", title: "Artifact",
+      idempotencyKey: "artifact-v1", entryFile: "index.html", files: [{ path: "index.html", source: "dist/index.html", size: content.length, sha256 }] } };
+    await expect(authority.execute(call)).resolves.toMatchObject({ status: "ready", audience: { mode: "private" } });
+    expect(readRemoteWorkspaceFile).toHaveBeenCalledOnce();
+    expect(executeTool).toHaveBeenCalledTimes(3);
+    await db.update(issues).set({ workMode: "ask" }).where(eq(issues.id, issueId));
+    try { await expect(authority.execute(call)).rejects.toThrow("unavailable to this run"); }
+    finally { await db.update(issues).set({ workMode: "standard" }).where(eq(issues.id, issueId)); }
+    await db.update(heartbeatRuns).set({ status: "succeeded" }).where(eq(heartbeatRuns.id, runId));
+    try { await expect(authority.execute(call)).rejects.toThrow("binding_not_authorized"); }
+    finally { await db.update(heartbeatRuns).set({ status: "running" }).where(eq(heartbeatRuns.id, runId)); }
+    expect(readRemoteWorkspaceFile).toHaveBeenCalledOnce();
   });
 
   it("writes progress through the real issue service and replays idempotently", async () => {

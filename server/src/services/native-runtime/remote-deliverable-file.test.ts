@@ -32,6 +32,12 @@ describe("remote deliverable admission", () => {
       .rejects.toThrow("paperclip_runner_file_handoff_remote_read_failed");
   });
 
+  it("permits an empty Notebook file only through the explicit server-owned opt-in", async () => {
+    const execute = vi.fn().mockResolvedValue({ ...success, stdout: "" });
+    await expect(readVerifiedRemoteWorkspaceFile({ ...request, byteSize: 0, sha256: digest(Buffer.alloc(0)), allowEmpty: true, runner: { execute } })).resolves.toEqual(Buffer.alloc(0));
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
   it.each([
     { stdout: "" }, { stdout: success.stdout + "\n" }, { stdout: "?".repeat(success.stdout.length) },
     { stdout: Buffer.alloc(body.length, 65).toString("base64") }, { timedOut: true }, { exitCode: 1, stderr: "/private/provider/details" },
@@ -79,6 +85,14 @@ describe.skipIf(!hasLinuxNode)("remote deliverable real Linux descriptor reads",
       env: { NODE_OPTIONS: "", NODE_PATH: "" },
     }));
     expect(await readFile(join(workspaceRoot, "checklist.md"))).toEqual(body);
+  });
+
+  it("reads a real 2 MiB Notebook asset and an explicitly admitted empty file", async () => {
+    const bytes = Buffer.alloc(2 * 1024 * 1024, 65);
+    await writeFile(join(workspaceRoot, "bundle.js"), bytes);
+    await expect(readVerifiedRemoteWorkspaceFile({ workspaceRoot, contentRef: "bundle.js", byteSize: bytes.length, sha256: digest(bytes), runner })).resolves.toEqual(bytes);
+    await writeFile(join(workspaceRoot, "empty.txt"), Buffer.alloc(0));
+    await expect(readVerifiedRemoteWorkspaceFile({ workspaceRoot, contentRef: "empty.txt", byteSize: 0, sha256: digest(Buffer.alloc(0)), allowEmpty: true, runner })).resolves.toEqual(Buffer.alloc(0));
   });
 
   it("passes metacharacters as data, never shell syntax", async () => {
