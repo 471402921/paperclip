@@ -27,6 +27,8 @@ import {
   type PrpStructuredRunResult,
 } from "../../vendor/paperclip-runner/index.js";
 
+const repositoryYieldCorrection = 'This task has a saved repository preparation for its next admission. This is routine setup, not a blocker. Call paperclip_finish with reportedWorkDisposition="yielded" and omit continuation (or use null); Paperclip will select the saved workspace continuation. Preserve the completed work and explain what remains. Do not repeat setup, set a timer, or ask the user to restart.';
+
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown> : {};
@@ -250,7 +252,7 @@ export async function nativeCompletionFeedback(
     const repository = await pendingTaskRepository(db, { companyId: run.companyId, issueId: issue.id, workspaceId: issue.executionWorkspaceId, repositoryIds });
     if (repository &&
         !(await issueTreeControlService(db).getActivePauseHoldGate(run.companyId, issue.id))) {
-      throw new Error('This task has a saved repository preparation for its next admission. This is routine setup, not a blocker. Call paperclip_finish with reportedWorkDisposition="yielded" and omit continuation (or use null); Paperclip will select the saved workspace continuation. Preserve the completed work and explain what remains. Do not repeat setup, set a timer, or ask the user to restart.');
+      throw new Error(repositoryYieldCorrection);
     }
   }
   if (result.reportedWorkDisposition === "yielded" && result.continuation?.kind === "monitor") {
@@ -260,7 +262,7 @@ export async function nativeCompletionFeedback(
     !isConversation(issue) &&
     result.reportedWorkDisposition === "yielded" &&
     result.continuation?.kind === "response_wake" &&
-    result.completionClaim.remainingWork.some((entry) => entry.blocksCompletion) &&
+    (!result.completionClaim.objectiveSatisfied || result.completionClaim.remainingWork.some((entry) => entry.blocksCompletion)) &&
     signals.actionableAttentionRequests.length === 0
   ) {
     const pause = await issueTreeControlService(db).getActivePauseHoldGate(
@@ -275,8 +277,10 @@ export async function nativeCompletionFeedback(
     });
     // Conversation turns and revoked chat authority retain their own lifecycle.
     if (chatWait === "not_applicable") {
+      const repository = await pendingTaskRepository(db, { companyId: run.companyId, issueId: issue.id, workspaceId: issue.executionWorkspaceId });
+      if (repository) throw new Error(repositoryYieldCorrection);
       throw new Error(
-        "The response_wake report includes blocking remaining work without a pending wait condition. Answering a user comment does not pause the task. Continue the authorized work, register a same_agent continuation, or report the concrete blocker or required question. Do not repeat completed work.",
+        "The response_wake report includes an unfinished objective or blocking remaining work without a pending wait condition. Answering a user comment does not pause the task. Continue the authorized work, or report the concrete blocker or required question. Do not repeat completed work.",
       );
     }
   }

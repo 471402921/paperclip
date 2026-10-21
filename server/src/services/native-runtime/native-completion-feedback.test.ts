@@ -212,6 +212,29 @@ describe("native final-response feedback", () => {
     const feedback = await nativeCompletionFeedback(db, current.runId, done);
     expect(feedback).not.toContain("#document-"); expect(feedback).not.toContain("foreign.example");
   });
+  it("requires a real response wait when an unfinished objective omits remaining work", async () => {
+    const value = await fixture();
+    const report: PrpStructuredRunResult = { ...done, reportedWorkDisposition: "yielded",
+      completionClaim: { ...done.completionClaim, objectiveSatisfied: false, remainingWork: [],
+        criteria: [{ criterionId: "objective", status: "not_satisfied", evidenceRefs: [] }] },
+      continuation: { kind: "response_wake", summary: "Repository preparation needs the next admission", idempotencyKey: "repository-admission" },
+    };
+    await expect(nativeCompletionFeedback(db, value.runId, report)).rejects.toThrow("without a pending wait condition");
+    const [workspace] = await db.insert(executionWorkspaces).values({ companyId: value.companyId, sourceIssueId: value.issueId,
+      mode: "shared_workspace", strategyType: "project_primary", metadata: { source: "task_session" }, name: "Task files" }).returning();
+    await db.insert(executionWorkspaceRepositories).values({ companyId: value.companyId, executionWorkspaceId: workspace.id,
+      requestedByIssueId: value.issueId, repositoryIdentity: "public/example", repoUrl: "https://github.com/public/example",
+      relativePath: ".paperclip-repositories/example", requestKey: "prepare" });
+    await db.update(issues).set({ executionWorkspaceId: workspace.id }).where(eq(issues.id, value.issueId));
+    await expect(nativeCompletionFeedback(db, value.runId, report)).rejects.toThrow("omit continuation (or use null)");
+    const [hold] = await db.insert(issueTreeHolds).values({ companyId: value.companyId, rootIssueId: value.issueId, mode: "pause" }).returning();
+    await expect(nativeCompletionFeedback(db, value.runId, report)).resolves.toContain("task is paused");
+    await db.update(issueTreeHolds).set({ status: "released" }).where(eq(issueTreeHolds.id, hold.id));
+    const [question] = await db.insert(issueThreadInteractions).values({ companyId: value.companyId, issueId: value.issueId,
+      sourceRunId: value.runId, createdByAgentId: value.agentId, kind: "ask_user_questions", status: "pending", continuationPolicy: "wake_assignee",
+      payload: { version: 1, questions: [{ id: "branch", prompt: "Which private branch?", selectionMode: "single", required: true, allowOther: true, options: [] }] } }).returning();
+    await expect(nativeCompletionFeedback(db, value.runId, report)).resolves.toContain(`Pending request: ${question.id}`);
+  });
   it("corrects a repository-admission blocker before accepting the result", async () => {
     const value = await fixture();
     const [workspace] = await db.insert(executionWorkspaces).values({ companyId: value.companyId,
