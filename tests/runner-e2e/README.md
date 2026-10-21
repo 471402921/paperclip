@@ -64,6 +64,29 @@ pnpm test:e2e:runner -- --id legacy-conversion.runner-codex.local.convert-and-de
 pnpm test:e2e:runner -- --id automatic-repository-configured-models.runner-codex.local.automatic-repository-resume --max-automatic-retries 0
 ```
 
+## Necessary free-text question
+
+The explicit-only `necessary-question` suite has four development cells: the
+recorded Codex and Claude models, on local and Daytona environments. It requests
+one essential booking reference that only the test user knows. The browser must
+show the actual free-text prompt and its explanation, then submit the real answer.
+The oracle checks the unchanged question, its server-owned provider or semantic
+receipt, the exact stored user answer, and one bound continuation. The saved
+confirmation must contain that answer exactly and have a visible document link.
+A title, success claim, replacement card, duplicate wake, or uncommitted result
+cannot establish a pass.
+
+This extends the existing continuation flow and keeps the older question suites
+unchanged. It uses production hire instructions, one attempt, one or two provider
+admissions, and 1,000-cent company and agent budgets. API-key authentication and
+per-turn lifecycle remain explicit development differences. It does not qualify
+Slack, staging subscription credentials, warm reuse, or the complete checkpoint.
+
+```sh
+pnpm test:e2e:runner -- --list --suite necessary-question
+pnpm test:e2e:runner -- --id necessary-question.runner-codex.local.necessary-free-text --max-automatic-retries 0
+```
+
 ## Live provider connection journeys
 
 See [PROVIDER-CONNECTIONS.md](PROVIDER-CONNECTIONS.md) for the explicit-only

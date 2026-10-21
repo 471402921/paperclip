@@ -53,7 +53,7 @@ function sameQuestion(a: Row, b?: Row) {
 function answeredByUser(i?: Row) {
   return i?.status === "answered" && nonempty(i.resolvedByUserId) && !i.resolvedByAgentId;
 }
-function resumedRun(before: ContinuationCheckpoint | undefined, after: ContinuationCheckpoint | undefined, i?: Row) {
+export function questionResumedOnce(before: ContinuationCheckpoint | undefined, after: ContinuationCheckpoint | undefined, i?: Row) {
   if (!before || !after || !i) return false;
   const path = questionPath(before, i);
   const prior = new Set(before.runs.map(r => r.id));
@@ -112,7 +112,7 @@ export function gradeQuestionResume(checkpoints: ContinuationCheckpoint[], marke
       detail: "The real board answer must remain bound to the unchanged question, with no fabricated or substituted response.",
     }, {
       id: `question-resume.${answer}.path`,
-      passed: resumedRun(before, after, i),
+      passed: questionResumedOnce(before, after, i),
       detail: `Observed path: ${questionPath(before, i) ?? "unknown"}; provider answers resume the same run; semantic answers require one exactly bound response wake.`,
     });
   }

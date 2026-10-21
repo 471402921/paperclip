@@ -1,3 +1,4 @@
+import { necessaryQuestionTask, necessaryQuestionDigest } from "./necessary-question.js";
 import { caseHandoffTask, caseHandoffDefinitionDigest } from "./case-handoffs-cases.js";
 import { caseReceiptTask, caseReceiptDefinitionDigest, CASE_RECEIPT_BUDGET_CENTS, CASE_RECEIPT_MAX_TURNS, CASE_RECEIPT_RUN_TIMEOUT_MS } from "./case-receipt-cases.js";
 import { TASK_WORKSPACES_SUITE, taskWorkspaceTask, taskWorkspaceProfile, taskWorkspaceDefinitionDigest } from "./task-workspaces-cases.js";
@@ -1184,6 +1185,16 @@ export const runnerSuites: readonly RunnerSuiteFixture[] = [
     expectedMatrixSize: 3,
     definitionMetadata: { version: 1, definitionDigest: taskWorkspaceDefinitionDigest(), scheduling: "explicit-only", providerTurns: 3,
       attempts: 1, budgetMonthlyCents: 1000, project: "none", cwd: "unconfigured-task-default", oracle: "public-file-download-and-host-nested-git", remoteLifecycle: "per_turn" },
+  },
+  {
+    id: "necessary-question", label: "Necessary free-text question and verified confirmation", manualOnly: true,
+    description: "One required private input, a visible question and context, and one exactly bound answer continuation.",
+    groups: [], profiles: repositoryModelProfiles.map(({ native }) => productionDefaultHireProfile(native)),
+    environments: runnerEnvironments, tasks: [necessaryQuestionTask], expectedMatrixSize: 4,
+    definitionMetadata: { version: 1, definitionDigest: necessaryQuestionDigest(), scheduling: "explicit-only", attempts: 1,
+      providerTurns: "1-2; provider pause or one semantic successor", budgetMonthlyCents: 1000, instructions: "production-default",
+      surface: "paperclip", target: "isolated-development-instance", authentication: "api-key", stagingAuthentication: "subscription",
+      remoteLifecycle: "per_turn", stagingQualification: false },
   },
   ...([false, true] as const).map(conversion => ({
     id: conversion ? "legacy-conversion" : "configured-repository",
