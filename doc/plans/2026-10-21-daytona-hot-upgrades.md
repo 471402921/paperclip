@@ -225,3 +225,11 @@ clean server typecheck after the final fixture edit. Logs are
 `/tmp/daytona-plugin-server-final-types2.log`, and `/tmp/daytona-plugin-build.log`.
 The separate five-minute prepared-task run writes its result to
 `/tmp/daytona-plugin-five-minute.log`; the PR records that final result.
+
+The prepared-task five-minute outage passed in 322.32 seconds, preserving the
+same real runner/provider and active turn with exactly one provider start.
+The final heartbeat/workspace regression set passed 453 tests.
+While these checks completed, master #17088 published Copilot v54 and v55.
+The integration preserves both historical identities and binds this PR's
+transport changes as v56. The only transport merge addition from master selects
+the completion tool's bridge schema; this PR's recovery implementation remains.
