@@ -1,3 +1,4 @@
+import { flushDeferredEnvironmentCleanup, registerDeferredEnvironmentCleanup, writeEnvironmentCleanup } from "./environment-cleanup-notifications.js";
 import { executeEnvironmentTask, pluginEnvironmentSupportsTasks, settleDispatchedEnvironmentTask } from "./environment-task-runtime.js";
 import type { PluginEnvironmentTaskOperation } from "@paperclipai/plugin-sdk";
 import { allowLegacyShutdownWorkspaceCleanup, legacyShutdownWorkspaceResourceProtected } from "./legacy-shutdown-workspace-settlement.js";
@@ -1349,12 +1350,14 @@ function createSandboxEnvironmentDriver(
   // Keep the token through queue splices, failed flushes and buffer overflow.
   // Release only when the database durably owns cleanup of this exact orphan.
   const orphanIdleWork = new Map<string, () => void>();
+  let unregisterDeferredCleanup: (() => void) | undefined;
   const orphanIdleKey = (record: DeferredOrphanCleanupRecord) => JSON.stringify([
     record.companyId, record.provider, record.providerLeaseId ?? record,
   ]);
   const trackOrphanIdleWork = (record: DeferredOrphanCleanupRecord) => {
     const key = orphanIdleKey(record);
     if (!orphanIdleWork.has(key)) orphanIdleWork.set(key, beginIdleTrackedWork());
+    unregisterDeferredCleanup ??= registerDeferredEnvironmentCleanup(db, flushDeferredOrphanCleanups);
   };
   const DEFERRED_ORPHAN_CLEANUP_FAILURE_REASON = "acquire_rejected_teardown_failed";
 
@@ -1373,6 +1376,8 @@ function createSandboxEnvironmentDriver(
 
   // Add one orphan record to the in-process buffer. Report `false` only when the
   // buffer is full, so the caller keeps the error log as the last durable handle.
+  let spoolDirty = true;
+  let spoolLoadPromise: Promise<void> | null = null;
   const enqueueDeferredOrphanCleanup = (record: DeferredOrphanCleanupRecord): boolean => {
     trackOrphanIdleWork(record);
     // Dedup by the provider lease id, so a repeated failure for the same orphan
@@ -1383,27 +1388,19 @@ function createSandboxEnvironmentDriver(
       record.providerLeaseId !== null &&
       deferredOrphanCleanups.some((entry) => entry.providerLeaseId === record.providerLeaseId);
     if (alreadyBuffered) return true;
-    if (deferredOrphanCleanups.length >= deferredOrphanCleanupBufferLimit) return false;
+    if (deferredOrphanCleanups.length >= deferredOrphanCleanupBufferLimit) { spoolDirty = true; return false; }
     deferredOrphanCleanups.push(record);
     return true;
   };
 
-  // Load the durable spool into the in-process buffer exactly once. The first
-  // flush after a restart runs this load, so the records a previous process
-  // could not land re-enter the flush path. A later flush sees the resolved
-  // promise and never reloads, so a record this process already buffered never
-  // doubles. The load runs before the flush splices the buffer, so a
-  // restart-recovered record flushes on the same tick.
-  let spoolLoadPromise: Promise<void> | null = null;
-  const ensureSpoolLoaded = (): Promise<void> => {
-    if (!spoolLoadPromise) {
-      spoolLoadPromise = (async () => {
-        const persisted = await orphanCleanupSpool.load();
-        for (const record of persisted) {
-          enqueueDeferredOrphanCleanup(record);
-        }
-      })();
-    }
+  const ensureSpoolLoaded = async (): Promise<void> => {
+    if (spoolLoadPromise) return spoolLoadPromise;
+    if (!spoolDirty) return;
+    spoolDirty = false;
+    spoolLoadPromise = (async () => {
+      try { for (const record of await orphanCleanupSpool.load()) enqueueDeferredOrphanCleanup(record); }
+      catch (error) { spoolDirty = true; throw error; }
+    })().finally(() => { spoolLoadPromise = null; });
     return spoolLoadPromise;
   };
 
@@ -1412,7 +1409,7 @@ function createSandboxEnvironmentDriver(
     // flushes on this tick. The load runs once, then a resolved promise returns.
     await ensureSpoolLoaded();
     if (deferredOrphanCleanups.length === 0) {
-      return { recovered: 0, pending: 0 };
+      return { recovered: 0, pending: orphanIdleWork.size };
     }
     // Take the whole batch synchronously before the first await, so a second
     // concurrent flush sees an empty buffer and never re-inserts the same record.
@@ -1461,7 +1458,8 @@ function createSandboxEnvironmentDriver(
         );
       }
     }
-    return { recovered, pending: deferredOrphanCleanups.length };
+    if (orphanIdleWork.size === 0) { unregisterDeferredCleanup?.(); unregisterDeferredCleanup = undefined; }
+    return { recovered, pending: orphanIdleWork.size };
   };
 
   // Build the safe diagnostic fields for an orphan record. The provider
@@ -4000,7 +3998,7 @@ export function environmentRuntimeService(
     // Persist recovery ownership before any provider work. Re-check scope and
     // run liveness in this write: the earlier selection cannot fence a resume.
     // The in-flight lease also excludes concurrent closures and cleanup sweeps.
-    const [claimed] = await db.update(environmentLeases).set({
+    const [claimed] = await writeEnvironmentCleanup(db, tx => tx.update(environmentLeases).set({
       status: "pending_cleanup",
       failureReason: input.failureReason,
       cleanupStatus: "failed",
@@ -4024,7 +4022,7 @@ export function environmentRuntimeService(
         WHERE ${heartbeatRuns.id} = ${environmentLeases.heartbeatRunId}
           AND ${heartbeatRuns.status} IN ('queued', 'scheduled_retry', 'running')
       )`,
-    )).returning();
+    )).returning());
     if (!claimed) return null;
     const lease = toEnvironmentLeaseSnapshot(claimed);
     let renewalInFlight = false;
@@ -4059,11 +4057,11 @@ export function environmentRuntimeService(
       clearInterval(renewal);
       // A crash skips this write; the bounded ownership lease lets the sweep
       // recover. A completed failure becomes eligible for a later explicit retry.
-      await db.update(environmentLeases).set({
+      await writeEnvironmentCleanup(db, tx => tx.update(environmentLeases).set({
         metadata: sql`${environmentLeases.metadata} || '{"pendingCleanupInFlight":false}'::jsonb`,
       }).where(and(eq(environmentLeases.id, lease.id),
         sql`${environmentLeases.metadata}->>'pendingCleanupAttemptId' = ${attemptId}`,
-      )).catch(() => {
+      ))).catch(() => {
         logger.warn({ leaseId: lease.id }, "scoped cleanup ownership settlement failed");
       });
     }
@@ -4217,7 +4215,7 @@ export function environmentRuntimeService(
           if (hasStopOnlyCleanup(leaseSnapshot)) {
             const intentKey = stopOnlyCleanupKey(leaseSnapshot);
             const attemptId = randomUUID();
-            const [claimed] = await db.update(environmentLeases).set({
+            const [claimed] = await writeEnvironmentCleanup(db, tx => tx.update(environmentLeases).set({
               status: "pending_cleanup", cleanupStatus: "failed", releasedAt: new Date(),
               metadata: sql`${environmentLeases.metadata} || ${JSON.stringify({ pendingCleanupAttemptId: attemptId,
                 pendingCleanupInFlight: true, pendingCleanupLeaseExpiresAtMs: Date.now() + 15 * 60_000 })}::jsonb`,
@@ -4225,7 +4223,7 @@ export function environmentRuntimeService(
               inArray(environmentLeases.status, ["active", "pending_cleanup"]),
               sql`coalesce(${environmentLeases.metadata}->>'pendingCleanupInFlight', 'false') = 'false'`,
               sql`${environmentLeases.metadata}->${intentKey} = ${JSON.stringify(leaseSnapshot.metadata?.[intentKey])}::jsonb`,
-            )).returning();
+            )).returning());
             if (!claimed) continue;
             const snapshot = toEnvironmentLeaseSnapshot(claimed);
             try {
@@ -4396,15 +4394,8 @@ export function environmentRuntimeService(
     // it down. The dispatcher sums the recovered and pending counts across all
     // drivers. A driver with no buffer contributes nothing.
     async flushDeferredOrphanCleanups(): Promise<{ recovered: number; pending: number }> {
-      let recovered = 0;
-      let pending = 0;
-      for (const driver of drivers.values()) {
-        if (!driver.flushDeferredOrphanCleanups) continue;
-        const result = await driver.flushDeferredOrphanCleanups();
-        recovered += result.recovered;
-        pending += result.pending;
-      }
-      return { recovered, pending };
+      return flushDeferredEnvironmentCleanup(db, Array.from(drivers.values())
+        .flatMap(driver => driver.flushDeferredOrphanCleanups ? [driver.flushDeferredOrphanCleanups] : []));
     },
 
     async destroyReusableSandboxLeases(input: {

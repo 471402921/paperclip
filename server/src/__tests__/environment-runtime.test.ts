@@ -186,6 +186,7 @@ describe("findReusableSandboxLeaseId", () => {
 describeEmbeddedPostgres("environmentRuntimeService", () => {
   let stopDb: (() => Promise<void>) | null = null;
   let db!: ReturnType<typeof createDb>;
+  let connectionString: string;
   let runtime!: ReturnType<typeof environmentRuntimeService>;
   const fixtureRoots: string[] = [];
   // Give each test its own orphan-cleanup spool directory, so a spool file one
@@ -197,13 +198,14 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
   beforeAll(async () => {
     const started = await startEmbeddedPostgresTestDatabase("environment-runtime");
     stopDb = started.stop;
-    db = createDb(started.connectionString);
-    runtime = environmentRuntimeService(db);
+    connectionString = started.connectionString;
   });
 
   beforeEach(async () => {
     orphanCleanupSpoolDir = await mkdtemp(path.join(os.tmpdir(), "orphan-cleanup-spool-"));
     process.env.SANDBOX_ORPHAN_CLEANUP_SPOOL_DIR = orphanCleanupSpoolDir;
+    db = createDb(connectionString);
+    runtime = environmentRuntimeService(db);
   });
 
   afterEach(async () => {
@@ -235,6 +237,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
     await db.delete(companySecrets);
     await db.delete(projects);
     await db.delete(companies);
+    await db.$client.end({ timeout: 1 });
   });
 
   afterAll(async () => {
@@ -1130,7 +1133,7 @@ describeEmbeddedPostgres("environmentRuntimeService", () => {
           }
           if (!injected && fault === "journal write failed") {
             injected = true;
-            vi.spyOn(db, "update").mockImplementationOnce(() => { throw new Error("Database unavailable"); });
+            vi.spyOn(db, "transaction").mockRejectedValueOnce(new Error("Database unavailable"));
           }
           throw Object.assign(new Error("Persist observed sandbox identity before cleanup"), {
             data: { schema: "paperclip/environment-creation-cleanup/v1", cleanup: observed },

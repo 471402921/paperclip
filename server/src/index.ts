@@ -1,3 +1,4 @@
+import { registerEnvironmentCleanupWork } from "./services/environment-cleanup-work.js";
 import { loginCleanupSchedule } from "./services/login-cleanup-state.js";
 import { registerLoginCleanupWork } from "./services/login-cleanup-work.js";
 import { timeStartupRecovery } from "./startup-recovery-timing.js";
@@ -1311,11 +1312,6 @@ async function startServerWithDatabaseTeardown(
   // path can also run the sweep from the orphaned-run reaper without a second
   // teardown. The heartbeat scheduler owns the sweep when it is enabled; the
   // disabled path creates its own runtime to own the same sweep.
-  // The interval sweep waits this long after a lease's last write before it
-  // retries the teardown. The window matches the orphaned-run reaper staleness,
-  // so a just-failed lease does not draw a retry on every tick. The startup
-  // sweep passes zero, so a restart retries a stranded orphan at once.
-  const ENVIRONMENT_LEASE_CLEANUP_SWEEP_BACKOFF_MS = 5 * 60 * 1000;
   const environmentLeaseCleanupHeartbeat = accountingHeartbeat;
   const chatCompletionDeliveries = chatCompletionDeliveryService(db as any, environmentLeaseCleanupHeartbeat);
   const connectionDeliveries = connectionIntentDeliveryService(db as any, environmentLeaseCleanupHeartbeat);
@@ -1379,31 +1375,21 @@ async function startServerWithDatabaseTeardown(
     inspectLease: lease => cleanupInspectionRuntime.inspectLeaseResource(lease.id),
     inspectSetup: setup => environmentCustomImages.inspectSetupResource(setup),
   });
-  let nextHistoricalCleanupCheck = 0;
-  const scheduleHistoricalCleanupVerification = () => {
-    if (!isCloudManagedInstance() || isIdleTaskDrainActive() || isWarmStandby() || heartbeatSchedulerStopped ||
-        Date.now() < nextHistoricalCleanupCheck) return;
-    nextHistoricalCleanupCheck = Date.now() + 5 * 60_000;
-    // Provider reads never delay readiness or the ordinary cleanup sweep.
-    trackHeartbeatSchedulerWork(historicalCleanup.sweep().then(result => {
-      if (result.verified > 0) logger.info(result, "verified historical provider cleanup");
-    }).catch(() => logger.warn("historical provider cleanup verification deferred")));
+  const runEnvironmentLeaseCleanupSweep = async (backoffMs: number) => {
+    const result = await environmentLeaseCleanupHeartbeat.sweepPendingCleanupLeases({ backoffMs });
+    if (result.destroyed > 0 || result.capped > 0) {
+      logger.info(result, "environment lease cleanup retried sandbox teardowns");
+    }
   };
-  const runEnvironmentLeaseCleanupSweep = (backoffMs: number) =>
-    environmentLeaseCleanupHeartbeat
-      .sweepPendingCleanupLeases({ backoffMs })
-      .then((result) => {
-        scheduleHistoricalCleanupVerification();
-        if (result.destroyed > 0 || result.capped > 0) {
-          logger.info(result, "environment lease cleanup sweep retried orphan sandbox teardowns");
-        }
-      })
-      .catch((err) => {
-        logger.error({ err }, "environment lease cleanup sweep failed");
-      });
-  const scheduleEnvironmentLeaseCleanupSweep = () => {
-    if (isIdleTaskDrainActive() || heartbeatSchedulerStopped) return;
-    trackHeartbeatSchedulerWork(runEnvironmentLeaseCleanupSweep(ENVIRONMENT_LEASE_CLEANUP_SWEEP_BACKOFF_MS));
+  const startEnvironmentCleanup = async () => {
+    const worker = registerEnvironmentCleanupWork(db, deliveryWork, {
+      sweepPending: runEnvironmentLeaseCleanupSweep,
+      historical: isCloudManagedInstance() ? historicalCleanup : undefined,
+      canRun: () => !isIdleTaskDrainActive() && !isWarmStandby() && !heartbeatSchedulerStopped,
+      minimumSpacingMs: config.heartbeatSchedulerIntervalMs,
+    });
+    server.on("close", worker.stop);
+    await worker.ready;
   };
   const githubConnectionEvents = githubConnectionEventService(db as any, {
     wakeup: environmentLeaseCleanupHeartbeat.wakeup,
@@ -1747,7 +1733,7 @@ async function startServerWithDatabaseTeardown(
       ], () => !isIdleTaskDrainActive() && !isWarmStandby() && !heartbeatSchedulerStopped, config.heartbeatSchedulerIntervalMs).ready);
       // Retry any orphan sandbox teardown left by a failed acquire before a
       // server restart, so a leaked sandbox does not stay allocated.
-      await step("environment_lease_cleanup", () => runEnvironmentLeaseCleanupSweep(0));
+      await step("environment_lease_cleanup", startEnvironmentCleanup);
       await step("retention_sweep", runRetentionSweep);
     };
 
@@ -1781,7 +1767,6 @@ async function startServerWithDatabaseTeardown(
         scheduleMergedPullRequestConfirmationSweep();
         scheduleGitHubConnectionEventPoll();
         scheduleGitHubConnectionContinuitySweep();
-        scheduleEnvironmentLeaseCleanupSweep();
 
         if (isIdleTaskDrainActive() || heartbeatSchedulerStopped) return;
         scheduled.routines.wake();
@@ -1930,10 +1915,9 @@ async function startServerWithDatabaseTeardown(
     // is still required. A failed acquire can leak a paid provider sandbox, so
     // this path retries the teardown at startup and on the interval, exactly as
     // the enabled path does.
-    await runEnvironmentLeaseCleanupSweep(0);
+    await startEnvironmentCleanup();
     startHeartbeatSchedulerInterval(() => {
       scheduleExternalObjectRefreshSweep(new Date());
-      scheduleEnvironmentLeaseCleanupSweep();
       scheduleGitHubConnectionEventPoll();
       scheduleGitHubConnectionContinuitySweep();
     });

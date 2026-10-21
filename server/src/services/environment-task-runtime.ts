@@ -1,3 +1,4 @@
+import { writeEnvironmentCleanup } from "./environment-cleanup-notifications.js";
 import { readWorkspaceProviderBinding } from "@paperclipai/shared";
 import { settlePluginTaskCredentialHandoff } from "./plugin-task-credential-writeback.js";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
@@ -214,9 +215,9 @@ export async function settleDispatchedEnvironmentTask(db: Db, workers: PluginWor
     await executeEnvironmentTask(db, workers, { ...scope, operation: { kind: "complete" } });
     return true;
   } catch {
-    await db.update(environmentLeases).set({ status: "pending_cleanup", cleanupStatus: "failed",
+    await writeEnvironmentCleanup(db, tx => tx.update(environmentLeases).set({ status: "pending_cleanup", cleanupStatus: "failed",
       failureReason: "plugin_runner_task_cleanup_unconfirmed", releasedAt: new Date(), updatedAt: new Date(),
-    }).where(and(eq(environmentLeases.id, lease.id), eq(environmentLeases.companyId, lease.companyId)));
+    }).where(and(eq(environmentLeases.id, lease.id), eq(environmentLeases.companyId, lease.companyId))));
     throw new Error("Plugin Runner termination is unconfirmed; the saved lease requires cleanup");
   }
 }
