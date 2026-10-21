@@ -47,7 +47,7 @@ import { RUNNERD_CANONICAL_ITEM } from "./codex-driver-values.js";
 
 describe("Codex app-server Codex driver", () => {
   it.each([
-    ["monitor", false], ["monitor", true], ["same_agent", false], ["same_agent", true],
+    ["monitor", false], ["monitor", true], ["same_agent", false], ["same_agent", true], ["same_agent", "explicit"],
   ] as const)("uses saved %s continuation with nullable input=%s", async (kind, nullable) => {
     const transport = new FakeCodexTransport();
     const continuation = { kind, summary: "Continue from saved task state", idempotencyKey: "saved:task:receipt" };
@@ -59,7 +59,7 @@ describe("Codex app-server Codex driver", () => {
     });
     try {
       await session.startTurn({ message: { role: "user", text: "Check the published PR later." } });
-      const report = { ...structuredClone(result), reportedWorkDisposition: "yielded", ...(nullable ? { continuation: null } : {}) };
+      const report = { ...structuredClone(result), reportedWorkDisposition: "yielded", ...(nullable === "explicit" ? { continuation } : nullable ? { continuation: null } : {}) };
       const response = await transport.invoke({ id: "finish-monitor", method: "item/tool/call", params: {
         threadId: "thread-1", turnId: "turn-1", callId: "finish-monitor", tool: "paperclip_finish", arguments: report,
       } });

@@ -5,6 +5,7 @@ import {
   PRP_BLOCK_RESULT_OUTPUT_SCHEMA,
   PRP_BLOCK_RESULT_PROVIDER_INPUT_SCHEMA,
   PRP_BLOCK_TOOL_DESCRIPTION,
+  PRP_COMPLETION_RESULT_BRIDGE_INPUT_SCHEMA,
   PRP_COMPLETION_RESULT_OUTPUT_SCHEMA,
   PRP_COMPLETION_RESULT_PROVIDER_INPUT_SCHEMA,
   PRP_COMPLETION_TOOL_DESCRIPTION,
@@ -57,6 +58,21 @@ describe("provider-neutral completion result schema", () => {
     const providerValidate = new Ajv2020({ strict: false }).compile(PRP_COMPLETION_RESULT_PROVIDER_INPUT_SCHEMA);
     expect(providerValidate(report)).toBe(true);
     expect(validate(report)).toBe(false);
+  });
+
+  it("carries a normalized workspace continuation only on the internal bridge", () => {
+    const bridge = new Ajv2020({ strict: false }).compile(PRP_COMPLETION_RESULT_BRIDGE_INPUT_SCHEMA);
+    const provider = new Ajv2020({ strict: false }).compile(PRP_COMPLETION_RESULT_PROVIDER_INPUT_SCHEMA);
+    const report = { ...baseResult, reportedWorkDisposition: "yielded", continuation: {
+      kind: "same_agent", summary: "Use the staged task checkout.", idempotencyKey: "repository:task:receipt:run" } };
+    expect(bridge(report)).toBe(true);
+    expect(provider(report)).toBe(false);
+    for (const invalid of [
+      { ...report, reportedWorkDisposition: "done" },
+      { ...report, continuation: { ...report.continuation, kind: "retry" } },
+      { ...report, continuation: { ...report.continuation, idempotencyKey: "" } },
+    ]) expect(bridge(invalid)).toBe(false);
+    expect(bridge(baseResult)).toBe(true);
   });
 
   it("allows done with no verification and no actionable attention", () => {
