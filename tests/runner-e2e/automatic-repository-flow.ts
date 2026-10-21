@@ -24,7 +24,8 @@ export async function runAutomaticRepositoryFlow(input: {
   const files = automaticRepositoryFiles(nonce);
   let issue: Row | undefined;
   let runs: Row[] = [];
-  const observation: AutomaticRepositoryObservation = { reference: "", issueDone: false, runCount: 0,
+  const observation: AutomaticRepositoryObservation = { expectedModel: execution.profile.model,
+    expectedProvider: execution.profile.provider === "codex" ? "codex" : "acpx:claude", actualProviders: [], reference: "", issueDone: false, runCount: 0,
     successfulCommittedRuns: 0, sourceContinuation: null, successorSource: null, workspaceIds: [], readyRepository: false,
     savedContext: null, firstSavedContext: null, firstContextAttributed: false,
     firstContextObservedAt: null, successorStartedAt: null, predecessorFinishedAt: null, predecessorRetagged: true, continuationReceipt: null,
@@ -56,6 +57,10 @@ export async function runAutomaticRepositoryFlow(input: {
         observation.firstContextObservedAt = Date.now();
       }
     }
+    observation.actualProviders = runs.map(run => {
+      const provider = run.runnerProfileJson?.nativeExecutionInput?.provider;
+      return { model: provider?.model ?? null, kind: provider ? provider.kind === "acpx" ? `acpx:${provider.agent}` : provider.kind : null };
+    });
     observation.workspaceIds = runs.map(run => run.runnerProfileJson?.nativeExecutionInput?.binding?.executionWorkspaceId ?? null);
     observation.monitorScheduled ||= Boolean(issue.monitorNextCheckAt || runs.some(run => String(run.resultJson?.finalizationReasonCode).startsWith("scheduled_monitor_")));
   }
