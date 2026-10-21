@@ -58,7 +58,19 @@ export async function runRepositoryVerificationFlow(input: {
   }
   async function save(phase: string) {
     const checks = gradeRepositoryProof(observation);
-    if (issue) input.observe(issue, runs, checks);
+    if (issue) {
+      input.observe(issue, runs, checks);
+      await input.evidence("api-state.json", {
+        capturePhase: phase,
+        issue: { id: issue.id, companyId: issue.companyId, identifier: issue.identifier, status: issue.status,
+          assigneeAgentId: issue.assigneeAgentId, executionWorkspaceId: issue.executionWorkspaceId, statusVersion: issue.statusVersion },
+        runs: runs.map(run => ({ id: run.id, companyId: run.companyId, agentId: run.agentId, issueId: run.issueId,
+          nativeIssueId: run.nativeIssueId, status: run.status, runtimeMode: run.runtimeMode, nativePhase: run.nativePhase,
+          startedAt: run.startedAt, finishedAt: run.finishedAt, errorCode: run.errorCode,
+          finalizationPhase: run.resultJson?.finalizationPhase })),
+        checks,
+      });
+    }
     await input.evidence("repository-verification.json", { schema: "paperclip.e2e.repository-verification.v1", phase, observation, checks,
       runs: runs.map(run => ({ id: run.id, status: run.status, nativePhase: run.nativePhase, source: run.contextSnapshot?.source,
         startedAt: run.startedAt, finishedAt: run.finishedAt })) });
