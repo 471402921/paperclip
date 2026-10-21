@@ -16,7 +16,10 @@ Set `PAPERCLIP_DEPENDABLE_QUALIFICATION_MANIFEST` to a private JSON file matchin
 writes `dependable-qualification.json` beside the existing report and makes an
 incomplete checkpoint fail that report command. The checkpoint reads the entire
 retained attempt pool before best-attempt selection. Failed attempts and missing
-observer receipts remain visible after later successes. The ordinary report's
+observer receipts remain visible after later successes. Duplicate receipts make
+the checkpoint incomplete while preserving report output. Qualification also
+requires every manifest-listed proof file to exist inside its attempt directory;
+missing files, symlinks, and unsafe paths cannot count as inspected evidence. The ordinary report's
 costs, timings, evidence scanning, and attempt records remain authoritative.
 
 The observer receipt is typed and validated as `RunnerE2EResult.dependableWork`;

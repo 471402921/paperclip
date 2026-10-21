@@ -102,18 +102,20 @@ export function gradeDependableQualification(config: DependableQualification, at
     !config.models.codie.trim() || !config.models.claude.trim() ||
     !digest.test(config.settingsHashes.codie) || !digest.test(config.settingsHashes.claude) ||
     !/^sha256:[a-f0-9]{64}$/.test(config.runnerArtifact)) throw new Error("Incomplete dependable-work qualification identity");
-  const receipts = new Set<string>();
+  const receipts = new Map<string, number>();
   const issues = new Map<string, number>();
   const runs = new Map<string, number>();
   for (const attempt of attempts) {
     const key = `${attempt.campaignId}:${attempt.result.executionId}:${attempt.result.attempt}`;
-    if (!attempt.campaignId || receipts.has(key)) throw new Error("Duplicate or missing attempt receipt");
-    receipts.add(key);
+    receipts.set(key, (receipts.get(key) ?? 0) + 1);
     if (attempt.result.issueId) issues.set(attempt.result.issueId, (issues.get(attempt.result.issueId) ?? 0) + 1);
     for (const run of attempt.result.runIds ?? []) runs.set(run, (runs.get(run) ?? 0) + 1);
   }
   const observations = attempts.map(attempt => {
     const problems = attemptProblems(attempt, config);
+    if (!attempt.campaignId) problems.push("missing-attempt-receipt");
+    if (receipts.get(`${attempt.campaignId}:${attempt.result.executionId}:${attempt.result.attempt}`)! > 1)
+      problems.push("duplicate-attempt-receipt");
     if ((attempt.result.issueId && issues.get(attempt.result.issueId)! > 1) || attempt.result.runIds?.some(id => runs.get(id)! > 1))
       problems.push("reused-task-or-run");
     return { campaignId: attempt.campaignId, executionId: attempt.result.executionId, attempt: attempt.result.attempt,
@@ -130,7 +132,8 @@ export function gradeDependableQualification(config: DependableQualification, at
       complete: checkpointAt !== null && staging.length > 0 };
   });
   return { schema: "paperclip.e2e.dependable-qualification.v1", revision: config.revision,
-    requiredCells: 24, requiredCandidatePasses: 72, complete: cells.every(cell => cell.complete), cells,
+    requiredCells: 24, requiredCandidatePasses: 72, complete: cells.every(cell => cell.complete) && !observations.some(row =>
+      row.problems.includes("duplicate-attempt-receipt") || row.problems.includes("missing-attempt-receipt")), cells,
     observations, failedAttempts: observations.filter(row => row.originalStatus === "failed").length,
     incompleteAttempts: observations.filter(row => !row.qualified).length };
 }

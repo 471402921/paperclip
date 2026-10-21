@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { execFile } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -85,7 +85,10 @@ it.each([
 
 it("rejects duplicate receipts instead of counting one run twice", () => {
   const row = attempt(DEPENDABLE_CELLS[0]!, 1);
-  expect(() => gradeDependableQualification(config, [row, structuredClone(row)])).toThrow("Duplicate");
+  const report = gradeDependableQualification(config, [row, structuredClone(row)]);
+  expect(report.complete).toBe(false);
+  expect(report.observations).toHaveLength(2);
+  expect(report.observations.every(value => !value.qualified && value.problems.includes("duplicate-attempt-receipt"))).toBe(true);
 });
 
 it("does not count an existing task or run as a fresh attempt under a new receipt", () => {
@@ -179,4 +182,42 @@ it("keeps a complete rotation for valid UTC dates before the Unix epoch", () => 
   const dates = ["1969-12-26", "1969-12-27", "1969-12-28", "1969-12-29", "1969-12-30", "1969-12-31"];
   expect(dates.every(date => dependableDailySelection(date).length === 4)).toBe(true);
   expect([...new Set(dates.flatMap(dependableDailySelection))].sort()).toEqual([...DEPENDABLE_CELLS].sort());
+});
+
+it.each(["missing", "duplicate", "linked", "unsafe"])("writes an incomplete report for %s retained proof", async defect => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "dependable-retained-proof-"));
+  try {
+    const rows = complete();
+    if (defect === "duplicate") rows.push(structuredClone(rows[0]!));
+    for (const [index, row] of rows.entries()) {
+      const directory = path.join(root, `campaign-${index}`, "attempt-1"); await mkdir(directory, { recursive: true });
+      const { manifestVerified: _manifest, secretScanPassed: _scan, ...evidence } = row.evidence;
+      await writeFile(path.join(directory, "result.json"), JSON.stringify({ ...row.result,
+        dependableWork: { campaignId: row.campaignId, cell: row.cell, phase: row.phase, evidence } }));
+      const files = defect === "unsafe" && index === 0 ? ["final-state.png", "../outside.png"] : ["final-state.png"];
+      await writeFile(path.join(directory, "evidence-manifest.json"), JSON.stringify({ files, leaks: [], missing: [] }));
+      if (defect === "linked" && index === 0) {
+        const outside = path.join(root, "outside.png"); await writeFile(outside, "external proof");
+        await symlink(outside, path.join(directory, "final-state.png"));
+      } else if (defect !== "missing" || index !== 0) await writeFile(path.join(directory, "final-state.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK1cAAAAASUVORK5CYII=", "base64"));
+    }
+    const manifest = path.join(root, "qualification.json"); await writeFile(manifest, JSON.stringify(config));
+    const repository = path.resolve(import.meta.dirname, "../.."), output = path.join(root, "report");
+    let exitCode = 0;
+    try {
+      await promisify(execFile)(process.execPath, [path.join(repository, "cli/node_modules/tsx/dist/cli.mjs"), path.join(repository, "tests/runner-e2e/report.ts")], {
+        cwd: repository, timeout: 25_000, env: { PATH: process.env.PATH, HOME: process.env.HOME, PAPERCLIP_RUNNER_E2E_REPORT_ROOT: root,
+          PAPERCLIP_RUNNER_E2E_REPORT_OUT: output, PAPERCLIP_RUNNER_E2E_EXPECTED_IDS: JSON.stringify([rows[0]!.result.executionId]),
+          PAPERCLIP_DEPENDABLE_QUALIFICATION_MANIFEST: manifest },
+      });
+    } catch (error) { exitCode = (error as { code: number }).code; }
+    expect(exitCode).toBe(1);
+    const report = JSON.parse(await readFile(path.join(output, "dependable-qualification.json"), "utf8"));
+    expect(report.complete).toBe(false);
+    expect(report.observations).toHaveLength(rows.length);
+    const original = report.observations.find((value: Record<string, any>) => value.campaignId === rows[0]!.campaignId);
+    expect(original?.problems).toContain(defect === "duplicate" ? "duplicate-attempt-receipt" : "evidence-unverified");
+    expect(await readFile(path.join(output, "summary.md"), "utf8")).toContain("checkpoint: incomplete");
+    expect(await readFile(path.join(output, "index.html"), "utf8")).toContain("html");
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

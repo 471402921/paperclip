@@ -4,6 +4,8 @@ import path from "node:path";
 import {
   copyFile,
   mkdir,
+  lstat,
+  realpath,
   readFile,
   readdir,
   writeFile,
@@ -67,7 +69,7 @@ function validate(result: RunnerE2EResult, evidence: EvidenceManifest | null) {
     errors.push(`missing evidence=${evidence.missing.join(",")}`);
   if (
     result.status === "passed" &&
-    !evidence?.files?.includes("final-state.png")
+    (!Array.isArray(evidence?.files) || !evidence.files.includes("final-state.png"))
   ) {
     errors.push("passing final-state screenshot missing");
   }
@@ -80,6 +82,22 @@ function safeEvidenceRelative(relative: string) {
   if (segments.length === 0 || segments.some((segment) => segment === ".."))
     return null;
   return segments;
+}
+
+async function retainedProofAvailable(directory: string, evidence: EvidenceManifest | null): Promise<boolean> {
+  if (!Array.isArray(evidence?.files) || evidence.files.length === 0) return false;
+  const root = await realpath(directory);
+  for (const file of evidence.files) {
+    const segments = typeof file === "string" ? safeEvidenceRelative(file) : null;
+    if (!segments) return false;
+    const source = path.join(root, ...segments);
+    const valid = await lstat(source).then(async stat => {
+      const resolved = await realpath(source);
+      return stat.isFile() && !stat.isSymbolicLink() && resolved.startsWith(`${root}${path.sep}`);
+    }).catch(() => false);
+    if (!valid) return false;
+  }
+  return true;
 }
 
 async function stageDashboardEvidence(
@@ -196,6 +214,7 @@ async function main() {
       .then((value) => JSON.parse(value) as EvidenceManifest)
       .catch(() => null);
     const errors = validate(result, evidence);
+    if (result.dependableWork && !await retainedProofAvailable(directory, evidence)) errors.push("Retained qualification proof is missing or invalid");
     const entry = {
       result,
       evidence,
