@@ -709,7 +709,6 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     await expect(finish(staleSignIn.authorizationUrl)).rejects.toMatchObject({ details: { code: "oauth_authorization_revoked" } });
     const [revoked] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
     expect(revoked).toMatchObject({ status: "revoked", credentialSecretRefs: [] });
-    // A new sign-in started after revocation is an intentional reconnect.
     await expect(finish((await start()).authorizationUrl)).resolves.toMatchObject({ connection: { status: "active" } });
     const [reconnected] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
     expect(reconnected).toMatchObject({ status: "active" });
@@ -786,8 +785,6 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
       const replays: { tool: string; result: unknown }[] = [];
       const assigned = await createAssignedMcpTools({ gatewayPublicId: named.gatewayPublicId, bearerToken: token.token,
         gateway: { ...gateway, async executeTool(input) {
-          // The CLI supplies an idempotency key to the same gateway. Exercise
-          // that storage boundary with the native adapter's receipt recovery.
           const arguments_ = input.parameters as Record<string, unknown>;
           const result = await gateway.executeTool({ ...input,
             ...(lostResponse !== "approval result" && typeof arguments_.idempotencyKey === "string"

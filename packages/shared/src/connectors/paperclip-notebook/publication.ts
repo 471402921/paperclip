@@ -8,7 +8,6 @@ const uploadUrl = (value: unknown): value is string => {
   catch { return false; }
 };
 
-/** Read intact MCP data, never the gateway's shortened audit summary. */
 export function readNotebookPublicationResult(tool: string, response: unknown): Record<string, unknown> | undefined {
   const outer = record(response);
   if (!outer || outer.isError === true) return;

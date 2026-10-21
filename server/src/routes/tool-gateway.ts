@@ -569,8 +569,6 @@ export function toolGatewayRoutes(db: Db, toolGateway: ToolGatewayService) {
     }
   });
 
-  // This route is consumed only by the local-file publisher. The ordinary MCP
-  // and tools/call routes cannot opt out of model/event redaction.
   const callTool = (privateTransfer: boolean) => async (req: Request, res: Response) => {
     if (privateTransfer) res.set("Cache-Control", "no-store");
     try {

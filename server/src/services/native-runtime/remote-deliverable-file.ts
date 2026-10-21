@@ -140,8 +140,6 @@ export async function readVerifiedRemoteWorkspaceFile(input: {
     chunks.push(body);
     if (byteSize === 0) break;
   }
-  // No chunk is returned to the publisher until the complete expected file
-  // hash passes, including replacements between separate descriptor reads.
   const body = Buffer.concat(chunks, byteSize);
   if (createHash("sha256").update(body).digest("hex") !== sha256) throw new Error(`${PREFIX}hash_mismatch`);
   if (deadline !== undefined && performance.now() >= deadline) throw new Error(`${PREFIX}remote_read_timeout`);

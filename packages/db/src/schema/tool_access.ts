@@ -207,6 +207,7 @@ export const connectionGrants = pgTable(
         tokenType?: string;
         refreshedAt?: string;
         refreshTokenExpiresAt?: string;
+        supersededByGrantId?: string;
         refreshLease?: {
           id?: string;
           expiresAt?: string;

@@ -733,6 +733,11 @@ validation, model delivery, and audit capture. Only its private projection can
 restore validated transfer fields. Caller config and remote tool responses
 cannot register these adapters or bypass normal action policy.
 
+Bind workspace contributions independently of ordinary MCP relay exposure. A
+local native run can use a connector's approved workspace helper while retaining
+its existing MCP transport. The separate `workspaceConnectionTools` binding does
+not expose ordinary relayed tools or saved-result tools.
+
 **Resolve eligibility from current assignments and access.** An AgentMail account
 credential alone does not give an agent email capabilities. An active inbox
 assigned to that agent does, provided both the inbox connection and saved

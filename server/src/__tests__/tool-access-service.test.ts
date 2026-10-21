@@ -903,14 +903,13 @@ function oauthCallbackInput(state: string): Parameters<ReturnType<typeof toolAcc
 }
 
 describeEmbeddedPostgres("tool access service", () => {
+  const externalDatabaseUrl = process.env.PAPERCLIP_TOOL_ACCESS_TEST_DATABASE_URL?.trim();
   let db!: ReturnType<typeof createDb>;
   let tempDb: Awaited<
     ReturnType<typeof startEmbeddedPostgresTestDatabase>
   > | null = null;
 
   beforeAll(async () => {
-    const externalDatabaseUrl =
-      process.env.PAPERCLIP_TOOL_ACCESS_TEST_DATABASE_URL?.trim();
     if (externalDatabaseUrl) {
       db = createDb(externalDatabaseUrl);
       await instanceSettingsService(db).updateExperimental({ enableMemoryConnectors: true });
@@ -1104,8 +1103,8 @@ describeEmbeddedPostgres("tool access service", () => {
     const { run } = await createIssueAndRun(db, company.id, agent.id);
     const { connection } = await createBrokerConnection(db, company.id);
     await allowConnectionForAgent(db, company.id, agent.id, connection.id);
-    const mintDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
-    const revocationDb = createDb(tempDb!.connectionString, {
+    const mintDb = createDb(externalDatabaseUrl ?? tempDb!.connectionString, { maxConnections: 1 });
+    const revocationDb = createDb(externalDatabaseUrl ?? tempDb!.connectionString, {
       maxConnections: 1,
     });
     const service = createTestToolAccessService(mintDb);
@@ -1691,9 +1690,9 @@ describeEmbeddedPostgres("tool access service", () => {
       .values(personalGrantRow(company, connection))
       .returning()
       .then((rows) => rows[0]!);
-    const serviceDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
+    const serviceDb = createDb(externalDatabaseUrl ?? tempDb!.connectionString, { maxConnections: 1 });
     const service = createTestToolAccessService(serviceDb);
-    const removalDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
+    const removalDb = createDb(externalDatabaseUrl ?? tempDb!.connectionString, { maxConnections: 1 });
     let releaseRemoval!: () => void;
     const removalMayCommit = new Promise<void>((resolve) => {
       releaseRemoval = resolve;
@@ -1973,13 +1972,13 @@ describeEmbeddedPostgres("tool access service", () => {
         subjectId: "previous-user",
       });
 
-      const firstReplacementDb = createDb(tempDb!.connectionString, {
+      const firstReplacementDb = createDb(externalDatabaseUrl ?? tempDb!.connectionString, {
         maxConnections: 1,
       });
-      const replacementDb = createDb(tempDb!.connectionString, {
+      const replacementDb = createDb(externalDatabaseUrl ?? tempDb!.connectionString, {
         maxConnections: 1,
       });
-      const cleanupDb = createDb(tempDb!.connectionString, {
+      const cleanupDb = createDb(externalDatabaseUrl ?? tempDb!.connectionString, {
         maxConnections: 1,
       });
       const replacementService = createTestToolAccessService(replacementDb);
@@ -7579,7 +7578,7 @@ describeEmbeddedPostgres("tool access service", () => {
     const company = await createCompany(db);
     const userId = `gmail-member-${randomUUID()}`;
     await grantBoardUser(db, company.id, userId, []);
-    const callbackDb = createDb(tempDb!.connectionString, {
+    const callbackDb = createDb(externalDatabaseUrl ?? tempDb!.connectionString, {
       maxConnections: 1,
     });
     const connector = fakeGmailConnector(company.id, userId);
@@ -9383,7 +9382,7 @@ describeEmbeddedPostgres("tool access service", () => {
     await grantBoardUser(db, company.id, userId, [], "owner");
     const actor = { actorType: "user" as const, actorId: userId };
     const connector = fakeGmailConnector(company.id, userId);
-    const refreshDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
+    const refreshDb = createDb(externalDatabaseUrl ?? tempDb!.connectionString, { maxConnections: 1 });
     const service = createTestToolAccessService(db, { paperclipCloudConnector: connector });
     const definition = getConnectableAppDefinition("gmail")!;
     const availability = definition.ownershipAvailability;
@@ -9523,10 +9522,10 @@ describeEmbeddedPostgres("tool access service", () => {
     const company = await createCompany(db);
     const userId = `gmail-member-${randomUUID()}`;
     await grantBoardUser(db, company.id, userId, []);
-    const callbackDb = createDb(tempDb!.connectionString, {
+    const callbackDb = createDb(externalDatabaseUrl ?? tempDb!.connectionString, {
       maxConnections: 1,
     });
-    const removalDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
+    const removalDb = createDb(externalDatabaseUrl ?? tempDb!.connectionString, { maxConnections: 1 });
     const service = createTestToolAccessService(callbackDb, {
       paperclipCloudConnector: fakeGmailConnector(company.id, userId),
     });
@@ -10679,6 +10678,137 @@ describeEmbeddedPostgres("tool access service", () => {
       definition.ownershipAvailability = availability;
     }
   }, 20000);
+
+  it.each(["promotion", "personal revocation", "organization revocation"] as const)("distinguishes OAuth credential promotion from explicit revocation (%s)", async change => {
+    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET", "slack-client-secret");
+    const company = await createCompany(db);
+    const userId = `oauth-promotion-${randomUUID()}`;
+    await grantBoardUser(db, company.id, userId, [], "owner");
+    const service = createTestToolAccessService(db);
+    const actor = { actorType: "user" as const, actorId: userId };
+    const connected = await service.connectGalleryApp(company.id, { galleryKey: "slack", name: "Promoted identity", grantKind: "user" }, actor);
+    const redirectUri = "https://paperclip.example/api/tools/oauth/callback";
+    vi.spyOn(globalThis, "fetch").mockImplementation(async url => {
+      if (String(url) === "https://slack.com/api/oauth.v2.access") return mcpHttpResponse(oauthToken("fixture-access-token", "fixture-refresh-token"));
+      if (String(url) === "https://mcp.slack.com/mcp") return mcpHttpResponse(catalogResponse([{ name: "search_messages", annotations: { readOnlyHint: true } }]));
+      throw new Error(`unexpected fetch ${String(url)}`);
+    });
+    const start = () => service.startOAuth(company.id, connected.connectionId, { redirectUri, actor, subjectUserId: userId });
+    const complete = (authorizationUrl: string) => service.completeOAuthCallback({ state: new URL(authorizationUrl).searchParams.get("state")!, code: "reconnect", redirectUri, actor });
+    await complete((await start()).authorizationUrl);
+    const reconnect = await start();
+    await service.finalizeOAuthAccess(company.id, connected.connectionId, { grantKind: "organization" }, actor);
+    const grants = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
+    const personal = grants.find(grant => grant.kind === "user" && grant.subjectUserId === userId)!;
+    const organization = grants.find(grant => grant.kind === "organization" && grant.isDefault)!;
+    expect(personal.status).toBe("revoked");
+    expect(organization.status).toBe("active");
+    if (change === "promotion") {
+      const installation = await service.addConnectionInstallation(connected.connectionId, {
+        providerTenant: Object.assign({ name: "Caller metadata" }, { oauth: { supersededByGrantId: organization.id } }),
+      }, actor);
+      expect(installation.providerTenant).toEqual({ name: "Caller metadata" });
+      await expect(complete(reconnect.authorizationUrl)).resolves.toMatchObject({ connection: { status: "active" } });
+      const [restored] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, personal.id));
+      expect(restored.status).toBe("active");
+      expect(restored.providerTenant?.oauth?.supersededByGrantId).toBeUndefined();
+    } else {
+      await service.revokeConnectionGrant(connected.connectionId, change === "personal revocation" ? personal.id : organization.id, actor);
+      await expect(complete(reconnect.authorizationUrl)).rejects.toMatchObject({ details: { code: "oauth_authorization_revoked" } });
+      const [retained] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, personal.id));
+      expect(retained.status).toBe("revoked");
+      if (change === "personal revocation") {
+        expect(retained.providerTenant?.oauth?.supersededByGrantId).toBeUndefined();
+        const [activeOrganization] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, organization.id));
+        expect(activeOrganization.status).toBe("active");
+      }
+    }
+  });
+
+  it.each(["suspend", "archive", "remove"] as const)("rejects a pre-removal OAuth callback after promoted account membership is restored (%s)", async cleanup => {
+    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET", "slack-client-secret");
+    const company = await createCompany(db);
+    const userId = `oauth-restored-${randomUUID()}`;
+    await grantBoardUser(db, company.id, userId, [], "owner");
+    await grantBoardUser(db, company.id, `remaining-owner-${randomUUID()}`, [], "owner");
+    const service = createTestToolAccessService(db);
+    const access = accessService(db);
+    const actor = { actorType: "user" as const, actorId: userId };
+    const connected = await service.connectGalleryApp(company.id, { galleryKey: "slack", name: "Restored membership", grantKind: "user" }, actor);
+    const redirectUri = "https://paperclip.example/api/tools/oauth/callback";
+    vi.spyOn(globalThis, "fetch").mockImplementation(async url => {
+      if (String(url) === "https://slack.com/api/oauth.v2.access") return mcpHttpResponse(oauthToken("fixture-access-token", "fixture-refresh-token"));
+      if (String(url) === "https://mcp.slack.com/mcp") return mcpHttpResponse(catalogResponse([{ name: "search_messages", annotations: { readOnlyHint: true } }]));
+      throw new Error(`unexpected fetch ${String(url)}`);
+    });
+    const start = () => service.startOAuth(company.id, connected.connectionId, { redirectUri, actor, subjectUserId: userId });
+    const complete = (authorizationUrl: string) => service.completeOAuthCallback({ state: new URL(authorizationUrl).searchParams.get("state")!, code: "reconnect", redirectUri, actor });
+    await complete((await start()).authorizationUrl);
+    const reconnect = await start();
+    await service.finalizeOAuthAccess(company.id, connected.connectionId, { grantKind: "organization" }, actor);
+    const membership = await access.getMembership(company.id, "user", userId);
+    expect(membership).not.toBeNull();
+    await access.updateMember(company.id, membership!.id, { membershipRole: "operator" });
+    if (cleanup === "suspend") await access.updateMemberAndPermissions(company.id, membership!.id, { status: "suspended", grants: [] }, null);
+    else if (cleanup === "archive") await access.archiveMember(company.id, membership!.id);
+    else await access.setUserCompanyAccess(userId, []);
+    await access.ensureMembership(company.id, "user", userId, "owner", "active");
+    await expect(complete(reconnect.authorizationUrl)).rejects.toMatchObject({ details: { code: "oauth_authorization_revoked" } });
+    const grants = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
+    const personal = grants.find(grant => grant.kind === "user" && grant.subjectUserId === userId)!;
+    expect(personal.status).toBe("revoked");
+    expect(personal.providerTenant?.oauth?.supersededByGrantId).toBeUndefined();
+    expect(grants.find(grant => grant.kind === "organization" && grant.isDefault)).toMatchObject({ status: "active" });
+  });
+
+  it("does not promote a personal OAuth identity revoked while promotion waits for its grant lock", async () => {
+    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");
+    vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_SECRET", "slack-client-secret");
+    const company = await createCompany(db);
+    const userId = `oauth-promotion-race-${randomUUID()}`;
+    await grantBoardUser(db, company.id, userId, [], "owner");
+    const service = createTestToolAccessService(db);
+    const actor = { actorType: "user" as const, actorId: userId };
+    const connected = await service.connectGalleryApp(company.id, { galleryKey: "slack", name: "Revoked promotion", grantKind: "user" }, actor);
+    const redirectUri = "https://paperclip.example/api/tools/oauth/callback";
+    vi.spyOn(globalThis, "fetch").mockImplementation(async url => {
+      if (String(url) === "https://slack.com/api/oauth.v2.access") return mcpHttpResponse(oauthToken("fixture-access-token", "fixture-refresh-token"));
+      if (String(url) === "https://mcp.slack.com/mcp") return mcpHttpResponse(catalogResponse([{ name: "search_messages", annotations: { readOnlyHint: true } }]));
+      throw new Error(`unexpected fetch ${String(url)}`);
+    });
+    const start = () => service.startOAuth(company.id, connected.connectionId, { redirectUri, actor, subjectUserId: userId });
+    const complete = (authorizationUrl: string) => service.completeOAuthCallback({ state: new URL(authorizationUrl).searchParams.get("state")!, code: "reconnect", redirectUri, actor });
+    await complete((await start()).authorizationUrl);
+    const reconnect = await start();
+    const [personal] = await db.select().from(connectionGrants).where(and(eq(connectionGrants.connectionId, connected.connectionId), eq(connectionGrants.subjectUserId, userId)));
+    let locked!: () => void, release!: () => void;
+    const held = new Promise<void>(resolve => { locked = resolve; });
+    const mayRevoke = new Promise<void>(resolve => { release = resolve; });
+    const revocation = db.transaction(async tx => {
+      await tx.select({ id: connectionGrants.id }).from(connectionGrants).where(eq(connectionGrants.id, personal.id)).for("update");
+      locked(); await mayRevoke;
+      return createTestToolAccessService(tx as unknown as Db).revokeConnectionGrant(connected.connectionId, personal.id, actor);
+    });
+    await held;
+    const promoted = Promise.allSettled([service.finalizeOAuthAccess(company.id, connected.connectionId, { grantKind: "organization" }, actor)]);
+    try {
+      await vi.waitFor(async () => {
+        const waiting = await db.execute(sql`SELECT pid FROM pg_stat_activity WHERE wait_event_type = 'Lock'
+          AND query ILIKE '%"connection_grants"%' AND query ILIKE '%for update%' AND pid <> pg_backend_pid()`);
+        expect(waiting.length).toBeGreaterThan(0);
+      }, { timeout: 5000 });
+    } finally { release(); }
+    await revocation;
+    const [result] = await promoted;
+    expect(result.status).toBe("rejected");
+    if (result.status === "rejected") expect(result.reason).toMatchObject({ details: { code: "oauth_identity_changed" } });
+    await expect(complete(reconnect.authorizationUrl)).rejects.toMatchObject({ details: { code: "oauth_authorization_revoked" } });
+    const grants = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
+    expect(grants.find(grant => grant.id === personal.id)?.providerTenant?.oauth?.supersededByGrantId).toBeUndefined();
+    expect(grants.some(grant => grant.kind === "organization" && grant.status === "active")).toBe(false);
+  });
 
   it.each(["sharing", "settings", "application"] as const)("orders personal OAuth reconnect credential rotation with concurrent %s", async change => {
     vi.stubEnv("PAPERCLIP_TOOL_OAUTH_SLACK_CLIENT_ID", "slack-client-id");

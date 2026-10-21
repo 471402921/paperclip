@@ -60,7 +60,6 @@ export interface PublishLocalOptions {
   routing?: "static" | "spa";
   idempotencyKey?: string;
   signal?: AbortSignal;
-  /** Local HTTP upload fixtures only. Production upload tickets must use HTTPS. */
   allowLoopbackUploads?: boolean;
 }
 export interface LocalPublishResult {
@@ -122,7 +121,6 @@ function digest(bytes: Uint8Array) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-/** Reads only the selected local file/directory. Symbolic links are never followed. */
 export async function collectLocalFiles(source: string): Promise<LocalFile[]> {
   const absolute = resolve(source);
   const info = await lstat(absolute);
@@ -189,16 +187,21 @@ async function readRegularFile(path: string, root: string): Promise<Buffer> {
       throw new Error(
         "Publication files must be regular files within the deployment limit.",
       );
-    return await handle.readFile();
+    const bytes = Buffer.allocUnsafe(stat.size + 1);
+    let length = 0;
+    while (length < bytes.length) {
+      const result = await handle.read(bytes, length, bytes.length - length, length);
+      if (result.bytesRead === 0) break;
+      length += result.bytesRead;
+    }
+    if (length > stat.size)
+      throw new Error("A file changed while preparing the publication. Try again.");
+    return bytes.subarray(0, length);
   } finally {
     await handle.close();
   }
 }
 
-/**
- * Uses an already-authorized Notebook connection. Tokens remain owned by the
- * caller's credential vault; this helper neither stores nor asks for them.
- */
 export async function publishLocal(
   api: NotebookPublishingApi,
   options: PublishLocalOptions,
@@ -291,8 +294,6 @@ export async function publishLocal(
       redirect: "error",
       credentials: "omit",
     };
-    // Only the explicit local HTTP fixture path bypasses public-only DNS
-    // pinning. Server-supplied HTTPS tickets cannot reach private addresses.
     const response = options.allowLoopbackUploads && loopback && url.protocol === "http:"
       ? await fetcher(url, request)
       : await guardedRemoteHttpFetch(url, request, {
@@ -320,7 +321,6 @@ export interface ToolCaller {
     arguments: Record<string, unknown>;
   }): Promise<unknown>;
 }
-/** Adapts an authenticated MCP client (including Paperclip's connection gateway). */
 export function publishingApiFromTools(
   client: ToolCaller,
 ): NotebookPublishingApi {

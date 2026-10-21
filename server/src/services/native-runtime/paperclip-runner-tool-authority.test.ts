@@ -884,7 +884,7 @@ describe("PaperclipRunnerToolAuthority", () => {
     const assignedMcpTools = await createAssignedMcpTools({ gateway: { listToolsForNamedGateway: vi.fn().mockResolvedValue(descriptors), executeTool } as unknown as ToolGatewayService,
       gatewayPublicId: "native-gateway", bearerToken: "controller-only-token" });
     const readRemoteWorkspaceFile = vi.fn(async () => content);
-    const binding = { companyId, agentId, issueId, runId, assignedMcpTools, workspaceRoot: "/runtime-only",
+    const binding = { companyId, agentId, issueId, runId, workspaceConnectionTools: assignedMcpTools, workspaceRoot: "/runtime-only",
       executionTargetKind: "remote" as const, readRemoteWorkspaceFile };
     const authority = new PaperclipRunnerToolAuthority(db, binding);
     expect(authority.definitions().find(tool => tool.name === "publish_notebook_files")?.inputSchema).toMatchObject({ properties: { connectionId: { enum: ["assigned-notebook"] } } });

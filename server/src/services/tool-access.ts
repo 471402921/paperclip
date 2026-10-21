@@ -6547,8 +6547,6 @@ export function toolAccessService(
     }).where(eq(toolConnections.id, connection.id));
   }
 
-  // The claim is shared across processes, and the row locks fence reconnects.
-  // Only revoked credentials are retried here; ordinary dispatch stays closed.
   async function withOAuthRevocationClaim(connectionId: string, companyId: string,
     operation: (connection: typeof toolConnections.$inferSelect, transaction: DbTransaction) => Promise<boolean>) {
     return db.transaction(async tx => {
@@ -6650,6 +6648,7 @@ export function toolAccessService(
         status: connectionGrants.status,
         kind: connectionGrants.kind,
         subjectUserId: connectionGrants.subjectUserId,
+        providerTenant: connectionGrants.providerTenant,
         credentialSecretRefs: connectionGrants.credentialSecretRefs,
         externalCredential: connectionGrants.externalCredential,
       })
@@ -6660,11 +6659,12 @@ export function toolAccessService(
           eq(connectionGrants.connectionId, connection.id),
         ),
       );
-    const grantsToRevoke = grantRows.filter((row) => row.status !== "revoked");
+    const grantsToRevoke = grantRows.filter((row) => row.status !== "revoked" || row.providerTenant?.oauth?.supersededByGrantId);
     if (grantsToRevoke.length > 0) {
       await db
         .update(connectionGrants)
         .set({
+          providerTenant: sql`${connectionGrants.providerTenant} #- '{oauth,supersededByGrantId}'`,
           status: "revoked",
           isDefault: false,
           revokedAt: now,
@@ -10948,8 +10948,6 @@ export function toolAccessService(
     const sendTokenRequest = async () => {
       const response = await fetchRemoteHttpUrl(tokenUrl, { method: "POST", headers, body,
         ...(input.idempotencyKey ? { signal: AbortSignal.timeout(10_000) } : {}) });
-      // The provider may have committed rotation before headers arrive or while
-      // the body is being read. Both failures must replay the same receipt key.
       const payload: unknown = input.idempotencyKey ? await response.json() : await response.json().catch(() => ({}));
       return { response, payload };
     };
@@ -11885,8 +11883,6 @@ export function toolAccessService(
       return initialGrant;
     }
 
-    // Resolve identity before taking the refresh lease or entering any locked
-    // write, including deployments with a one-connection database pool.
     const lifecycle = connectorOAuthLifecycle(await connectorAppForConnection(connection));
     return singleFlight(oauthGrantRefreshFlights, initialGrant.id, async () => {
       const lease = await acquireOAuthGrantRefreshLease(
@@ -16679,10 +16675,6 @@ export function toolAccessService(
           )
           .limit(1)
           .for("update");
-        if (existingUserGrant?.status === "revoked"
-          && existingUserGrant.revokedAt && existingUserGrant.revokedAt >= stateRow.createdAt) {
-          throw conflict("OAuth authorization was revoked after this sign in began. Start sign in again.", { code: "oauth_authorization_revoked" });
-        }
         await tx.select({ id: toolApplications.id }).from(toolApplications)
           .where(and(eq(toolApplications.id, connection.applicationId), eq(toolApplications.companyId, connection.companyId)))
           .for("update");
@@ -16691,6 +16683,15 @@ export function toolAccessService(
           .for("update");
         if (!lockedConnection || lockedConnection.status === "archived" || lockedConnection.config.oauthRevocationPending === true) {
           throw conflict("OAuth authorization was removed while sign in was in progress. Reconnect after revocation finishes.", { code: "oauth_revocation_pending" });
+        }
+        if (existingUserGrant?.status === "revoked"
+          && existingUserGrant.revokedAt && existingUserGrant.revokedAt >= stateRow.createdAt) {
+          const supersededByGrantId = existingUserGrant.providerTenant?.oauth?.supersededByGrantId;
+          const [promotedGrant] = supersededByGrantId ? await tx.select({ id: connectionGrants.id }).from(connectionGrants)
+            .where(and(eq(connectionGrants.companyId, connection.companyId), eq(connectionGrants.connectionId, connection.id),
+              eq(connectionGrants.id, supersededByGrantId), eq(connectionGrants.kind, "organization"),
+              eq(connectionGrants.status, "active"), eq(connectionGrants.isDefault, true))).limit(1) : [];
+          if (!promotedGrant) throw conflict("OAuth authorization was revoked after this sign in began. Start sign in again.", { code: "oauth_authorization_revoked" });
         }
         const subjectCredentialSecretRefs =
           existingUserGrant?.credentialSecretRefs ?? [];
@@ -16749,6 +16750,7 @@ export function toolAccessService(
             ...(connectedAccount ? { name: connectedAccount.name, externalId: connectedAccount.externalId } : {}),
             oauth: {
               ...asRecord(asRecord(existingUserGrant?.providerTenant).oauth),
+              supersededByGrantId: undefined,
               strategy: "direct_oauth",
               accessTokenExpiresAt: expiresAt ?? undefined,
               scopes: grantedScopes.scopes,
@@ -17408,10 +17410,15 @@ export function toolAccessService(
         ];
         const nowAt = new Date();
         await db.transaction(async (tx) => {
-          await tx.select({ id: connectionGrants.id }).from(connectionGrants)
+          const lockedGrants = await tx.select().from(connectionGrants)
             .where(and(eq(connectionGrants.companyId, companyId), eq(connectionGrants.connectionId, connection.id),
               or(eq(connectionGrants.id, personalGrant.id), and(eq(connectionGrants.kind, "organization"), eq(connectionGrants.isDefault, true)))))
             .orderBy(connectionGrants.id).for("update");
+          const lockedPersonalGrant = lockedGrants.find(grant => grant.id === personalGrant.id);
+          if (lockedPersonalGrant?.status !== "active" || lockedPersonalGrant.updatedAt.getTime() !== personalGrant.updatedAt.getTime()
+            || JSON.stringify(lockedPersonalGrant.credentialSecretRefs) !== JSON.stringify(personalGrant.credentialSecretRefs)) {
+            throw conflict("Your connected identity changed while it was being shared. Start sharing it again.", { code: "oauth_identity_changed" });
+          }
           await tx.select({ id: toolApplications.id }).from(toolApplications)
             .where(and(eq(toolApplications.id, connection.applicationId), eq(toolApplications.companyId, companyId)))
             .for("update");
@@ -17482,6 +17489,7 @@ export function toolAccessService(
           await tx
             .update(connectionGrants)
             .set({
+              providerTenant: { ...personalGrant.providerTenant, oauth: { ...personalGrant.providerTenant?.oauth, supersededByGrantId: organizationGrantId } },
               credentialSecretRefs: [],
               status: "revoked",
               revokedAt: nowAt,
@@ -19234,7 +19242,7 @@ export function toolAccessService(
           companyId: connection.companyId,
           connectionId: connection.id,
           kind: "organization",
-          providerTenant: input.providerTenant,
+          providerTenant: input.providerTenant ? { name: input.providerTenant.name, externalId: input.providerTenant.externalId } : undefined,
           credentialSecretRefs: input.credentialSecretRefs ?? [],
           status: "active",
           isDefault: input.isDefault ?? false,
@@ -19336,6 +19344,7 @@ export function toolAccessService(
         const [updated] = await tx
           .update(connectionGrants)
           .set({
+            providerTenant: sql`${connectionGrants.providerTenant} #- '{oauth,supersededByGrantId}'`,
             status: "revoked",
             isDefault: false,
             revokedAt: new Date(),

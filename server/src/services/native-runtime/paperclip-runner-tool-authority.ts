@@ -162,6 +162,7 @@ type Binding = {
   /** Server-owned suppression for baseline evals; true never overrides operator opt-in. */
   connectorAssignments?: Pick<ConnectorAssignment, "tools">[];
   assignedMcpTools?: Awaited<ReturnType<typeof createAssignedMcpTools>>;
+  workspaceConnectionTools?: Awaited<ReturnType<typeof createAssignedMcpTools>>;
   apiToolsEnabled?: boolean;
   workMode?: "standard" | "planning" | "ask";
   casesEnabled?: boolean;
@@ -318,9 +319,10 @@ export class PaperclipRunnerToolAuthority {
     definitions.push(REUSE_CHAT_ATTACHMENT_TOOL_DEFINITION);
     if (this.binding.chatAttachmentReadScope) definitions.push(READ_CHAT_ATTACHMENT_TOOL_DEFINITION);
     if (this.binding.taskAttachmentRead) definitions.push(...TASK_ATTACHMENT_DEFINITIONS);
+    const workspaceConnectionTools = this.binding.workspaceConnectionTools ?? this.binding.assignedMcpTools;
     if (!this.binding.firstPartyOnly && !this.binding.museRuntime && workMode === "standard" && this.binding.workspaceRoot
       && (!this.binding.dotRuntime || this.binding.workspaceBridge)
-      && this.binding.assignedMcpTools) definitions.push(...connectorWorkspaceTools.definitions(this.binding.assignedMcpTools));
+      && workspaceConnectionTools) definitions.push(...connectorWorkspaceTools.definitions(workspaceConnectionTools));
     definitions.push(...runnerBridgeDefinitions({ workspace: !this.binding.firstPartyOnly && !!this.binding.workspaceRoot && this.binding.workspaceBridge === true, skills: !!this.binding.runtimeContext, api: runnerApiToolsEnabled(this.binding.companyId, this.binding.apiToolsEnabled), mode: workMode }));
     const connectionTools = this.binding.firstPartyOnly ? [] : [...RUNTIME_CONNECTION_TOOL_DEFINITIONS,
       ...(this.binding.connectorAssignments ?? []).flatMap((assignment) => assignment.tools)];
@@ -373,16 +375,17 @@ export class PaperclipRunnerToolAuthority {
       }
     }
     if (connectorWorkspaceTools.has(call.tool)) {
+      const workspaceConnectionTools = this.binding.workspaceConnectionTools ?? this.binding.assignedMcpTools;
       const authorize = async () => {
         const current = await this.#boundContext();
         if (current.issue.workMode !== "standard" || this.binding.workMode && this.binding.workMode !== "standard"
-          || this.binding.firstPartyOnly || this.binding.museRuntime || !this.binding.workspaceRoot || !this.binding.assignedMcpTools)
+          || this.binding.firstPartyOnly || this.binding.museRuntime || !this.binding.workspaceRoot || !workspaceConnectionTools)
           throw forbidden("Connector workspace tools are unavailable to this run");
         if (this.binding.dotRuntime && (!this.binding.workspaceBridge || current.actor.adapterConfig?.dotWorkspaceAccess !== true))
           throw forbidden("Dot workspace access is required for connector workspace tools");
         await this.binding.assertBridgeAuthority?.();
       };
-      return connectorWorkspaceTools.execute(call.tool, call.arguments, { tools: this.binding.assignedMcpTools!,
+      return connectorWorkspaceTools.execute(call.tool, call.arguments, { tools: workspaceConnectionTools!,
         workspaceRoot: this.binding.workspaceRoot!, executionTargetKind: this.binding.executionTargetKind,
         readRemoteWorkspaceFile: this.binding.readRemoteWorkspaceFile, authorize });
     }

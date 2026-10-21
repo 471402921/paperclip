@@ -8,7 +8,6 @@ type GatewayTool = { name: string; connectionId?: string; applicationKey?: strin
 type GatewayApi = Pick<PaperclipApiClient, "post"> & { apiBase: string; runId?: string };
 type NotebookPublishOptions = PublishLocalOptions & { connection: string };
 
-/** Runs in the agent's admitted filesystem. Notebook credentials stay in the server vault. */
 export async function publishNotebookFromRun(api: GatewayApi, options: NotebookPublishOptions, fetcher: typeof fetch = fetch) {
   if (!api.runId) throw new Error("Notebook local publication requires an active agent run. Set PAPERCLIP_RUN_ID or --run-id.");
   const session = await api.post<{ sessionId: string; token: string }>("/api/tool-gateway/sessions", { ttlMs: 15 * 60_000 });
@@ -42,8 +41,6 @@ export async function publishNotebookFromRun(api: GatewayApi, options: NotebookP
       });
       if (!result || !["completed", "replayed"].includes(result.status)) throw new Error("Notebook publication has not completed. Inspect the tool action before continuing.");
       if (result.status === "replayed" && !recovering && !readNotebookPublicationResult(input.name, result.result)) {
-        // Gateway audit summaries may be truncated. Retrieve the complete,
-        // owner-authorized receipt from Notebook through the same action gateway.
         const kind = input.name === "notebook_create_page" ? "create_page" : input.name === "notebook_begin_upload" ? "begin_upload" : undefined;
         if (kind) return callTool({ name: "notebook_get_operation", arguments: { receipt: { kind, idempotencyKey: input.arguments.idempotencyKey } } }, true);
         if (input.name === "notebook_finalize_upload") return callTool({ name: "notebook_get_operation", arguments: { operationId: input.arguments.deploymentId } }, true);
@@ -59,8 +56,6 @@ export async function publishNotebookFromRun(api: GatewayApi, options: NotebookP
     const publishing = publishingApiFromTools({ callTool });
     return await publishLocal(publishing, options, fetcher);
   } catch (error) {
-    // The normal gateway posts a human approval card and executes the approved
-    // action automatically. Retain its bounded session until that action settles.
     awaitingApproval = error instanceof ApiRequestError && !!error.body && typeof error.body === "object"
       && "reasonCode" in error.body && error.body.reasonCode === "approval_required";
     if (awaitingApproval && error instanceof ApiRequestError) error.details = error.body;
