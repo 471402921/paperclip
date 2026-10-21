@@ -34,6 +34,8 @@ import {
 } from "./connector-telemetry.js";
 import { canBrowseProjectRepositoryGrant, mergeProjectRepository } from "./project-repositories.js";
 import { captureRunIdentity } from "./run-identity.js";
+import { measureRunPhase } from "./execution-preparation-timing.js";
+import { measureRunTransaction } from "./execution-transaction-timing.js";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import {
@@ -12318,31 +12320,33 @@ export function toolAccessService(
     initialGrant: typeof connectionGrants.$inferSelect,
     actor?: ActorInfo,
   ) {
-    try {
-      return await refreshManagedGitHubGrantAccessOnce(
-        connection,
-        initialGrant,
-        actor,
-      );
-    } catch (error) {
-      if (
-        !(error instanceof HttpError) ||
-        asRecord(error.details).code !== "github_access_changed"
-      )
-        throw error;
-      const [current] = await db
-        .select()
-        .from(connectionGrants)
-        .where(
-          and(
-            eq(connectionGrants.id, initialGrant.id),
-            eq(connectionGrants.companyId, connection.companyId),
-            eq(connectionGrants.connectionId, connection.id),
-          ),
+    return measureRunPhase("connectors.github.refresh", async () => {
+      try {
+        return await refreshManagedGitHubGrantAccessOnce(
+          connection,
+          initialGrant,
+          actor,
         );
-      if (!current || current.status !== "active") throw error;
-      return refreshManagedGitHubGrantAccessOnce(connection, current, actor);
-    }
+      } catch (error) {
+        if (
+          !(error instanceof HttpError) ||
+          asRecord(error.details).code !== "github_access_changed"
+        )
+          throw error;
+        const [current] = await measureRunPhase("connectors.github.grants", () => db
+          .select()
+          .from(connectionGrants)
+          .where(
+            and(
+              eq(connectionGrants.id, initialGrant.id),
+              eq(connectionGrants.companyId, connection.companyId),
+              eq(connectionGrants.connectionId, connection.id),
+            ),
+          ));
+        if (!current || current.status !== "active") throw error;
+        return refreshManagedGitHubGrantAccessOnce(connection, current, actor);
+      }
+    });
   }
 
   async function refreshManagedGitHubGrantAccessOnce(
@@ -12350,13 +12354,13 @@ export function toolAccessService(
     initialGrant: typeof connectionGrants.$inferSelect,
     actor?: ActorInfo,
   ) {
-    let grant = await refreshOAuthGrantCredentials({
+    let grant = await measureRunPhase("connectors.github.credentials", () => refreshOAuthGrantCredentials({
       companyId: connection.companyId,
       connectionId: connection.id,
       grantId: initialGrant.id,
       actor,
-    });
-    const resolveAccessToken = async () => {
+    }));
+    const resolveAccessToken = async () => measureRunPhase("connectors.github.credentials", async () => {
       const accessRef = grant.credentialSecretRefs.find(
         (ref) => ref.configPath === "oauth.access_token",
       );
@@ -12373,15 +12377,15 @@ export function toolAccessService(
           undefined,
         )
       ).value;
-    };
+    });
     let metadata;
     let accessToken = await resolveAccessToken();
     try {
-      metadata = await loadGitHubGrantMetadata(
+      metadata = await measureRunPhase("connectors.github.repositories", () => loadGitHubGrantMetadata(
         accessToken,
         fetch,
         grant.providerTenant?.github?.appSlug,
-      );
+      ));
     } catch (error) {
       const providerCode =
         error instanceof HttpError ? asRecord(error.details).code : null;
@@ -12389,27 +12393,27 @@ export function toolAccessService(
       // GitHub may invalidate an access token before its recorded expiry. If an
       // expiring token pair exists, rotate it once under the same durable lease
       // and CAS path, then repeat /user before surfacing reconnect-required.
-      grant = await refreshOAuthGrantCredentials({
+      grant = await measureRunPhase("connectors.github.credentials", () => refreshOAuthGrantCredentials({
         companyId: connection.companyId,
         connectionId: connection.id,
         grantId: initialGrant.id,
         forceRefresh: true,
         actor,
-      });
+      }));
       accessToken = await resolveAccessToken();
       try {
-        metadata = await loadGitHubGrantMetadata(
+        metadata = await measureRunPhase("connectors.github.repositories", () => loadGitHubGrantMetadata(
           accessToken,
           fetch,
           grant.providerTenant?.github?.appSlug,
-        );
+        ));
       } catch (retryError) {
         const retryCode =
           retryError instanceof HttpError
             ? asRecord(retryError.details).code
             : null;
         if (retryCode === "oauth_reauthorization_required") {
-          await db
+          await measureRunPhase("connectors.github.grant_write", () => db
             .update(connectionGrants)
             .set({ status: "needs_reauthorization", updatedAt: now() })
             .where(
@@ -12417,13 +12421,13 @@ export function toolAccessService(
                 eq(connectionGrants.id, grant.id),
                 eq(connectionGrants.companyId, grant.companyId),
               ),
-            );
+            ));
         }
         throw retryError;
       }
     }
-    const { updated, previousGitHub } = await db.transaction(async (tx) => {
-      const [currentGrant] = await tx
+    const { updated, previousGitHub } = await measureRunTransaction(db, "connectors.github.refresh", async (tx) => {
+      const [currentGrant] = await measureRunPhase("connectors.github.grant_lock", () => tx
         .select()
         .from(connectionGrants)
         .where(
@@ -12433,7 +12437,7 @@ export function toolAccessService(
           ),
         )
         .for("update")
-        .limit(1);
+        .limit(1));
       if (!currentGrant || currentGrant.status === "revoked")
         throw notFound("GitHub authorization not found");
       const previousGitHub = currentGrant.providerTenant?.github;
@@ -12461,7 +12465,7 @@ export function toolAccessService(
             previousGitHub?.webhookHealth ?? metadata.webhookHealth,
         },
       };
-      const [updated] = await tx
+      const [updated] = await measureRunPhase("connectors.github.grant_write", () => tx
         .update(connectionGrants)
         .set({
           providerTenant,
@@ -12474,7 +12478,7 @@ export function toolAccessService(
             eq(connectionGrants.companyId, grant.companyId),
           ),
         )
-        .returning();
+        .returning());
       if (!updated) throw notFound("GitHub authorization not found");
       return { updated, previousGitHub };
     });
@@ -12489,7 +12493,7 @@ export function toolAccessService(
     if (cloudConnector && subject) {
       const previous = new Set(previousGitHub?.installationIds ?? []);
       const current = new Set(metadata.installationIds);
-      await Promise.all([
+      await measureRunPhase("connectors.github.webhooks", () => Promise.all([
         ...metadata.installationIds.map((installationId) =>
           cloudConnector.setWebhookBinding({
             subject,
@@ -12515,7 +12519,7 @@ export function toolAccessService(
               active: false,
             }),
           ),
-      ]);
+      ]));
     }
     return updated;
   }
@@ -18488,9 +18492,9 @@ export function toolAccessService(
       companyId: string,
       userId: string | null,
       localTrusted = false,
-    ) => {
+    ) => measureRunPhase("connectors.github.catalog", async () => {
       const [connections, grants, members, memberships] = await Promise.all([
-        db
+        measureRunPhase("connectors.github.connections", () => db
           .select()
           .from(toolConnections)
           .where(
@@ -18498,17 +18502,17 @@ export function toolAccessService(
               eq(toolConnections.companyId, companyId),
               eq(toolConnections.enabled, true),
             ),
-          ),
-        db
+          )),
+        measureRunPhase("connectors.github.grants", () => db
           .select()
           .from(connectionGrants)
-          .where(eq(connectionGrants.companyId, companyId)),
-        db
+          .where(eq(connectionGrants.companyId, companyId))),
+        measureRunPhase("connectors.github.grant_members", () => db
           .select()
           .from(connectionGrantMembers)
-          .where(eq(connectionGrantMembers.companyId, companyId)),
+          .where(eq(connectionGrantMembers.companyId, companyId))),
         userId
-          ? db
+          ? measureRunPhase("connectors.github.membership", () => db
               .select()
               .from(companyMemberships)
               .where(
@@ -18518,7 +18522,7 @@ export function toolAccessService(
                   eq(companyMemberships.principalId, userId),
                   eq(companyMemberships.status, "active"),
                 ),
-              )
+              ))
           : Promise.resolve([]),
       ]);
       const repositories = new Map<
@@ -18585,8 +18589,8 @@ export function toolAccessService(
               );
               rows = grant.providerTenant?.github?.repositories ?? [];
             } else {
-              const headers = initialGrant
-                ? await (async () => {
+              const headers = await measureRunPhase("connectors.github.credentials", () => initialGrant
+                ? (async () => {
                     const ref = initialGrant.credentialSecretRefs.find(
                       (ref) =>
                         ref.configPath === "oauth.access_token" ||
@@ -18605,8 +18609,8 @@ export function toolAccessService(
                     );
                     return { Authorization: `Bearer ${secret.value}` };
                   })()
-                : await resolveCredentialHeaders(connection, actor);
-              rows = await loadGitHubTokenRepositories(headers);
+                : resolveCredentialHeaders(connection, actor));
+              rows = await measureRunPhase("connectors.github.repositories", () => loadGitHubTokenRepositories(headers));
             }
             for (const row of rows) {
               mergeProjectRepository(repositories, row, connection.name, connection.id);
@@ -18627,7 +18631,7 @@ export function toolAccessService(
         connectionCount,
         failedConnectionCount,
       };
-    },
+    }),
 
     listConnections: async (
       companyId: string,
