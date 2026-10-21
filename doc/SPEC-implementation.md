@@ -1339,6 +1339,16 @@ Invites tab does not hide this Cloud action.
 
 ## 10.3 Agents
 
+The Harness / Runtime configuration page offers **Upgrade runner** for existing
+legacy Claude and Codex agents when the target environment selects Paperclip
+Runner by default. The action uses the normal authorized agent PATCH with
+`runner: "paperclip"`, includes pending configuration edits, and retains the
+model and compatible settings. A rejected conversion leaves saved configuration
+unchanged and identifies unsupported fields. Successful conversion records a
+configuration revision, clears incompatible session state, and preserves agent
+identity, instruction files, credentials, run policy, and run history. Existing
+agents never upgrade merely by visiting or saving unrelated configuration.
+
 The Core setup wizard creates its agent record when the user submits the agent
 name, before adapter selection, authentication, and runtime configuration.
 Until the adapter is chosen, the held record uses a provisional adapter

@@ -1863,7 +1863,7 @@ export function agentRoutes(
         if (experimental.enableMuse !== true || experimental.enableNativeRunner !== true) throw unprocessable("Muse is experimental and disabled on this instance.", { code: "paperclip_runner_muse_disabled" });
       } else if (asRecord(config)?.provider === "grok_bot" && (experimental.enableGrokBot !== true || experimental.enablePublicMcp !== true || experimental.enableNativeRunner !== true)) {
         throw unprocessable("Enable Grok Bot, Assistant connections (MCP), and Paperclip Runner before connecting this agent.", { code: "paperclip_runner_grok_disabled" });
-      } else if (!([undefined, "codex"].includes(asRecord(config)?.provider as string | undefined)) &&
+      } else if (!([undefined, "codex", "opencode"].includes(asRecord(config)?.provider as string | undefined)) &&
         !(asRecord(config)?.provider === "acpx" && asRecord(config)?.acpxAgent === "copilot") &&
         agentHarnessType("paperclip_runner", asRecord(config) ?? {}) !== "claude_local" &&
         experimental.enableNativeRunner !== true) {
@@ -2165,6 +2165,7 @@ export function agentRoutes(
     adapterType: string | null | undefined;
     adapterConfig: Record<string, unknown>;
     constraintAdapterConfig?: Record<string, unknown>;
+    setupOnly?: boolean;
   }): Promise<Record<string, unknown>> {
     const normalizedAdapterConfig = await secretsSvc.normalizeAdapterConfigForPersistence(
       input.companyId,
@@ -2174,7 +2175,11 @@ export function agentRoutes(
         adapterType: input.adapterType ?? null,
       },
     );
-    await assertAdapterConfigConstraints(
+    const incompleteOpenCodeSetup = input.setupOnly && input.adapterType === "paperclip_runner"
+      && normalizedAdapterConfig.provider === "opencode"
+      && (normalizedAdapterConfig.model === undefined || normalizedAdapterConfig.model === "");
+    // Inactive drafts can precede model selection. Test/hire always validate the complete profile.
+    if (!incompleteOpenCodeSetup) await assertAdapterConfigConstraints(
       input.companyId,
       input.adapterType,
       input.constraintAdapterConfig
@@ -4716,7 +4721,7 @@ export function agentRoutes(
     assertNoAgentLocalAdapterHostCommandMutation(req, createInput.adapterType ?? "process", requestedCreateConfig, await callerUsesAiConnectionPool(req, companyId));
     assertNoAgentProcessAdapterMutation(req, createInput.adapterType ?? "process", Object.keys(requestedCreateConfig).length > 0);
     assertExternalInstructionsAdmin(req, { id: agentId, companyId, name: createInput.name, adapterConfig: requestedCreateConfig });
-    Object.assign(createInput, await resolveNewAgentRunnerForCompany(db, companyId, { ...createInput, runner: createRunner }));
+    Object.assign(createInput, await resolveNewAgentRunnerForCompany(db, companyId, { ...createInput, runner: createRunner, setupOnly: Boolean(setupId) }));
     createInput.adapterType = await assertSelectableAdapterType(createInput.adapterType, createInput.adapterConfig);
     const rawCreateAdapterConfig = (createInput.adapterConfig ?? {}) as Record<string, unknown>;
     assertProviderTraceSettingTransition(req, createInput.runtimeConfig);
@@ -4766,6 +4771,7 @@ export function agentRoutes(
       companyId,
       adapterType: createInput.adapterType,
       adapterConfig: desiredSkillAssignment.adapterConfig,
+      setupOnly: Boolean(setupId),
     });
     const normalizedRuntimeConfig = await normalizeCreatedAgentRuntimeConfig(req, companyId, createInput.adapterType, normalizedAdapterConfig, createInput.runtimeConfig);
     await assertAgentEnvironmentSelection(companyId, createInput.adapterType, createInput.defaultEnvironmentId);
@@ -5377,7 +5383,7 @@ export function agentRoutes(
       const config = hasOwn(patchData, "adapterConfig") ? { ...(replaceAdapterConfig ? {} : existing.adapterConfig), ...asRecord(patchData.adapterConfig) } : existing.adapterConfig;
       Object.assign(patchData, await resolveNewAgentRunnerForCompany(db, existing.companyId, {
         adapterType: typeof patchData.adapterType === "string" ? patchData.adapterType : existing.adapterType,
-        adapterConfig: config, runner,
+        adapterConfig: config, runner, setupOnly: existing.lifecycleHolds?.includes("setup"),
         defaultEnvironmentId: hasOwn(patchData, "defaultEnvironmentId") ? patchData.defaultEnvironmentId as string | null : existing.defaultEnvironmentId,
       }));
     }
@@ -5502,6 +5508,7 @@ export function agentRoutes(
         companyId: existing.companyId,
         adapterType: requestedAdapterType,
         adapterConfig: effectiveAdapterConfig,
+        setupOnly: existing.lifecycleHolds?.includes("setup"),
       });
       patchData.adapterConfig = syncInstructionsBundleConfigFromFilePath(existing, normalizedEffectiveAdapterConfig);
       assertExternalInstructionsAdmin(req, {

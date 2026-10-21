@@ -49,6 +49,13 @@ start execution. This preference does not change the org chart or permissions.
 
 ### Agent Execution
 
+Existing Claude and Codex agents can upgrade from the legacy runner on their
+Harness / Runtime page when Paperclip Runner is the qualified default for their
+environment. One action saves pending edits and translates compatible settings
+while keeping the harness, selected model, account bindings, instructions, and
+history. Unsupported settings produce an actionable error without changing the
+saved agent. Future runs start fresh sessions.
+
 Paperclip supports several ways to run an agent's heartbeat:
 
 1. **Local CLI/session adapters** — Paperclip starts or resumes local coding-tool sessions such as Claude Code, Codex, Gemini, OpenCode, Pi, and Cursor, then tracks the run.
