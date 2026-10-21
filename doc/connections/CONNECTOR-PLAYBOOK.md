@@ -721,6 +721,24 @@ as `agentmail_send` rather than extending core tools with provider-specific
 branches. Existing MCP connectors continue to use their normal MCP tool catalog;
 they do not need a duplicate native wrapper just to supply a skill.
 
+A local-file helper can use the trusted contracts in
+`services/connectors/runtime-tools.ts` and `private-transfer.ts`. The connector
+owns its upload protocol and operation receipts. Shared code supplies approved
+workspace access, connection-scoped calls, and a run-bound private transfer
+channel. The adapter must remove temporary capabilities before ordinary result
+validation, model delivery, and audit capture. Only its private projection can
+restore validated transfer fields. Caller config and remote tool responses
+cannot register these adapters or bypass normal action policy.
+
+Bind workspace contributions independently of ordinary MCP relay exposure. A
+local native run can use a connector's approved workspace helper while retaining
+its existing MCP transport. The separate `workspaceConnectionTools` binding does
+not expose ordinary relayed tools or saved-result tools.
+Remote workspace readers may receive an explicit server-owned byte allowance up
+to 25 MiB. The ordinary attachment ceiling stays unchanged. Transfer reads use
+bounded capture chunks, at most 256 commands and a 120-second total deadline,
+with descriptor confinement and a final whole-file checksum.
+
 **Resolve eligibility from current assignments and access.** An AgentMail account
 credential alone does not give an agent email capabilities. An active inbox
 assigned to that agent does, provided both the inbox connection and saved

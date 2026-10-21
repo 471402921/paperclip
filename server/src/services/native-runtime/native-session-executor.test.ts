@@ -60,6 +60,7 @@ import { AGENT_FILES_CONTRACT } from "../agent-file-store.js";
 import { captureDirectorySnapshot, directorySnapshotSha256, serializeDirectorySnapshot } from "@paperclipai/adapter-utils/workspace-restore-merge";
 import { agentInstructionWorkingCopies } from "@paperclipai/db";
 import * as noLaunchProofModule from "./native-maintenance-no-launch.js";
+import { connectorWorkspaceTools, createConnectorWorkspaceTools } from "../connectors/runtime-tools.js";
 import {
   NativeSessionCleanupQuarantinedError,
   NativeProviderTerminalFailure,
@@ -105,6 +106,7 @@ vi.mock("./native-github-access.js", () => ({
 }));
 
 type BackendFactoryOptions = {
+  dynamicTools?: Array<Record<string, unknown>>;
   runnerInstanceId?: string;
   acpxRuntimeDirectory?: string;
   workingDirectoryAuthority?: "local_filesystem" | "remote_runner";
@@ -186,7 +188,7 @@ const state = vi.hoisted(() => ({
   cancel: vi.fn(),
   copyBackCodexAuth: vi.fn(async () => "kept-host"),
   toolAuthorityDefinitions: vi.fn(
-    async (_binding: Record<string, unknown>) => [],
+    async (_binding: Record<string, unknown>): Promise<Array<Record<string, unknown>>> => [],
   ),
   toolAuthorityExecute: vi.fn(),
   persistActivity: vi.fn(async (_db: unknown, input: { action: string }) => ({
@@ -10862,6 +10864,59 @@ describe("runnerd provider runtime wiring", () => {
     );
   });
 
+  it.each([true, false])("wires contributed workspace tools into local v5 without relaying ordinary assigned tools (assigned=%s)", async assigned => {
+    const current = { ...scopedNativeExecution(`local-workspace-connector-${assigned}`),
+      schema: "paperclip.native-execution-input.v5" as const,
+      provider: { kind: "codex" as const, model: null, approvalPolicy: "never" as const },
+      executionMode: "default" as const, planningContext: null, runtimeContext: nativeRuntimeContextFixture() };
+    const database = leaseDb(current);
+    const actualAssigned = await vi.importActual<typeof import("./assigned-mcp-tools.js")>("./assigned-mcp-tools.js");
+    const actualAuthority = await vi.importActual<typeof import("./paperclip-runner-tool-authority.js")>("./paperclip-runner-tool-authority.js");
+    const tools = [{ name: "mcp.fixture:export", upstreamToolName: "export", connectionId: "fixture-connection",
+      applicationKey: "fireflies", displayName: "Export", description: "Export",
+      parametersSchema: { type: "object", properties: {} }, pluginId: "fixture", providerType: "mcp_remote_http", risk: "write" }];
+    const registry = createConnectorWorkspaceTools([{ name: "export_workspace", definitions: client => client.connectionTools().map(tool => ({
+      name: "export_workspace", description: "Export an approved workspace file", inputSchema: { type: "object", properties: { connectionId: { enum: [tool.connectionId] } } },
+    })), execute: async () => ({ exported: true }) }]);
+    const spies = [vi.spyOn(connectorWorkspaceTools, "hasContributions").mockImplementation(registry.hasContributions),
+      vi.spyOn(connectorWorkspaceTools, "definitions").mockImplementation(registry.definitions)];
+    try {
+      const gateway = { listToolsForNamedGateway: vi.fn(async () => assigned ? tools : []), executeTool: vi.fn() };
+      state.createAssignedMcpTools.mockImplementationOnce(input => actualAssigned.createAssignedMcpTools({ ...input, gateway }));
+      state.toolAuthorityDefinitions.mockImplementationOnce(async binding => new actualAuthority.PaperclipRunnerToolAuthority(database,
+        binding as ConstructorParameters<typeof actualAuthority.PaperclipRunnerToolAuthority>[1]).definitions());
+      state.createBackend.mockClear(); state.createTransport.mockClear();
+      const environment = { PAPERCLIP_NATIVE_MCP_NAME: "paperclip-assigned",
+        PAPERCLIP_NATIVE_MCP_URL: "http://127.0.0.1:3217/mcp/gateways/local-contributions", PAPERCLIP_NATIVE_MCP_TOKEN: "fixture-run-token" };
+      await createRunnerdBackend({ db: database, execution: current, runnerInstanceId: "runner-local-contributions", runnerEnvironment: environment });
+      expect(state.createAssignedMcpTools).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        gatewayPublicId: "local-contributions", bearerToken: environment.PAPERCLIP_NATIVE_MCP_TOKEN, workMode: "standard",
+      }));
+      const definitions = state.createBackend.mock.calls[0]![1].dynamicTools!;
+      const contributed = definitions.find(tool => tool.name === "export_workspace");
+      if (assigned) expect(contributed).toMatchObject({ inputSchema: { properties: { connectionId: { enum: ["fixture-connection"] } } } });
+      else expect(contributed).toBeUndefined();
+      expect(definitions.some(tool => String(tool.name).startsWith("app_") || ["paperclip_search_assigned_tools", "paperclip_call_assigned_tool", "read_tool_result"].includes(String(tool.name)))).toBe(false);
+      expect(state.toolAuthorityDefinitions).toHaveBeenCalledWith(expect.objectContaining({ assignedMcpTools: undefined }));
+      state.createBackend.mock.calls[0]![1].codexTransportFactory!();
+      expect(state.createTransport.mock.calls[0]![0]).toMatchObject({ environment });
+    } finally { spies.forEach(spy => spy.mockRestore()); }
+  });
+
+  it("does not prepare a local workspace connection client when no contributions are registered", async () => {
+    const current = { ...scopedNativeExecution("local-empty-contributions"), schema: "paperclip.native-execution-input.v5" as const,
+      provider: { kind: "codex" as const, model: null, approvalPolicy: "never" as const },
+      executionMode: "default" as const, planningContext: null, runtimeContext: nativeRuntimeContextFixture() };
+    const empty = createConnectorWorkspaceTools([]);
+    const spy = vi.spyOn(connectorWorkspaceTools, "hasContributions").mockImplementation(empty.hasContributions);
+    try {
+      await createRunnerdBackend({ db: leaseDb(current), execution: current, runnerInstanceId: "runner-local-empty-contributions",
+        runnerEnvironment: { PAPERCLIP_NATIVE_MCP_NAME: "paperclip-assigned", PAPERCLIP_NATIVE_MCP_URL: "http://127.0.0.1:3217/mcp/gateways/empty",
+        PAPERCLIP_NATIVE_MCP_TOKEN: "fixture-run-token" } });
+      expect(state.createAssignedMcpTools).not.toHaveBeenCalled();
+    } finally { spy.mockRestore(); }
+  });
+
   it.each([
     { PAPERCLIP_NATIVE_MCP_NAME: "paperclip-assigned" },
     { PAPERCLIP_NATIVE_MCP_URL: "http://127.0.0.1:3217/mcp/gateways/test" },
@@ -13430,6 +13485,7 @@ describe("runnerd provider runtime wiring", () => {
 
   it.each(["ssh", "sandbox"].flatMap(transport => ["explicit", "linux-arm64", "linux-x64", "missing", "mismatch"].map(mode => ({ transport, mode }))))
   ("binds a $transport launch to the selected controller-owned runner artifact ($mode)", async ({ transport, mode }) => {
+    state.createBackend.mockClear(); state.createTransport.mockClear();
     const remoteCwd = "/home/daytona/paperclip-workspace";
     const controllerArtifact = `/controller/artifacts/${mode}/paperclip-runnerd`;
     const explicit = mode === "explicit" || mode === "missing" || mode === "mismatch";

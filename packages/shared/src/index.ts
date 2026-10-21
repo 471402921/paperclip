@@ -288,6 +288,7 @@ export {
   recommendedDefaultsForApp,
   resolveConnectionMethodServerUrl,
 } from "./app-definitions.js";
+export { getAppDefinitionForApplicationKey } from "./connector-identity.js";
 export {
   connectionSetupStateForApp,
   connectionSetupStateForMethod,

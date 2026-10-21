@@ -569,7 +569,8 @@ export function toolGatewayRoutes(db: Db, toolGateway: ToolGatewayService) {
     }
   });
 
-  router.post("/tool-gateway/tools/call", async (req, res) => {
+  const callTool = (privateTransfer: boolean) => async (req: Request, res: Response) => {
+    if (privateTransfer) res.set("Cache-Control", "no-store");
     try {
       const token = gatewayToken(req);
       if (!token) {
@@ -582,9 +583,14 @@ export function toolGatewayRoutes(db: Db, toolGateway: ToolGatewayService) {
         timeoutMs?: number;
         approvedActionRequestId?: unknown;
         idempotencyKey?: unknown;
+        connectionId?: unknown;
       };
       if (typeof body.tool !== "string" || body.tool.trim().length === 0) {
         res.status(400).json({ error: '"tool" is required and must be a string' });
+        return;
+      }
+      if (privateTransfer && (typeof body.connectionId !== "string" || !uuidPattern.test(body.connectionId))) {
+        res.status(400).json({ error: 'A connection ID is required for private transfer' });
         return;
       }
       const toolName = body.tool;
@@ -598,12 +604,15 @@ export function toolGatewayRoutes(db: Db, toolGateway: ToolGatewayService) {
           typeof body.approvedActionRequestId === "string" ? body.approvedActionRequestId : null,
         idempotencyKey: typeof body.idempotencyKey === "string" ? body.idempotencyKey : null,
         callerHeaders: callerHeaders(req),
+        ...(privateTransfer ? { privateTransfer: { connectionId: body.connectionId as string } } : {}),
       }));
       res.json(result);
     } catch (err) {
       sendGatewayError(res, err);
     }
-  });
+  };
+  router.post("/tool-gateway/tools/call", callTool(false));
+  router.post("/tool-gateway/connector-transfers/call", callTool(true));
 
   router.post("/tool-gateway/action-requests/:id/approve", async (req, res) => {
     try {

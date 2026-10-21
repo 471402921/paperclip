@@ -29,6 +29,7 @@ import { emitConnectionInvoked } from "./connector-telemetry.js";
 import { resolveManagedGitHubIdentitySelection } from "./git-credentials.js";
 import { extractRemoteMcpPending } from "./remote-mcp-pending.js";
 import { logger } from "../middleware/logger.js";
+import { connectorTransfers, type ConnectorTransferProjection } from "./connectors/private-transfer.js";
 import { spawn } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -396,6 +397,7 @@ interface ExecuteGatewayToolInput {
   approvedActionRequestId?: string | null;
   idempotencyKey?: string | null;
   callerHeaders?: Record<string, string | string[] | undefined>;
+  privateTransfer?: { connectionId: string };
 }
 
 interface ExecuteTestCallInput {
@@ -448,6 +450,7 @@ type HeaderPolicySummary = {
 
 type RemoteHttpExecutionResult = {
   result: unknown;
+  privateTransfer?: ConnectorTransferProjection;
   headerSummary?: HeaderPolicySummary;
   execution?: RemoteHttpExecutionAudit;
 };
@@ -6439,11 +6442,12 @@ export function createToolGatewayService(
         false,
         sourceTemplateKey,
       );
+      const prepared = connectorTransfers.prepare(result, tool, parameters);
       await markCallHealth(
         "ok",
         "Remote MCP server responded to tools/call.",
       );
-      return { result, headerSummary, execution };
+      return { ...prepared, headerSummary, execution };
     } catch (error) {
       if (error instanceof McpHttpResponseError) {
         const failure = error.reason === "too_large" ? responseTooLargeError()
@@ -10115,6 +10119,10 @@ export function createToolGatewayService(
         }
       }
       let tool = await findToolForSession(session, input.tool);
+      if (input.privateTransfer && (!session.agentId || !session.runId
+        || input.privateTransfer.connectionId !== tool.connectionId || !connectorTransfers.supports(tool, input.parameters))) {
+        throw new ToolGatewayHttpError(403, "Private transfer requires an eligible action on the selected connection in an active agent run.", "connector_transfer_denied");
+      }
       if (tool.providerType === "paperclip_slack_chat") {
         const definition = SLACK_TOOLS.find(t => t.name === tool.upstreamToolName);
         const args = definition?.schema.parse(input.parameters ?? {}) as Record<string, unknown> | undefined;
@@ -11016,7 +11024,9 @@ export function createToolGatewayService(
           status: "completed" as const,
           tool: virtualToolName ?? tool.name,
           targetTool: virtualToolName ? tool.name : undefined,
-          result: resultValidation.value,
+          result: input.privateTransfer && connectedMcpExecution?.privateTransfer
+            ? connectedMcpExecution.privateTransfer.restore(resultValidation.value)
+            : resultValidation.value,
         };
       } catch (err) {
         const normalizedError =
