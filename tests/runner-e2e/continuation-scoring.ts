@@ -15,7 +15,7 @@ export interface ContinuationCheckpoint {
   attachments: unknown[];
   comments: unknown[];
   questionPresentation?: { interactionId: string; promptVisible: boolean; contextVisible: boolean };
-  outputLinkVisible?: boolean;
+  outputDocument?: { issueId: string; key: string; revisionId: string; href: string; visibleBody: string };
   interactions: unknown[];
   runs: Array<{ id: string; status: string; runtimeMode?: string }>;
 }

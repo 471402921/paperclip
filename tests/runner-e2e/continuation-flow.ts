@@ -181,8 +181,24 @@ export async function runContinuationFlow(input: {
         const question = interactions.find(interaction => interaction.kind === "ask_user_questions" && interaction.status === "pending");
         checkpoints.at(-1)!.questionPresentation = { interactionId: question?.id ?? "", promptVisible: true, contextVisible: true };
       } else if (phase === "final") {
-        await expect(page.locator('a[href*="#document-"]').last()).toBeVisible({ timeout: 30_000 });
-        checkpoints.at(-1)!.outputLinkVisible = true;
+        expect(documents).toHaveLength(1);
+        const document = documents[0]!;
+        expect(document.latestRevisionId).toBeTruthy();
+        const href = `/${encodeURIComponent(fixtures.company.issuePrefix!)}/issues/${encodeURIComponent(issue!.identifier ?? issue!.id)}#document-${encodeURIComponent(document.key)}`;
+        const url = new URL(href, page.url()).href;
+        const link = page.getByTestId("task-chat-agent-bubble").locator(`a[href=${JSON.stringify(href)}]`).last();
+        await expect(link).toBeVisible({ timeout: 30_000 });
+        await link.click();
+        await expect(page).toHaveURL(url);
+        const target = page.locator([
+          `[id=${JSON.stringify(`document-${document.key}`)}]:visible`,
+          `[id=${JSON.stringify(`side-panel-content-document:${document.key}`)}]:visible`,
+        ].join(", "));
+        await expect(target).toHaveCount(1);
+        await expect(target).toBeVisible();
+        const visibleBody = `Booking confirmed: ${scenario.answer}`;
+        await expect(target).toContainText(visibleBody);
+        checkpoints.at(-1)!.outputDocument = { issueId: issue!.id, key: document.key, revisionId: document.latestRevisionId, href, visibleBody };
       }
     }
     await captureLoadedContinuation(page, String(issue!.title), () => input.capture(

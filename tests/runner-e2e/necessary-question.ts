@@ -21,7 +21,7 @@ export function gradeNecessaryQuestion(checkpoints: ContinuationCheckpoint[], an
   const pending = cards(initial), finished = cards(final), question = pending[0], resolved = finished[0];
   const field = question?.payload?.questionSet?.questions?.[0], contract = necessaryQuestionContract();
   const check = (id: string, passed: boolean, detail: string) => ({ id, passed: Boolean(passed), detail });
-  const response = resolved?.result?.answers;
+  const response = resolved?.result?.answers, document = final?.documents[0], navigation = final?.outputDocument;
   return [
     check("necessary-question.form", checkpoints.length === 2 && !!initial && pending.length === 1 && question?.status === "pending" && initial.documents.length === 0 && initial.attachments.length === 0 &&
       validResumeQuestionForm(initial, question, false) && field?.required === true && field.prompt === contract.prompt &&
@@ -39,8 +39,10 @@ export function gradeNecessaryQuestion(checkpoints: ContinuationCheckpoint[], an
       final.runs.every((run: Row) => run.status === "succeeded" && run.runtimeMode === "native" && run.nativePhase === "committed" && run.resultJson?.finalizationPhase === "committed"),
       "The answer must resume its bound provider run or admit exactly one bound semantic successor, without duplicate work."),
     check("necessary-question.result", final?.issue.status === "done" && final.documents.length === 1 &&
-      !!final.documents[0]?.latestRevisionId && final.documents[0]?.body.trim() === `Booking confirmed: ${answer}` && final.outputLinkVisible === true,
-      "The saved confirmation must contain the exact answer and have an accessible link in the rendered task."),
+      !!document?.latestRevisionId && document?.body.trim() === `Booking confirmed: ${answer}` &&
+      navigation?.issueId === final.issue.id && navigation?.key === document.key && navigation?.revisionId === document.latestRevisionId &&
+      navigation?.visibleBody === document.body.trim(),
+      "The final reply must open this task's saved confirmation and show its exact answer."),
   ];
 }
 

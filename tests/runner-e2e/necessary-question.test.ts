@@ -22,12 +22,13 @@ function recording(provider = false): any[] {
     runs: [run], interactions: [card], documents: [], children: [], attachments: [], comments: [],
     questionPresentation: { interactionId: "card", promptVisible: true, contextVisible: true } };
   const final = structuredClone(initial) as Row;
-  final.phase = "final"; final.issue.status = "done"; final.lifecycle.executionRunId = null; final.outputLinkVisible = true;
+  final.phase = "final"; final.issue.status = "done"; final.lifecycle.executionRunId = null;
   final.interactions[0] = { ...final.interactions[0], status: "answered", resolvedByUserId: "local-board",
     result: { answers: [{ questionId: "reference", optionIds: [], otherText: scenario.answer }] } };
   if (provider) { final.runs[0].status = "succeeded"; final.runs[0].nativePhase = "committed"; final.runs[0].resultJson.finalizationPhase = "committed"; }
   else final.runs.push({ ...structuredClone(run), id: "second", contextSnapshot: { issueId: "task", sourceRunId: "first",
     interactionId: "card", interactionKind: "ask_user_questions", interactionStatus: "answered" } });
+  final.outputDocument = { issueId: "task", key: "confirmation", revisionId: "revision", href: "/QA/issues/task#document-confirmation", visibleBody: `Booking confirmed: ${scenario.answer}` };
   final.documents = [{ key: "confirmation", body: `Booking confirmed: ${scenario.answer}`, latestRevisionId: "revision" }];
   return [structuredClone(initial), final];
 }
@@ -61,7 +62,11 @@ describe("necessary free-text question journey", () => {
     ["wrong wake binding", (points: Row[]) => { points[1].runs[1].contextSnapshot.interactionId = "foreign"; }],
     ["uncommitted result", (points: Row[]) => { points[1].runs[1].resultJson.finalizationPhase = "pending"; }],
     ["wrong saved result", (points: Row[]) => { points[1].documents[0].body = "Claimed complete"; }],
-    ["inaccessible result", (points: Row[]) => { points[1].outputLinkVisible = false; }],
+    ["inaccessible result", (points: Row[]) => { delete points[1].outputDocument; }],
+    ["foreign linked task", (points: Row[]) => { points[1].outputDocument.issueId = "foreign"; }],
+    ["different linked document", (points: Row[]) => { points[1].outputDocument.key = "other"; }],
+    ["stale linked revision", (points: Row[]) => { points[1].outputDocument.revisionId = "older"; }],
+    ["wrong displayed content", (points: Row[]) => { points[1].outputDocument.visibleBody = "Claimed complete"; }],
     ["duplicate question", (points: Row[]) => { points[1].interactions.push(points[1].interactions[0]); }],
   ] as const)("rejects %s", (_name, change) => { const points = recording(); change(points); expect(failures(points).length).toBeGreaterThan(0); });
   it("does not put the required answer in the original request", () => {
