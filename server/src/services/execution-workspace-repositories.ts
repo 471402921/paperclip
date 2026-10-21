@@ -362,7 +362,9 @@ export function executionWorkspaceRepositoryService(db: Db) {
           await fs.rename(ignoreTemporary, ignorePath);
         } finally { await fs.rm(ignoreTemporary, { force: true }); }
         await measureRunPhase("workspace.repository.ignore_rules", () => ensureManagedRepositoriesIgnored(root, {
-          plainTaskDirectory: workspace.strategyType === "task_directory" && !workspace.repoUrl && !workspace.projectWorkspaceId,
+          plainTaskDirectory: workspace.strategyType === "project_primary" && workspace.metadata?.source === "task_session"
+            && workspace.sourceIssueId === input.issueId && ["shared_workspace", "isolated_workspace"].includes(workspace.mode)
+            && !workspace.repoUrl && !workspace.projectId && !workspace.projectWorkspaceId,
         }));
       }
       return stagingParent;

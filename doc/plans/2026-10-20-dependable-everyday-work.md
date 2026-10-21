@@ -122,3 +122,24 @@ the recorded Codex and Claude models. All twelve new cells declare development
 API-key authentication and per-turn lifecycle differences. None counts as staging
 subscription, warm lifecycle, Slack, or the complete 24-cell milestone. Fresh
 provider measurement remains required; catalog registration is not acceptance.
+The fifth development attempt uses the recorded Codex model. It has no monitor,
+but selects a response wake and then reaches productive-continuation recovery.
+Its next admission still fails at Git setup. The first plain-root regression had
+used a `task_directory` strategy that the runtime does not persist. The production
+runtime records `project_primary`, task ownership, and a `task_session` source.
+A corrected real-database reproduction fails with that recorded representation.
+The repair now checks those current ownership/source fields and absence of a root
+repository or configured project source. Shared and isolated task directories are
+covered; configured, agent, worktree, and adapter-managed roots stay strict. The
+second Git helper caller was inspected, but is not established as this attempt's
+cause. The fifth failure remains retained, including the distinct response-wake
+selection. Live same-agent acceptance is still open.
+
+
+That fifth attempt also exposes an independent completion-validation gap: a
+provider can report an unsatisfied objective, leave remainingWork empty, and yield
+to response_wake without any pending response. The existing gate checked only
+blocking remainingWork entries. A real-database reproduction accepts that invalid
+report before repair. The same gate now also checks an unfinished objective.
+Current questions, approvals, pause holds, conversations, and authorized external
+response waits retain their earlier checks. No accepted result is rewritten.

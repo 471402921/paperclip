@@ -334,7 +334,25 @@ const support = await getEmbeddedPostgresTestSupport();
     expect(acquisition.materialize).not.toHaveBeenCalled();
   });
 
-  it.each(["sponsored", "sponsored_git_residue", "local_board", "local_board_jwt", "routine"] as const)("prepares public Git from an idle workspace for a trusted %s task and reuses verified bytes after trust downgrade", async principal => {
+  it.each([
+    { name: "missing task owner", patch: { sourceIssueId: null } },
+    { name: "configured directory source", patch: { metadata: { source: "project_primary" } } },
+    { name: "agent directory source", patch: { metadata: { source: "agent_home" } } },
+    { name: "worktree strategy", patch: { strategyType: "git_worktree" } },
+    { name: "adapter-managed mode", patch: { mode: "adapter_managed" } },
+    { name: "configured root repository", patch: { repoUrl: "https://github.com/public/anchor" } },
+  ])("keeps strict Git validation for $name", async ({ patch }) => {
+    const f = await fixture();
+    await f.request({ kind: "url", url: "https://github.com/public/example" });
+    await db.update(executionWorkspaces).set({ strategyType: "project_primary", sourceIssueId: f.issueId,
+      metadata: { source: "task_session" }, ...patch }).where(eq(executionWorkspaces.id, f.workspace.id));
+    await mkdir(path.join(f.admission.cwd, ".git", "info"), { recursive: true });
+    await writeFile(path.join(f.admission.cwd, ".git", "info", "exclude"), "/.paperclip-repositories/\n");
+    await expect(f.service.prepareForAdmission(f.admission)).rejects.toThrow("not a git repository");
+    expect(acquisition.materialize).not.toHaveBeenCalled();
+  });
+
+  it.each(["sponsored", "sponsored_git_residue", "sponsored_shared_git_residue", "local_board", "local_board_jwt", "routine"] as const)("prepares public Git from an idle workspace for a trusted %s task and reuses verified bytes after trust downgrade", async principal => {
     const f = await fixture();
     await db.update(executionWorkspaces).set({ status: "idle" }).where(eq(executionWorkspaces.id, f.workspace.id));
     const localBoard = principal === "local_board" || principal === "local_board_jwt";
@@ -366,7 +384,9 @@ const support = await getEmbeddedPostgresTestSupport();
       await exec("git", ["-C", cwd, "remote", "set-url", "origin", input.repoUrl]);
       return result;
     });
-    if (principal === "sponsored_git_residue") {
+    if (principal === "sponsored_git_residue" || principal === "sponsored_shared_git_residue") {
+      await db.update(executionWorkspaces).set({ strategyType: "project_primary", sourceIssueId: f.issueId,
+        mode: principal === "sponsored_shared_git_residue" ? "shared_workspace" : "isolated_workspace", metadata: { source: "task_session" } }).where(eq(executionWorkspaces.id, f.workspace.id));
       await mkdir(path.join(f.admission.cwd, ".git", "info"), { recursive: true });
       await writeFile(path.join(f.admission.cwd, ".git", "info", "exclude"), "/.paperclip-repositories/\n");
     }
