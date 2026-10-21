@@ -130,8 +130,8 @@ it("rejects unexpected credential-bearing metadata before retained report proces
   const { manifestVerified: _manifest, secretScanPassed: _scan, ...evidence } = row.evidence;
   const result = { ...row.result, dependableWork: { campaignId: row.campaignId, cell: row.cell, phase: row.phase, evidence } };
   expect(() => validateRetainedRunnerResult(result)).not.toThrow();
-  expect(() => validateRetainedRunnerResult({ ...result, dependableWork: { ...result.dependableWork, credential: "not-allowed" } })).toThrow("credential");
-  expect(() => validateRetainedRunnerResult({ ...result, dependableWork: { ...result.dependableWork, evidence: { ...evidence, callbackUrl: "https://invalid.example" } } })).toThrow("callbackUrl");
+  expect(() => validateRetainedRunnerResult({ ...result, dependableWork: { ...result.dependableWork, credential: "not-allowed" } })).toThrow("result.dependableWork");
+  expect(() => validateRetainedRunnerResult({ ...result, dependableWork: { ...result.dependableWork, evidence: { ...evidence, callbackUrl: "https://invalid.example" } } })).toThrow("result.dependableWork.evidence");
 });
 
 it("makes the actual report command fail an incomplete checkpoint while retaining an earlier failure", async () => {
@@ -160,4 +160,23 @@ it("makes the actual report command fail an incomplete checkpoint while retainin
     expect(report.cells[0].candidatePassed).toBe(1);
     expect(await readFile(path.join(output, "summary.md"), "utf8")).toContain("checkpoint: incomplete");
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+it.each(["constructor", "toString", "__proto__", "secret-value-in-a-field-name"])("rejects unexpected metadata keys without echoing %s", key => {
+  const row = attempt(DEPENDABLE_CELLS[0]!, 1);
+  const { manifestVerified: _manifest, secretScanPassed: _scan, ...evidence } = row.evidence;
+  const receipt = { campaignId: row.campaignId, cell: row.cell, phase: row.phase, evidence };
+  for (const dependableWork of [{ ...receipt, [key]: "untrusted" }, { ...receipt, evidence: { ...evidence, [key]: "untrusted" } }]) {
+    let error: unknown;
+    try { validateRetainedRunnerResult({ ...row.result, dependableWork }); } catch (caught) { error = caught; }
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("result.dependableWork");
+    expect((error as Error).message).not.toContain(key);
+  }
+});
+
+it("keeps a complete rotation for valid UTC dates before the Unix epoch", () => {
+  const dates = ["1969-12-26", "1969-12-27", "1969-12-28", "1969-12-29", "1969-12-30", "1969-12-31"];
+  expect(dates.every(date => dependableDailySelection(date).length === 4)).toBe(true);
+  expect([...new Set(dates.flatMap(dependableDailySelection))].sort()).toEqual([...DEPENDABLE_CELLS].sort());
 });

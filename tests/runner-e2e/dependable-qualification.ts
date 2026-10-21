@@ -34,7 +34,6 @@ export function dependableRequiredChecks(cell: DependableCell) {
   return [...COMMON_CHECKS, ...JOURNEY_CHECKS[journey]].map(id => `dependable.${id}`);
 }
 
-/** Metadata is recorded by the Product E2E observer, never taken from agent prose. */
 export interface DependableAttempt {
   campaignId: string;
   cell: DependableCell;
@@ -57,7 +56,6 @@ export interface DependableQualification {
   revision: string;
   startedAt: string;
   candidatePassesPerCell: 3;
-  /** Captured effective configuration, including model, environment and auth method. */
   settingsHashes: Record<DependableProvider, string>;
   models: Record<DependableProvider, string>;
   instructionsHash: string;
@@ -98,7 +96,6 @@ function attemptProblems(attempt: DependableAttempt, config: DependableQualifica
   return problems;
 }
 
-/** A checkpoint over existing attempt records; it neither runs work nor retries it. */
 export function gradeDependableQualification(config: DependableQualification, attempts: readonly DependableAttempt[]) {
   if (!sha.test(config.revision) || time(config.startedAt) === null || config.candidatePassesPerCell !== 3 ||
     !digest.test(config.definitionHash) || !digest.test(config.instructionsHash) ||
@@ -138,12 +135,12 @@ export function gradeDependableQualification(config: DependableQualification, at
     incompleteAttempts: observations.filter(row => !row.qualified).length };
 }
 
-/** Four explicit cells daily; the complete 24-cell set rotates every six UTC days. */
 export function dependableDailySelection(utcDate: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(utcDate) || new Date(utcDate).toISOString().slice(0, 10) !== utcDate)
     throw new Error("Daily rotation requires an exact UTC date");
   const day = Math.floor(Date.parse(utcDate) / 86_400_000);
-  const journey = DEPENDABLE_JOURNEYS[day % DEPENDABLE_JOURNEYS.length]!;
+  const length = DEPENDABLE_JOURNEYS.length;
+  const journey = DEPENDABLE_JOURNEYS[((day % length) + length) % length]!;
   return DEPENDABLE_CELLS.filter(cell => cell.endsWith(`.${journey}`));
 }
 
@@ -154,7 +151,6 @@ export function dependableDailyExecutions(utcDate: string, availableIds: readonl
   return ids;
 }
 
-/** Integrates with the ordinary report's entire retained pool, before best-attempt selection. */
 export function gradeRetainedDependableResults(config: DependableQualification, entries: readonly {
   result: RunnerE2EResult;
   evidence: { files?: string[]; leaks?: unknown[]; missing?: unknown[] } | null;

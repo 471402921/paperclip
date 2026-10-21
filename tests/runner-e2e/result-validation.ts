@@ -60,7 +60,7 @@ const shape =
   };
 const closedShape = (fields: Record<string, Rule>): Rule => (value, at) => {
   shape(fields)(value, at);
-  for (const key of Object.keys(value as object)) if (!(key in fields)) invalid(`${at}.${key}`);
+  for (const key of Object.keys(value as object)) if (!Object.hasOwn(fields, key)) invalid(`${at} (unexpected field)`);
 };
 const date: Rule = (value, at) => {
   string(value, at);
