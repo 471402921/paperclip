@@ -1,3 +1,4 @@
+import { waitForFinalizationDelivery } from "./finalization-delivery.js";
 import { captureStockHarness, gradeStockHire } from "./stock-harness.js";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
@@ -105,13 +106,13 @@ export async function runFinalizationRecoveryFlow(input: {
       accept: run => run?.id === observation!.binding.runId && run.status === "succeeded" && run.nativePhase === "committed" &&
         run.resultJson?.finalizationPhase === "committed" && issue!.status === "done",
       reject: run => runs.length > 1 ? "Recovery repeated provider admission" : run && ["failed", "cancelled", "timed_out"].includes(run.status) ? "Original run did not recover" : undefined });
-    const run = runs[0]!;
+    let run = runs[0]!;
     const provider = run.runnerProfileJson?.nativeExecutionInput?.provider;
     if (provider?.model !== execution.profile.model || (provider.kind === "acpx" ? `acpx:${provider.agent}` : provider.kind) !==
         (execution.profile.provider === "codex" ? "codex" : "acpx:claude")) throw new Error("Recovered run did not retain the configured provider and model");
-    const [rows, operations, comments, interactions, view, artifacts] = await Promise.all([
+    const [rows, operations, interactions, view, artifacts] = await Promise.all([
       events(run.id), api.get<Row[]>(`/api/heartbeat-runs/${run.id}/workspace-operations`),
-      api.get<Row[]>(`/api/issues/${issue.id}/comments`), api.get<Row[]>(`/api/issues/${issue.id}/interactions`),
+      api.get<Row[]>(`/api/issues/${issue.id}/interactions`),
       api.get<Row>(`/api/issues/${issue.id}/workspace`), readRegisteredArtifacts(api, issue.id, run.id, [files.proof]),
     ]);
     if (!proof) throw new Error("Missing original proof before crash");
@@ -122,8 +123,13 @@ export async function runFinalizationRecoveryFlow(input: {
       throw new Error("Restored binary is missing, linked, or the wrong size");
     const hash = createHash("sha256");
     for await (const chunk of createReadStream(file)) hash.update(chunk);
-    const finalReply = comments.filter(comment => comment.authorAgentId === fixtures.agent.id && comment.createdByRunId === run.id &&
-      comment.body?.trim() === run.resultJson.nativeResult?.summary?.trim());
+    const delivered = await waitForFinalizationDelivery({ binding: observation!.binding, agentId: fixtures.agent.id, deadlineAt: input.deadlineAt,
+      load: async () => {
+        await refresh();
+        return { run: runs[0] ?? {}, runCount: runs.length, comments: await api.get<Row[]>(`/api/issues/${issue!.id}/comments`) };
+      } });
+    run = delivered.run;
+    const delivery = delivered.delivery;
     await page.goto(`/${encodeURIComponent(fixtures.company.issuePrefix!)}/issues/${encodeURIComponent(issue.identifier ?? issue.id)}`);
     await expect(page.getByTestId("task-chat-agent-bubble").locator(`a[href*="${artifacts[0]!.attachmentId}"]`).last()).toBeVisible({ timeout: 30_000 });
     observation!.final = { runIds: runs.map(candidate => candidate.id), committed: run.runtimeMode === "native" && run.nativePhase === "committed",
@@ -132,8 +138,8 @@ export async function runFinalizationRecoveryFlow(input: {
         operation.heartbeatRunId === run.id && operation.phase === "workspace_finalize" && operation.status === "succeeded" && operation.metadata?.resumedFromOperationId)
         .map(operation => ({ resumedFromOperationId: operation.metadata.resumedFromOperationId, startedAt: operation.startedAt })),
       artifactId: artifacts[0]!.attachmentId, artifactSha256: artifacts[0]!.sha256, byteSize: stat.size,
-      actualSha256: hash.digest("hex"), expectedSha256: proof.sha256, proofReference: proof.reference, finalDeliveryCount: finalReply.length,
-      deliveryReceiptMatches: run.issueCommentStatus === "satisfied" && finalReply.length === 1 && run.issueCommentSatisfiedByCommentId === finalReply[0]!.id,
+      actualSha256: hash.digest("hex"), expectedSha256: proof.sha256, proofReference: proof.reference, finalDeliveryCount: delivery.finalDeliveryCount,
+      deliveryReceiptMatches: delivery.deliveryReceiptMatches,
       visibleDelivery: true, pendingInteractions: interactions.filter(interaction => interaction.status === "pending").length };
     await input.evidence("finalization-after.json", { binding: observation!.binding, events: eventReceipts(rows),
       operations: operations.map(operation => ({ id: operation.id, companyId: operation.companyId, issueId: operation.issueId,
@@ -141,9 +147,7 @@ export async function runFinalizationRecoveryFlow(input: {
         finishedAt: operation.finishedAt, resumedFromOperationId: operation.metadata?.resumedFromOperationId })),
       restoredFile: { path: files.data, byteSize: stat.size, sha256: observation!.final.actualSha256 },
       delivery: { runId: run.id, status: run.issueCommentStatus, satisfiedByCommentId: run.issueCommentSatisfiedByCommentId,
-        summarySha256: createHash("sha256").update(String(run.resultJson.nativeResult?.summary ?? "").trim()).digest("hex"),
-        replies: finalReply.map(comment => ({ id: comment.id, authorAgentId: comment.authorAgentId, createdByRunId: comment.createdByRunId,
-          bodySha256: createHash("sha256").update(String(comment.body).trim()).digest("hex") })) } });
+        presentation: delivery.presentation, replies: delivery.replies } });
     const checks = gradeFinalizationRecovery(observation!);
     input.observe(issue, runs, checks);
     await save("completed");
