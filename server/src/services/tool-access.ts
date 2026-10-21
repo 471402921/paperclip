@@ -6547,8 +6547,8 @@ export function toolAccessService(
     }).where(eq(toolConnections.id, connection.id));
   }
 
-  async function withOAuthRevocationClaim(connectionId: string, companyId: string,
-    operation: (connection: typeof toolConnections.$inferSelect, transaction: DbTransaction) => Promise<boolean>) {
+  async function withOAuthRevocationClaim<T>(connectionId: string, companyId: string,
+    operation: (connection: typeof toolConnections.$inferSelect, transaction: DbTransaction) => Promise<T>) {
     return db.transaction(async tx => {
       const result = await tx.execute<{ claimed: boolean }>(sql`SELECT pg_try_advisory_xact_lock(hashtextextended(${"paperclip.oauth_revocation:" + connectionId}, 0)) AS claimed`);
       if (!result[0]?.claimed) return null;
@@ -6595,6 +6595,41 @@ export function toolAccessService(
       } catch { pending += 1; }
     }
     return { checked: rows.length, pending };
+  }
+
+  async function removeConnectionCredentials(connection: typeof toolConnections.$inferSelect,
+    grantRows: Pick<typeof connectionGrants.$inferSelect, "id" | "credentialSecretRefs">[], database = db) {
+    const revokeProvider = isOAuthRevocableConnection(connection);
+    const pendingOAuthGrantIds = await revokeOAuthGrants(connection, grantRows.map(grant => grant.id), database);
+    const pendingOAuthSecretIds = new Set([...grantRows.filter(grant => pendingOAuthGrantIds.has(grant.id))
+      .flatMap(grant => grant.credentialSecretRefs.map(ref => ref.secretId)),
+      ...(pendingOAuthGrantIds.size ? connection.credentialSecretRefs.filter(ref => ref.configPath === "oauth.client_secret").map(ref => ref.secretId) : [])]);
+    const candidateSecretIds = [
+      ...Object.values(asRecord(connection.config.aggregatorDiscovery)).flatMap(value => typeof asRecord(value).secretId === "string" ? [asRecord(value).secretId as string] : []),
+      ...connection.credentialRefs.map(ref => ref.secretId),
+      ...connection.credentialSecretRefs.map(ref => ref.secretId),
+      ...grantRows.flatMap(grant => grant.credentialSecretRefs.map(ref => ref.secretId)),
+    ];
+    const { owned, retained } = await classifyConnectionSecrets(connection, candidateSecretIds, database);
+    const secretClient = database === db ? secrets : secretService(database);
+    let secretsRevoked = 0;
+    for (const secretId of owned) {
+      if (pendingOAuthSecretIds.has(secretId)) continue;
+      if (await secretClient.remove(secretId)) secretsRevoked += 1;
+    }
+    const retainedClientRefs = pendingOAuthGrantIds.size ? connection.credentialSecretRefs.filter(ref => ref.configPath === "oauth.client_secret") : [];
+    const credentialRefsCleared = connection.credentialRefs.length + connection.credentialSecretRefs.length - retainedClientRefs.length;
+    const [cleared] = await database.update(toolConnections).set({
+      credentialRefs: [], credentialSecretRefs: retainedClientRefs,
+      config: { ...withoutInlineOAuthTokens(connection.config), ...(revokeProvider ? { oauthRevocationPending: pendingOAuthGrantIds.size > 0 } : {}) },
+      transportConfig: { ...withoutInlineOAuthTokens(connection.transportConfig), ...(revokeProvider ? { oauthRevocationPending: pendingOAuthGrantIds.size > 0 } : {}) },
+      updatedAt: now(),
+    }).where(eq(toolConnections.id, connection.id)).returning();
+    const clearedGrantIds = grantRows.filter(grant => !pendingOAuthGrantIds.has(grant.id)).map(grant => grant.id);
+    if (clearedGrantIds.length) await database.update(connectionGrants).set({ credentialSecretRefs: [], updatedAt: now() })
+      .where(and(eq(connectionGrants.companyId, connection.companyId), eq(connectionGrants.connectionId, connection.id),
+        inArray(connectionGrants.id, clearedGrantIds), eq(connectionGrants.status, "revoked")));
+    return { connection: cleared ?? connection, secretsRevoked, secretsRetainedShared: retained.length, credentialRefsCleared };
   }
 
   /**
@@ -6981,64 +7016,22 @@ export function toolAccessService(
     // `secrets.remove` marks the row deleted before it calls the provider, so a
     // provider error leaves an unresolvable secret and a resumable removal
     // rather than a half-open app.
-    const pendingOAuthGrantIds = await revokeOAuthGrants(connection, grantRows.map(grant => grant.id));
-    const pendingOAuthSecretIds = new Set([...grantRows.filter(grant => pendingOAuthGrantIds.has(grant.id))
-      .flatMap(grant => grant.credentialSecretRefs.map(ref => ref.secretId)),
-      ...(pendingOAuthGrantIds.size ? connection.credentialSecretRefs.filter(ref => ref.configPath === "oauth.client_secret").map(ref => ref.secretId) : [])]);
-    const candidateSecretIds = [
-      ...Object.values(asRecord(connection.config.aggregatorDiscovery)).flatMap(value => typeof asRecord(value).secretId === "string" ? [asRecord(value).secretId as string] : []),
-      ...connection.credentialRefs.map((ref) => ref.secretId),
-      ...connection.credentialSecretRefs.map((ref) => ref.secretId),
-      ...grantRows.flatMap((grant) =>
-        (grant.credentialSecretRefs ?? []).map((ref) => ref.secretId),
-      ),
-    ];
-    const { owned, retained } = await classifyConnectionSecrets(
-      connection,
-      candidateSecretIds,
-    );
-    let secretsRevoked = 0;
-    for (const secretId of owned) {
-      if (pendingOAuthSecretIds.has(secretId)) continue;
-      const removed = await secrets.remove(secretId);
-      if (removed) secretsRevoked += 1;
-    }
-
-    const retainedClientRefs = pendingOAuthGrantIds.size ? connection.credentialSecretRefs.filter(ref => ref.configPath === "oauth.client_secret") : [];
-    const credentialRefsCleared =
-      connection.credentialRefs.length + connection.credentialSecretRefs.length - retainedClientRefs.length;
-    const [cleared] = await db
-      .update(toolConnections)
-      .set({
-        credentialRefs: [],
-        credentialSecretRefs: retainedClientRefs,
-        config: { ...withoutInlineOAuthTokens(connection.config), ...(revokeProvider ? { oauthRevocationPending: pendingOAuthGrantIds.size > 0 } : {}) },
-        transportConfig: { ...withoutInlineOAuthTokens(connection.transportConfig), ...(revokeProvider ? { oauthRevocationPending: pendingOAuthGrantIds.size > 0 } : {}) },
-        updatedAt: now,
-      })
-      .where(eq(toolConnections.id, connection.id))
-      .returning();
-    if (
-      grantRows.some((grant) => (grant.credentialSecretRefs ?? []).length > 0)
-    ) {
-      await db
-        .update(connectionGrants)
-        .set({ credentialSecretRefs: [], updatedAt: now })
-        .where(
-          and(
-            eq(connectionGrants.companyId, connection.companyId),
-            eq(connectionGrants.connectionId, connection.id),
-            ...(pendingOAuthGrantIds.size > 0 ? [notInArray(connectionGrants.id, [...pendingOAuthGrantIds])] : []),
-          ),
-        );
-    }
+    const cleanup = revokeProvider ? await withOAuthRevocationClaim(connection.id, connection.companyId, async (current, tx) => {
+      if (current.status !== "archived") return null;
+      const grants = await tx.select({ id: connectionGrants.id, credentialSecretRefs: connectionGrants.credentialSecretRefs })
+        .from(connectionGrants).where(and(eq(connectionGrants.companyId, connection.companyId),
+          eq(connectionGrants.connectionId, connection.id), eq(connectionGrants.status, "revoked")));
+      return removeConnectionCredentials(current, grants, tx as unknown as Db);
+    }) : await removeConnectionCredentials(connection, grantRows);
+    const finalized = cleanup || null;
+    const finalConnection = finalized?.connection ?? await getConnectionRow(connection.id, connection.companyId);
 
     return {
-      connection: toConnection(cleared ?? archived.connection),
+      connection: toConnection(finalConnection),
       removal: {
-        secretsRevoked,
-        secretsRetainedShared: retained.length,
-        credentialRefsCleared,
+        secretsRevoked: finalized?.secretsRevoked ?? 0,
+        secretsRetainedShared: finalized?.secretsRetainedShared ?? 0,
+        credentialRefsCleared: finalized?.credentialRefsCleared ?? 0,
         secretBindingsRemoved: removedSecretBindings.length,
         grantsRevoked: grantsToRevoke.length,
         installsRemoved: removedInstalls.length,
@@ -7053,7 +7046,7 @@ export function toolAccessService(
         gatewaySessionsRevoked,
         applicationArchived: archived.applicationArchived,
         externalCredentialCleanup,
-        ...(revokeProvider ? { oauthRevocationPending: pendingOAuthGrantIds.size > 0 } : {}),
+        ...(revokeProvider ? { oauthRevocationPending: finalConnection.config.oauthRevocationPending === true } : {}),
       },
     };
   }
@@ -17006,16 +16999,24 @@ export function toolAccessService(
           "Only a company owner, admin, or member with connection-manager permission can share credentials with the organization.",
         );
       }
-      await tx.select({ id: connectionGrants.id }).from(connectionGrants)
+      const organizationGrants = await tx.select({ id: connectionGrants.id, status: connectionGrants.status, revokedAt: connectionGrants.revokedAt }).from(connectionGrants)
         .where(and(eq(connectionGrants.companyId, connection.companyId), eq(connectionGrants.connectionId, connection.id),
-          eq(connectionGrants.kind, "organization"), eq(connectionGrants.isDefault, true)))
+          eq(connectionGrants.kind, "organization")))
+        .orderBy(connectionGrants.id)
         .for("update");
       await tx.select({ id: toolApplications.id }).from(toolApplications)
         .where(and(eq(toolApplications.id, connection.applicationId), eq(toolApplications.companyId, connection.companyId)))
         .for("update");
-      await tx.select({ id: toolConnections.id }).from(toolConnections)
+      const [lockedConnection] = await tx.select().from(toolConnections)
         .where(and(eq(toolConnections.id, connection.id), eq(toolConnections.companyId, connection.companyId)))
         .for("update");
+      if (!lockedConnection || lockedConnection.status === "archived" || lockedConnection.config.oauthRevocationPending === true) {
+        throw conflict("OAuth authorization was removed while sign in was in progress. Reconnect after revocation finishes.", { code: "oauth_revocation_pending" });
+      }
+      if (organizationGrants.some(grant => grant.status === "revoked" && grant.revokedAt && grant.revokedAt >= stateRow.createdAt)) {
+        throw conflict("OAuth authorization was revoked after this sign in began. Start sign in again.", { code: "oauth_authorization_revoked" });
+      }
+      connection = lockedConnection;
       const txSecrets = secretService(tx);
       const txSecretContext = { dbClient: tx, secretClient: txSecrets };
 
