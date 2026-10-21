@@ -148,6 +148,10 @@ const RECOVERABLE_READ_OPERATIONS = new Set([
   "list_document_revisions", "list_agents", "get_agent", "list_projects", "list_approvals",
   "get_approval", "get_approval_context", "read_agent_instructions", "get_agent_instruction_history",
 ]);
+const RECOVERABLE_READ_ERRORS = new Set([
+  "paperclip_runner_document_not_found", "paperclip_runner_agent_not_found",
+  "paperclip_runner_approval_not_found", "paperclip_runner_tool_input_invalid",
+]);
 const readOnlyApiMethod = (method: string) => ["GET", "HEAD", "OPTIONS"].includes(method);
 const toolCallKey = (callId: string) => createHash("sha256").update(callId).digest("hex");
 const toolInputDigest = (value: unknown) => createHash("sha256").update(canonicalJson(value)).digest("hex");
@@ -382,7 +386,7 @@ export class PaperclipRunnerToolAuthority {
     if (!this.binding.museRuntime) await this.binding.assertBridgeAuthority?.();
     const context = await this.#boundContext();
     const { run } = context;
-    if (RECOVERABLE_READ_OPERATIONS.has(call.tool)) return { result: await this.execute(call) };
+    if (RECOVERABLE_READ_OPERATIONS.has(call.tool)) return this.#recoverRead(call);
     const input = record(call.arguments);
     const key = typeof input.idempotencyKey === "string" ? input.idempotencyKey : null;
     const receipt = key ? record(record(run.resultJson?.semanticToolReceipts)[key]) : {};
@@ -409,7 +413,7 @@ export class PaperclipRunnerToolAuthority {
         throw error;
       }
       const { input: apiInput, operation } = validated;
-      if (readOnlyApiMethod(operation.method)) return { result: await this.execute(call) };
+      if (readOnlyApiMethod(operation.method)) return this.#recoverRead(call);
       const api = record(record(run.resultJson?.apiToolReceipts)[callKey]);
       if (api.state !== "completed" || api.digest !== toolInputDigest(apiInput)) return null;
       const result = await this.#apiReceiptResult(api);
@@ -423,6 +427,22 @@ export class PaperclipRunnerToolAuthority {
         && Object.hasOwn(bridge, "result")) return { result: bridge.result };
     }
     return null;
+  }
+
+  async #recoverRead(call: Parameters<PaperclipRunnerToolAuthority["execute"]>[0]) {
+    try {
+      return { result: await this.execute(call) };
+    } catch (error) {
+      // A known read failure is a tool outcome, not a failed transport. Keep
+      // authorization, uncertain effects, and unexpected storage errors fatal.
+      if (!(error instanceof Error && (RECOVERABLE_READ_ERRORS.has(error.message)
+        || (error instanceof HttpError && [400, 404, 422].includes(error.status))))) throw error;
+      await this.binding.assertBridgeAuthority?.();
+      await this.#boundContext();
+      return { isError: true, result: {
+        success: false, contentItems: [{ type: "inputText", text: error.message }],
+      } };
+    }
   }
 
   async #apiReceiptResult(receipt: { encryptedResult?: unknown; result?: unknown }): Promise<unknown> {

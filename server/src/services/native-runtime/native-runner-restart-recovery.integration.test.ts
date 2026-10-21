@@ -62,6 +62,7 @@ import { closeIdleWarmNativeSessionsForRestart, detachNativeSessionsForRestart, 
 import { loadNativeRunnerCheckpoint, nativeRunnerCheckpointWriter, registerNativeRunnerCheckpoint, restoreNativeRunnerCheckpoint } from "./native-runner-checkpoint.js";
 import { REMOTE_RUNNER_RECONNECT_GRACE_MS } from "./native-runner-recovery-contract.js";
 import { PaperclipRunnerToolAuthority } from "./paperclip-runner-tool-authority.js";
+import { HttpError } from "../../errors.js";
 
 const mockCaptureRunFailure = vi.hoisted(() => vi.fn());
 vi.mock("../../sentry.js", async () => {
@@ -687,6 +688,38 @@ describeEmbeddedPostgres("native runner restart recovery with real processes", (
     await expect(recover(call)).rejects.toThrow("paperclip_runner_tool_binding_not_authorized");
     await expect(recover(apiRead)).rejects.toThrow("paperclip_runner_tool_binding_not_authorized");
     expect(executeRead).toHaveBeenCalledTimes(2);
+  });
+
+  it("recovers missing-document reads as tool errors while fencing lost authority and unknown failures", async () => {
+    const fixture = await seedRun("READ-RECOVERY");
+    const assertBridgeAuthority = vi.fn(async () => {});
+    const authority = new PaperclipRunnerToolAuthority(fixture.db, {
+      companyId, issueId: fixture.issueId, agentId, runId: fixture.runId,
+      apiToolsEnabled: true, assertBridgeAuthority,
+    });
+    const read = { tool: "read_document", callId: "missing-document", arguments: { key: "deleted" } };
+    await expect(authority.recover(read)).resolves.toEqual({ isError: true, result: {
+      success: false, contentItems: [{ type: "inputText", text: "paperclip_runner_document_not_found" }],
+    } });
+    await expect(authority.recover({ tool: "get_task_context", callId: "next-read", arguments: {} }))
+      .resolves.toMatchObject({ result: { activeTask: { id: fixture.issueId } } });
+
+    const execute = vi.spyOn(authority, "execute");
+    const apiRead = { tool: "call_api", callId: "missing-api-resource", arguments: { operationId: "GET /api/agents/me" } };
+    execute.mockRejectedValueOnce(new HttpError(404, "Resource disappeared"));
+    await expect(authority.recover(apiRead)).resolves.toMatchObject({ isError: true, result: { success: false } });
+    execute.mockRejectedValueOnce(new HttpError(403, "Authority revoked"));
+    await expect(authority.recover(apiRead)).rejects.toThrow("Authority revoked");
+    execute.mockRejectedValueOnce(new Error("database unavailable"));
+    await expect(authority.recover(read)).rejects.toThrow("database unavailable");
+    execute.mockImplementationOnce(async () => {
+      await fixture.db.update(heartbeatRuns).set({ status: "cancelled" }).where(eq(heartbeatRuns.id, fixture.runId));
+      throw new Error("paperclip_runner_document_not_found");
+    });
+    await expect(authority.recover(read)).rejects.toThrow("paperclip_runner_tool_binding_not_authorized");
+    execute.mockRestore();
+    assertBridgeAuthority.mockRejectedValueOnce(new Error("controller lease lost"));
+    await expect(authority.recover(read)).rejects.toThrow("controller lease lost");
   });
 
   it("restores encrypted controller authority from Postgres and fences a stale writer", async () => {

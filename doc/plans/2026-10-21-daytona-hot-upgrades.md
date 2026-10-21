@@ -347,3 +347,26 @@ Logs: `/tmp/checkpoint-merged-protocol-tests.log`,
 `/tmp/hot-upgrade-cost-final-typecheck.log`, `/tmp/hot-upgrade-cost-merged-build.log`,
 `/tmp/hot-upgrade-cost-e2e-types.log`, `/tmp/checkpoint-final-postgres-tests.log`,
 `/tmp/checkpoint-final-migrations.log`, and `/tmp/checkpoint-final-server-types.log`.
+
+All 52 CI checks outside Greptile passed at `f8f9db0c48` (four intentional
+skips). Greptile identified a recovery defect: a missing document during an
+offline controller interval could fail the recovered transport. Known read
+errors now return the same failed-tool envelope as live calls. The product tool
+authority owns this classification; it rechecks its lease and run before
+settling the error. Unknown failures, revoked authority, and uncertain writes
+remain fenced. The new regression initially asserted `task` instead of the
+existing `activeTask` response field; the assertion was corrected without
+changing the production response contract. Logs:
+`/tmp/checkpoint-recovered-read-tests.log` and
+`/tmp/checkpoint-recovered-read-final-tests.log`.
+The final restart, tool-authority, and API integration verification passed 110
+tests (five Docker-only skips); server typecheck also passed.
+
+The merged full local suite found four failures in unchanged tests: two chat
+integration cases (ambiguous Slack retry and attachment-only Telegram failure),
+a workspace port-conflict case, and a wrong-company gateway revocation case.
+All four passed isolated reruns without source or timeout changes. Their
+original causes remain unknown, and the full invocation is not a clean pass.
+Original evidence: `/tmp/hot-upgrade-cost-merged-full-tests.log`. Rerun evidence:
+`/tmp/checkpoint-unrelated-chat-recheck.log` and
+`/tmp/checkpoint-workspace-gateway-recheck.log`.
