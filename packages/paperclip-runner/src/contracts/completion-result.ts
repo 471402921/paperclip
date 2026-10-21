@@ -384,6 +384,20 @@ export const PRP_COMPLETION_RESULT_PROVIDER_INPUT_SCHEMA = {
   else: { properties: { continuation: { type: "null" } } },
 } as const;
 
+export const PRP_COMPLETION_RESULT_BRIDGE_INPUT_SCHEMA = {
+  ...PRP_COMPLETION_RESULT_PROVIDER_INPUT_SCHEMA,
+  properties: {
+    ...PRP_COMPLETION_RESULT_PROVIDER_INPUT_SCHEMA.properties,
+    continuation: {
+      ...PRP_COMPLETION_RESULT_PROVIDER_INPUT_SCHEMA.properties.continuation,
+      properties: {
+        ...waitContinuationSchema.properties,
+        kind: { type: "string", enum: [...waitContinuationSchema.properties.kind.enum, "same_agent"] },
+      },
+    },
+  },
+} as const;
+
 export const PRP_BLOCK_RESULT_PROVIDER_INPUT_SCHEMA = {
   type: "object",
   additionalProperties: true,
