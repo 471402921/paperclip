@@ -706,6 +706,7 @@ export function slackSearchOAuthService(
         await tx
           .update(connectionGrants)
           .set({
+            providerTenant: sql`${connectionGrants.providerTenant} #- '{oauth,supersededByGrantId}'`,
             status: "revoked",
             revokedAt: new Date(),
             revokedByUserId: userId,

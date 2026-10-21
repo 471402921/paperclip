@@ -1,3 +1,5 @@
+import { applyConnectorAppConfiguration, connectorAppDefinition, connectorOAuthLifecycle } from "./connectors/lifecycle.js";
+import { revokeOAuthToken, selectOAuthRevocationAuthMethod } from "./oauth-revocation.js";
 import { stableHash, descriptorHash } from "./tool-catalog-hash.js";
 import { assertProfileEntryInputs } from "./tool-profile-entry-validation.js";
 import { DAYTONA_TOOLS, daytonaClient, daytonaRisk, isDaytonaConnection, isDaytonaToolName } from "./daytona.js";
@@ -524,6 +526,8 @@ type OAuthProviderEndpoints = {
   authorizationUrl: string;
   tokenUrl: string;
   registrationUrl?: string | null;
+  revocationUrl?: string | null;
+  revocationEndpointAuthMethodsSupported?: string[];
   codeChallengeMethodsSupported?: string[];
   tokenEndpointAuthMethodsSupported?: string[];
   grantTypesSupported?: string[];
@@ -3212,6 +3216,7 @@ export function toolAccessService(
     return cachedCloudConnector;
   };
   async function appForConnectionSetup(app: AppDefinition): Promise<AppDefinition> {
+    app = applyConnectorAppConfiguration(app);
     if (!app.methods.some((method) => isPaperclipCloudConnectorStrategy(method.oauthStrategy))) {
       return app;
     }
@@ -6368,6 +6373,7 @@ export function toolAccessService(
   async function classifyConnectionSecrets(
     connection: typeof toolConnections.$inferSelect,
     secretIds: string[],
+    database = db,
   ): Promise<{ owned: string[]; retained: string[] }> {
     const unique = [
       ...new Set(
@@ -6376,7 +6382,7 @@ export function toolAccessService(
     ];
     if (unique.length === 0) return { owned: [], retained: [] };
 
-    const secretRows = await db
+    const secretRows = await database
       .select({
         id: companySecrets.id,
         key: companySecrets.key,
@@ -6392,8 +6398,8 @@ export function toolAccessService(
       );
     const byId = new Map(secretRows.map((row) => [row.id, row]));
 
-    const referencedElsewhere = await connectionSecretsUsedByOtherConsumers(db, unique);
-    const foreignBindings = await db
+    const referencedElsewhere = await connectionSecretsUsedByOtherConsumers(database, unique);
+    const foreignBindings = await database
       .select({ secretId: companySecretBindings.secretId })
       .from(companySecretBindings)
       .where(
@@ -6408,7 +6414,7 @@ export function toolAccessService(
     // Bindings are the authority, but read the sibling refs too: a row written
     // before `syncCredentialBindings` existed — or by hand — can reference a
     // secret with no binding to prove it.
-    const siblingConnections = await db
+    const siblingConnections = await database
       .select({
         credentialRefs: toolConnections.credentialRefs,
         credentialSecretRefs: toolConnections.credentialSecretRefs,
@@ -6426,7 +6432,7 @@ export function toolAccessService(
       for (const ref of row.credentialSecretRefs ?? [])
         referencedElsewhere.add(ref.secretId);
     }
-    const siblingGrants = await db
+    const siblingGrants = await database
       .select({ credentialSecretRefs: connectionGrants.credentialSecretRefs })
       .from(connectionGrants)
       .where(
@@ -6441,10 +6447,10 @@ export function toolAccessService(
     }
 
     const definitionIds = secretRows.flatMap((row) => row.userSecretDefinitionId ? [row.userSecretDefinitionId] : []);
-    const definitions = definitionIds.length ? await db.select().from(userSecretDefinitions)
+    const definitions = definitionIds.length ? await database.select().from(userSecretDefinitions)
       .where(and(eq(userSecretDefinitions.companyId, connection.companyId), inArray(userSecretDefinitions.id, definitionIds))) : [];
     const dedicatedDefinitions = new Set(definitions.filter((row) => row.key.startsWith(CONNECTION_OWNED_SECRET_KEY_PREFIX) || row.key.startsWith(`tool_oauth.${connection.id}.`)).map((row) => row.id));
-    const foreignDeclarations = definitionIds.length ? await db.select().from(userSecretDeclarations).where(and(
+    const foreignDeclarations = definitionIds.length ? await database.select().from(userSecretDeclarations).where(and(
       inArray(userSecretDeclarations.userSecretDefinitionId, definitionIds),
       sql`not (${userSecretDeclarations.targetType} = 'tool_connection' and ${userSecretDeclarations.targetId} = ${connection.id})`,
     )) : [];
@@ -6468,6 +6474,126 @@ export function toolAccessService(
       else retained.push(secretId);
     }
     return { owned, retained };
+  }
+
+  function isOAuthRevocableConnection(connection: typeof toolConnections.$inferSelect) {
+    const oauth = oauthConfig(connection);
+    return connection.authKind === "oauth" && connection.credentialSource === "paperclip_vault"
+      && !isPaperclipCloudConnectorStrategy(oauth.strategy)
+      && (typeof oauth.revocationUrl === "string" || (oauth.revocationUrl !== null && typeof oauth.metadataUrl === "string"));
+  }
+
+  async function oauthRevocationMetadata(connection: typeof toolConnections.$inferSelect) {
+    const oauth = oauthConfig(connection);
+    if (typeof oauth.revocationUrl === "string") return {
+      url: assertOAuthEndpointUrl("token", oauth.revocationUrl),
+      authMethods: oauth.revocationEndpointAuthMethodsSupported,
+    };
+    if (oauth.revocationUrl === null || typeof oauth.metadataUrl !== "string") return null;
+    const endpoints = await endpointsFromMetadataUrl(connection, oauth.metadataUrl);
+    if (!endpoints || endpoints.authorizationUrl !== oauth.authorizationUrl || endpoints.tokenUrl !== oauth.tokenUrl
+      || (typeof oauth.issuer === "string" && (!endpoints.issuer || !sameOAuthIssuer(oauth.issuer, endpoints.issuer)))) {
+      throw new HttpError(502, "OAuth revocation metadata is temporarily unavailable.", { code: "oauth_revocation_pending" });
+    }
+    return endpoints.revocationUrl ? { url: endpoints.revocationUrl, authMethods: endpoints.revocationEndpointAuthMethodsSupported } : null;
+  }
+
+  async function revokeOAuthGrants(connection: typeof toolConnections.$inferSelect, grantIds: string[], database = db) {
+    const pending = new Set<string>();
+    if (!isOAuthRevocableConnection(connection)) return pending;
+    for (const grantId of grantIds) {
+      const [grant] = await database.select().from(connectionGrants).where(and(eq(connectionGrants.companyId, connection.companyId),
+        eq(connectionGrants.connectionId, connection.id), eq(connectionGrants.id, grantId)));
+      if (!grant || grant.status !== "revoked") continue;
+      const ref = grant.credentialSecretRefs.find(ref => ref.configPath === "oauth.refresh_token")
+        ?? grant.credentialSecretRefs.find(ref => ref.configPath === "oauth.access_token");
+      if (!ref) continue;
+      try {
+        const endpoint = await oauthRevocationMetadata(connection);
+        if (!endpoint) continue;
+        const resolved = await resolveConnectionGrantSecret(database, connection, grant, ref, {
+          consumerType: "tool_connection", consumerId: connection.id, actorType: "system", actorId: "oauth-revocation",
+        });
+        const clientConnection = { ...connection, credentialSecretRefs: [...connection.credentialSecretRefs, ...grant.credentialSecretRefs.filter(ref => ref.configPath === "oauth.client_secret")] };
+        const client = await oauthClientForConnection(clientConnection, String(oauthConfig(connection).provider ?? "generic"), undefined, database, "revocation");
+        if (!client.clientId) throw new Error("OAuth client id is missing");
+        await revokeOAuthToken({ revocationUrl: endpoint.url, clientId: client.clientId, clientSecret: client.clientSecret,
+          authMethod: selectOAuthRevocationAuthMethod({ advertised: endpoint.authMethods, fallback: storedOAuthTokenEndpointAuthMethod(oauthConfig(connection), client.clientSecret), hasSecret: Boolean(client.clientSecret) }), token: resolved.value,
+          refresh: ref.configPath === "oauth.refresh_token", send: requestRemoteHttpEndpoint });
+      } catch {
+        pending.add(grant.id);
+      }
+    }
+    return pending;
+  }
+
+  async function finishOAuthGrantRevocations(connection: typeof toolConnections.$inferSelect,
+    grants: typeof connectionGrants.$inferSelect[], pendingIds: Set<string>, database = db) {
+    const successful = grants.filter(grant => !pendingIds.has(grant.id));
+    const { owned } = await classifyConnectionSecrets(connection, successful.flatMap(grant => grant.credentialSecretRefs.map(ref => ref.secretId)), database);
+    const siblings = await database.select({ credentialSecretRefs: connectionGrants.credentialSecretRefs }).from(connectionGrants)
+      .where(and(eq(connectionGrants.companyId, connection.companyId), eq(connectionGrants.connectionId, connection.id),
+        ...(successful.length ? [notInArray(connectionGrants.id, successful.map(grant => grant.id))] : [])));
+    const retained = new Set([...connection.credentialSecretRefs.map(ref => ref.secretId), ...siblings.flatMap(row => row.credentialSecretRefs.map(ref => ref.secretId))]);
+    const secretClient = database === db ? secrets : secretService(database);
+    for (const secretId of owned) if (!retained.has(secretId)) await secretClient.remove(secretId);
+    if (successful.length > 0) await database.update(connectionGrants).set({ credentialSecretRefs: [], updatedAt: now() })
+      .where(and(inArray(connectionGrants.id, successful.map(grant => grant.id)), eq(connectionGrants.status, "revoked")));
+    await database.update(toolConnections).set({
+      config: sql`${toolConnections.config} || ${JSON.stringify({ oauthRevocationPending: pendingIds.size > 0 })}::jsonb`,
+      transportConfig: sql`${toolConnections.transportConfig} || ${JSON.stringify({ oauthRevocationPending: pendingIds.size > 0 })}::jsonb`,
+      updatedAt: now(),
+    }).where(eq(toolConnections.id, connection.id));
+  }
+
+  async function withOAuthRevocationClaim(connectionId: string, companyId: string,
+    operation: (connection: typeof toolConnections.$inferSelect, transaction: DbTransaction) => Promise<boolean>) {
+    return db.transaction(async tx => {
+      const result = await tx.execute<{ claimed: boolean }>(sql`SELECT pg_try_advisory_xact_lock(hashtextextended(${"paperclip.oauth_revocation:" + connectionId}, 0)) AS claimed`);
+      if (!result[0]?.claimed) return null;
+      await tx.select({ id: connectionGrants.id }).from(connectionGrants)
+        .where(and(eq(connectionGrants.companyId, companyId), eq(connectionGrants.connectionId, connectionId)))
+        .orderBy(connectionGrants.id).for("update");
+      await tx.select({ id: toolApplications.id }).from(toolApplications)
+        .innerJoin(toolConnections, eq(toolConnections.applicationId, toolApplications.id))
+        .where(and(eq(toolConnections.id, connectionId), eq(toolConnections.companyId, companyId)))
+        .for("update", { of: toolApplications });
+      const [connection] = await tx.select().from(toolConnections)
+        .where(and(eq(toolConnections.id, connectionId), eq(toolConnections.companyId, companyId))).for("update");
+      if (!connection || connection.config.oauthRevocationPending !== true
+        || !isOAuthRevocableConnection(connection)) return false;
+      return operation(connection, tx);
+    });
+  }
+
+  let nextOAuthRevocationSweepAt = 0;
+  async function sweepOAuthRevocations() {
+    if (now().getTime() < nextOAuthRevocationSweepAt) return { checked: 0, pending: 0 };
+    nextOAuthRevocationSweepAt = now().getTime() + 60_000;
+    const rows = await db.select({ connection: toolConnections }).from(toolConnections)
+      .where(sql`${toolConnections.config} ->> 'oauthRevocationPending' = 'true'`)
+      .orderBy(asc(toolConnections.updatedAt)).limit(2);
+
+    let pending = 0;
+    for (const { connection: selected } of rows) {
+      try {
+        const stillPending = await withOAuthRevocationClaim(selected.id, selected.companyId, async (connection, tx) => {
+          if (connection.status === "archived") {
+            const result = await toolAccessService(tx as unknown as Db, options).archiveConnection(connection.id, connection.companyId,
+              { actorType: "system", actorId: "oauth-revocation" });
+            return result.removal.oauthRevocationPending === true;
+          }
+          const database = tx as unknown as Db;
+          const grants = await tx.select().from(connectionGrants).where(and(eq(connectionGrants.connectionId, connection.id),
+            eq(connectionGrants.companyId, connection.companyId), eq(connectionGrants.status, "revoked")));
+          const pendingIds = await revokeOAuthGrants(connection, grants.map(grant => grant.id), database);
+          await finishOAuthGrantRevocations(connection, grants, pendingIds, database);
+          return pendingIds.size > 0;
+        });
+        if (stillPending !== false) pending += 1;
+      } catch { pending += 1; }
+    }
+    return { checked: rows.length, pending };
   }
 
   /**
@@ -6508,6 +6634,7 @@ export function toolAccessService(
 
   async function removeConnectionUnlocked(connectionId: string, companyId?: string, actor?: ActorInfo): Promise<ToolConnectionRemovalResult> {
     const connection = await getConnectionRow(connectionId, companyId);
+    const revokeProvider = isOAuthRevocableConnection(connection);
     forgetMcpHttpSessions(connection.id);
     const now = new Date();
     const binding = actorBinding(actor);
@@ -6520,6 +6647,7 @@ export function toolAccessService(
         status: connectionGrants.status,
         kind: connectionGrants.kind,
         subjectUserId: connectionGrants.subjectUserId,
+        providerTenant: connectionGrants.providerTenant,
         credentialSecretRefs: connectionGrants.credentialSecretRefs,
         externalCredential: connectionGrants.externalCredential,
       })
@@ -6530,11 +6658,12 @@ export function toolAccessService(
           eq(connectionGrants.connectionId, connection.id),
         ),
       );
-    const grantsToRevoke = grantRows.filter((row) => row.status !== "revoked");
+    const grantsToRevoke = grantRows.filter((row) => row.status !== "revoked" || row.providerTenant?.oauth?.supersededByGrantId);
     if (grantsToRevoke.length > 0) {
       await db
         .update(connectionGrants)
         .set({
+          providerTenant: sql`${connectionGrants.providerTenant} #- '{oauth,supersededByGrantId}'`,
           status: "revoked",
           isDefault: false,
           revokedAt: now,
@@ -6805,7 +6934,8 @@ export function toolAccessService(
         .for("update");
       const [updatedConnection] = await tx
         .update(toolConnections)
-        .set({ status: "archived", enabled: false, updatedAt: now })
+        .set({ status: "archived", enabled: false, updatedAt: now,
+          ...(revokeProvider ? { config: { ...connection.config, oauthRevocationPending: true } } : {}) })
         .where(eq(toolConnections.id, connection.id))
         .returning();
       if (!updatedConnection) throw notFound("Tool connection not found");
@@ -6850,6 +6980,10 @@ export function toolAccessService(
     // `secrets.remove` marks the row deleted before it calls the provider, so a
     // provider error leaves an unresolvable secret and a resumable removal
     // rather than a half-open app.
+    const pendingOAuthGrantIds = await revokeOAuthGrants(connection, grantRows.map(grant => grant.id));
+    const pendingOAuthSecretIds = new Set([...grantRows.filter(grant => pendingOAuthGrantIds.has(grant.id))
+      .flatMap(grant => grant.credentialSecretRefs.map(ref => ref.secretId)),
+      ...(pendingOAuthGrantIds.size ? connection.credentialSecretRefs.filter(ref => ref.configPath === "oauth.client_secret").map(ref => ref.secretId) : [])]);
     const candidateSecretIds = [
       ...Object.values(asRecord(connection.config.aggregatorDiscovery)).flatMap(value => typeof asRecord(value).secretId === "string" ? [asRecord(value).secretId as string] : []),
       ...connection.credentialRefs.map((ref) => ref.secretId),
@@ -6864,19 +6998,21 @@ export function toolAccessService(
     );
     let secretsRevoked = 0;
     for (const secretId of owned) {
+      if (pendingOAuthSecretIds.has(secretId)) continue;
       const removed = await secrets.remove(secretId);
       if (removed) secretsRevoked += 1;
     }
 
+    const retainedClientRefs = pendingOAuthGrantIds.size ? connection.credentialSecretRefs.filter(ref => ref.configPath === "oauth.client_secret") : [];
     const credentialRefsCleared =
-      connection.credentialRefs.length + connection.credentialSecretRefs.length;
+      connection.credentialRefs.length + connection.credentialSecretRefs.length - retainedClientRefs.length;
     const [cleared] = await db
       .update(toolConnections)
       .set({
         credentialRefs: [],
-        credentialSecretRefs: [],
-        config: withoutInlineOAuthTokens(connection.config),
-        transportConfig: withoutInlineOAuthTokens(connection.transportConfig),
+        credentialSecretRefs: retainedClientRefs,
+        config: { ...withoutInlineOAuthTokens(connection.config), ...(revokeProvider ? { oauthRevocationPending: pendingOAuthGrantIds.size > 0 } : {}) },
+        transportConfig: { ...withoutInlineOAuthTokens(connection.transportConfig), ...(revokeProvider ? { oauthRevocationPending: pendingOAuthGrantIds.size > 0 } : {}) },
         updatedAt: now,
       })
       .where(eq(toolConnections.id, connection.id))
@@ -6891,6 +7027,7 @@ export function toolAccessService(
           and(
             eq(connectionGrants.companyId, connection.companyId),
             eq(connectionGrants.connectionId, connection.id),
+            ...(pendingOAuthGrantIds.size > 0 ? [notInArray(connectionGrants.id, [...pendingOAuthGrantIds])] : []),
           ),
         );
     }
@@ -6915,6 +7052,7 @@ export function toolAccessService(
         gatewaySessionsRevoked,
         applicationArchived: archived.applicationArchived,
         externalCredentialCleanup,
+        ...(revokeProvider ? { oauthRevocationPending: pendingOAuthGrantIds.size > 0 } : {}),
       },
     };
   }
@@ -7389,6 +7527,8 @@ export function toolAccessService(
               provider: endpoints.provider,
               authorizationUrl: endpoints.authorizationUrl,
               tokenUrl: endpoints.tokenUrl,
+              revocationUrl: endpoints.revocationUrl,
+              revocationEndpointAuthMethodsSupported: endpoints.revocationEndpointAuthMethodsSupported,
               registrationUrl: endpoints.registrationUrl ?? null,
               metadataUrl: endpoints.metadataUrl ?? null,
               scopes: endpoints.scopes,
@@ -9003,6 +9143,8 @@ export function toolAccessService(
     connection: typeof toolConnections.$inferSelect,
     provider: string,
     actor?: ActorInfo,
+    database = db,
+    credentialAccess: "connection" | "revocation" = "connection",
   ) {
     const configured = configuredOAuthClientForConnection(connection, provider);
     if (configured.clientId) return configured;
@@ -9031,7 +9173,7 @@ export function toolAccessService(
         (ref) => ref.configPath === "oauth.client_secret",
       )
     ) {
-      const [personalGrant] = await db
+      const [personalGrant] = await database
         .select({
           credentialSecretRefs: connectionGrants.credentialSecretRefs,
         })
@@ -9054,18 +9196,19 @@ export function toolAccessService(
       : credentialSecretRefs.find(
           (ref) => ref.configPath === "oauth.client_secret",
         );
+    const accessContext = {
+      consumerType: "tool_connection" as const,
+      consumerId: connection.id,
+      configPath: "oauth.client_secret",
+      actorType: actor?.actorType ?? "system" as const,
+      actorId: actor?.actorId ?? null,
+    };
     const clientSecret = clientSecretRef
-      ? await secrets.resolveSecretValue(
+      ? await (database === db ? secrets : secretService(database)).resolveSecretValue(
           connection.companyId,
           clientSecretRef.secretId,
           clientSecretRef.versionSelector ?? "latest",
-          {
-            consumerType: "tool_connection",
-            consumerId: connection.id,
-            configPath: "oauth.client_secret",
-            actorType: actor?.actorType ?? "system",
-            actorId: actor?.actorId ?? null,
-          },
+          credentialAccess === "revocation" ? { accessContext } : accessContext,
         )
       : null;
     return {
@@ -9391,6 +9534,8 @@ export function toolAccessService(
       rejections,
       firstPartyOrigin,
     );
+    let revocationUrl = safeOAuthEndpointUrl("token", metadata.revocation_endpoint, rejections, firstPartyOrigin);
+    let revocationEndpointAuthMethodsSupported = normalizeOauthScopes(metadata.revocation_endpoint_auth_methods_supported);
     let scopes = normalizeOauthScopes(metadata.scopes_supported);
     let offlineAccessSupported = Boolean(
       authorizationUrl && scopes.includes("offline_access"),
@@ -9466,6 +9611,8 @@ export function toolAccessService(
           rejections,
           firstPartyOrigin,
         );
+      revocationUrl = revocationUrl ?? safeOAuthEndpointUrl("token", authMetadata.revocation_endpoint, rejections, firstPartyOrigin);
+      if (!revocationEndpointAuthMethodsSupported.length) revocationEndpointAuthMethodsSupported = normalizeOauthScopes(authMetadata.revocation_endpoint_auth_methods_supported);
       issuer = issuer ?? advertisedIssuer ?? candidate.issuer;
       offlineAccessSupported = offlineAccessSupported ||
         normalizeOauthScopes(authMetadata.scopes_supported).includes("offline_access");
@@ -9500,6 +9647,8 @@ export function toolAccessService(
       authorizationUrl,
       tokenUrl,
       registrationUrl,
+      revocationUrl,
+      revocationEndpointAuthMethodsSupported,
       codeChallengeMethodsSupported,
       tokenEndpointAuthMethodsSupported,
       grantTypesSupported,
@@ -9568,8 +9717,7 @@ export function toolAccessService(
       // without adopting a different issuer or changing their requested tool scopes.
       let refreshMetadata: OAuthProviderEndpoints | null = null;
       if (
-        !connection.config.sourceTemplateKey &&
-        typeof oauth.offlineAccessSupported !== "boolean" &&
+        ((!connection.config.sourceTemplateKey && typeof oauth.offlineAccessSupported !== "boolean") || oauth.revocationUrl === undefined) &&
         typeof oauth.metadataUrl === "string"
       ) {
         const discovered = await endpointsFromMetadataUrl(
@@ -9590,6 +9738,8 @@ export function toolAccessService(
           : refreshMetadata?.offlineAccessSupported,
         authorizationUrl: configuredAuthorizationUrl,
         tokenUrl: configuredTokenUrl,
+        revocationEndpointAuthMethodsSupported: Array.isArray(oauth.revocationEndpointAuthMethodsSupported) ? normalizeOauthScopes(oauth.revocationEndpointAuthMethodsSupported) : refreshMetadata?.revocationEndpointAuthMethodsSupported,
+        revocationUrl: typeof oauth.revocationUrl === "string" ? safeOAuthEndpointUrl("token", oauth.revocationUrl, rejections, firstPartyOrigin) : oauth.revocationUrl === null ? null : refreshMetadata?.revocationUrl,
         registrationUrl: safeOAuthEndpointUrl(
           "registration",
           oauth.registrationUrl,
@@ -9717,9 +9867,7 @@ export function toolAccessService(
       typeof connection.config.sourceTemplateKey === "string"
         ? connection.config.sourceTemplateKey
         : null;
-    const galleryEntry = sourceTemplateKey
-      ? getConnectableAppDefinition(sourceTemplateKey)
-      : null;
+    const galleryEntry = await connectorAppForConnection(connection);
     const galleryMethod = galleryEntry
       ? connectionMethodForConnection(galleryEntry, connection)
       : null;
@@ -10225,6 +10373,8 @@ export function toolAccessService(
         provider: input.endpoints.provider,
         authorizationUrl: input.endpoints.authorizationUrl,
         tokenUrl: input.endpoints.tokenUrl,
+        revocationUrl: input.endpoints.revocationUrl,
+        revocationEndpointAuthMethodsSupported: input.endpoints.revocationEndpointAuthMethodsSupported,
         registrationUrl: input.endpoints.registrationUrl,
         metadataUrl: input.endpoints.metadataUrl ?? null,
         scopes: input.endpoints.scopes,
@@ -10293,6 +10443,8 @@ export function toolAccessService(
         provider: input.endpoints.provider,
         authorizationUrl: input.endpoints.authorizationUrl,
         tokenUrl: input.endpoints.tokenUrl,
+        revocationUrl: input.endpoints.revocationUrl,
+        revocationEndpointAuthMethodsSupported: input.endpoints.revocationEndpointAuthMethodsSupported,
         registrationUrl: input.endpoints.registrationUrl ?? null,
         metadataUrl: input.endpoints.metadataUrl ?? null,
         scopes: input.endpoints.scopes,
@@ -10719,6 +10871,7 @@ export function toolAccessService(
     refreshToken?: string | null;
     /** RFC 8707 resource indicator: the MCP server this token is for. */
     resource?: string | null;
+    idempotencyKey?: string;
   }) {
     const body = new URLSearchParams();
     if (input.grantType === "client_credentials") {
@@ -10784,12 +10937,20 @@ export function toolAccessService(
         "utf8",
       ).toString("base64")}`;
     }
-    const response = await fetchRemoteHttpUrl(tokenUrl, {
-      method: "POST",
-      headers,
-      body,
-    });
-    const payload = (await response.json().catch(() => ({}))) as unknown;
+    if (input.idempotencyKey) headers["Idempotency-Key"] = input.idempotencyKey;
+    const sendTokenRequest = async () => {
+      const response = await fetchRemoteHttpUrl(tokenUrl, { method: "POST", headers, body,
+        ...(input.idempotencyKey ? { signal: AbortSignal.timeout(10_000) } : {}) });
+      const payload: unknown = input.idempotencyKey ? await response.json() : await response.json().catch(() => ({}));
+      return { response, payload };
+    };
+    let exchanged: Awaited<ReturnType<typeof sendTokenRequest>>;
+    try { exchanged = await sendTokenRequest(); }
+    catch (error) {
+      if (!input.idempotencyKey) throw error;
+      exchanged = await sendTokenRequest();
+    }
+    const { response, payload } = exchanged;
     const record = asRecord(payload);
     if (!response.ok || record.ok === false) {
       const providerError = normalizeOAuthProviderError(record.error);
@@ -11113,6 +11274,7 @@ export function toolAccessService(
             },
           )
         : null;
+    const lifecycle = connectorOAuthLifecycle(await connectorAppForConnection(connection));
     let token: Awaited<ReturnType<typeof exchangeOAuthToken>>;
     try {
       token = await exchangeOAuthToken({
@@ -11129,6 +11291,7 @@ export function toolAccessService(
             ? normalizeOauthScopes(oauth.scopes)
             : normalizeOauthScopes(oauth.scope),
         refreshToken,
+        ...(refreshToken && lifecycle?.refreshTokenRetry === "idempotency-key" ? { idempotencyKey: createHash("sha256").update(refreshToken).digest("hex") } : {}),
         // Refreshing must stay bound to the same MCP server the original grant
         // named, or the authorization server may widen the token's audience.
         resource:
@@ -11713,6 +11876,7 @@ export function toolAccessService(
       return initialGrant;
     }
 
+    const lifecycle = connectorOAuthLifecycle(await connectorAppForConnection(connection));
     return singleFlight(oauthGrantRefreshFlights, initialGrant.id, async () => {
       const lease = await acquireOAuthGrantRefreshLease(
         connection,
@@ -11774,6 +11938,8 @@ export function toolAccessService(
                   ? normalizeOauthScopes(oauth.scopes)
                   : normalizeOauthScopes(oauth.scope),
             refreshToken: refreshSecret.value,
+            ...(lifecycle?.refreshTokenRetry === "idempotency-key"
+              ? { idempotencyKey: createHash("sha256").update(refreshSecret.value).digest("hex") } : {}),
             resource:
               typeof oauth.resource === "string" && oauth.resource
                 ? oauth.resource
@@ -12439,6 +12605,16 @@ export function toolAccessService(
     return `${base.slice(0, 151).trimEnd()} (${randomUUID().slice(0, 6)})`;
   }
 
+  async function connectorAppForConnection(connection: { config?: Record<string, unknown>; transportConfig?: Record<string, unknown>; applicationId?: string; companyId?: string }, database = db, applicationKey?: unknown): Promise<AppDefinition | null> {
+    if (applicationKey === undefined && connection.applicationId && connection.companyId) {
+      const [application] = await database.select({ applicationKey: toolApplications.applicationKey }).from(toolApplications)
+        .where(and(eq(toolApplications.companyId, connection.companyId), eq(toolApplications.id, connection.applicationId))).limit(1);
+      applicationKey = application?.applicationKey;
+    }
+    const app = connectorAppDefinition(connection, applicationKey);
+    return app ? applyConnectorAppConfiguration(app) : null;
+  }
+
   async function assertExperimentalConnectorSetupEnabled(provider: unknown, existing = false) {
     if (!existing && isMemoryConnectorId(provider)
       && !(await instanceSettingsService(db).getExperimental()).enableMemoryConnectors) {
@@ -12458,6 +12634,9 @@ export function toolAccessService(
       throw notFound("Tool app gallery entry not found");
 
     const galleryEntry = definition ? await appForConnectionSetup(definition) : null;
+    if (galleryEntry?.availability?.available === false) {
+      throw unprocessable(galleryEntry.availability.reason ?? "This connector is not configured", { code: "connector_unavailable" });
+    }
 
     let existingApplication: typeof toolApplications.$inferSelect | null = null;
     let requestedResumeConnection: typeof toolConnections.$inferSelect | null =
@@ -12661,6 +12840,9 @@ export function toolAccessService(
             .limit(1)
         : [undefined];
     const retainedConnection = requestedResumeConnection ?? recoveredConnection;
+    if (retainedConnection?.config.oauthRevocationPending === true) {
+      throw conflict("OAuth authorization revocation is still pending. It will retry automatically; reconnect after cleanup finishes.", { code: "oauth_revocation_pending" });
+    }
     let applicationName = existingApplication?.name ?? requestedName;
     let name = retainedConnection?.name ?? requestedName;
     if (!existingApplication) {
@@ -12769,7 +12951,7 @@ export function toolAccessService(
       }
     }
     const requestedGrantKind =
-      retainedGrantKind ?? input.grantKind ?? "organization";
+      retainedGrantKind ?? input.grantKind ?? (method?.grantKinds?.length === 1 ? method.grantKinds[0]! : "organization");
     if (method?.grantKinds && !method.grantKinds.includes(requestedGrantKind)) {
       throw badRequest(
         `${galleryEntry?.name ?? "This app"} supports only ${method.grantKinds.join(" or ")} credentials`,
@@ -14745,6 +14927,7 @@ export function toolAccessService(
   ): Promise<ToolOAuthStartResult> {
     let connection = await getConnectionRow(connectionId, companyId);
     assertSupportedConnection(connection);
+    if (connection.config.oauthRevocationPending === true) throw conflict("OAuth authorization revocation is still pending. It will retry automatically.", { code: "oauth_revocation_pending" });
     await assertExperimentalConnectorSetupEnabled(connection.config.sourceTemplateKey, connection.status !== "draft");
     if (connection.status === "archived")
       throw conflict("Archived app connections cannot start sign in");
@@ -14752,9 +14935,7 @@ export function toolAccessService(
       typeof connection.config.sourceTemplateKey === "string"
         ? connection.config.sourceTemplateKey
         : null;
-    const galleryEntry = sourceTemplateKey
-      ? getConnectableAppDefinition(sourceTemplateKey)
-      : null;
+    const galleryEntry = await connectorAppForConnection(connection);
     assertOAuthRedirectConstraints(galleryEntry, input.redirectUri);
     const galleryMethod = galleryEntry
       ? connectionMethodForConnection(galleryEntry, connection)
@@ -15289,6 +15470,8 @@ export function toolAccessService(
         provider: endpoints.provider,
         authorizationUrl: endpoints.authorizationUrl,
         tokenUrl: endpoints.tokenUrl,
+        revocationUrl: endpoints.revocationUrl,
+              revocationEndpointAuthMethodsSupported: endpoints.revocationEndpointAuthMethodsSupported,
         registrationUrl: endpoints.registrationUrl ?? null,
         metadataUrl: endpoints.metadataUrl ?? null,
         // Curated apps persist only the reviewed scopes attached to this OAuth
@@ -16371,13 +16554,12 @@ export function toolAccessService(
       status: connection.status,
       enabled: connection.enabled,
     };
+    const lifecycle = connectorOAuthLifecycle(await connectorAppForConnection(connection));
     const sourceTemplateKey =
       typeof connection.config.sourceTemplateKey === "string"
         ? connection.config.sourceTemplateKey
         : null;
-    const galleryEntry = sourceTemplateKey
-      ? getConnectableAppDefinition(sourceTemplateKey)
-      : null;
+    const galleryEntry = await connectorAppForConnection(connection);
     assertOAuthRedirectConstraints(galleryEntry, input.redirectUri);
     const endpoints = await oauthEndpointsForConnection(
       connection,
@@ -16420,6 +16602,9 @@ export function toolAccessService(
       token.scope = googleWorkspaceEffectiveScopes(authorizedScopes, normalizeOauthScopes(token.scope)).join(" ");
       if (!token.scope) throw unprocessable("Google did not grant any selected service permissions", { code: "oauth_scope_grant_invalid" });
     }
+    const connectedAccount = lifecycle?.accountIdentity
+      ? await lifecycle.accountIdentity({ endpoint: await resolvedRemoteEndpoint(connection, input.actor), accessToken: token.accessToken, send: requestRemoteHttpEndpoint })
+      : null;
     const connectedAt = now();
     const expiresAt = token.expiresIn
       ? new Date(connectedAt.getTime() + token.expiresIn * 1000).toISOString()
@@ -16468,9 +16653,21 @@ export function toolAccessService(
         await tx.select({ id: toolApplications.id }).from(toolApplications)
           .where(and(eq(toolApplications.id, connection.applicationId), eq(toolApplications.companyId, connection.companyId)))
           .for("update");
-        await tx.select({ id: toolConnections.id }).from(toolConnections)
+        const [lockedConnection] = await tx.select({ id: toolConnections.id, status: toolConnections.status, config: toolConnections.config }).from(toolConnections)
           .where(and(eq(toolConnections.id, connection.id), eq(toolConnections.companyId, connection.companyId)))
           .for("update");
+        if (!lockedConnection || lockedConnection.status === "archived" || lockedConnection.config.oauthRevocationPending === true) {
+          throw conflict("OAuth authorization was removed while sign in was in progress. Reconnect after revocation finishes.", { code: "oauth_revocation_pending" });
+        }
+        if (existingUserGrant?.status === "revoked"
+          && existingUserGrant.revokedAt && existingUserGrant.revokedAt >= stateRow.createdAt) {
+          const supersededByGrantId = existingUserGrant.providerTenant?.oauth?.supersededByGrantId;
+          const [promotedGrant] = supersededByGrantId ? await tx.select({ id: connectionGrants.id }).from(connectionGrants)
+            .where(and(eq(connectionGrants.companyId, connection.companyId), eq(connectionGrants.connectionId, connection.id),
+              eq(connectionGrants.id, supersededByGrantId), eq(connectionGrants.kind, "organization"),
+              eq(connectionGrants.status, "active"), eq(connectionGrants.isDefault, true))).limit(1) : [];
+          if (!promotedGrant) throw conflict("OAuth authorization was revoked after this sign in began. Start sign in again.", { code: "oauth_authorization_revoked" });
+        }
         const subjectCredentialSecretRefs =
           existingUserGrant?.credentialSecretRefs ?? [];
         const accessRef = await createOrRotateOAuthSecret(
@@ -16525,8 +16722,10 @@ export function toolAccessService(
         const grantValues = {
           providerTenant: {
             ...(existingUserGrant?.providerTenant ?? {}),
+            ...(connectedAccount ? { name: connectedAccount.name, externalId: connectedAccount.externalId } : {}),
             oauth: {
               ...asRecord(asRecord(existingUserGrant?.providerTenant).oauth),
+              supersededByGrantId: undefined,
               strategy: "direct_oauth",
               accessTokenExpiresAt: expiresAt ?? undefined,
               scopes: grantedScopes.scopes,
@@ -16571,6 +16770,8 @@ export function toolAccessService(
             provider: endpoints.provider,
             authorizationUrl: endpoints.authorizationUrl,
             tokenUrl: endpoints.tokenUrl,
+            revocationUrl: endpoints.revocationUrl,
+              revocationEndpointAuthMethodsSupported: endpoints.revocationEndpointAuthMethodsSupported,
             metadataUrl: endpoints.metadataUrl ?? null,
             scopes: authorizedScopes,
             clientIdEnv: client.clientIdEnv,
@@ -16600,6 +16801,7 @@ export function toolAccessService(
         const [updatedConnection] = await tx
           .update(toolConnections)
           .set({
+            ...(connectedAccount ? { name: connectedAccount.connectionName } : {}),
             status: "active",
             enabled: true,
             authKind: "oauth",
@@ -16849,6 +17051,8 @@ export function toolAccessService(
           provider: endpoints.provider,
           authorizationUrl: endpoints.authorizationUrl,
           tokenUrl: endpoints.tokenUrl,
+          revocationUrl: endpoints.revocationUrl,
+              revocationEndpointAuthMethodsSupported: endpoints.revocationEndpointAuthMethodsSupported,
           metadataUrl: endpoints.metadataUrl ?? null,
           scopes: authorizedScopes,
           clientIdEnv: client.clientIdEnv,
@@ -17181,10 +17385,15 @@ export function toolAccessService(
         ];
         const nowAt = new Date();
         await db.transaction(async (tx) => {
-          await tx.select({ id: connectionGrants.id }).from(connectionGrants)
+          const lockedGrants = await tx.select().from(connectionGrants)
             .where(and(eq(connectionGrants.companyId, companyId), eq(connectionGrants.connectionId, connection.id),
               or(eq(connectionGrants.id, personalGrant.id), and(eq(connectionGrants.kind, "organization"), eq(connectionGrants.isDefault, true)))))
             .orderBy(connectionGrants.id).for("update");
+          const lockedPersonalGrant = lockedGrants.find(grant => grant.id === personalGrant.id);
+          if (lockedPersonalGrant?.status !== "active" || lockedPersonalGrant.updatedAt.getTime() !== personalGrant.updatedAt.getTime()
+            || JSON.stringify(lockedPersonalGrant.credentialSecretRefs) !== JSON.stringify(personalGrant.credentialSecretRefs)) {
+            throw conflict("Your connected identity changed while it was being shared. Start sharing it again.", { code: "oauth_identity_changed" });
+          }
           await tx.select({ id: toolApplications.id }).from(toolApplications)
             .where(and(eq(toolApplications.id, connection.applicationId), eq(toolApplications.companyId, companyId)))
             .for("update");
@@ -17255,6 +17464,7 @@ export function toolAccessService(
           await tx
             .update(connectionGrants)
             .set({
+              providerTenant: { ...personalGrant.providerTenant, oauth: { ...personalGrant.providerTenant?.oauth, supersededByGrantId: organizationGrantId } },
               credentialSecretRefs: [],
               status: "revoked",
               revokedAt: nowAt,
@@ -17371,7 +17581,8 @@ export function toolAccessService(
     galleryKey: string,
     methodKey?: string | null,
   ): Promise<ToolAppMetadataPreflightResult> {
-    const app = getConnectableAppDefinition(galleryKey);
+    const definition = getConnectableAppDefinition(galleryKey);
+    const app = definition ? await appForConnectionSetup(definition) : null;
     if (!app || app.availability?.available === false)
       throw notFound("App not found");
     const method = connectionMethodFor(app, methodKey);
@@ -19004,7 +19215,7 @@ export function toolAccessService(
           companyId: connection.companyId,
           connectionId: connection.id,
           kind: "organization",
-          providerTenant: input.providerTenant,
+          providerTenant: input.providerTenant ? { name: input.providerTenant.name, externalId: input.providerTenant.externalId } : undefined,
           credentialSecretRefs: input.credentialSecretRefs ?? [],
           status: "active",
           isDefault: input.isDefault ?? false,
@@ -19085,6 +19296,7 @@ export function toolAccessService(
         // provider-level disconnect must warn that it removes every profile.
         providerRevocation = "local_only_shared_client";
       }
+      const revokeProvider = isOAuthRevocableConnection(connection);
       const grant = await db.transaction(async (tx) => {
         const [lockedGrant] = await tx.select({ id: connectionGrants.id }).from(connectionGrants)
           .where(and(eq(connectionGrants.id, grantId), eq(connectionGrants.companyId, connection.companyId), eq(connectionGrants.connectionId, connection.id)))
@@ -19105,6 +19317,7 @@ export function toolAccessService(
         const [updated] = await tx
           .update(connectionGrants)
           .set({
+            providerTenant: sql`${connectionGrants.providerTenant} #- '{oauth,supersededByGrantId}'`,
             status: "revoked",
             isDefault: false,
             revokedAt: new Date(),
@@ -19141,9 +19354,23 @@ export function toolAccessService(
             })),
           );
         }
+        if (revokeProvider) {
+          await tx.update(toolConnections).set({ config: sql`${toolConnections.config} || '{"oauthRevocationPending":true}'::jsonb`, updatedAt: now() }).where(eq(toolConnections.id, connection.id));
+        }
         return updated;
       });
       if (!grant) throw notFound("Connection grant not found");
+      if (revokeProvider) {
+        const stillPending = await withOAuthRevocationClaim(connection.id, connection.companyId, async (current, tx) => {
+          const database = tx as unknown as Db;
+          const grants = await tx.select().from(connectionGrants).where(and(eq(connectionGrants.connectionId, connection.id),
+            eq(connectionGrants.companyId, connection.companyId), eq(connectionGrants.status, "revoked")));
+          const pendingIds = await revokeOAuthGrants(current, grants.map(row => row.id), database);
+          await finishOAuthGrantRevocations(current, grants, pendingIds, database);
+          return pendingIds.size > 0;
+        });
+        providerRevocation = stillPending === false ? "success" : "pending";
+      }
       await db.insert(toolAccessAuditEvents).values({
         companyId: connection.companyId,
         connectionId: connection.id,
@@ -19451,6 +19678,8 @@ export function toolAccessService(
       const config = normalizeGoogleSheetsConnectionConfig(
         input.config ?? input.transportConfig ?? existing.config,
       );
+      if (Object.prototype.hasOwnProperty.call(existing.config, "oauthRevocationPending")) config.oauthRevocationPending = existing.config.oauthRevocationPending === true;
+      else delete config.oauthRevocationPending;
       if (input.config?.methodConfig !== undefined && typeof config.sourceTemplateKey === "string") {
         const app = getConnectableAppDefinition(config.sourceTemplateKey);
         if (app) normalizeConnectionMethodConfig(connectionMethodForConnection(app, { ...existing, config }), asRecord(config.methodConfig));
@@ -19553,6 +19782,8 @@ export function toolAccessService(
     sweepConnectionHealth,
 
     sweepGitHubConnectionContinuity,
+
+    sweepOAuthRevocations,
 
     listCatalog: async (
       connectionId: string,
