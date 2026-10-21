@@ -233,3 +233,27 @@ While these checks completed, master #17088 published Copilot v54 and v55.
 The integration preserves both historical identities and binds this PR's
 transport changes as v56. The only transport merge addition from master selects
 the completion tool's bridge schema; this PR's recovery implementation remains.
+
+## Recovery of API-backed tools
+
+The fresh review of `da19b2871a` identified completed `comment_on_task` and
+`write_task_document` writes that recovery could not find in the API receipt
+store. Inspection found the same gap for `hire_agent`. The tool authority now
+owns shared request conversion for live dispatch and recovery, including schema
+normalization before receipt hashing and the existing response conversion.
+Completed receipts return the original response without another HTTP write.
+Missing, pending, or mismatched receipts remain unresolved; current run authority,
+API enablement, and work-mode checks still apply. Safe task API reads re-enter
+normal execution and authorization.
+
+The first regression run reproduced both task-write failures. Its hiring case
+instead failed because the fixture lacked explicit agent and responsible-user
+creation grants; the fixture now establishes those grants. The initial evidence
+is retained in `/tmp/daytona-api-alias-before.log`. The regression recreates the
+authority after a real HTTP mutation and compares persisted effects before and
+after receipt recovery, with missing/pending/changed-input, disabled-access, and
+paused-agent cases.
+
+All 2,048 real-HTTP, API-contract, and tool-authority tests passed after the fix,
+including all three completed-write cases, and server typecheck passed. Logs:
+`/tmp/daytona-api-alias-tests.log` and `/tmp/daytona-api-alias-types.log`.

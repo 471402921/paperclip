@@ -57,7 +57,7 @@ import { runnerApiSensitiveResponse } from "./runner-api-sensitive-response.js";
 import { workspaceFileResourceService } from "../workspace-file-resources.js";
 import { badRequest, forbidden, notFound, HttpError } from "../../errors.js";
 import { runnerApiCatalog, searchRunnerApi } from "./runner-api-catalog.js";
-import { executeRunnerApi, validateRunnerApiCall, RUNNER_API_MAX_BYTES, type RunnerApiFile, type RunnerApiIo } from "./runner-api-client.js";
+import { executeRunnerApi, validateRunnerApiCall, RUNNER_API_MAX_BYTES, type RunnerApiCall, type RunnerApiFile, type RunnerApiIo } from "./runner-api-client.js";
 import { acquireRunnerApiResponseSlot, runnerApiCompanyCaptureMaxBytes, RUNNER_API_RESPONSE_MAX_BYTES, RUNNER_API_RESPONSE_RUN_MAX_BYTES, RunnerApiResponseLimitError } from "./runner-api-response-limits.js";
 import { and, desc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
@@ -249,6 +249,41 @@ function apiToolResult(value: unknown) {
   return { ...response, apiOperationId: operationId };
 }
 
+const TASK_API_PATHS: Readonly<Record<string, readonly [string, string]>> = {
+  get_task: ["GET", "/api/issues/{id}"],
+  comment_on_task: ["POST", "/api/issues/{id}/comments"],
+  list_task_documents: ["GET", "/api/issues/{id}/documents"],
+  read_task_document: ["GET", "/api/issues/{id}/documents/{key}"],
+  write_task_document: ["PUT", "/api/issues/{id}/documents/{key}"],
+};
+
+function taskBridgeApiRequest(tool: string, input: Record<string, any>): RunnerApiCall {
+  const [method, path] = TASK_API_PATHS[tool]!;
+  const operation = runnerApiCatalog().find(operation => operation.method === method && operation.path === path);
+  if (!operation) throw new Error("runner_task_api_operation_unavailable");
+  const body = tool === "comment_on_task" ? { body: input.body } : tool === "write_task_document"
+    ? { title: input.title, format: "markdown", body: input.body, baseRevisionId: input.baseRevisionId } : undefined;
+  return { operationId: operation.operationId, pathParams: { id: input.taskId, ...(input.key ? { key: input.key } : {}) }, ...(body ? { body } : {}) };
+}
+
+function hireAgentApiRequest(input: Record<string, unknown>, binding: Pick<Binding, "companyId" | "agentId" | "issueId">): RunnerApiCall {
+  const body: Record<string, unknown> = {
+    name: requiredString(input.name), adapterType: "paperclip_runner", inheritRuntimeFrom: "caller",
+    reportsTo: binding.agentId, sourceIssueId: binding.issueId,
+  };
+  if (input.role !== undefined) body.role = input.role;
+  if (input.title !== undefined) body.title = input.title;
+  if (input.capabilities !== undefined) body.capabilities = input.capabilities;
+  if (typeof input.instructions === "string" && input.instructions.trim()) {
+    body.instructionsBundle = { entryFile: "AGENTS.md", files: { "AGENTS.md": input.instructions } };
+  }
+  return { operationId: "POST /api/companies/{companyId}/agent-hires", pathParams: { companyId: binding.companyId }, body };
+}
+
+function hireAgentResult(value: unknown, provider: unknown) {
+  return { ...apiToolResult(value), ...(provider === "openai_dot" ? { setupRequired: "This creates a separate Paperclip Dot agent. Its operator must pair a separate OpenAI Dot before it can run. The existing Dot binding and workspace permission are never inherited." } : {}) };
+}
+
 export class PaperclipRunnerToolAuthority {
   #taskAttachmentCache = new TaskAttachmentReadCache();
   close() { this.#taskAttachmentCache.close(); }
@@ -344,7 +379,8 @@ export class PaperclipRunnerToolAuthority {
   async recover(call: Parameters<PaperclipRunnerToolAuthority["execute"]>[0]): Promise<{ result: unknown; isError?: boolean } | null> {
     await this.#assertToolScope(call.tool);
     if (!this.binding.museRuntime) await this.binding.assertBridgeAuthority?.();
-    const { run } = await this.#boundContext();
+    const context = await this.#boundContext();
+    const { run } = context;
     if (RECOVERABLE_READ_OPERATIONS.has(call.tool)) return { result: await this.execute(call) };
     const input = record(call.arguments);
     const key = typeof input.idempotencyKey === "string" ? input.idempotencyKey : null;
@@ -353,15 +389,24 @@ export class PaperclipRunnerToolAuthority {
       && Object.hasOwn(receipt, "result")) return { result: receipt.result };
 
     const callKey = toolCallKey(call.callId);
-    if (call.tool === "call_api") {
+    if (call.tool === "call_api" || call.tool === "hire_agent" || Object.hasOwn(TASK_API_PATHS, call.tool)) {
       if (!runnerApiToolsEnabled(this.binding.companyId, this.binding.apiToolsEnabled)) return null;
-      const operation = runnerApiCatalog().find(entry => entry.operationId === input.operationId);
-      if (operation?.transport === "rest" && readOnlyApiMethod(operation.method)) return { result: await this.execute(call) };
+      let request = call.arguments;
+      if (Object.hasOwn(TASK_API_PATHS, call.tool)) {
+        if (!this.definitions().some(definition => definition.name === call.tool)) return null;
+        const parsed = RUNNER_BRIDGE_SCHEMAS.get(call.tool)!.safeParse(call.arguments);
+        if (!parsed.success) return null;
+        request = taskBridgeApiRequest(call.tool, parsed.data as Record<string, any>);
+      } else if (call.tool === "hire_agent") request = hireAgentApiRequest(input, this.binding);
+      const { input: apiInput, operation } = validateRunnerApiCall(request, {
+        ...this.binding, issueIdentifier: context.issue.identifier, workMode: context.issue.workMode,
+      });
+      if (readOnlyApiMethod(operation.method)) return { result: await this.execute(call) };
       const api = record(record(run.resultJson?.apiToolReceipts)[callKey]);
-      if (api.state !== "completed" || api.digest !== toolInputDigest(call.arguments)) return null;
+      if (api.state !== "completed" || api.digest !== toolInputDigest(apiInput)) return null;
       const result = await this.#apiReceiptResult(api);
       if (result === undefined || record(result).outcome === "unknown") return null;
-      return { result: apiToolResult(result) };
+      return { result: call.tool === "hire_agent" ? hireAgentResult(result, context.actor.adapterConfig?.provider) : apiToolResult(result) };
     }
     if (call.tool === "workspace_write" || call.tool === "workspace_run") {
       const bridge = record(record(run.resultJson?.bridgeToolReceipts)[callKey]);
@@ -478,14 +523,7 @@ export class PaperclipRunnerToolAuthority {
         if (call.tool === "list_assigned_skills") return runtimeContext.skills.map(skill => ({ key: skill.key, name: skill.runtimeName, versionId: skill.versionId, digest: skill.bundle.digest }));
         return settleRunnerBridgeRead(() => readAssignedSkill(runtimeContext, input));
       }
-      const paths: Record<string, [string, string]> = { get_task: ["GET", "/api/issues/{id}"], comment_on_task: ["POST", "/api/issues/{id}/comments"],
-        list_task_documents: ["GET", "/api/issues/{id}/documents"], read_task_document: ["GET", "/api/issues/{id}/documents/{key}"], write_task_document: ["PUT", "/api/issues/{id}/documents/{key}"] };
-      const [method, path] = paths[call.tool]!;
-      const operation = runnerApiCatalog().find(operation => operation.method === method && operation.path === path);
-      if (!operation) throw new Error("runner_task_api_operation_unavailable");
-      const body = call.tool === "comment_on_task" ? { body: input.body } : call.tool === "write_task_document" ? { title: input.title, format: "markdown", body: input.body, baseRevisionId: input.baseRevisionId } : undefined;
-      const { operationId, ...response } = record(await this.#callApi(call.callId, { operationId: operation.operationId, pathParams: { id: input.taskId, ...(input.key ? { key: input.key } : {}) }, ...(body ? { body } : {}) }));
-      return { ...response, apiOperationId: operationId };
+      return apiToolResult(await this.#callApi(call.callId, taskBridgeApiRequest(call.tool, input)));
     }
     if (this.binding.firstPartyOnly && (call.tool === READ_TOOL_RESULT || this.binding.assignedMcpTools?.has(call.tool) || isConnectorTool(call.tool)
       || RUNTIME_CONNECTION_TOOL_DEFINITIONS.some(tool => tool.name === call.tool))) throw forbidden("This Grok Bot connection exposes first-party Paperclip operations. Use your own provider apps under their existing permissions.");
@@ -669,28 +707,7 @@ export class PaperclipRunnerToolAuthority {
       }
       case "search_api": return searchRunnerApi(call.arguments);
       case "hire_agent": {
-        const body: Record<string, unknown> = {
-          name: requiredString(input.name),
-          adapterType: "paperclip_runner",
-          inheritRuntimeFrom: "caller",
-          reportsTo: this.binding.agentId,
-          sourceIssueId: this.binding.issueId,
-        };
-        if (input.role !== undefined) body.role = input.role;
-        if (input.title !== undefined) body.title = input.title;
-        if (input.capabilities !== undefined) body.capabilities = input.capabilities;
-        if (typeof input.instructions === "string" && input.instructions.trim()) {
-          body.instructionsBundle = {
-            entryFile: "AGENTS.md",
-            files: { "AGENTS.md": input.instructions },
-          };
-        }
-        const { operationId, ...response } = record(await this.#callApi(call.callId, {
-          operationId: "POST /api/companies/{companyId}/agent-hires",
-          pathParams: { companyId: this.binding.companyId },
-          body,
-        }));
-        return { ...response, apiOperationId: operationId, ...(context.actor.adapterConfig?.provider === "openai_dot" ? { setupRequired: "This creates a separate Paperclip Dot agent. Its operator must pair a separate OpenAI Dot before it can run. The existing Dot binding and workspace permission are never inherited." } : {}) };
+        return hireAgentResult(await this.#callApi(call.callId, hireAgentApiRequest(input, this.binding)), context.actor.adapterConfig?.provider);
       }
       case "call_api": {
         // PRP reserves operationId/callId for semantic result identity. The
