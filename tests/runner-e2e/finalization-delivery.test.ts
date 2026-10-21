@@ -8,7 +8,7 @@ function fixture() {
       issueCommentSatisfiedByCommentId: "reply", resultJson: { nativeResult: { summary: "Internal saved result." },
         presentationDecision: { schema: "paperclip.run_presentation_decision.v1", chosenSource: "final_agent_message", commentAction: "create", commentId: "reply" } } },
     comments: [{ id: "reply", companyId: "company", issueId: "task", authorAgentId: "agent", createdByRunId: "run",
-      body: "Here is your downloadable proof.", deletedAt: null }] };
+      body: "Here is your downloadable proof.", deletedAt: null as string | null }] };
 }
 
 describe("finalization final delivery observation", () => {
