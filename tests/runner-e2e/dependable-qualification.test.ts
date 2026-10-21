@@ -221,3 +221,12 @@ it.each(["missing", "duplicate", "linked", "unsafe"])("writes an incomplete repo
     expect(await readFile(path.join(output, "index.html"), "utf8")).toContain("html");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+it("does not start a daily rotation when only today's journeys are registered", () => {
+  const today = dependableDailySelection("2026-10-20").map(dependableExecutionId);
+  expect(() => dependableDailyExecutions("2026-10-20", today)).toThrow("not registered");
+  const all = DEPENDABLE_CELLS.map(dependableExecutionId);
+  const later = all.find(id => !today.includes(id))!;
+  const missingLater = all.filter(id => id !== later);
+  expect(() => dependableDailyExecutions("2026-10-20", missingLater)).toThrow("not registered");
+});

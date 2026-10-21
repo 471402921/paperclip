@@ -25,7 +25,7 @@ costs, timings, evidence scanning, and attempt records remain authoritative.
 The observer receipt is typed and validated as `RunnerE2EResult.dependableWork`;
 it contains no credentials or provider prose. `dependableDailyExecutions` returns
 four exact execution IDs per UTC day, rotating all cells in six days. It refuses
-to select a journey absent from the catalog. The existing bounded operations
+to start the rotation until all 24 exact journeys exist in the catalog. The existing bounded operations
 manifest and shared journal must own spending and scheduling; this checkpoint
 does not start work, retry it, or create a second scheduler.
 

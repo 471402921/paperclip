@@ -149,7 +149,7 @@ export function dependableDailySelection(utcDate: string) {
 
 export function dependableDailyExecutions(utcDate: string, availableIds: readonly string[]) {
   const ids = dependableDailySelection(utcDate).map(dependableExecutionId);
-  const absent = ids.filter(id => !availableIds.includes(id));
+  const absent = DEPENDABLE_CELLS.map(dependableExecutionId).filter(id => !availableIds.includes(id));
   if (absent.length) throw new Error(`Dependable journeys not registered: ${absent.join(", ")}`);
   return ids;
 }
