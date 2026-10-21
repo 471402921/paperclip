@@ -981,10 +981,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             continue;
         }
-        if message.get("method").is_none() && message.get("id") == Some(&json!("terminal-result-request")) {
+        if message.get("method").is_none()
+            && message.get("id") == Some(&json!("terminal-result-request"))
+        {
             let success = message.pointer("/result/success") == Some(&json!(true));
-            log_call(call_log.as_deref(), if success { "terminal-result:accepted" } else { "terminal-result:rejected" })?;
-            finish_turn(&state_path, &mut state, if success { "completed" } else { "failed" })?;
+            log_call(
+                call_log.as_deref(),
+                if success {
+                    "terminal-result:accepted"
+                } else {
+                    "terminal-result:rejected"
+                },
+            )?;
+            finish_turn(
+                &state_path,
+                &mut state,
+                if success { "completed" } else { "failed" },
+            )?;
             continue;
         }
         if message.get("method").is_none() && message.get("id") == Some(&json!("tool-request-1")) {
