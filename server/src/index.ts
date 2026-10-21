@@ -39,7 +39,7 @@ import { deliverExecutionStatuses } from "./services/execution-status-delivery.j
 import { deliverReconciledExecutions, settleUnrecoverableExecutions } from "./services/execution-recovery-resolution.js";
 import { reconcileSafeNativeReplacements } from "./services/native-runtime/native-safe-replacement.js";
 import { reconcileAbandonedExecutionControl } from "./services/execution-control-reconciliation.js";
-import { EXECUTION_RECONCILIATION_INTERVAL_MS } from "./services/execution-control-deadline.js";
+import { executionControlSchedule, registerExecutionControlWork } from "./services/execution-control-work.js";
 import { connectionIntentDeliveryService } from "./services/connection-intent-delivery.js";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import type { Server, RequestListener } from "node:http";
@@ -1205,30 +1205,6 @@ async function startServerWithDatabaseTeardown(
       await Promise.allSettled([...heartbeatSchedulerInFlight]);
     }
   };
-  const executionControlSweepsInFlight = new Set<string>();
-  const executionControlSweeps = [
-    ["finalization", () => reconcileAbandonedExecutionControl(db)],
-    ["replacement", () => heartbeat ? reconcileSafeNativeReplacements(db, new Date(), { verifyStoppedSession: run => verifyStoppedNativeSessionForReplacement(db, run) }) : undefined],
-    ["reconciliation_delivery", () => heartbeat ? deliverReconciledExecutions(db, heartbeat.wakeup) : undefined],
-    ["status_delivery", () => deliverExecutionStatuses(db)],
-    ["automatic_disposition", () => settleUnrecoverableExecutions(db)],
-    ["local_ai_login_cleanup", () => localAiLoginService(db).reapExpired()],
-  ] as const;
-  const sweepExecutionControl = () => {
-    if (isIdleTaskDrainActive() || heartbeatSchedulerStopped || isWarmStandby()) return;
-    // Independent durable queues must not block one another. Each queue remains
-    // single-flight; a later sweep observes committed transitions from its peers.
-    for (const [queue, work] of executionControlSweeps) {
-      if (executionControlSweepsInFlight.has(queue)) continue;
-      executionControlSweepsInFlight.add(queue);
-      trackHeartbeatSchedulerWork(Promise.resolve().then(async () => { await work(); })
-        .catch(err => logger.error({ err, queue }, "execution control reconciliation failed"))
-        .finally(() => { executionControlSweepsInFlight.delete(queue); }));
-    }
-  };
-  const executionControlInterval = setInterval(sweepExecutionControl, EXECUTION_RECONCILIATION_INTERVAL_MS);
-  executionControlInterval.unref?.();
-  sweepExecutionControl();
   const startHeartbeatSchedulerInterval = (callback: () => void) => {
     heartbeatSchedulerInterval = setInterval(() => {
       if (!isWarmStandby() && !isIdleTaskDrainActive()) callback();
@@ -1346,6 +1322,18 @@ async function startServerWithDatabaseTeardown(
     resolveNativeQuestion: (interaction) => deliverNativeQuestionResponse(db as any, interaction),
   });
   const deliveryWork = app.locals.deliveryWork as ReturnType<typeof createDeliveryWorkCoordinator>;
+  const executionSchedule = executionControlSchedule(db);
+  registerExecutionControlWork(deliveryWork, [
+    { queue: DELIVERY_QUEUES.executionFinalization, run: () => reconcileAbandonedExecutionControl(db), next: executionSchedule.finalization },
+    { queue: DELIVERY_QUEUES.executionStatus, run: () => deliverExecutionStatuses(db), next: executionSchedule.status },
+    { queue: DELIVERY_QUEUES.executionDisposition, run: () => settleUnrecoverableExecutions(db), next: executionSchedule.disposition },
+    { queue: DELIVERY_QUEUES.localLoginCleanup, run: () => localAiLoginService(db).reapExpired(), next: executionSchedule.localLogin },
+    ...(heartbeat ? [
+      { queue: DELIVERY_QUEUES.executionReplacement, run: () => reconcileSafeNativeReplacements(db, new Date(), { verifyStoppedSession: run => verifyStoppedNativeSessionForReplacement(db, run) }), next: executionSchedule.replacement },
+      { queue: DELIVERY_QUEUES.executionContinuation, run: () => deliverReconciledExecutions(db, heartbeat.wakeup), next: executionSchedule.continuation },
+    ] : []),
+  ], () => !heartbeatSchedulerStopped);
+
   const budgetEnforcementWorker = registerBudgetEnforcementWork(db, deliveryWork, {
     cancelWorkForScope: accountingHeartbeat.cancelBudgetScopeWork,
   });
@@ -2092,7 +2080,6 @@ async function startServerWithDatabaseTeardown(
     unsubscribeChatCompletions();
     await deliveryWork.stop();
     unregisterTerminalWorkspaceProbe?.();
-    clearInterval(executionControlInterval);
     if (heartbeatSchedulerInterval) {
       clearInterval(heartbeatSchedulerInterval);
       heartbeatSchedulerInterval = null;
