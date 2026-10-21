@@ -10864,6 +10864,41 @@ describe("runnerd provider runtime wiring", () => {
     );
   });
 
+  it.each([true, false])("wires connector workspace tools into local v5 without relaying ordinary assigned tools (assigned=%s)", async assigned => {
+    const current = { ...scopedNativeExecution(`local-workspace-connector-${assigned}`),
+      schema: "paperclip.native-execution-input.v5" as const,
+      provider: { kind: "codex" as const, model: null, approvalPolicy: "never" as const },
+      executionMode: "default" as const, planningContext: null, runtimeContext: nativeRuntimeContextFixture() };
+    const database = leaseDb(current);
+    const actualAssigned = await vi.importActual<typeof import("./assigned-mcp-tools.js")>("./assigned-mcp-tools.js");
+    const actualAuthority = await vi.importActual<typeof import("./paperclip-runner-tool-authority.js")>("./paperclip-runner-tool-authority.js");
+    const tools = ["notebook_begin_upload", "notebook_finalize_upload"].map(name => ({
+      name: `mcp.fixture:${name}`, upstreamToolName: name, connectionId: "notebook-connection",
+      applicationKey: "paperclip-notebook", displayName: name, description: name,
+      parametersSchema: { type: "object", properties: {} }, pluginId: "fixture", providerType: "mcp_remote_http", risk: "write",
+    }));
+    const listToolsForNamedGateway = vi.fn(async () => assigned ? tools : []);
+    const gateway = { listToolsForNamedGateway, executeTool: vi.fn() };
+    state.createAssignedMcpTools.mockImplementationOnce(input => actualAssigned.createAssignedMcpTools({ ...input, gateway }));
+    state.toolAuthorityDefinitions.mockImplementationOnce(async binding => new actualAuthority.PaperclipRunnerToolAuthority(database,
+      binding as ConstructorParameters<typeof actualAuthority.PaperclipRunnerToolAuthority>[1]).definitions());
+    state.createBackend.mockClear(); state.createTransport.mockClear();
+    const environment = { PAPERCLIP_NATIVE_MCP_NAME: "paperclip-assigned",
+      PAPERCLIP_NATIVE_MCP_URL: "http://127.0.0.1:3217/mcp/gateways/local-contributions", PAPERCLIP_NATIVE_MCP_TOKEN: "fixture-run-token" };
+    await createRunnerdBackend({ db: database, execution: current, runnerInstanceId: "runner-local-contributions", runnerEnvironment: environment });
+    expect(state.createAssignedMcpTools).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      gatewayPublicId: "local-contributions", bearerToken: environment.PAPERCLIP_NATIVE_MCP_TOKEN, workMode: "standard",
+    }));
+    const definitions = state.createBackend.mock.calls[0]![1].dynamicTools!;
+    const publisher = definitions.find(tool => tool.name === "publish_notebook_files");
+    if (assigned) expect(publisher).toMatchObject({ inputSchema: { properties: { connectionId: { enum: ["notebook-connection"] } } } });
+    else expect(publisher).toBeUndefined();
+    expect(definitions.some(tool => String(tool.name).startsWith("app_") || ["paperclip_search_assigned_tools", "paperclip_call_assigned_tool", "read_tool_result"].includes(String(tool.name)))).toBe(false);
+    expect(state.toolAuthorityDefinitions).toHaveBeenCalledWith(expect.objectContaining({ assignedMcpTools: undefined }));
+    state.createBackend.mock.calls[0]![1].codexTransportFactory!();
+    expect(state.createTransport.mock.calls[0]![0]).toMatchObject({ environment });
+  });
+
   it.each([true, false])("wires contributed workspace tools into local v5 without relaying ordinary assigned tools (assigned=%s)", async assigned => {
     const current = { ...scopedNativeExecution(`local-workspace-connector-${assigned}`),
       schema: "paperclip.native-execution-input.v5" as const,

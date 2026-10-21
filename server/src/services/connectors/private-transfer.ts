@@ -1,4 +1,5 @@
 import { getAppDefinitionForApplicationKey } from "@paperclipai/shared";
+import { notebookUploadTransfer } from "./paperclip-notebook/upload-transfer.js";
 
 export interface ConnectorTransferTool {
   providerType?: unknown;
@@ -38,4 +39,4 @@ export function createConnectorTransferRegistry(adapters: readonly ConnectorTran
   };
 }
 
-export const connectorTransfers = createConnectorTransferRegistry([]);
+export const connectorTransfers = createConnectorTransferRegistry([notebookUploadTransfer]);

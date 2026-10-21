@@ -43,6 +43,29 @@ remaining operations before qualifying the whole capability.
 Gaps: Runtime tool broker searches available services without granting connection
 administration.
 
+Notebook is internally gated by `enablePaperclipNotebook` (default off, no settings toggle). Disabled instances hide setup/discovery and deny curated Notebook dispatch and publishing; local removal and grant revocation remain available.
+
+The connector catalog declares the feature key. Shared availability checks use
+the saved application identity. Publishing and file-transfer protocols live in
+the Notebook module; OAuth uses the existing generic flow. Runtime and gateway
+interfaces remain generic.
+
+Notebook source addition: `paperclip-notebook` is discoverable through
+`connections_search` and requestable through `connection_request`. Its standard
+personal authorization requests read, write, share, and delete scopes. Notebook
+page ownership remains enforced by the remote service; a client-supplied agent
+label grants no authority. The direct MCP connection requires no Cloud instance
+enrollment. Notebook fixture evidence: `verified` against disposable PostgreSQL 18
+with controlled MCP responses — [Notebook integration](../../doc/connections/PAPERCLIP-NOTEBOOK.md)
+and [generic OAuth fixture](../../server/src/__tests__/generic-mcp-connection.test.ts).
+Native runs with an approved workspace can use `publish_notebook_files` through
+their assigned gateway. Shell runtimes with an existing agent credential and run
+header can use `paperclipai notebook publish`. Local transfer fixtures exercise
+2 MiB bundles, selected-connection checks, approval/denial, and stopped-run
+authority. Live deployed publication and hosted/self-hosted OAuth remain release
+checks.
+
+
 ## `identity-and-access`
 
 Capability ID: `connection-setup/identity-and-access`.

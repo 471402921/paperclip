@@ -47,6 +47,8 @@ interface ApiClientOptions {
   apiBase: string;
   apiKey?: string;
   runId?: string;
+  headers?: Record<string, string>;
+  redirect?: RequestRedirect;
   recoverAuth?: (input: RecoverAuthInput) => Promise<string | null>;
 }
 
@@ -55,12 +57,16 @@ export class PaperclipApiClient {
   apiKey?: string;
   readonly runId?: string;
   readonly recoverAuth?: (input: RecoverAuthInput) => Promise<string | null>;
+  private readonly headers: Record<string, string>;
+  private readonly redirect?: RequestRedirect;
 
   constructor(opts: ApiClientOptions) {
     this.apiBase = opts.apiBase.replace(/\/+$/, "");
     this.apiKey = opts.apiKey?.trim() || undefined;
     this.runId = opts.runId?.trim() || undefined;
     this.recoverAuth = opts.recoverAuth;
+    this.headers = { ...opts.headers };
+    this.redirect = opts.redirect;
   }
 
   get<T>(path: string, opts?: RequestOptions): Promise<T | null> {
@@ -116,6 +122,7 @@ export class PaperclipApiClient {
 
     const headers: Record<string, string> = {
       accept: "application/json",
+      ...this.headers,
       ...toStringRecord(init.headers),
     };
 
@@ -136,6 +143,7 @@ export class PaperclipApiClient {
       response = await fetch(url, {
         ...init,
         headers,
+        ...(this.redirect ? { redirect: this.redirect } : {}),
       });
     } catch (error) {
       throw new ApiConnectionError({

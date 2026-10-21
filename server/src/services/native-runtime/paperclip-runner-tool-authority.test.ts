@@ -914,6 +914,39 @@ describe("PaperclipRunnerToolAuthority", () => {
     } finally { spies.forEach(spy => spy.mockRestore()); }
   });
 
+  it("publishes Notebook files only from a bound standard-mode workspace and a selected assigned connection", async () => {
+    const content = Buffer.from("native artifact"), sha256 = createHash("sha256").update(content).digest("hex");
+    const executeTool = vi.fn(async ({ tool }: { tool: string }) => ({ status: "completed", result: { structuredContent:
+      tool.endsWith("notebook_create_page") ? { id: issueId, version: 1 }
+      : tool.endsWith("notebook_begin_upload") ? { deploymentId: "ready-deployment", status: "ready" }
+      : { operationId: "ready-deployment", status: "ready", audience: { mode: "private" } } } }));
+    const descriptors = ["notebook_create_page", "notebook_begin_upload", "notebook_finalize_upload"].map(name => ({
+      name: `notebook:${name}`, upstreamToolName: name, applicationKey: "paperclip-notebook", connectionId: "assigned-notebook",
+      risk: "write", providerType: "mcp_remote_http", displayName: name, description: name, pluginId: "fixture", parametersSchema: { type: "object" },
+    } as ToolGatewayDescriptor));
+    const assignedMcpTools = await createAssignedMcpTools({ gateway: { listToolsForNamedGateway: vi.fn().mockResolvedValue(descriptors), executeTool } as unknown as ToolGatewayService,
+      gatewayPublicId: "native-gateway", bearerToken: "controller-only-token" });
+    const readRemoteWorkspaceFile = vi.fn(async () => content);
+    const binding = { companyId, agentId, issueId, runId, workspaceConnectionTools: assignedMcpTools, workspaceRoot: "/runtime-only",
+      executionTargetKind: "remote" as const, readRemoteWorkspaceFile };
+    const authority = new PaperclipRunnerToolAuthority(db, binding);
+    expect(authority.definitions().find(tool => tool.name === "publish_notebook_files")?.inputSchema).toMatchObject({ properties: { connectionId: { enum: ["assigned-notebook"] } } });
+    expect(new PaperclipRunnerToolAuthority(db, { ...binding, workMode: "planning" }).definitions().some(tool => tool.name === "publish_notebook_files")).toBe(false);
+    expect(new PaperclipRunnerToolAuthority(db, { ...binding, workspaceRoot: undefined }).definitions().some(tool => tool.name === "publish_notebook_files")).toBe(false);
+    const call = { tool: "publish_notebook_files", callId: "publish-native", arguments: { connectionId: "assigned-notebook", title: "Artifact",
+      idempotencyKey: "artifact-v1", entryFile: "index.html", files: [{ path: "index.html", source: "dist/index.html", size: content.length, sha256 }] } };
+    await expect(authority.execute(call)).resolves.toMatchObject({ status: "ready", audience: { mode: "private" } });
+    expect(readRemoteWorkspaceFile).toHaveBeenCalledOnce();
+    expect(executeTool).toHaveBeenCalledTimes(3);
+    await db.update(issues).set({ workMode: "ask" }).where(eq(issues.id, issueId));
+    try { await expect(authority.execute(call)).rejects.toThrow("unavailable to this run"); }
+    finally { await db.update(issues).set({ workMode: "standard" }).where(eq(issues.id, issueId)); }
+    await db.update(heartbeatRuns).set({ status: "succeeded" }).where(eq(heartbeatRuns.id, runId));
+    try { await expect(authority.execute(call)).rejects.toThrow("binding_not_authorized"); }
+    finally { await db.update(heartbeatRuns).set({ status: "running" }).where(eq(heartbeatRuns.id, runId)); }
+    expect(readRemoteWorkspaceFile).toHaveBeenCalledOnce();
+  });
+
   it("writes progress through the real issue service and replays idempotently", async () => {
     const authority = new PaperclipRunnerToolAuthority(db, {
       companyId,

@@ -99,6 +99,25 @@ saved connection. Run a permitted read-only action with an eligible agent and
 verify its useful result. Try an ineligible agent and confirm denial. Repeat
 with a user who cannot install company-wide; the UI must not imply broad access.
 
+Notebook is internally gated by `enablePaperclipNotebook` (default off, no settings toggle). Disabled instances hide setup/discovery and deny curated Notebook dispatch and publishing; local removal and grant revocation remain available.
+
+Availability is catalog metadata evaluated by shared connector checks. Notebook
+publishing behavior stays in its connector module.
+
+Paperclip Notebook uses the existing personal-account MCP OAuth setup at
+`https://notebook.paperclip.app/mcp`. Sign in through Cloud, assign agents, and
+verify tool discovery. The connection keeps its default catalog name.
+Reconnect must preserve agent assignments and Allowed / Ask first / Off choices.
+Removal disables local use and clears saved credentials. Remote authorization
+can be revoked separately in Notebook's Connected apps screen; automatic remote
+cleanup and custom keyed refresh recovery are deferred. A lost rotating-token
+response may require reconnecting. Native workspace runs can publish local
+files with `publish_notebook_files`. Approved shell runtimes with existing agent
+credentials can use `paperclipai notebook publish` for a built directory. Both
+paths use the selected connection's ordinary action gateway. See [Notebook](../../doc/connections/PAPERCLIP-NOTEBOOK.md)
+for the deployment contract and fixture coverage. Live Notebook qualification
+still requires a deployed service and both hosted and self-hosted clients.
+
 Daytona follows this same key/access wizard. Its native method exposes the
 published platform and Toolbox HTTP actions using provider sandbox IDs, without
 a Paperclip task or lease requirement. [Daytona browser setup](../../tests/e2e/daytona-connector.spec.ts)

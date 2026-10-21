@@ -1,5 +1,6 @@
 import type { createAssignedMcpTools } from "../native-runtime/assigned-mcp-tools.js";
 import type { RemoteWorkspaceFileReader } from "../native-runtime/native-runner-file-handoff.js";
+import { notebookWorkspaceTool } from "./paperclip-notebook/runtime-tool.js";
 
 export type AssignedConnectionTools = Awaited<ReturnType<typeof createAssignedMcpTools>>;
 export interface ConnectorWorkspaceContext {
@@ -32,4 +33,4 @@ export function createConnectorWorkspaceTools(contributions: readonly ConnectorW
   };
 }
 
-export const connectorWorkspaceTools = createConnectorWorkspaceTools([]);
+export const connectorWorkspaceTools = createConnectorWorkspaceTools([notebookWorkspaceTool]);

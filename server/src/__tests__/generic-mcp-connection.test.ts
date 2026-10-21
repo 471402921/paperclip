@@ -1,4 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { Writable } from "node:stream";
@@ -7,6 +10,9 @@ import pino from "pino";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
+  EMBEDDED_POSTGRES_TEST_TIMEOUT_MS,
+  applyPendingMigrations,
+  closeRegisteredClients,
   activityLog,
   agents,
   authUsers,
@@ -17,6 +23,7 @@ import {
   companySecrets,
   companySecretVersions,
   createDb,
+  heartbeatRuns,
   issueThreadInteractions,
   issues,
   principalPermissionGrants,
@@ -24,6 +31,9 @@ import {
   toolAccessAuditEvents,
   toolCallEvents,
   toolInvocations,
+  toolGatewaySessions,
+  toolMcpGateways,
+  toolMcpGatewayTokens,
   toolActionRequests,
   toolApplications,
   toolCatalogEntries,
@@ -35,24 +45,31 @@ import {
   toolProfiles,
   toolRuntimeSlots,
 } from "@paperclipai/db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { APP_DEFINITIONS, MCP_CONFIG_HELP_PROMPT } from "@paperclipai/shared";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
 import { toolAccessService } from "../services/tool-access.js";
+import { instanceSettingsService } from "../services/instance-settings.js";
+import { connectionIntentService } from "../services/connection-intents.js";
 import { ComposioApiError, type ComposioClient } from "../services/composio.js";
 import { createComposioSessionManager } from "../services/composio-session-manager.js";
 import { createToolGatewayService } from "../services/tool-gateway.js";
+import { createAssignedMcpTools } from "../services/native-runtime/assigned-mcp-tools.js";
+import { notebookPublicationClient } from "../services/connectors/paperclip-notebook/publication-client.js";
+import { publishNotebookWorkspaceFiles } from "../services/connectors/paperclip-notebook/publishing.js";
 import { toolAccessPolicyService } from "../services/tool-access-policy.js";
 import { toolAccessRoutes } from "../routes/tool-access.js";
+import { toolGatewayRoutes } from "../routes/tool-gateway.js";
 import { errorHandler } from "../middleware/index.js";
 import { createHttpLogger } from "../middleware/logger.js";
 import { HTTP_LOG_REDACT_PATHS } from "../middleware/http-log-redaction.js";
 import { startOAuthRefreshFixture } from "../../../scripts/mcp-fixtures/servers/oauth-refresh-fixture.mjs";
 
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
+const externalTestDatabaseUrl = process.env.PAPERCLIP_TEST_DATABASE_URL?.trim();
+const embeddedPostgresSupport = externalTestDatabaseUrl ? { supported: true } : await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
 
 /**
@@ -81,6 +98,11 @@ const FIXTURE_TOOLS = [
 ];
 
 type FixtureOptions = {
+  notebookAccount?: { id: string; email: string; emailVerified: boolean };
+  notebookToolResult?: (name: string, arguments_: Record<string, unknown>) => unknown | Promise<unknown>;
+  scopes?: string[];
+  rotateRefreshTokens?: boolean;
+  dropFirstRefreshResponse?: boolean;
   /** How the MCP endpoint authenticates. */
   auth?: "public" | "oauth" | "header";
   /** For `auth: "header"`, the header the endpoint requires and its value. */
@@ -169,18 +191,23 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
   const requests: FixtureRequest[] = [];
   const issuedCodes = new Map<string, { codeChallenge: string; resource: string | null }>();
   let accessToken: string | null = null;
+  let refreshToken = "fixture-refresh";
+  let refreshResponseDropped = false;
+  const tokenResponses: { access_token: string; refresh_token: string }[] = [];
   const tools = options.tools ?? FIXTURE_TOOLS;
+  const scopes = options.scopes ?? (options.notebookAccount ? ["notebook:read", "notebook:write", "notebook:share", "notebook:delete"] : null);
   const resourceMetadataUrl = `${MCP_ORIGIN}/.well-known/oauth-protected-resource/mcp`;
 
   const authorizationServerMetadata = () => ({
     issuer: ISSUER,
     authorization_endpoint: options.authorizationEndpoint ?? `${ISSUER}/authorize`,
     token_endpoint: options.tokenEndpoint ?? `${ISSUER}/token`,
+    ...(options.notebookAccount ? { revocation_endpoint: `${MCP_ORIGIN}/oauth/revoke` } : {}),
     ...(options.dcr === false ? {} : { registration_endpoint: `${ISSUER}/register` }),
     ...(options.cimd ? { client_id_metadata_document_supported: true } : {}),
     code_challenge_methods_supported: ["S256"],
     token_endpoint_auth_methods_supported: options.tokenEndpointAuthMethods ?? ["none"],
-    scopes_supported: ["mcp:read", "mcp:write"],
+    scopes_supported: scopes ?? ["mcp:read", "mcp:write"],
   });
 
   const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
@@ -204,6 +231,18 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
         if (supplied !== options.requiredHeader.value) return unauthorizedMcpResponse(resourceMetadataUrl);
       }
       const rpc = parsedBody as Record<string, unknown>;
+      if (options.notebookAccount && rpc.method === "initialize") {
+        return jsonResponse({ jsonrpc: "2.0", id: rpc.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "Notebook fixture", version: "1" } } });
+      }
+      if (options.notebookAccount && rpc.method === "notifications/initialized") return jsonResponse({}, 202);
+      if (options.notebookAccount && rpc.method === "tools/call" && (rpc.params as Record<string, unknown>)?.name === "notebook_get_account") {
+        return jsonResponse({ jsonrpc: "2.0", id: rpc.id, result: { structuredContent: options.notebookAccount, content: [] } });
+      }
+      if (options.notebookToolResult && rpc.method === "tools/call") {
+        const params = rpc.params as { name: string; arguments: Record<string, unknown> };
+        const result = await options.notebookToolResult(params.name, params.arguments);
+        return jsonResponse({ jsonrpc: "2.0", id: rpc.id, result: { structuredContent: result, content: [] } });
+      }
       if (rpc.method === "tools/call") {
         return jsonResponse({ jsonrpc: "2.0", id: rpc.id, result: {
           content: [{ type: "text", text: "Fixture meeting data" }],
@@ -254,14 +293,24 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
         const issued = issuedCodes.get(body.get("code") ?? "");
         if (!issued) return jsonResponse({ error: "invalid_grant" }, 400);
       }
+      if (grantType === "refresh_token" && options.rotateRefreshTokens && body.get("refresh_token") !== refreshToken) {
+        return jsonResponse({ error: "invalid_grant" }, 400);
+      }
       accessToken = `fixture-access-${randomUUID()}`;
-      return jsonResponse({
+      if (options.rotateRefreshTokens) refreshToken = `fixture-refresh-${randomUUID()}`;
+      const response = {
         access_token: accessToken,
-        refresh_token: "fixture-refresh",
+        refresh_token: refreshToken,
         expires_in: 3600,
         token_type: "Bearer",
-        scope: "mcp:read",
-      });
+        scope: scopes?.join(" ") ?? "mcp:read",
+      };
+      tokenResponses.push(response);
+      if (grantType === "refresh_token" && options.dropFirstRefreshResponse && !refreshResponseDropped) {
+        refreshResponseDropped = true;
+        throw new TypeError("Fixture lost the committed rotating refresh response");
+      }
+      return jsonResponse(response);
     }
 
     // 404 rather than throw: discovery legitimately probes several well-known
@@ -272,6 +321,7 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
   return {
     fetchMock,
     requests,
+    tokenResponses,
     /** Pretend the operator approved the consent screen and got a code back. */
     issueAuthorizationCode(authorizationUrl: string) {
       const parsed = new URL(authorizationUrl);
@@ -339,15 +389,23 @@ function createRouteApp(
 describeEmbeddedPostgres("generic remote MCP connections", () => {
   let db!: ReturnType<typeof createDb>;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+  const restoreCatalogEndpoints: (() => void)[] = [];
 
   beforeAll(async () => {
+    if (externalTestDatabaseUrl) {
+      db = createDb(externalTestDatabaseUrl);
+      await applyPendingMigrations(externalTestDatabaseUrl);
+      return;
+    }
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-generic-mcp-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  }, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS);
 
   afterEach(async () => {
+    for (const restore of restoreCatalogEndpoints.splice(0)) restore();
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
+    await instanceSettingsService(db).updateExperimental({ enablePaperclipNotebook: false });
     await db.delete(toolCallEvents);
     await db.delete(toolInvocations);
     await db.delete(toolActionRequests);
@@ -358,6 +416,9 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     await db.delete(companySecrets);
     await db.delete(activityLog);
     await db.delete(toolAccessAuditEvents);
+    await db.delete(toolGatewaySessions);
+    await db.delete(toolMcpGatewayTokens);
+    await db.delete(toolMcpGateways);
     await db.delete(toolRuntimeSlots);
     await db.delete(toolConnectionInstalls);
     await db.delete(toolProfileBindings);
@@ -367,6 +428,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     await db.delete(toolConnections);
     await db.delete(toolApplications);
     await db.delete(issueThreadInteractions);
+    await db.delete(heartbeatRuns);
     await db.delete(issues);
     await db.delete(principalPermissionGrants);
     await db.delete(companyMemberships);
@@ -376,6 +438,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
   });
 
   afterAll(async () => {
+    if (externalTestDatabaseUrl) await closeRegisteredClients(externalTestDatabaseUrl);
     await tempDb?.cleanup();
   });
 
@@ -396,6 +459,377 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     }
     return false;
   }
+
+  function useNotebookFixtureEndpoint() {
+    const method = APP_DEFINITIONS.find(app => app.slug === "paperclip-notebook")!.methods.find(method => method.key === "mcp-oauth")!;
+    const originalUrl = method.defaults!.serverUrl;
+    method.defaults!.serverUrl = MCP_URL;
+    restoreCatalogEndpoints.push(() => { method.defaults!.serverUrl = originalUrl; });
+  }
+
+  it.each(["missing", "relabelled"])("keeps Notebook setup internal after %s markers, denying pending OAuth and finalization while allowing removal", async marker => {
+    const company = await createCompany(db), settings = instanceSettingsService(db);
+    await settings.updateExperimental({ enablePaperclipNotebook: false });
+    const service = toolAccessService(db, { paperclipCloudConnector: null });
+    const actor = { actorType: "user" as const, actorId: "board-user" };
+    const app = createRouteApp(db);
+    const gallery = await request(app).get(`/api/companies/${company.id}/tools/gallery`).expect(200);
+    expect(gallery.body.apps.some((item: { slug: string }) => item.slug === "paperclip-notebook")).toBe(false);
+    await expect(service.connectGalleryApp(company.id, { galleryKey: "paperclip-notebook", grantKind: "user" }, actor))
+      .rejects.toMatchObject({ status: 403, details: { code: "connector_disabled" } });
+    await request(app).get(`/api/companies/${company.id}/tools/apps/paperclip-notebook/preflight`).expect(403);
+    await expect(service.createConnection(company.id, { name: "Notebook bypass", transport: "mcp_remote", config: {
+      sourceTemplateKey: "paperclip-notebook", url: MCP_URL,
+    } }, actor)).rejects.toMatchObject({ status: 403, details: { code: "connector_disabled" } });
+    expect(await db.select().from(toolConnections).where(eq(toolConnections.companyId, company.id))).toEqual([]);
+    expect(await db.select().from(companySecrets).where(eq(companySecrets.companyId, company.id))).toEqual([]);
+    await settings.updateExperimental({ enablePaperclipNotebook: true });
+    useNotebookFixtureEndpoint();
+    const fixture = installMcpOAuthFixture({ auth: "oauth", notebookAccount: { id: "cloud-owner", email: "owner@example.test", emailVerified: true } });
+    const enabledGallery = await request(app).get(`/api/companies/${company.id}/tools/gallery`).expect(200);
+    expect(enabledGallery.body.apps.some((item: { slug: string }) => item.slug === "paperclip-notebook")).toBe(true);
+    const connected = await service.connectGalleryApp(company.id, { galleryKey: "paperclip-notebook", grantKind: "user" }, actor);
+    const start = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+    const saved = await service.getConnection(connected.connectionId, company.id);
+    const config = { ...saved.config };
+    delete config.sourceTemplateKey;
+    if (marker === "relabelled") config.sourceTemplateKey = "custom-mcp";
+    await service.updateConnection(connected.connectionId, { config });
+    await settings.updateExperimental({ enablePaperclipNotebook: false });
+    await expect(service.completeOAuthCallback({ state: new URL(start.authorizationUrl).searchParams.get("state")!,
+      code: fixture.issueAuthorizationCode(start.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor }))
+      .rejects.toMatchObject({ status: 403, details: { code: "connector_disabled" } });
+    expect(fixture.requestsTo("/token")).toHaveLength(0);
+    await expect(service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor }))
+      .rejects.toMatchObject({ status: 403, details: { code: "connector_disabled" } });
+    await expect(service.reconnectGalleryApp(connected.connectionId, company.id, { credentialValues: {} }, actor))
+      .rejects.toMatchObject({ status: 403, details: { code: "connector_disabled" } });
+    await expect(service.connectGalleryApp(company.id, { resumeConnectionId: connected.connectionId, grantKind: "user" }, actor))
+      .rejects.toMatchObject({ status: 403, details: { code: "connector_disabled" } });
+    await expect(service.finishGalleryAppConnection(company.id, connected.connectionId, { enabledCatalogEntryIds: [], askFirstCatalogEntryIds: [], access: { agentIds: [] } }, actor))
+      .rejects.toMatchObject({ status: 403, details: { code: "connector_disabled" } });
+    await expect(service.archiveConnection(connected.connectionId, company.id, actor)).resolves.toMatchObject({ connection: { status: "archived" } });
+  });
+
+  it("connects Notebook with personal OAuth and preserves policies across ordinary rotation, reconnect, and local removal", async () => {
+    await instanceSettingsService(db).updateExperimental({ enablePaperclipNotebook: true });
+    useNotebookFixtureEndpoint();
+    const scopes = ["notebook:read", "notebook:write", "notebook:share", "notebook:delete"];
+    const fixture = installMcpOAuthFixture({ auth: "oauth", scopes, rotateRefreshTokens: true,
+      notebookAccount: { id: "cloud-owner", email: "owner@example.test", emailVerified: true },
+      tools: [
+        { name: "notebook_get_account", annotations: { readOnlyHint: true } },
+        { name: "notebook_list_pages", annotations: { readOnlyHint: true } },
+        { name: "notebook_publish", annotations: { readOnlyHint: false } },
+        { name: "notebook_set_sharing", annotations: { readOnlyHint: false } },
+        { name: "notebook_delete_page", annotations: { readOnlyHint: false, destructiveHint: true } },
+      ] });
+    const company = await createCompany(db);
+    const serviceDb = createDb(externalTestDatabaseUrl ?? tempDb!.connectionString, { maxConnections: 1 });
+    const service = toolAccessService(serviceDb, { paperclipCloudConnector: null });
+    const actor = { actorType: "user" as const, actorId: "board-user" };
+    const connected = await service.connectGalleryApp(company.id, { galleryKey: "paperclip-notebook" }, actor);
+    const authorize = async () => {
+      const start = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+      expect(start.registrationSource).toBe("dcr");
+      const authorization = new URL(start.authorizationUrl);
+      expect(authorization.searchParams.get("resource")).toBe(MCP_URL);
+      expect(authorization.searchParams.get("code_challenge_method")).toBe("S256");
+      expect(authorization.searchParams.get("scope")?.split(" ")).toEqual(scopes);
+      return service.completeOAuthCallback({ state: authorization.searchParams.get("state")!, code: fixture.issueAuthorizationCode(start.authorizationUrl),
+        iss: ISSUER, redirectUri: REDIRECT_URI, actor });
+    };
+    const completed = await authorize();
+    expect(completed.connection).toMatchObject({ name: "Paperclip Notebook", credentialPolicy: "per_user" });
+    expect(completed.catalog).toHaveLength(5);
+    expect(completed.catalog.every(entry => entry.status === "active")).toBe(true);
+    const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
+    expect(grant).toMatchObject({ kind: "user", subjectUserId: "board-user" });
+    expect(grant!.providerTenant).not.toHaveProperty("name");
+    expect(grant!.providerTenant).not.toHaveProperty("externalId");
+    expect(fixture.requestsTo("/mcp").filter(call => (call.body as Record<string, unknown>)?.method === "tools/call")).toEqual([]);
+    const stored = await db.select().from(companySecrets).where(inArray(companySecrets.id, grant!.credentialSecretRefs.map(ref => ref.secretId)));
+    expect(stored).toHaveLength(2);
+    expect(stored.every(secret => secret.scope === "user" && secret.ownerUserId === "board-user")).toBe(true);
+    expect(JSON.stringify(completed)).not.toContain("fixture-access-");
+    for (let rotation = 0; rotation < 2; rotation += 1) {
+      await service.refreshOAuthGrantCredentials({ companyId: company.id, connectionId: connected.connectionId, grantId: grant!.id, forceRefresh: true, actor });
+    }
+    const refreshRequests = fixture.requestsTo("/token").filter(call => (call.body as URLSearchParams).get("grant_type") === "refresh_token");
+    expect(refreshRequests).toHaveLength(2);
+    expect((refreshRequests[0]!.body as URLSearchParams).get("refresh_token")).toBe(fixture.tokenResponses[0]!.refresh_token);
+    expect((refreshRequests[1]!.body as URLSearchParams).get("refresh_token")).toBe(fixture.tokenResponses[1]!.refresh_token);
+    expect(fixture.tokenResponses[0]!.refresh_token).not.toBe(fixture.tokenResponses[1]!.refresh_token);
+    expect(fixture.requests.every(call => call.headers["idempotency-key"] === undefined)).toBe(true);
+    const [agent] = await db.insert(agents).values({ companyId: company.id, name: "Notebook author", role: "engineer", status: "active", adapterType: "process", adapterConfig: {}, runtimeConfig: {} }).returning();
+    const [unassigned] = await db.insert(agents).values({ companyId: company.id, name: "Unassigned", role: "engineer", status: "active", adapterType: "process", adapterConfig: {}, runtimeConfig: {} }).returning();
+    await service.finishGalleryAppConnection(company.id, connected.connectionId, {
+      enabledCatalogEntryIds: completed.catalog.filter(entry => entry.toolName !== "notebook_delete_page").map(entry => entry.id),
+      askFirstCatalogEntryIds: completed.catalog.filter(entry => entry.toolName === "notebook_set_sharing").map(entry => entry.id), access: { agentIds: [agent!.id] },
+    }, actor);
+    await authorize();
+    expect(await db.select({ id: connectionGrants.id }).from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId))).toEqual([{ id: grant!.id }]);
+    const policy = toolAccessPolicyService(db);
+    const decision = (name: string, agentId = agent!.id) => {
+      const entry = completed.catalog.find(entry => entry.toolName === name)!;
+      return policy.decide({ companyId: company.id, actor: { actorType: "agent", actorId: agentId, agentId },
+        request: { connectionId: connected.connectionId, catalogEntryId: entry.id, toolName: name } });
+    };
+    await expect(decision("notebook_publish")).resolves.toMatchObject({ allowed: true });
+    await expect(decision("notebook_set_sharing")).resolves.toMatchObject({ allowed: false, decision: "require_approval" });
+    await expect(decision("notebook_delete_page")).resolves.toMatchObject({ allowed: false, decision: "deny" });
+    await expect(decision("notebook_publish", unassigned!.id)).resolves.toMatchObject({ allowed: false });
+    const saved = await service.getConnection(connected.connectionId, company.id);
+    const config = { ...saved.config };
+    delete config.sourceTemplateKey;
+    await service.updateConnection(connected.connectionId, { config });
+    const [currentGrant] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
+    await db.update(connectionGrants).set({ providerTenant: { ...currentGrant!.providerTenant, oauth: {
+      ...currentGrant!.providerTenant?.oauth, accessTokenExpiresAt: new Date(0).toISOString(),
+    } } }).where(eq(connectionGrants.id, grant!.id));
+    await instanceSettingsService(db).updateExperimental({ enablePaperclipNotebook: false });
+    const tokenRequestsWhileOff = fixture.requestsTo("/token").length;
+    const mcpRequestsWhileOff = fixture.requestsTo("/mcp").length;
+    const secretAccessBeforeOff = await db.select({ id: secretAccessEvents.id }).from(secretAccessEvents);
+    await expect(service.checkHealth(connected.connectionId, actor)).rejects.toMatchObject({ status: 403, details: { code: "connector_disabled" } });
+    await expect(service.refreshCatalog(connected.connectionId, actor)).rejects.toMatchObject({ status: 403, details: { code: "connector_disabled" } });
+    expect(fixture.requestsTo("/token")).toHaveLength(tokenRequestsWhileOff);
+    expect(fixture.requestsTo("/mcp")).toHaveLength(mcpRequestsWhileOff);
+    expect(await db.select({ id: secretAccessEvents.id }).from(secretAccessEvents)).toEqual(secretAccessBeforeOff);
+    const removed = await service.archiveConnection(connected.connectionId, company.id, actor);
+    expect(removed.connection.status).toBe("archived");
+    expect(removed.removal).not.toHaveProperty("oauthRevocationPending");
+    await expect(decision("notebook_publish")).resolves.toMatchObject({ allowed: false });
+    const [removedGrant] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
+    expect(removedGrant).toMatchObject({ status: "revoked", credentialSecretRefs: [] });
+    expect(await db.select().from(companySecrets).where(inArray(companySecrets.id, currentGrant!.credentialSecretRefs.map(ref => ref.secretId)))).toEqual([]);
+    expect(fixture.requestsTo("/oauth/revoke")).toEqual([]);
+    await instanceSettingsService(db).updateExperimental({ enablePaperclipNotebook: true });
+    await service.connectGalleryApp(company.id, { galleryKey: "paperclip-notebook", applicationId: connected.application.id }, actor);
+    await authorize();
+    expect(fixture.requestsTo("/oauth/revoke")).toEqual([]);
+    expect(fixture.requests.every(call => call.headers["idempotency-key"] === undefined)).toBe(true);
+  });
+
+  it("reconnects Notebook after a lost rotating refresh response requires new authorization", async () => {
+    await instanceSettingsService(db).updateExperimental({ enablePaperclipNotebook: true });
+    useNotebookFixtureEndpoint();
+    const fixture = installMcpOAuthFixture({ auth: "oauth", rotateRefreshTokens: true, dropFirstRefreshResponse: true,
+      notebookAccount: { id: "cloud-owner", email: "owner@example.test", emailVerified: true } });
+    const company = await createCompany(db), service = toolAccessService(db, { paperclipCloudConnector: null });
+    const actor = { actorType: "user" as const, actorId: "board-user" };
+    const connected = await service.connectGalleryApp(company.id, { galleryKey: "paperclip-notebook" }, actor);
+    const authorize = async () => {
+      const start = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+      return service.completeOAuthCallback({ state: new URL(start.authorizationUrl).searchParams.get("state")!, code: fixture.issueAuthorizationCode(start.authorizationUrl),
+        iss: ISSUER, redirectUri: REDIRECT_URI, actor });
+    };
+    await authorize();
+    const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
+    const refresh = () => service.refreshOAuthGrantCredentials({ companyId: company.id, connectionId: connected.connectionId, grantId: grant!.id, forceRefresh: true, actor });
+    await expect(refresh()).rejects.toThrow("Fixture lost the committed rotating refresh response");
+    expect(fixture.requestsTo("/token")).toHaveLength(2);
+    await expect(refresh()).rejects.toMatchObject({ status: 422, details: { code: "oauth_reauthorization_required" } });
+    const [expired] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
+    expect(expired!.status).toBe("needs_reauthorization");
+    await authorize();
+    const [renewed] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
+    expect(renewed).toMatchObject({ status: "active", credentialSecretRefs: expect.any(Array) });
+    expect(renewed!.credentialSecretRefs).toHaveLength(2);
+    await expect(refresh()).resolves.toMatchObject({ status: "active" });
+    expect(fixture.requestsTo("/oauth/revoke")).toEqual([]);
+    expect(fixture.requests.every(call => call.headers["idempotency-key"] === undefined)).toBe(true);
+  });
+
+  it.each(["create response", "upload response", "approval result"])("recovers complete Notebook publication receipts through the real gateway after a lost %s", async (lostResponse) => {
+    await instanceSettingsService(db).updateExperimental({ enablePaperclipNotebook: true });
+    useNotebookFixtureEndpoint();
+    const workspace = await mkdtemp(join(tmpdir(), "notebook-gateway-replay-"));
+    try {
+      const pageId = randomUUID(), deploymentId = randomUUID();
+      const files = Array.from({ length: 20 }, (_, index) => {
+        const path = index === 0 ? "index.html" : `asset-${index}.txt`;
+        const bytes = Buffer.from(`<p>Notebook file ${index}</p>`);
+        return { path, source: path, bytes, size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+      });
+      await Promise.all(files.map(file => writeFile(join(workspace, file.path), file.bytes)));
+      const page = { id: pageId, version: 1 };
+      const ready = { operationId: deploymentId, status: "ready", pageId, shareUrl: "https://notebook.fixture.test/p/report", audience: { mode: "private" } };
+      const plan = { deploymentId, status: "uploading", uploads: files.map(file => ({ path: file.path,
+        url: `https://quarantine.s3.us-east-1.amazonaws.com/${file.path}?${new URLSearchParams({
+          "X-Amz-Algorithm": "AWS4-HMAC-SHA256", "X-Amz-Credential": "ASIAFIXTUREEXAMPLE/20261020/us-east-1/s3/aws4_request",
+          "X-Amz-Date": "20261020T170000Z", "X-Amz-Expires": "900", "X-Amz-Security-Token": `IQoJb3JpZ2luX2VjE${"x".repeat(350)}`,
+          "X-Amz-SignedHeaders": "host;x-amz-checksum-sha256", "X-Amz-Signature": createHash("sha256").update(`ticket:${file.path}`).digest("hex"),
+        })}`, headers: { "content-length": String(file.size), "x-amz-checksum-sha256": Buffer.from(file.sha256, "hex").toString("base64") } })) };
+      expect(Buffer.byteLength(JSON.stringify(plan))).toBeGreaterThan(4096);
+      const receipts = new Map<string, unknown>();
+      const mutationCalls: string[] = [], receiptCalls: string[] = [];
+      const uploaded = new Map<string, Buffer>();
+      const names = ["notebook_create_page", "notebook_begin_upload", "notebook_finalize_upload", "notebook_get_operation"];
+      const fixture = installMcpOAuthFixture({ auth: "oauth", notebookAccount: { id: "cloud-owner", email: "owner@example.test", emailVerified: true },
+        tools: names.map(name => ({ name, inputSchema: { type: "object", additionalProperties: true }, annotations: { readOnlyHint: name === "notebook_get_operation" } })),
+        notebookToolResult(name, arguments_) {
+          if (name === "notebook_get_operation") {
+            if (arguments_.operationId === deploymentId) return ready;
+            const receipt = arguments_.receipt as { kind: string; idempotencyKey: string };
+            receiptCalls.push(receipt.kind);
+            const result = receipts.get(`${receipt.kind}:${receipt.idempotencyKey}`);
+            if (!result) throw new Error("Receipt does not exist");
+            return result;
+          }
+          mutationCalls.push(name);
+          if (name === "notebook_create_page") { receipts.set(`create_page:${arguments_.idempotencyKey}`, page); return page; }
+          if (name === "notebook_begin_upload") { receipts.set(`begin_upload:${arguments_.idempotencyKey}`, plan); return plan; }
+          expect(name).toBe("notebook_finalize_upload");
+          expect(arguments_.deploymentId).toBe(deploymentId);
+          for (const file of files) expect(uploaded.get(file.path)).toEqual(file.bytes);
+          return ready;
+        } });
+      const company = await createCompany(db);
+      const actor = { actorType: "user" as const, actorId: "board-user" };
+      const service = toolAccessService(db, { paperclipCloudConnector: null });
+      const connected = await service.connectGalleryApp(company.id, { galleryKey: "paperclip-notebook", grantKind: "user" }, actor);
+      const start = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+      const completed = await service.completeOAuthCallback({ state: new URL(start.authorizationUrl).searchParams.get("state")!,
+        code: fixture.issueAuthorizationCode(start.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor });
+      const [agent] = await db.insert(agents).values({ companyId: company.id, name: "Notebook publisher", role: "engineer", status: "active", adapterType: "process", adapterConfig: {}, runtimeConfig: {} }).returning();
+      const [issue] = await db.insert(issues).values({ companyId: company.id, title: "Publish Notebook report", status: "in_progress", assigneeAgentId: agent!.id }).returning();
+      const [run] = await db.insert(heartbeatRuns).values({ companyId: company.id, agentId: agent!.id, invocationSource: "assignment", status: "running",
+        responsibleUserId: "board-user", contextSnapshot: { issueId: issue!.id } }).returning();
+      const configure = (ask: boolean, off: boolean) => service.finishGalleryAppConnection(company.id, connected.connectionId, {
+        enabledCatalogEntryIds: completed.catalog.filter(entry => !off || entry.toolName !== "notebook_begin_upload").map(entry => entry.id),
+        askFirstCatalogEntryIds: ask ? completed.catalog.filter(entry => entry.toolName === "notebook_begin_upload").map(entry => entry.id) : [], access: { agentIds: [agent!.id] },
+      }, actor);
+      await configure(lostResponse === "approval result", false);
+      const [profile] = await db.select().from(toolProfiles).where(eq(toolProfiles.profileKey, `app:${connected.connectionId}`));
+      const gateway = createToolGatewayService(db, { toolActionSigningSecret: "notebook-gateway-replay-fixture" });
+      const named = await gateway.createNamedGateway({ companyId: company.id, body: { name: "Notebook publication", profileId: profile!.id, agentId: agent!.id, issueId: issue!.id } });
+      const token = await gateway.createNamedGatewayToken({ companyId: company.id, gatewayId: named.id, body: { name: "Publisher run", subjectType: "heartbeat_run", subjectId: run!.id } });
+      const descriptors = await gateway.listToolsForNamedGateway({ gatewayPublicId: named.gatewayPublicId, bearerToken: token.token });
+      const upstreamNames = new Map(descriptors.map(tool => [tool.name, tool.upstreamToolName]));
+      let droppedCreateResponse = false, droppedUploadResponse = false, uploadAttempts = 0;
+      const replays: { tool: string; result: unknown }[] = [];
+      const assigned = await createAssignedMcpTools({ gatewayPublicId: named.gatewayPublicId, bearerToken: token.token,
+        gateway: { ...gateway, async executeTool(input) {
+          const arguments_ = input.parameters as Record<string, unknown>;
+          const result = await gateway.executeTool({ ...input,
+            ...(lostResponse !== "approval result" && typeof arguments_.idempotencyKey === "string"
+              ? { idempotencyKey: `notebook:${connected.connectionId}:${arguments_.idempotencyKey}` } : {}) });
+          const upstreamName = upstreamNames.get(input.tool)!;
+          if (result.status === "replayed") replays.push({ tool: upstreamName!, result: result.result });
+          if (lostResponse === "create response" && upstreamName === "notebook_create_page" && !droppedCreateResponse) {
+            droppedCreateResponse = true;
+            throw new TypeError("Fixture lost the committed create response");
+          }
+          return result;
+        } } });
+      expect(notebookPublicationClient(assigned).connectionIds()).toContain(connected.connectionId);
+      const settings = instanceSettingsService(db);
+      await settings.updateExperimental({ enablePaperclipNotebook: false });
+      const disabledRequestCount = fixture.requestsTo("/mcp").length;
+      expect(await gateway.listToolsForNamedGateway({ gatewayPublicId: named.gatewayPublicId, bearerToken: token.token })).toEqual([]);
+      await expect(gateway.executeTool({ gatewayPublicId: named.gatewayPublicId, sessionToken: token.token,
+        tool: descriptors[0]!.name, parameters: {} })).rejects.toMatchObject({ reasonCode: "tool_not_found" });
+      const readWhileDisabled = vi.fn();
+      await expect(publishNotebookWorkspaceFiles({ tools: assigned, workspaceRoot: "/runtime-only", executionTargetKind: "remote",
+        readRemoteWorkspaceFile: readWhileDisabled, authorize: async () => undefined,
+        arguments: { connectionId: connected.connectionId, idempotencyKey: "disabled", entryFile: "index.html",
+          files: files.map(({ bytes: _bytes, ...file }) => file) } })).rejects.toThrow("assigned_connection_tool_unavailable");
+      expect(readWhileDisabled).not.toHaveBeenCalled();
+      const intents = connectionIntentService(db);
+      const claims = { sub: agent!.id, company_id: company.id, run_id: run!.id, responsible_user_id: "board-user" };
+      expect((await intents.search(claims, "Paperclip Notebook")).results.some(item => item.service === "paperclip-notebook")).toBe(false);
+      await expect(intents.request(claims, "paperclip-notebook")).rejects.toMatchObject({ status: 404 });
+      expect(fixture.requestsTo("/mcp")).toHaveLength(disabledRequestCount);
+      await settings.updateExperimental({ enablePaperclipNotebook: true });
+
+      const publish = () => publishNotebookWorkspaceFiles({ tools: assigned, workspaceRoot: workspace, authorize: async () => undefined,
+        arguments: { connectionId: connected.connectionId, title: "Report", idempotencyKey: "gateway-receipt", entryFile: "index.html",
+          files: files.map(({ bytes: _bytes, ...file }) => file) },
+        upload: async (url, init) => {
+          uploadAttempts += 1;
+          expect(url.href).toBe(plan.uploads.find(ticket => ticket.path === url.pathname.slice(1))!.url);
+          if (lostResponse === "upload response" && !droppedUploadResponse) { droppedUploadResponse = true; return new Response(null, { status: 503 }); }
+          uploaded.set(url.pathname.slice(1), Buffer.from(init.body as Uint8Array));
+          return new Response(null, { status: 200 });
+        } });
+      if (lostResponse === "approval result") {
+        await expect(publish()).rejects.toMatchObject({ reasonCode: "approval_required" });
+        expect(uploaded.size).toBe(0);
+        const [action] = await db.select().from(toolActionRequests).where(and(eq(toolActionRequests.companyId, company.id), eq(toolActionRequests.status, "pending")));
+        expect(action).toBeDefined();
+        await settings.updateExperimental({ enablePaperclipNotebook: false });
+        const callsBeforeDisabledApproval = fixture.requestsTo("/mcp").length;
+        await expect(gateway.approveActionRequest({ companyId: company.id, actionRequestId: action!.id, actor: { userId: "board-user" } }))
+          .rejects.toMatchObject({ reasonCode: "tool_not_found" });
+        expect(fixture.requestsTo("/mcp")).toHaveLength(callsBeforeDisabledApproval);
+        expect(uploaded.size).toBe(0);
+        await settings.updateExperimental({ enablePaperclipNotebook: true });
+        await gateway.approveActionRequest({ companyId: company.id, actionRequestId: action!.id, actor: { userId: "board-user" } });
+        const [invocation] = await db.select().from(toolInvocations).where(eq(toolInvocations.id, action!.invocationId));
+        expect(invocation).toMatchObject({ status: "succeeded" });
+        expect(Buffer.byteLength(invocation!.resultSummary!.summary!)).toBeLessThan(Buffer.byteLength(JSON.stringify(plan)));
+      } else await expect(publish()).rejects.toThrow(lostResponse === "create response" ? "committed create" : "upload failed");
+      const result = await publish();
+      expect(result).toMatchObject({ status: "ready", pageId, audience: { mode: "private" } });
+      expect(uploaded.size).toBe(files.length);
+      expect(mutationCalls.filter(name => name === "notebook_create_page")).toHaveLength(1);
+      expect(mutationCalls.filter(name => name === "notebook_begin_upload")).toHaveLength(1);
+      if (lostResponse !== "approval result") {
+        expect(receiptCalls).toContain("create_page");
+        expect(replays.some(replay => replay.tool.includes("notebook_create_page"))).toBe(true);
+      }
+      if (lostResponse !== "create response") {
+        expect(receiptCalls).toContain("begin_upload");
+        const replay = replays.find(replay => replay.tool.includes("notebook_begin_upload"))!;
+        if (lostResponse === "upload response") expect(replay.result).toHaveProperty("summary");
+        expect(replay.result).not.toHaveProperty("structuredContent");
+        expect(Buffer.byteLength(JSON.stringify(replay.result))).toBeLessThan(Buffer.byteLength(JSON.stringify(plan)));
+      }
+      const listed = await gateway.listToolsForNamedGateway({ gatewayPublicId: named.gatewayPublicId, bearerToken: token.token });
+      const receiptTool = listed.find(tool => tool.upstreamToolName === "notebook_get_operation")!;
+      const chunks: Buffer[] = [];
+      const logStream = new Writable({ write(chunk, _encoding, done) { chunks.push(Buffer.from(chunk)); done(); } });
+      const app = express().use(express.json()).use(createHttpLogger(pino({ redact: [...HTTP_LOG_REDACT_PATHS] }, logStream)))
+        .use("/api", toolGatewayRoutes(db, gateway));
+      const body = { tool: receiptTool.name, parameters: { receipt: { kind: "begin_upload", idempotencyKey: "gateway-receipt:upload" } } };
+      const modelResult = await request(app).post("/api/tool-gateway/tools/call").set("x-paperclip-tool-gateway-token", token.token)
+        .send({ ...body, privateTransfer: { connectionId: connected.connectionId } }).expect(200);
+      const transported = await request(app).post("/api/tool-gateway/connector-transfers/call").set("x-paperclip-tool-gateway-token", token.token)
+        .send({ ...body, connectionId: connected.connectionId }).expect("Cache-Control", "no-store").expect(200);
+      expect(transported.body.result.data.structuredContent.uploads).toEqual(plan.uploads);
+      await request(app).post("/api/tool-gateway/connector-transfers/call").set("x-paperclip-tool-gateway-token", token.token)
+        .send({ ...body, connectionId: randomUUID() }).expect(403);
+      await request(app).post("/api/tool-gateway/connector-transfers/call").set("x-paperclip-tool-gateway-token", token.token)
+        .send({ ...body, parameters: { operationId: deploymentId }, connectionId: connected.connectionId }).expect(403);
+      await request(app).post("/api/tool-gateway/connector-transfers/call").send({ ...body, connectionId: connected.connectionId }).expect(401);
+      const recorded = JSON.stringify({ modelResult: modelResult.body, httpLogs: Buffer.concat(chunks).toString("utf8"), invocations: await db.select().from(toolInvocations),
+        audit: await db.select().from(toolAccessAuditEvents), events: await db.select().from(toolCallEvents), activity: await db.select().from(activityLog) });
+      for (const ticket of plan.uploads) {
+        expect(recorded).not.toContain(ticket.url);
+        expect(recorded).not.toContain(new URL(ticket.url).searchParams.get("X-Amz-Signature"));
+      }
+      expect(recorded).not.toContain("ASIAFIXTUREEXAMPLE");
+      expect(recorded).not.toContain("IQoJb3JpZ2luX2VjE");
+      expect(Buffer.concat(chunks).toString("utf8")).not.toContain(token.token);
+      const begin = listed.find(tool => tool.upstreamToolName === "notebook_begin_upload")!;
+      const upstreamCalls = mutationCalls.length;
+      await configure(true, false);
+      await expect(gateway.executeTool({ gatewayPublicId: named.gatewayPublicId, sessionToken: token.token, tool: begin.name,
+        parameters: { pageId, expectedVersion: 1, idempotencyKey: "approval-required" } })).rejects.toMatchObject({ reasonCode: "approval_required" });
+      expect(mutationCalls).toHaveLength(upstreamCalls);
+      await configure(false, true);
+      await expect(gateway.executeTool({ gatewayPublicId: named.gatewayPublicId, sessionToken: token.token, tool: begin.name,
+        parameters: { pageId, expectedVersion: 1, idempotencyKey: "off" } })).rejects.toThrow();
+      expect(mutationCalls).toHaveLength(upstreamCalls);
+      const attemptsBeforeOffReplay = uploadAttempts;
+      await expect(publish()).rejects.toThrow();
+      expect(uploadAttempts).toBe(attemptsBeforeOffReplay);
+      await db.update(heartbeatRuns).set({ status: "succeeded" }).where(eq(heartbeatRuns.id, run!.id));
+      await request(app).post("/api/tool-gateway/connector-transfers/call").set("x-paperclip-tool-gateway-token", token.token)
+        .send({ ...body, connectionId: connected.connectionId }).expect(401);
+    } finally { await rm(workspace, { recursive: true, force: true }); }
+  });
 
   it.each(["mcp-oauth", "mcp-api-key"])("connects Fireflies through %s with vaulted credentials and its stable meeting tools", async (methodKey) => {
     // Keep the real catalog method and governance identity; redirect only its

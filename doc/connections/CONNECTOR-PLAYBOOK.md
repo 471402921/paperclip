@@ -721,6 +721,12 @@ as `agentmail_send` rather than extending core tools with provider-specific
 branches. Existing MCP connectors continue to use their normal MCP tool catalog;
 they do not need a duplicate native wrapper just to supply a skill.
 
+For a gated catalog connector, declare `experimentalFeatureKey` in its
+`AppDefinition`. Shared availability checks resolve the saved application key
+and evaluate that feature before setup, discovery, and execution. Keep the
+feature's settings visibility separate from this enforcement. Do not add
+provider-name checks to the gateway or setup screens.
+
 A local-file helper can use the trusted contracts in
 `services/connectors/runtime-tools.ts` and `private-transfer.ts`. The connector
 owns its upload protocol and operation receipts. Shared code supplies approved
