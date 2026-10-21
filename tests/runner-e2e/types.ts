@@ -22,6 +22,7 @@ export type RunnerTaskFlow =
   | "task_workspaces"
   | "automatic_repository"
   | "repository_verification"
+  | "finalization_recovery"
   | "repository_skills"
   | "provider_connection"
   | "plan_task_guidance"

@@ -98,6 +98,37 @@ pnpm test:e2e:runner -- --id legacy-conversion.runner-codex.local.convert-and-de
 pnpm test:e2e:runner -- --id automatic-repository-configured-models.runner-codex.local.automatic-repository-resume --max-automatic-retries 0
 ```
 
+## Finalization recovery
+
+The explicit-only `finalization-recovery` suite has two development cells on
+Daytona: Codex `gpt-6.1-sol` and Claude `claude-opus-5-5`. It uses the production
+hire instructions and one provider admission. A 64 MiB random data file makes
+real workspace export observable; a small registered JSON proof records its
+original size, hash and reference before the interruption.
+
+The observer requires a saved native result and a running workspace-finalization
+operation. The isolated server wrapper rechecks that boundary through public
+APIs, then kills only its previously observed process tree without graceful
+shutdown. This includes the attempt's embedded database; no shared service or
+remote sandbox receives the process signal. Restart uses the same persisted
+instance. A crash outside the required phase or a missed interruption window
+fails; ordinary shutdown and completed work cannot substitute for this fault.
+
+A pass requires recovery of the interrupted workspace operation, the unchanged
+accepted-result digest and original artifact, independently hashed restored
+binary bytes, no additional provider turn or admission, and exactly one final
+reply matched to its delivery receipt and visible download. API reads and
+allowlisted lifecycle evidence stay in the existing report pipeline. The flow
+uses no private Runner hook or direct database write. These API-key/per-turn
+checks do not qualify deployed staging, warm reuse, or Slack delivery. One
+attempt has 1,000-cent company and agent hard stops; the binary is retained in
+the fixture workspace, not uploaded as a deliverable.
+
+```sh
+pnpm test:e2e:runner -- --list --suite finalization-recovery
+pnpm test:e2e:runner -- --id finalization-recovery.runner-codex.daytona.preserve-result-on-restart --max-automatic-retries 0
+```
+
 ## Necessary free-text question
 
 The explicit-only `necessary-question` suite has four development cells: the
