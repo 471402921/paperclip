@@ -19,7 +19,7 @@ export const HTTP_LOG_REDACT_PATHS = [
   'req.headers["x-paperclip-cloud-inspection"]',
   // Runtime GitHub capabilities authorize credential acquisition for a live run.
   'req.headers["x-paperclip-github-capability"]',
-  // Local Notebook file transfer uses the same bounded agent gateway session.
+  // Connector file transfers use the same bounded agent gateway session.
   'req.headers["x-paperclip-tool-gateway-token"]',
   // Telegram's optional webhook verification header is a reusable bearer
   // secret sent on every provider callback.

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CommandManagedRuntimeRunner } from "@paperclipai/adapter-utils/command-managed-runtime";
 import { MAX_REMOTE_DELIVERABLE_BYTES, readVerifiedRemoteWorkspaceFile } from "./remote-deliverable-file.js";
-import { publishNotebookWorkspaceFiles } from "./notebook-publishing.js";
+import { publishNotebookWorkspaceFiles } from "../connectors/paperclip-notebook/publishing.js";
 
 const digest = (body: Buffer) => createHash("sha256").update(body).digest("hex");
 const image = "node:24-bookworm-slim";
@@ -221,10 +221,10 @@ describe.skipIf(!hasLinuxNode)("remote deliverable real Linux descriptor reads",
     captureLimit = Math.min(4 * 1024 * 1024, 4 * Math.ceil(attachmentMiB * 1024 * 1024 / 3));
     const maximum = Buffer.alloc(sizeMiB * 1024 * 1024, 39);
     await writeFile(join(workspaceRoot, "report.html"), maximum);
-    const executeNotebookTool = vi.fn(async (_connection: string, name: string) => name === "notebook_create_page" ? { id: "page", version: 1 }
+    const callConnectionTool = vi.fn(async (_connection: string, name: string) => ({ status: "completed", result: { data: { structuredContent: name === "notebook_create_page" ? { id: "page", version: 1 }
       : name === "notebook_begin_upload" ? { deploymentId: "deployment", uploads: [{ path: "report.html", url: "https://quarantine.example/report" }] }
-      : { operationId: "deployment", status: "ready" });
-    const tools = { notebookConnectionIds: () => ["notebook"], assertNotebookConnectionAvailable: async () => undefined, executeNotebookTool } as unknown as Parameters<typeof publishNotebookWorkspaceFiles>[0]["tools"];
+      : { operationId: "deployment", status: "ready" } } } }));
+    const tools = { connectionTools: () => ["notebook_begin_upload", "notebook_finalize_upload"].map(upstreamToolName => ({ applicationKey: "paperclip-notebook", connectionId: "notebook", upstreamToolName })), assertConnectionTools: async () => undefined, callConnectionTool } as unknown as Parameters<typeof publishNotebookWorkspaceFiles>[0]["tools"];
     const upload = vi.fn(async (_url: URL, init: RequestInit) => {
       expect(Buffer.from(init.body as Uint8Array).equals(maximum)).toBe(true);
       return new Response(null, { status: 200 });
@@ -238,7 +238,7 @@ describe.skipIf(!hasLinuxNode)("remote deliverable real Linux descriptor reads",
         files: [{ path: "report.html", source: read.contentRef, size: read.byteSize, sha256: read.sha256 }] },
     })).resolves.toMatchObject({ status: "ready" });
     expect(upload).toHaveBeenCalledOnce();
-    expect(executeNotebookTool.mock.calls.map(([, name]) => name)).toEqual(["notebook_create_page", "notebook_begin_upload", "notebook_finalize_upload"]);
+    expect(callConnectionTool.mock.calls.map(([, name]) => name)).toEqual(["notebook_create_page", "notebook_begin_upload", "notebook_finalize_upload"]);
     expect(runner.execute).toHaveBeenCalledTimes(2 * Math.ceil(sizeMiB / Math.min(2, attachmentMiB)));
   }, 60_000);
 

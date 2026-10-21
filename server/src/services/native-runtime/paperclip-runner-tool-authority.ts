@@ -24,7 +24,7 @@ import { agentCommentaryToolInputSchema } from "@paperclipai/shared";
 import { submitAgentCommentary } from "../agent-commentary.js";
 import type { createAssignedMcpTools } from "./assigned-mcp-tools.js";
 import { captureRunnerToolResult, fitRunnerToolResultPage, READ_TOOL_RESULT, READ_TOOL_RESULT_DEFINITION, readToolResultSchema, RUNNER_TOOL_RESULT_MAX_BYTES } from "./runner-tool-results.js";
-import { NOTEBOOK_PUBLISH_TOOL, publishNotebookWorkspaceFiles } from "./notebook-publishing.js";
+import { connectorWorkspaceTools } from "../connectors/runtime-tools.js";
 import { assertAssignableAgent } from "../agent-assignability.js";
 import { approvalReadSqlCondition, canActorReadApproval, authorizationService, issueReadSqlCondition, type AuthorizationActor } from "../authorization.js";
 import { resolveCoreTrustPreset } from "../trust-preset-resolver.js";
@@ -319,9 +319,7 @@ export class PaperclipRunnerToolAuthority {
     if (this.binding.taskAttachmentRead) definitions.push(...TASK_ATTACHMENT_DEFINITIONS);
     if (!this.binding.firstPartyOnly && !this.binding.museRuntime && workMode === "standard" && this.binding.workspaceRoot
       && (!this.binding.dotRuntime || this.binding.workspaceBridge)
-      && this.binding.assignedMcpTools?.notebookConnectionIds().length) definitions.push({ ...NOTEBOOK_PUBLISH_TOOL,
-        inputSchema: { ...NOTEBOOK_PUBLISH_TOOL.inputSchema, properties: { ...NOTEBOOK_PUBLISH_TOOL.inputSchema.properties,
-          connectionId: { type: "string", enum: this.binding.assignedMcpTools.notebookConnectionIds() } } } });
+      && this.binding.assignedMcpTools) definitions.push(...connectorWorkspaceTools.definitions(this.binding.assignedMcpTools));
     definitions.push(...runnerBridgeDefinitions({ workspace: !this.binding.firstPartyOnly && !!this.binding.workspaceRoot && this.binding.workspaceBridge === true, skills: !!this.binding.runtimeContext, api: runnerApiToolsEnabled(this.binding.companyId, this.binding.apiToolsEnabled), mode: workMode }));
     const connectionTools = this.binding.firstPartyOnly ? [] : [...RUNTIME_CONNECTION_TOOL_DEFINITIONS,
       ...(this.binding.connectorAssignments ?? []).flatMap((assignment) => assignment.tools)];
@@ -373,18 +371,17 @@ export class PaperclipRunnerToolAuthority {
         throw forbidden("This review run may only inspect the assigned task and resolve its review.");
       }
     }
-    if (call.tool === NOTEBOOK_PUBLISH_TOOL.name) {
+    if (connectorWorkspaceTools.has(call.tool)) {
       const authorize = async () => {
         const current = await this.#boundContext();
         if (current.issue.workMode !== "standard" || this.binding.workMode && this.binding.workMode !== "standard"
           || this.binding.firstPartyOnly || this.binding.museRuntime || !this.binding.workspaceRoot || !this.binding.assignedMcpTools)
-          throw forbidden("Notebook file publication is unavailable to this run");
+          throw forbidden("Connector workspace tools are unavailable to this run");
         if (this.binding.dotRuntime && (!this.binding.workspaceBridge || current.actor.adapterConfig?.dotWorkspaceAccess !== true))
-          throw forbidden("Dot workspace access is required to publish Notebook files");
+          throw forbidden("Dot workspace access is required for connector workspace tools");
         await this.binding.assertBridgeAuthority?.();
       };
-      await authorize();
-      return publishNotebookWorkspaceFiles({ arguments: call.arguments, tools: this.binding.assignedMcpTools!,
+      return connectorWorkspaceTools.execute(call.tool, call.arguments, { tools: this.binding.assignedMcpTools!,
         workspaceRoot: this.binding.workspaceRoot!, executionTargetKind: this.binding.executionTargetKind,
         readRemoteWorkspaceFile: this.binding.readRemoteWorkspaceFile, authorize });
     }

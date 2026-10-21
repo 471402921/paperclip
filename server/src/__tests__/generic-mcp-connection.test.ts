@@ -58,7 +58,8 @@ import { ComposioApiError, type ComposioClient } from "../services/composio.js";
 import { createComposioSessionManager } from "../services/composio-session-manager.js";
 import { createToolGatewayService } from "../services/tool-gateway.js";
 import { createAssignedMcpTools } from "../services/native-runtime/assigned-mcp-tools.js";
-import { publishNotebookWorkspaceFiles } from "../services/native-runtime/notebook-publishing.js";
+import { notebookPublicationClient } from "../services/connectors/paperclip-notebook/publication-client.js";
+import { publishNotebookWorkspaceFiles } from "../services/connectors/paperclip-notebook/publishing.js";
 import { toolAccessPolicyService } from "../services/tool-access-policy.js";
 import { toolAccessRoutes } from "../routes/tool-access.js";
 import { toolGatewayRoutes } from "../routes/tool-gateway.js";
@@ -100,6 +101,9 @@ type FixtureOptions = {
   notebookAccount?: { id: string; email: string; emailVerified: boolean };
   notebookToolResult?: (name: string, arguments_: Record<string, unknown>) => unknown | Promise<unknown>;
   revocationStatus?: () => number;
+  revocationEndpoint?: string;
+  revocationEndpointAuthMethods?: string[];
+  dcrClientSecret?: string;
   dropFirstRefreshResponse?: boolean;
   dropFirstRefreshResponseBody?: boolean;
   scopes?: string[];
@@ -200,6 +204,8 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
     issuer: ISSUER,
     authorization_endpoint: options.authorizationEndpoint ?? `${ISSUER}/authorize`,
     token_endpoint: options.tokenEndpoint ?? `${ISSUER}/token`,
+    ...((options.revocationEndpoint || options.notebookAccount) ? { revocation_endpoint: options.revocationEndpoint ?? `${MCP_ORIGIN}/oauth/revoke` } : {}),
+    ...(options.revocationEndpointAuthMethods ? { revocation_endpoint_auth_methods_supported: options.revocationEndpointAuthMethods } : {}),
     ...(options.dcr === false ? {} : { registration_endpoint: `${ISSUER}/register` }),
     ...(options.cimd ? { client_id_metadata_document_supported: true } : {}),
     code_challenge_methods_supported: ["S256"],
@@ -261,7 +267,7 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
     const servedMetadataUrl = options.wellKnownStyle === "oidc-suffix" ? oidcSuffixUrl : rfc8414Url;
     if (href === servedMetadataUrl) return jsonResponse(authorizationServerMetadata());
 
-    if (href === `${MCP_ORIGIN}/oauth/revoke` && method === "POST" && options.notebookAccount) {
+    if (href === (options.revocationEndpoint ?? `${MCP_ORIGIN}/oauth/revoke`) && method === "POST" && (options.revocationEndpoint || options.notebookAccount)) {
       return jsonResponse({}, options.revocationStatus?.() ?? 200);
     }
 
@@ -273,6 +279,7 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
       const requested = parsedBody as Record<string, unknown>;
       return jsonResponse({
         client_id: "fixture-dcr-client",
+        ...(options.dcrClientSecret ? { client_secret: options.dcrClientSecret } : {}),
         // A conforming server echoes back what it registered, and Paperclip
         // requires its own callback even when the provider adds a routing URI.
         redirect_uris: [
@@ -471,11 +478,11 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     const gallery = await request(app).get(`/api/companies/${company.id}/tools/gallery`).expect(200);
     expect(gallery.body.apps.some((item: { slug: string }) => item.slug === "paperclip-notebook")).toBe(false);
     await expect(service.connectGalleryApp(company.id, { galleryKey: "paperclip-notebook", grantKind: "user" }, actor))
-      .rejects.toMatchObject({ status: 403, details: { code: "paperclip_notebook_disabled" } });
+      .rejects.toMatchObject({ status: 403, details: { code: "connector_disabled" } });
     await request(app).get(`/api/companies/${company.id}/tools/apps/paperclip-notebook/preflight`).expect(403);
     await expect(service.createConnection(company.id, { name: "Notebook bypass", transport: "mcp_remote", config: {
       sourceTemplateKey: "paperclip-notebook", url: MCP_URL,
-    } }, actor)).rejects.toMatchObject({ status: 403, details: { code: "paperclip_notebook_disabled" } });
+    } }, actor)).rejects.toMatchObject({ status: 403, details: { code: "connector_disabled" } });
     expect(await db.select().from(toolConnections).where(eq(toolConnections.companyId, company.id))).toEqual([]);
     expect(await db.select().from(companySecrets).where(eq(companySecrets.companyId, company.id))).toEqual([]);
     await settings.updateExperimental({ enablePaperclipNotebook: true });
@@ -493,16 +500,16 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     await settings.updateExperimental({ enablePaperclipNotebook: false });
     await expect(service.completeOAuthCallback({ state: new URL(start.authorizationUrl).searchParams.get("state")!,
       code: fixture.issueAuthorizationCode(start.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor }))
-      .rejects.toMatchObject({ status: 403, details: { code: "paperclip_notebook_disabled" } });
+      .rejects.toMatchObject({ status: 403, details: { code: "connector_disabled" } });
     expect(fixture.requestsTo("/token")).toHaveLength(0);
     await expect(service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor }))
-      .rejects.toMatchObject({ status: 403, details: { code: "paperclip_notebook_disabled" } });
+      .rejects.toMatchObject({ status: 403, details: { code: "connector_disabled" } });
     await expect(service.reconnectGalleryApp(connected.connectionId, company.id, { credentialValues: {} }, actor))
-      .rejects.toMatchObject({ status: 403, details: { code: "paperclip_notebook_disabled" } });
+      .rejects.toMatchObject({ status: 403, details: { code: "connector_disabled" } });
     await expect(service.connectGalleryApp(company.id, { resumeConnectionId: connected.connectionId, grantKind: "user" }, actor))
-      .rejects.toMatchObject({ status: 403, details: { code: "paperclip_notebook_disabled" } });
+      .rejects.toMatchObject({ status: 403, details: { code: "connector_disabled" } });
     await expect(service.finishGalleryAppConnection(company.id, connected.connectionId, { enabledCatalogEntryIds: [], askFirstCatalogEntryIds: [], access: { agentIds: [] } }, actor))
-      .rejects.toMatchObject({ status: 403, details: { code: "paperclip_notebook_disabled" } });
+      .rejects.toMatchObject({ status: 403, details: { code: "connector_disabled" } });
     await expect(service.archiveConnection(connected.connectionId, company.id, actor)).resolves.toMatchObject({ connection: { status: "archived" } });
   });
 
@@ -590,21 +597,21 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     const mcpRequestsWhileOff = fixture.requestsTo("/mcp").length;
     const secretAccessBeforeOff = await db.select({ id: secretAccessEvents.id }).from(secretAccessEvents);
     await expect(service.checkHealth(connected.connectionId, actor))
-      .rejects.toMatchObject({ status: 403, details: { code: "paperclip_notebook_disabled" } });
+      .rejects.toMatchObject({ status: 403, details: { code: "connector_disabled" } });
     await expect(service.refreshCatalog(connected.connectionId, actor))
-      .rejects.toMatchObject({ status: 403, details: { code: "paperclip_notebook_disabled" } });
+      .rejects.toMatchObject({ status: 403, details: { code: "connector_disabled" } });
     expect(fixture.requestsTo("/token")).toHaveLength(tokenRequestsWhileOff);
     expect(fixture.requestsTo("/mcp")).toHaveLength(mcpRequestsWhileOff);
     expect(await db.select({ id: secretAccessEvents.id }).from(secretAccessEvents)).toEqual(secretAccessBeforeOff);
     const removed = await service.archiveConnection(connected.connectionId, company.id, actor);
-    expect(removed.removal.notebookRevocationPending).toBe(true);
+    expect(removed.removal.oauthRevocationPending).toBe(true);
     expect(removed.connection.status).toBe("archived");
     await expect(decision("notebook_publish")).resolves.toMatchObject({ allowed: false });
     const [pendingGrant] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
     expect(pendingGrant!.status).toBe("revoked");
     expect(pendingGrant!.credentialSecretRefs).toHaveLength(2);
     revocationStatus = 200;
-    await expect(service.sweepNotebookRevocations()).resolves.toEqual({ checked: 1, pending: 0 });
+    await expect(service.sweepOAuthRevocations()).resolves.toEqual({ checked: 1, pending: 0 });
     const [clearedGrant] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
     expect(clearedGrant!.credentialSecretRefs).toEqual([]);
     expect(fixture.requestsTo("/oauth/revoke")).toHaveLength(2);
@@ -623,13 +630,13 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     expect(pendingIndividual!.credentialSecretRefs.map(ref => ref.secretId)).toEqual(renewedSecretIds);
     expect(await db.select().from(companySecrets).where(inArray(companySecrets.id, renewedSecretIds))).toHaveLength(2);
     revocationStatus = 200;
-    await expect(toolAccessService(serviceDb, { paperclipCloudConnector: null }).sweepNotebookRevocations()).resolves.toEqual({ checked: 1, pending: 0 });
+    await expect(toolAccessService(serviceDb, { paperclipCloudConnector: null }).sweepOAuthRevocations()).resolves.toEqual({ checked: 1, pending: 0 });
     const [revokedGrant] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
     expect(revokedGrant).toMatchObject({ status: "revoked", credentialSecretRefs: [] });
     const deletedSecrets = await db.select().from(companySecrets).where(inArray(companySecrets.id, renewedSecretIds));
     expect(deletedSecrets).toEqual([]);
     const [revokedConnection] = await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId));
-    expect(revokedConnection!.config.notebookRevocationPending).toBe(false);
+    expect(revokedConnection!.config.oauthRevocationPending).toBe(false);
   });
 
   it("does not let a stale Notebook revocation sweep remove a reconnected account", async () => {
@@ -660,11 +667,11 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
       await staleSweepReleased;
       return transaction(...args);
     });
-    const staleSweep = service.sweepNotebookRevocations();
+    const staleSweep = service.sweepOAuthRevocations();
     try {
       await staleSweepPaused;
       const otherService = toolAccessService(db, { paperclipCloudConnector: null });
-      await expect(otherService.sweepNotebookRevocations()).resolves.toEqual({ checked: 1, pending: 0 });
+      await expect(otherService.sweepOAuthRevocations()).resolves.toEqual({ checked: 1, pending: 0 });
       await otherService.connectGalleryApp(company.id, { galleryKey: "paperclip-notebook", applicationId: connected.application.id, grantKind: "user" }, actor);
       await authorize();
     } finally { releaseStaleSweep(); }
@@ -698,8 +705,8 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
     await service.revokeConnectionGrant(connected.connectionId, grant!.id, actor);
     const [connection] = await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId));
-    expect(connection).toMatchObject({ status: "active", config: { notebookRevocationPending: false } });
-    await expect(finish(staleSignIn.authorizationUrl)).rejects.toMatchObject({ details: { code: "notebook_authorization_revoked" } });
+    expect(connection).toMatchObject({ status: "active", config: { oauthRevocationPending: false } });
+    await expect(finish(staleSignIn.authorizationUrl)).rejects.toMatchObject({ details: { code: "oauth_authorization_revoked" } });
     const [revoked] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
     expect(revoked).toMatchObject({ status: "revoked", credentialSecretRefs: [] });
     // A new sign-in started after revocation is an intentional reconnect.
@@ -793,7 +800,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
           }
           return result;
         } } });
-      expect(assigned.notebookConnectionIds()).toContain(connected.connectionId);
+      expect(notebookPublicationClient(assigned).connectionIds()).toContain(connected.connectionId);
       const settings = instanceSettingsService(db);
       await settings.updateExperimental({ enablePaperclipNotebook: false });
       const disabledRequestCount = fixture.requestsTo("/mcp").length;
@@ -804,7 +811,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
       await expect(publishNotebookWorkspaceFiles({ tools: assigned, workspaceRoot: "/runtime-only", executionTargetKind: "remote",
         readRemoteWorkspaceFile: readWhileDisabled, authorize: async () => undefined,
         arguments: { connectionId: connected.connectionId, idempotencyKey: "disabled", entryFile: "index.html",
-          files: files.map(({ bytes: _bytes, ...file }) => file) } })).rejects.toThrow("assigned_notebook_tool_unavailable");
+          files: files.map(({ bytes: _bytes, ...file }) => file) } })).rejects.toThrow("assigned_connection_tool_unavailable");
       expect(readWhileDisabled).not.toHaveBeenCalled();
       const intents = connectionIntentService(db);
       const claims = { sub: agent!.id, company_id: company.id, run_id: run!.id, responsible_user_id: "board-user" };
@@ -864,15 +871,15 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
         .use("/api", toolGatewayRoutes(db, gateway));
       const body = { tool: receiptTool.name, parameters: { receipt: { kind: "begin_upload", idempotencyKey: "gateway-receipt:upload" } } };
       const modelResult = await request(app).post("/api/tool-gateway/tools/call").set("x-paperclip-tool-gateway-token", token.token)
-        .send({ ...body, notebookUploadTransport: { connectionId: connected.connectionId } }).expect(200);
-      const transported = await request(app).post("/api/tool-gateway/notebook/uploads/call").set("x-paperclip-tool-gateway-token", token.token)
+        .send({ ...body, privateTransfer: { connectionId: connected.connectionId } }).expect(200);
+      const transported = await request(app).post("/api/tool-gateway/connector-transfers/call").set("x-paperclip-tool-gateway-token", token.token)
         .send({ ...body, connectionId: connected.connectionId }).expect("Cache-Control", "no-store").expect(200);
       expect(transported.body.result.data.structuredContent.uploads).toEqual(plan.uploads);
-      await request(app).post("/api/tool-gateway/notebook/uploads/call").set("x-paperclip-tool-gateway-token", token.token)
+      await request(app).post("/api/tool-gateway/connector-transfers/call").set("x-paperclip-tool-gateway-token", token.token)
         .send({ ...body, connectionId: randomUUID() }).expect(403);
-      await request(app).post("/api/tool-gateway/notebook/uploads/call").set("x-paperclip-tool-gateway-token", token.token)
+      await request(app).post("/api/tool-gateway/connector-transfers/call").set("x-paperclip-tool-gateway-token", token.token)
         .send({ ...body, parameters: { operationId: deploymentId }, connectionId: connected.connectionId }).expect(403);
-      await request(app).post("/api/tool-gateway/notebook/uploads/call").send({ ...body, connectionId: connected.connectionId }).expect(401);
+      await request(app).post("/api/tool-gateway/connector-transfers/call").send({ ...body, connectionId: connected.connectionId }).expect(401);
       const recorded = JSON.stringify({ modelResult: modelResult.body, httpLogs: Buffer.concat(chunks).toString("utf8"), invocations: await db.select().from(toolInvocations),
         audit: await db.select().from(toolAccessAuditEvents), events: await db.select().from(toolCallEvents), activity: await db.select().from(activityLog) });
       for (const ticket of plan.uploads) {
@@ -896,9 +903,89 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
       await expect(publish()).rejects.toThrow();
       expect(uploadAttempts).toBe(attemptsBeforeOffReplay);
       await db.update(heartbeatRuns).set({ status: "succeeded" }).where(eq(heartbeatRuns.id, run!.id));
-      await request(app).post("/api/tool-gateway/notebook/uploads/call").set("x-paperclip-tool-gateway-token", token.token)
+      await request(app).post("/api/tool-gateway/connector-transfers/call").set("x-paperclip-tool-gateway-token", token.token)
         .send({ ...body, connectionId: connected.connectionId }).expect(401);
     } finally { await rm(workspace, { recursive: true, force: true }); }
+  });
+
+  it("retains a confidential client used by another active grant while generic revocation fences stale callbacks", async () => {
+    const fixture = installMcpOAuthFixture({ auth: "oauth", revocationEndpoint: `${ISSUER}/vendor/disconnect`,
+      dcrClientSecret: "fixture-shared-registration-secret", tokenEndpointAuthMethods: ["client_secret_basic"] });
+    const company = await createCompany(db);
+    await db.insert(companyMemberships).values({ companyId: company.id, principalType: "user", principalId: "second-user", status: "active", membershipRole: "admin" });
+    const service = toolAccessService(db, { paperclipCloudConnector: null });
+    const firstActor = { actorType: "user" as const, actorId: "board-user" }, secondActor = { actorType: "user" as const, actorId: "second-user" };
+    const connected = await service.connectGalleryApp(company.id, { link: MCP_URL, name: "Independent MCP", grantKind: "organization" }, firstActor);
+    const start = (actor: typeof firstActor) => service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, subjectUserId: actor.actorId, actor });
+    const finish = (authorizationUrl: string, actor: typeof firstActor) => service.completeOAuthCallback({ state: new URL(authorizationUrl).searchParams.get("state")!, code: fixture.issueAuthorizationCode(authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor });
+    await finish((await start(firstActor)).authorizationUrl, firstActor);
+    await finish((await start(secondActor)).authorizationUrl, secondActor);
+    const grants = await db.select().from(connectionGrants).where(and(eq(connectionGrants.connectionId, connected.connectionId), eq(connectionGrants.kind, "user")));
+    expect(grants).toHaveLength(2);
+    const first = grants.find(grant => grant.subjectUserId === firstActor.actorId)!, second = grants.find(grant => grant.subjectUserId === secondActor.actorId)!;
+    const saved = await service.getConnection(connected.connectionId, company.id), clientRef = saved.credentialSecretRefs.find(ref => ref.configPath === "oauth.client_secret")!;
+    for (const grant of grants) await db.update(connectionGrants).set({ credentialSecretRefs: [...grant.credentialSecretRefs, clientRef] }).where(eq(connectionGrants.id, grant.id));
+    const stale = await start(firstActor);
+    await service.revokeConnectionGrant(connected.connectionId, first.id, firstActor);
+    await expect(finish(stale.authorizationUrl, firstActor)).rejects.toMatchObject({ details: { code: "oauth_authorization_revoked" } });
+    expect(await db.select().from(companySecrets).where(eq(companySecrets.id, clientRef.secretId))).toHaveLength(1);
+    const [active] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, second.id));
+    expect(active!.status).toBe("active");
+    expect(active!.credentialSecretRefs).toContainEqual(clientRef);
+    await expect(service.refreshCatalog(connected.connectionId, secondActor)).resolves.toMatchObject({ connection: { status: "active" } });
+    expect(fixture.requestsTo("/vendor/disconnect")).toHaveLength(1);
+  });
+
+  it.each(["advertised", "legacy", "unsupported"])("uses advertised generic OAuth revocation metadata without provider-name routing (endpoint=%s)", async mode => {
+    const advertised = mode !== "unsupported";
+    let status = 503;
+    const revocationEndpoint = `${ISSUER}/vendor/disconnect`;
+    const fixture = installMcpOAuthFixture({ auth: "oauth", ...(advertised ? { revocationEndpoint } : {}),
+      dcrClientSecret: "fixture-registration-secret", tokenEndpointAuthMethods: [mode === "legacy" ? "client_secret_post" : "client_secret_basic"],
+      revocationEndpointAuthMethods: ["client_secret_basic"], revocationStatus: () => status });
+    const company = await createCompany(db);
+    const serviceDb = createDb(externalTestDatabaseUrl ?? tempDb!.connectionString, { maxConnections: 1 });
+    const service = toolAccessService(serviceDb, { paperclipCloudConnector: null });
+    const actor = { actorType: "user" as const, actorId: "board-user" };
+    const connected = await service.connectGalleryApp(company.id, { link: MCP_URL, name: "Independent MCP", grantKind: "user" }, actor);
+    const start = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+    await service.completeOAuthCallback({ state: new URL(start.authorizationUrl).searchParams.get("state")!, code: fixture.issueAuthorizationCode(start.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor });
+    const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
+    const saved = await service.getConnection(connected.connectionId, company.id);
+    const clientRef = saved.credentialSecretRefs.find(ref => ref.configPath === "oauth.client_secret")!;
+    expect(clientRef).toBeDefined();
+    const staleStart = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+    if (mode === "legacy") {
+      const current = await service.getConnection(connected.connectionId, company.id);
+      const oauth = { ...(current.config.oauth as Record<string, unknown>) };
+      expect(oauth.clientTokenEndpointAuthMethod).toBe("client_secret_post");
+      delete oauth.revocationUrl;
+      delete oauth.revocationEndpointAuthMethodsSupported;
+      const legacyConfig = { ...current.config, oauth };
+      await db.update(toolConnections).set({ config: legacyConfig, transportConfig: legacyConfig }).where(eq(toolConnections.id, connected.connectionId));
+    }
+    const removed = await service.archiveConnection(connected.connectionId, company.id, actor);
+    if (advertised) {
+      expect(removed.removal.oauthRevocationPending).toBe(true);
+      const [pending] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
+      expect(pending!.credentialSecretRefs).toHaveLength(2);
+      expect(removed.connection.credentialSecretRefs).toContainEqual(clientRef);
+      expect(removed.removal.credentialRefsCleared).toBe(0);
+      expect(await db.select().from(companySecrets).where(eq(companySecrets.id, clientRef.secretId))).toHaveLength(1);
+      expect(fixture.requestsTo("/vendor/disconnect")).toHaveLength(1);
+      expect(fixture.requestsTo("/vendor/disconnect")[0]!.headers.authorization).toMatch(/^Basic /);
+      status = 200;
+      await expect(service.sweepOAuthRevocations()).resolves.toEqual({ checked: 1, pending: 0 });
+      expect(fixture.requestsTo("/vendor/disconnect")).toHaveLength(2);
+      const [cleared] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
+      expect(cleared!.credentialSecretRefs).toEqual([]);
+      expect(await db.select().from(companySecrets).where(eq(companySecrets.id, clientRef.secretId))).toEqual([]);
+    } else {
+      expect(removed.removal.oauthRevocationPending).not.toBe(true);
+      expect(fixture.requestsTo("/vendor/disconnect")).toEqual([]);
+      expect(fixture.requestsTo("/oauth/revoke")).toEqual([]);
+    }
+    await expect(service.completeOAuthCallback({ state: new URL(staleStart.authorizationUrl).searchParams.get("state")!, code: fixture.issueAuthorizationCode(staleStart.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor })).rejects.toBeDefined();
   });
 
   it.each(["mcp-oauth", "mcp-api-key"])("connects Fireflies through %s with vaulted credentials and its stable meeting tools", async (methodKey) => {

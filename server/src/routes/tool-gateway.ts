@@ -571,8 +571,8 @@ export function toolGatewayRoutes(db: Db, toolGateway: ToolGatewayService) {
 
   // This route is consumed only by the local-file publisher. The ordinary MCP
   // and tools/call routes cannot opt out of model/event redaction.
-  const callTool = (notebookUploadTransport: boolean) => async (req: Request, res: Response) => {
-    if (notebookUploadTransport) res.set("Cache-Control", "no-store");
+  const callTool = (privateTransfer: boolean) => async (req: Request, res: Response) => {
+    if (privateTransfer) res.set("Cache-Control", "no-store");
     try {
       const token = gatewayToken(req);
       if (!token) {
@@ -591,8 +591,8 @@ export function toolGatewayRoutes(db: Db, toolGateway: ToolGatewayService) {
         res.status(400).json({ error: '"tool" is required and must be a string' });
         return;
       }
-      if (notebookUploadTransport && (typeof body.connectionId !== "string" || !uuidPattern.test(body.connectionId))) {
-        res.status(400).json({ error: 'A Notebook connection ID is required for local upload transport' });
+      if (privateTransfer && (typeof body.connectionId !== "string" || !uuidPattern.test(body.connectionId))) {
+        res.status(400).json({ error: 'A connection ID is required for private transfer' });
         return;
       }
       const toolName = body.tool;
@@ -606,7 +606,7 @@ export function toolGatewayRoutes(db: Db, toolGateway: ToolGatewayService) {
           typeof body.approvedActionRequestId === "string" ? body.approvedActionRequestId : null,
         idempotencyKey: typeof body.idempotencyKey === "string" ? body.idempotencyKey : null,
         callerHeaders: callerHeaders(req),
-        ...(notebookUploadTransport ? { notebookUploadTransport: { connectionId: body.connectionId as string } } : {}),
+        ...(privateTransfer ? { privateTransfer: { connectionId: body.connectionId as string } } : {}),
       }));
       res.json(result);
     } catch (err) {
@@ -614,7 +614,7 @@ export function toolGatewayRoutes(db: Db, toolGateway: ToolGatewayService) {
     }
   };
   router.post("/tool-gateway/tools/call", callTool(false));
-  router.post("/tool-gateway/notebook/uploads/call", callTool(true));
+  router.post("/tool-gateway/connector-transfers/call", callTool(true));
 
   router.post("/tool-gateway/action-requests/:id/approve", async (req, res) => {
     try {

@@ -3,7 +3,7 @@ import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { publishNotebookWorkspaceFiles } from "./notebook-publishing.js";
+import { publishNotebookWorkspaceFiles } from "../connectors/paperclip-notebook/publishing.js";
 import { createAssignedMcpTools } from "./assigned-mcp-tools.js";
 import { ToolGatewayHttpError, type ToolGatewayDescriptor, type ToolGatewayService } from "../tool-gateway.js";
 import type { CommandManagedRuntimeRunner } from "@paperclipai/adapter-utils/command-managed-runtime";
@@ -38,7 +38,7 @@ describe("native Notebook workspace publication", () => {
     expect(result).toMatchObject({ status: "ready", audience: { mode: "private" } });
     expect(f.uploaded).toEqual([body]);
     expect(f.executeTool.mock.calls.map(([call]) => call.tool)).toEqual(["gateway:notebook_create_page", "gateway:notebook_begin_upload", "gateway:notebook_finalize_upload"]);
-    expect(f.executeTool.mock.calls[1][0]).toMatchObject({ gatewayPublicId: "selected-gateway", sessionToken: "controller-only-credential", notebookUploadTransport: { connectionId: "notebook" }, parameters: { assets: [{ path: "index.html", size: body.length, sha256: digest(body) }] } });
+    expect(f.executeTool.mock.calls[1][0]).toMatchObject({ gatewayPublicId: "selected-gateway", sessionToken: "controller-only-credential", privateTransfer: { connectionId: "notebook" }, parameters: { assets: [{ path: "index.html", size: body.length, sha256: digest(body) }] } });
     expect(f.upload.mock.calls[0][1]).toMatchObject({ method: "PUT", headers: { "x-upload-checksum": digest(body) }, redirect: "error", credentials: "omit" });
     expect(JSON.stringify(result)).not.toMatch(/temporary|controller-only|s3\.us-east/);
   });
@@ -46,7 +46,7 @@ describe("native Notebook workspace publication", () => {
     const f = await fixture(), readRemoteWorkspaceFile = vi.fn();
     vi.mocked(f.gateway.listToolsForNamedGateway).mockResolvedValue([]);
     await expect(publishNotebookWorkspaceFiles({ ...f, arguments: arguments_(), workspaceRoot: "/runtime-only",
-      executionTargetKind: "remote", readRemoteWorkspaceFile })).rejects.toThrow("assigned_notebook_tool_unavailable");
+      executionTargetKind: "remote", readRemoteWorkspaceFile })).rejects.toThrow("assigned_connection_tool_unavailable");
     expect(readRemoteWorkspaceFile).not.toHaveBeenCalled();
     expect(f.executeTool).not.toHaveBeenCalled();
     expect(f.upload).not.toHaveBeenCalled();

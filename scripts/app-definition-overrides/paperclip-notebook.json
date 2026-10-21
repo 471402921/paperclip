@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "slug": "paperclip-notebook",
+  "experimentalFeatureKey": "enablePaperclipNotebook",
   "name": "Paperclip Notebook",
   "description": "Publish, find, and share reports, files, and interactive pages with your Paperclip Cloud account.",
   "categories": [

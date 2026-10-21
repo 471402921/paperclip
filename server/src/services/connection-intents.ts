@@ -1,4 +1,4 @@
-import { isNotebookConnection, notebookAppConfiguration } from "./notebook-connection.js";
+import { connectorAppDefinition, applyConnectorAppConfiguration } from "./connectors/lifecycle.js";
 import { updateAgentConfigurationInTransaction } from "./agent-configuration-transaction.js";
 import { emailChannelService } from "./email-channels.js";
 import { emailConnectionService } from "./email-connections.js";
@@ -30,6 +30,7 @@ import {
 } from "@paperclipai/db";
 import {
   APP_STORE_DEFINITIONS,
+  isConnectorFeatureEnabled,
   AGGREGATOR_PRIORITY, AGGREGATOR_NAMES, AGGREGATOR_CATALOG_SOURCES,
   findAggregatorService, searchAggregatorServices, prepareConnectionSearch, scoreConnectionSearch, explicitAggregatorQuery, normalizeConnectionQuery, parseAggregatorRoute, aggregatorProviderQuestion, aggregatorProviderQuestionSet,
   aggregatorContinuationInstruction, isRemoteMcpConnectorId, askUserQuestionsPayloadSchema, askUserQuestionsResultSchema,
@@ -365,10 +366,10 @@ export function connectionIntentService(db: Db) {
     if (!service.startsWith("connection:")) {
       const definition = getAppStoreDefinition(service);
       if (!definition) throw notFound("Connection service was not found");
-      if (service === "paperclip-notebook" && !(await instanceSettingsService(db).getExperimental()).enablePaperclipNotebook) {
+      if (definition.experimentalFeatureKey && !isConnectorFeatureEnabled(definition, await instanceSettingsService(db).getExperimental())) {
         throw notFound("Connection service was not found");
       }
-      const app = notebookAppConfiguration(definition);
+      const app = applyConnectorAppConfiguration(definition);
       if (purpose === "channel" && service !== "agentmail") {
         throw unprocessable("This email connection is not available");
       }
@@ -394,8 +395,9 @@ export function connectionIntentService(db: Db) {
       || (grant.kind === "agent" && grant.subjectAgentId === agentId)
     ))) throw notFound("Configured connection was not found");
     const application = await access.getApplication(connection.applicationId, companyId);
-    if (isNotebookConnection(connection, application.applicationKey)
-      && !(await instanceSettingsService(db).getExperimental()).enablePaperclipNotebook) {
+    const definition = connectorAppDefinition(connection, application.applicationKey);
+    if (definition?.experimentalFeatureKey && !isConnectorFeatureEnabled(definition,
+      await instanceSettingsService(db).getExperimental())) {
       throw notFound("Configured connection was not found");
     }
     return {
@@ -422,7 +424,7 @@ export function connectionIntentService(db: Db) {
     const discoveryMethods = (app: (typeof APP_STORE_DEFINITIONS)[number]) => getAvailableConnectionMethods(app)
       .filter(method => method.purpose !== "channel" || app.slug === "agentmail"
         || (method.provider === "github" ? settings.enableGitHubReviewBots : settings.enableChatConnectors));
-    const services = [...APP_STORE_DEFINITIONS.filter(app => (settings.enablePaperclipNotebook || app.slug !== "paperclip-notebook")
+    const services = [...APP_STORE_DEFINITIONS.filter(app => isConnectorFeatureEnabled(app, settings)
       && discoveryMethods(app).length).map((app) => app.slug),
       ...inventory.connections.filter((connection) =>
         sourceSlugForConnection(connection, inventory.applicationsById)?.startsWith("connection:")

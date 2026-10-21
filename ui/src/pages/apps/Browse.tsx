@@ -32,6 +32,7 @@ import {
 import type { ComposioAppSnapshot, ToolApplication, ToolConnection } from "@paperclipai/shared";
 import {
   getAppDefinitionForUrl,
+  getAppDefinitionForApplicationKey,
   isMemoryConnectorId,
   getAppStoreDefinition,
   isToolConnectionAttentionHealth,
@@ -43,7 +44,7 @@ import {
 import { useNavigate } from "@/lib/router";
 import { useChatConnectorsEnabled, chatProviderVisible } from "@/hooks/useChatConnectorsEnabled";
 import { useMemoryConnectorsEnabled } from "@/hooks/useMemoryConnectorsEnabled";
-import { usePaperclipNotebookEnabled } from "@/hooks/usePaperclipNotebookEnabled";
+import { useConnectorAvailability } from "@/hooks/useConnectorAvailability";
 import { appCopyFor } from "@/lib/app-gallery-copy";
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
@@ -367,7 +368,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
   const { userId: viewingUserId, settled: identitySettled } = useAccountIdentity();
   const { enabled: chatConnectorsEnabled, githubEnabled } = useChatConnectorsEnabled();
   const { enabled: memoryConnectorsEnabled } = useMemoryConnectorsEnabled();
-  const { enabled: notebookEnabled } = usePaperclipNotebookEnabled();
+  const connectorAvailability = useConnectorAvailability();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -490,7 +491,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
       pushToast({
         title: "Connection removed",
         body:
-          _connection?.removal?.notebookRevocationPending ? "Notebook is disconnected here. Remote authorization revocation is pending and will retry automatically." : target.pool ? "The connections in the pool are kept." : target.kind === "chat"
+          _connection?.removal?.oauthRevocationPending ? "This connection is disconnected here. Remote authorization revocation is pending and will retry automatically." : target.pool ? "The connections in the pool are kept." : target.kind === "chat"
             ? `${target.providerName} is disconnected. Existing Paperclip tasks remain available.`
             : target.remainingConnectionCount > 0
             ? `${target.providerName} still has ${target.remainingConnectionCount} active ${target.remainingConnectionCount === 1 ? "connection" : "connections"} available to agents.`
@@ -524,7 +525,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
     (galleryQuery.data?.apps ?? []) as AppGalleryDisplayEntry[]
   ).filter((entry) => {
     if (!memoryConnectorsEnabled && isMemoryConnectorId(appDefinitionSlug(entry))) return false;
-    if (!notebookEnabled && appDefinitionSlug(entry) === "paperclip-notebook") return false;
+    if (!connectorAvailability.enabled(entry)) return false;
     const definition = getAppStoreDefinition(appDefinitionSlug(entry));
     return (
       chatProviderVisible(appDefinitionSlug(entry), chatConnectorsEnabled, githubEnabled) ||
@@ -957,7 +958,8 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
               onRequestRemove={target => void requestConnectionRemoval(target)}
               preselectedAgentId={preselectedChatAgentId}
               chatConnectorsEnabled={chatConnectorsEnabled}
-              setupEnabled={row.slug !== "paperclip-notebook" || notebookEnabled}
+              setupEnabled={connectorAvailability.enabled(row.entry ?? getConnectableAppDefinition(row.slug))
+                && row.applications.every(application => connectorAvailability.enabled(getAppDefinitionForApplicationKey(application.applicationKey)))}
               githubReviewBotsEnabled={githubEnabled}
               onConnectAggregator={connectAggregator}
               onManageAggregator={(app, connectionId) => setAggregatorToManage({ app, connectionId })}

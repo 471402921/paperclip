@@ -1,4 +1,5 @@
-import { isNotebookApplicationKey } from "@paperclipai/shared";
+import { getAppDefinitionForApplicationKey } from "@paperclipai/shared";
+import type { ConnectorTransferAdapter } from "../private-transfer.js";
 
 type RecordValue = Record<string, unknown>;
 export interface NotebookUploadTool {
@@ -25,7 +26,7 @@ const record = (value: unknown): RecordValue | undefined =>
 const nonempty = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
 
 export function isNotebookUploadRequest(tool: NotebookUploadTool, parameters: unknown): boolean {
-  if (tool.providerType !== "mcp_remote_http" || !isNotebookApplicationKey(tool.applicationKey)
+  if (tool.providerType !== "mcp_remote_http" || getAppDefinitionForApplicationKey(tool.applicationKey)?.slug !== "paperclip-notebook"
     || !nonempty(tool.connectionId)) return false;
   if (tool.upstreamToolName === "notebook_begin_upload") return true;
   const args = record(parameters);
@@ -65,7 +66,6 @@ function readTickets(value: unknown): NotebookUploadTickets | undefined {
       || ticket.headers !== undefined && (!record(ticket.headers)
         || !Object.values(record(ticket.headers)!).every(header => typeof header === "string"))) return;
     paths.add(ticket.path);
-    // Preserve the signed URL's exact bytes, rather than URL.href's normalized representation.
     uploads.push({ path: ticket.path, url: ticket.url });
   }
   return { deploymentId: plan.deploymentId, uploads };
@@ -78,7 +78,6 @@ function parseJsonContainer(value: string): object | undefined {
   } catch { return; }
 }
 
-/** Remove capabilities before ordinary result validation, classification, logging, or model delivery. */
 export function prepareNotebookUploadResult<T>(result: T, tool: NotebookUploadTool, parameters: unknown): {
   result: T; uploadTickets?: NotebookUploadTickets;
 } {
@@ -86,7 +85,6 @@ export function prepareNotebookUploadResult<T>(result: T, tool: NotebookUploadTo
   try {
     return prepareBoundedUploadResult(result);
   } catch {
-    // Do not retain partially scanned provider content when its safety bounds fail.
     return { result: {
       content: "Notebook upload response exceeded transfer limits.",
       error: "Invalid Notebook upload response",
@@ -175,7 +173,6 @@ function prepareBoundedUploadResult<T>(result: T): { result: T; uploadTickets?: 
   return { result: redact(result) as T, ...(uploadTickets ? { uploadTickets } : {}) };
 }
 
-/** Restore only canonical structured URL leaves for an explicitly admitted local-file transfer. */
 export function restoreNotebookUploadTickets<T>(result: T, tickets: NotebookUploadTickets): T {
   const validated = readTickets(tickets);
   const outer = record(result);
@@ -192,3 +189,14 @@ export function restoreNotebookUploadTickets<T>(result: T, tickets: NotebookUplo
     uploads: plan.uploads.map((ticket, index) => ({ ...record(ticket), url: validated.uploads[index]!.url })),
   } } } as T;
 }
+
+export const notebookUploadTransfer: ConnectorTransferAdapter = {
+  applicationSlug: "paperclip-notebook",
+  supports: isNotebookUploadRequest,
+  prepare(result, tool, parameters) {
+    const prepared = prepareNotebookUploadResult(result, tool, parameters);
+    return { result: prepared.result, ...(prepared.uploadTickets ? {
+      privateTransfer: { restore: safe => restoreNotebookUploadTickets(safe, prepared.uploadTickets!) },
+    } : {}) };
+  },
+};

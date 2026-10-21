@@ -7,7 +7,7 @@ import { connectionInstructionsConfig, defaultConnectionAgentInstructions, type 
 import { RemoteMcpProductionSetup } from "./remote-mcp/RemoteMcpProductionSetup";
 import { findAggregatorApp } from "@paperclipai/shared/aggregator-app-catalog";
 import { useMemoryConnectorsEnabled } from "@/hooks/useMemoryConnectorsEnabled";
-import { usePaperclipNotebookEnabled } from "@/hooks/usePaperclipNotebookEnabled";
+import { useConnectorAvailability } from "@/hooks/useConnectorAvailability";
 import { AiConnectionCredentialStep } from "@/components/ai-connections/AiConnectionCredentialStep";
 import { ConnectionChoiceList } from "./ConnectionChoiceList";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
@@ -52,6 +52,7 @@ import {
   connectionMethodSupportsAutomaticOAuth,
   credentialConfigPath,
   getAppDefinitionForUrl,
+  getAppDefinitionForApplicationKey,
   getConnectableAppDefinition,
   getAvailableConnectionMethods,
   getRecommendedConnectionMethod,
@@ -585,7 +586,7 @@ export function ConnectionSetupFlow(props: ConnectionSetupFlowProps = {}) {
   const params = useParams<{ appKey?: string }>();
   const { selectedCompanyId } = useCompany();
   const memory = useMemoryConnectorsEnabled();
-  const notebook = usePaperclipNotebookEnabled();
+  const availability = useConnectorAvailability();
   const interactionId = props.interactionId || searchParams.get("intent") || undefined;
   const source = (props.serviceSlug || searchParams.get("source") || params.appKey || searchParams.get("appKey"))?.trim() || undefined;
   const draftId = useMemo(() => {
@@ -595,16 +596,28 @@ export function ConnectionSetupFlow(props: ConnectionSetupFlowProps = {}) {
     return null;
   }, [interactionId, selectedCompanyId, source]);
   const existingId = props.configuredConnection?.id || searchParams.get("resume") || searchParams.get("reconnect") || draftId;
-  const lookup = Boolean(existingId && (!source || isRemoteMcpConnectorId(source) || isMemoryConnectorId(source) || source === "paperclip-notebook"));
+  const requestedDefinition = getConnectableAppDefinition(source ?? "");
+  const lookup = Boolean(existingId && (!source || isRemoteMcpConnectorId(source) || isMemoryConnectorId(source) || requestedDefinition?.experimentalFeatureKey));
   const existing = useQuery({ queryKey: ["tools", "connection", existingId], queryFn: () => toolsApi.getConnection(existingId!), enabled: lookup });
+  const applications = useQuery({ queryKey: queryKeys.tools.applications(selectedCompanyId ?? "__none__"),
+    queryFn: () => toolsApi.listApplications(selectedCompanyId!), enabled: Boolean(existingId && selectedCompanyId) });
+  const connections = useQuery({ queryKey: queryKeys.tools.connections(selectedCompanyId ?? "__none__"),
+    queryFn: () => toolsApi.listConnections(selectedCompanyId!), enabled: Boolean(existingId && selectedCompanyId) });
+  const retained = existing.data ?? connections.data?.connections.find(item => item.id === existingId);
+  const application = applications.data?.applications.find(item => item.id === (retained?.applicationId ?? props.configuredConnection?.applicationId));
+  const persistedDefinition = application?.applicationKey != null
+    ? getAppDefinitionForApplicationKey(application.applicationKey)
+    : getConnectableAppDefinition(String(retained?.config?.sourceTemplateKey ?? ""));
+  const gatedDefinitions = [persistedDefinition, requestedDefinition].filter(app => app?.experimentalFeatureKey);
   const provider = source || existing.data?.config?.sourceTemplateKey;
   const method = searchParams.get("method") || existing.data?.config?.connectionMethodKey;
   if (lookup && existing.isPending) return <p className="p-6 text-sm text-muted-foreground">Loading connection…</p>;
   if (lookup && existing.isError) return <div role="alert" className="space-y-3 p-6"><p>Could not load this connection. Your saved access and credentials have not changed.</p><Button variant="outline" onClick={() => void existing.refetch()}>Try again</Button></div>;
-  if (provider === "paperclip-notebook" || existing.data?.config?.sourceTemplateKey === "paperclip-notebook") {
-    if (!notebook.loaded) return <p role="status" className="p-6 text-sm text-muted-foreground">Loading connection settings…</p>;
-    if (notebook.failed) return <p role="alert" className="p-6 text-sm text-destructive">Could not load Notebook availability. Refresh to try again.</p>;
-    if (!notebook.enabled) return <p role="status" className="p-6 text-sm text-muted-foreground">Paperclip Notebook is not available on this instance.</p>;
+  if (gatedDefinitions.length) {
+    if (!availability.loaded) return <p role="status" className="p-6 text-sm text-muted-foreground">Loading connection settings…</p>;
+    if (availability.failed) return <p role="alert" className="p-6 text-destructive text-sm">Could not load connector availability. Refresh to try again.</p>;
+    const disabled = gatedDefinitions.find(app => !availability.enabled(app));
+    if (disabled) return <p role="status" className="p-6 text-sm text-muted-foreground">{disabled.name} is not available on this instance.</p>;
   }
   if (isMemoryConnectorId(provider) && !(existing.data && existing.data.status !== "draft" && existing.data.config?.sourceTemplateKey === provider)) {
     if (!memory.loaded) return <p className="p-6 text-sm text-muted-foreground">Loading connection settings…</p>;
@@ -655,7 +668,7 @@ function StandardConnectionSetupFlow({
   const { selectedCompany, selectedCompanyId } = useCompany();
   const { enabled: chatConnectorsEnabled, githubEnabled } = useChatConnectorsEnabled();
   const { enabled: memoryConnectorsEnabled } = useMemoryConnectorsEnabled();
-  const { enabled: notebookEnabled } = usePaperclipNotebookEnabled();
+  const connectorAvailability = useConnectorAvailability();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToast();
   const [searchParams] = useSearchParams();
@@ -1047,12 +1060,12 @@ function StandardConnectionSetupFlow({
   // Generic custom URLs remain usable without selecting a hidden provider.
   const visibleGalleryApps = useMemo(
     () => (galleryQuery.data?.apps ?? []).filter((app) => (memoryConnectorsEnabled || !isMemoryConnectorId(app.slug))
-      && (notebookEnabled || app.slug !== "paperclip-notebook")).filter((app) =>
+      && connectorAvailability.enabled(app)).filter((app) =>
       chatProviderVisible(app.slug, chatConnectorsEnabled, githubEnabled) ||
       !app.methods.some((method) => method.purpose === "channel") ||
       appSupportsToolCatalogSetup(app),
     ),
-    [galleryQuery.data, chatConnectorsEnabled, githubEnabled, memoryConnectorsEnabled, notebookEnabled],
+    [galleryQuery.data, chatConnectorsEnabled, githubEnabled, memoryConnectorsEnabled, connectorAvailability.enabled],
   );
   const fullRequestedDefinition = requestedAppKey
     ? getConnectableAppDefinition(requestedAppKey)

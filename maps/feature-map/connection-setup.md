@@ -101,6 +101,9 @@ with a user who cannot install company-wide; the UI must not imply broad access.
 
 Notebook is internally gated by `enablePaperclipNotebook` (default off, no settings toggle). Disabled instances hide setup/discovery and deny curated Notebook dispatch and publishing; removal and revocation remain available.
 
+Availability is catalog metadata evaluated by shared connector checks. Notebook
+account and publishing behavior stays in its connector module.
+
 Paperclip Notebook uses the same personal-account MCP OAuth setup and defaults
 to `https://notebook.paperclip.app/mcp`. Operators can override it with
 `PAPERCLIP_NOTEBOOK_MCP_URL` for staging or development. Sign in through Cloud,

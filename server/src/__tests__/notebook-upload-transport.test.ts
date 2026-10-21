@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isNotebookUploadRequest, prepareNotebookUploadResult, restoreNotebookUploadTickets } from "../services/notebook-upload-transport.js";
+import { isNotebookUploadRequest, prepareNotebookUploadResult, restoreNotebookUploadTickets } from "../services/connectors/paperclip-notebook/upload-transfer.js";
 
 const deploymentId = "44444444-4444-4444-8444-444444444444";
 const url = "https://notebook-quarantine.s3.us-east-1.amazonaws.com/quarantine/report%20one.html?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ASIAEXAMPLE%2F20261020%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20261020T120000Z&X-Amz-Expires=900&X-Amz-Security-Token=session%2Btoken%2Fbytes%3D&X-Amz-SignedHeaders=host&X-Amz-Signature=0123456789abcdef";

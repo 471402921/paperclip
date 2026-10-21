@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { isNotebookApplicationKey, readNotebookPublicationResult } from "@paperclipai/shared";
+import { getAppDefinitionForApplicationKey, readNotebookPublicationResult } from "@paperclipai/shared";
 import { PaperclipApiClient, ApiRequestError } from "../../client/http.js";
 import { publishLocal, publishingApiFromTools, type PublishLocalOptions } from "../../client/notebook-publish.js";
 import { addCommonClientOptions, handleCommandError, printOutput, resolveCommandContext, type BaseClientOptions } from "./common.js";
@@ -17,7 +17,7 @@ export async function publishNotebookFromRun(api: GatewayApi, options: NotebookP
   try {
     const gateway = new PaperclipApiClient({ apiBase: api.apiBase, headers: { "x-paperclip-tool-gateway-token": session.token }, redirect: "error" });
     const tools = await gateway.get<GatewayTool[]>("/api/tool-gateway/tools");
-    const selected = tools?.filter(tool => tool.connectionId === options.connection && isNotebookApplicationKey(tool.applicationKey)) ?? [];
+    const selected = tools?.filter(tool => tool.connectionId === options.connection && getAppDefinitionForApplicationKey(tool.applicationKey)?.slug === "paperclip-notebook") ?? [];
     const byName = new Map(selected.map(tool => [tool.upstreamToolName, tool.name]));
     for (const name of ["notebook_create_page", "notebook_begin_upload", "notebook_finalize_upload"]) {
       if ((!options.pageId || name !== "notebook_create_page") && !byName.has(name))
@@ -27,14 +27,14 @@ export async function publishNotebookFromRun(api: GatewayApi, options: NotebookP
       const tool = byName.get(input.name);
       if (!tool) throw new Error("Notebook publication tool is unavailable on the selected connection.");
       const current = await gateway.get<GatewayTool[]>("/api/tool-gateway/tools");
-      if (!current?.some(candidate => candidate.name === tool && candidate.connectionId === options.connection && isNotebookApplicationKey(candidate.applicationKey))) {
+      if (!current?.some(candidate => candidate.name === tool && candidate.connectionId === options.connection && getAppDefinitionForApplicationKey(candidate.applicationKey)?.slug === "paperclip-notebook")) {
         throw new Error("Notebook publication tool is unavailable on the selected connection.");
       }
       const uploadTransport = input.name === "notebook_begin_upload" || input.name === "notebook_get_operation"
         && !!input.arguments.receipt && typeof input.arguments.receipt === "object" && "kind" in input.arguments.receipt
         && input.arguments.receipt.kind === "begin_upload";
       const result = await gateway.post<{ status: string; result?: unknown }>(uploadTransport
-        ? "/api/tool-gateway/notebook/uploads/call" : "/api/tool-gateway/tools/call", {
+        ? "/api/tool-gateway/connector-transfers/call" : "/api/tool-gateway/tools/call", {
         tool, parameters: input.arguments,
         ...(uploadTransport ? { connectionId: options.connection } : {}),
         ...(typeof input.arguments.idempotencyKey === "string"

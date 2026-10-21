@@ -614,11 +614,11 @@ describe("openapi routes", () => {
     ).not.toContain("sessionToken");
   });
 
-  it("documents the private run-bound Notebook upload transport", () => {
+  it("documents the private run-bound connector transfer transport", () => {
     const { spec } = loadSpecRoutes();
-    const operation = spec.paths["/api/tool-gateway/notebook/uploads/call"].post;
-    expect(operation.security).toEqual([{ NotebookUploadGatewayAuth: [] }]);
-    expect(spec.components.securitySchemes.NotebookUploadGatewayAuth).toMatchObject({
+    const operation = spec.paths["/api/tool-gateway/connector-transfers/call"].post;
+    expect(operation.security).toEqual([{ ConnectorTransferGatewayAuth: [] }]);
+    expect(spec.components.securitySchemes.ConnectorTransferGatewayAuth).toMatchObject({
       type: "apiKey", in: "header", name: "x-paperclip-tool-gateway-token",
     });
     expect(operation["x-paperclip-authorization"]).toEqual({

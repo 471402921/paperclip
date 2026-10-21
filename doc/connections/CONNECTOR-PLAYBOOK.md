@@ -712,6 +712,27 @@ as `agentmail_send` rather than extending core tools with provider-specific
 branches. Existing MCP connectors continue to use their normal MCP tool catalog;
 they do not need a duplicate native wrapper just to supply a skill.
 
+For a gated catalog connector, declare `experimentalFeatureKey` in its
+`AppDefinition`. Shared availability checks resolve the saved application key
+and evaluate that feature before setup, discovery, and execution. Keep the
+feature's settings visibility separate from this enforcement. Do not add
+provider-name checks to the gateway or setup screens.
+
+Keep optional endpoint configuration and authenticated account lookup in the
+connector module. Register these through `services/connectors/lifecycle.ts`.
+OAuth revocation uses discovered provider metadata and the shared cleanup
+lifecycle. A connector can declare refresh-response retry support only when its
+server supports the matching idempotency contract.
+
+A local-file helper can use the trusted contracts in
+`services/connectors/runtime-tools.ts` and `private-transfer.ts`. The connector
+owns its upload protocol and operation receipts. Shared code supplies approved
+workspace access, connection-scoped calls, and a run-bound private transfer
+channel. The adapter must remove temporary capabilities before ordinary result
+validation, model delivery, and audit capture. Only its private projection can
+restore validated transfer fields. Caller config and remote tool responses
+cannot register these adapters or bypass normal action policy.
+
 **Resolve eligibility from current assignments and access.** An AgentMail account
 credential alone does not give an agent email capabilities. An active inbox
 assigned to that agent does, provided both the inbox connection and saved

@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import type { Db } from "@paperclipai/db";
-import { isNotebookApplicationKey, readNotebookPublicationResult } from "@paperclipai/shared";
 import { deduplicateToolDescriptors, ToolGatewayHttpError, type ToolGatewayDescriptor, type ToolGatewayService } from "../tool-gateway.js";
 
 type WorkMode = "standard" | "planning" | "ask";
@@ -160,67 +159,32 @@ export async function createAssignedMcpTools(input: {
   }
 
   return {
-    async assertNotebookConnectionAvailable(connectionId: string): Promise<void> {
-      const current = await input.gateway.listToolsForNamedGateway({
-        gatewayPublicId: input.gatewayPublicId, bearerToken: input.bearerToken,
-      });
-      const names = new Set(current.filter(tool => tool.connectionId === connectionId
-        && isNotebookApplicationKey(tool.applicationKey) && tools.has(assignedToolName(tool.name)) && permits(tool))
-        .map(tool => tool.upstreamToolName));
-      if (!names.has("notebook_begin_upload") || !names.has("notebook_finalize_upload")) {
-        throw new Error("assigned_notebook_tool_unavailable");
-      }
+    connectionTools(currentWorkMode?: WorkMode): ToolGatewayDescriptor[] {
+      return [...tools.values()].filter(tool => tool.connectionId && permits(tool) && permits(tool, currentWorkMode)).map(tool => structuredClone(tool));
     },
-    notebookConnectionIds(): string[] {
-      const connections = new Map<string, Set<string>>();
-      for (const tool of tools.values()) {
-        if (!isNotebookApplicationKey(tool.applicationKey) || !tool.connectionId || !permits(tool)) continue;
-        const names = connections.get(tool.connectionId) ?? new Set<string>();
-        names.add(tool.upstreamToolName ?? ""); connections.set(tool.connectionId, names);
-      }
-      return [...connections].filter(([, names]) => names.has("notebook_begin_upload") && names.has("notebook_finalize_upload")).map(([id]) => id);
+    async assertConnectionTools(connectionId: string, upstreamNames: readonly string[], currentWorkMode?: WorkMode): Promise<void> {
+      const current = await input.gateway.listToolsForNamedGateway({ gatewayPublicId: input.gatewayPublicId, bearerToken: input.bearerToken });
+      const names = new Set(current.filter(tool => {
+        const pinned = tools.get(assignedToolName(tool.name));
+        return tool.connectionId === connectionId && permits(tool) && permits(tool, currentWorkMode)
+          && pinned?.name === tool.name && pinned.connectionId === connectionId
+          && pinned.applicationKey === tool.applicationKey && pinned.upstreamToolName === tool.upstreamToolName
+          && permits(pinned) && permits(pinned, currentWorkMode);
+      }).map(tool => tool.upstreamToolName));
+      if (!upstreamNames.every(name => names.has(name))) throw new Error("assigned_connection_tool_unavailable");
     },
-    async executeNotebookTool(connectionId: string, upstreamToolName: string, argumentsValue: Record<string, unknown>, currentWorkMode: WorkMode): Promise<unknown> {
-      const matches = [...tools.values()].filter(tool => isNotebookApplicationKey(tool.applicationKey)
-        && tool.connectionId === connectionId && tool.upstreamToolName === upstreamToolName);
-      if (matches.length !== 1) throw new Error("assigned_notebook_tool_unavailable");
+    async callConnectionTool(connectionId: string, upstreamToolName: string, parameters: Record<string, unknown>, options: {
+      workMode?: WorkMode; privateTransfer?: boolean;
+    } = {}) {
+      const matches = [...tools.values()].filter(tool => tool.connectionId === connectionId && tool.upstreamToolName === upstreamToolName);
+      if (matches.length !== 1) throw new Error("assigned_connection_tool_unavailable");
       const tool = matches[0]!;
-      if (!permits(tool) || !permits(tool, currentWorkMode)) throw new Error("paperclip_runner_tool_mode_denied");
-      // Replays can return an earlier audit result. Check the current catalog
-      // before using one to upload bytes, including after an approval pause.
-      const fresh = (await input.gateway.listToolsForNamedGateway({ gatewayPublicId: input.gatewayPublicId,
-        bearerToken: input.bearerToken })).find(candidate => candidate.name === tool.name);
-      if (!fresh || !permits(fresh) || !permits(fresh, currentWorkMode)) throw new Error("assigned_notebook_tool_unavailable");
+      if (!permits(tool) || !permits(tool, options.workMode)) throw new Error("paperclip_runner_tool_mode_denied");
+      await this.assertConnectionTools(connectionId, [upstreamToolName], options.workMode);
       const result = await input.gateway.executeTool({ gatewayPublicId: input.gatewayPublicId, sessionToken: input.bearerToken,
-        tool: tool.name, parameters: argumentsValue,
-        ...(upstreamToolName === "notebook_begin_upload" || upstreamToolName === "notebook_get_operation"
-          && object(argumentsValue.receipt ?? {}).kind === "begin_upload" ? { notebookUploadTransport: { connectionId } } : {}) });
+        tool: tool.name, parameters, ...(options.privateTransfer ? { privateTransfer: { connectionId } } : {}) });
       if (result.status !== "completed" && result.status !== "replayed") throw new Error("assigned_mcp_tool_execution_incomplete");
-      if (result.status === "replayed") {
-        const complete = readNotebookPublicationResult(upstreamToolName, result.result);
-        if (complete) return complete;
-        // A replay can contain only the gateway's shortened audit summary.
-        // Recover complete domain receipts under the selected connection's policy.
-        const kind = upstreamToolName === "notebook_create_page" ? "create_page" : upstreamToolName === "notebook_begin_upload" ? "begin_upload" : undefined;
-        if (kind) return this.executeNotebookTool(connectionId, "notebook_get_operation", {
-          receipt: { kind, idempotencyKey: argumentsValue.idempotencyKey },
-        }, currentWorkMode);
-        if (upstreamToolName === "notebook_finalize_upload") return this.executeNotebookTool(connectionId, "notebook_get_operation", {
-          operationId: argumentsValue.deploymentId,
-        }, currentWorkMode);
-      }
-      const receiptRecoveryError = () => new Error("Notebook receipt recovery returned a shortened approval result. Set notebook_get_operation to Allowed for this recovery, then retry with the same publication key.");
-      if (result.status === "replayed" && upstreamToolName === "notebook_get_operation" && (!result.result || typeof result.result !== "object")) throw receiptRecoveryError();
-      if (!result.result || typeof result.result !== "object" || "isError" in result.result && result.result.isError === true)
-        throw new ToolGatewayHttpError(502, "Notebook returned an error.", "tool_error");
-      const outer = result.result as { data?: unknown; structuredContent?: unknown };
-      const payload = outer.data && typeof outer.data === "object" ? outer.data as { structuredContent?: unknown; isError?: boolean } : outer;
-      if ("isError" in payload && payload.isError === true) throw new ToolGatewayHttpError(502, "Notebook returned an error.", "tool_error");
-      if (!payload.structuredContent || typeof payload.structuredContent !== "object") {
-        if (result.status === "replayed" && upstreamToolName === "notebook_get_operation") throw receiptRecoveryError();
-        throw new Error("assigned_notebook_invalid_response");
-      }
-      return payload.structuredContent;
+      return result;
     },
     definitions(fits?: (definitions: ToolDefinition[]) => boolean): ToolDefinition[] {
       const direct = [...tools].filter(([, tool]) => permits(tool)).map(([name, tool]) => definition(name, tool));

@@ -5,12 +5,10 @@ import type { CommandManagedRuntimeRunner } from "@paperclipai/adapter-utils/com
 import { MAX_ATTACHMENT_BYTES } from "../../attachment-types.js";
 
 export const MAX_REMOTE_DELIVERABLE_BYTES = MAX_ATTACHMENT_BYTES;
-const MAX_NOTEBOOK_REMOTE_BYTES = 25 * 1024 * 1024;
-// Notebook's 25 MiB decoded ceiling exceeds existing command output buffers
-// once base64 encoded. Keep every response below the 4 MiB capture ceiling.
-const NOTEBOOK_READ_CHUNK_BYTES = 2 * 1024 * 1024;
-const MAX_NOTEBOOK_READ_CHUNKS = 256;
-const NOTEBOOK_READ_TIMEOUT_MS = 120_000;
+const MAX_WORKSPACE_TRANSFER_BYTES = 25 * 1024 * 1024;
+const WORKSPACE_TRANSFER_CHUNK_BYTES = 2 * 1024 * 1024;
+const MAX_WORKSPACE_TRANSFER_CHUNKS = 256;
+const WORKSPACE_TRANSFER_TIMEOUT_MS = 120_000;
 const PREFIX = "paperclip_runner_file_handoff_";
 const READ_TIMEOUT_MS = 10_000;
 
@@ -85,7 +83,6 @@ export async function readVerifiedRemoteWorkspaceFile(input: {
   byteSize: number;
   sha256: string;
   allowEmpty?: boolean;
-  /** Server-owned Notebook allowance. Never read from a tool/request payload. */
   maxBytes?: number;
 }): Promise<Buffer> {
   const { workspaceRoot, contentRef, byteSize } = input;
@@ -98,9 +95,9 @@ export async function readVerifiedRemoteWorkspaceFile(input: {
   const relative = posix.normalize(contentRef);
   if (relative === "." || relative === ".." || relative.startsWith("../")) throw new Error(`${PREFIX}path_denied`);
   const maxBytes = input.maxBytes === undefined ? MAX_REMOTE_DELIVERABLE_BYTES : input.maxBytes;
-  const invalidNotebookAllowance = input.maxBytes !== undefined &&
-    (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_NOTEBOOK_REMOTE_BYTES);
-  if (invalidNotebookAllowance || !Number.isSafeInteger(byteSize) || byteSize < (input.allowEmpty ? 0 : 1) || byteSize > maxBytes) {
+  const invalidTransferAllowance = input.maxBytes !== undefined &&
+    (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_WORKSPACE_TRANSFER_BYTES);
+  if (invalidTransferAllowance || !Number.isSafeInteger(byteSize) || byteSize < (input.allowEmpty ? 0 : 1) || byteSize > maxBytes) {
     throw new Error(`${PREFIX}size_denied`);
   }
   const sha256 = typeof input.sha256 === "string" ? input.sha256.trim().toLowerCase() : "";
@@ -110,13 +107,13 @@ export async function readVerifiedRemoteWorkspaceFile(input: {
   let deadline: number | undefined;
   if (input.maxBytes !== undefined) {
     const encodedBudget = 4 * Math.ceil(MAX_REMOTE_DELIVERABLE_BYTES / 3);
-    chunkSize = Math.min(NOTEBOOK_READ_CHUNK_BYTES, Math.max(1, Math.floor(MAX_REMOTE_DELIVERABLE_BYTES)));
+    chunkSize = Math.min(WORKSPACE_TRANSFER_CHUNK_BYTES, Math.max(1, Math.floor(MAX_REMOTE_DELIVERABLE_BYTES)));
     if (byteSize > 0 && (!Number.isFinite(encodedBudget) || encodedBudget < 4 ||
         4 * Math.ceil(Math.min(byteSize, chunkSize) / 3) > encodedBudget) ||
-        Math.ceil(byteSize / chunkSize) > MAX_NOTEBOOK_READ_CHUNKS) {
+        Math.ceil(byteSize / chunkSize) > MAX_WORKSPACE_TRANSFER_CHUNKS) {
       throw new Error(`${PREFIX}capture_limit`);
     }
-    deadline = performance.now() + NOTEBOOK_READ_TIMEOUT_MS;
+    deadline = performance.now() + WORKSPACE_TRANSFER_TIMEOUT_MS;
   }
   for (let offset = 0; offset < byteSize || offset === 0; offset += chunkSize) {
     const length = Math.min(chunkSize, byteSize - offset);

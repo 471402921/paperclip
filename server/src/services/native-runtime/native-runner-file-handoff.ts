@@ -38,7 +38,6 @@ import { getNativeReviewAssignment, readNativeReviewAssignmentContext } from "./
 
 export type RemoteWorkspaceFileReader = (input: Pick<NativeRunnerFileHandoffInput, "contentRef" | "byteSize" | "sha256"> & {
   allowEmpty?: boolean;
-  /** Server-owned Notebook allowance; ordinary attachment inputs cannot set it. */
   maxBytes?: number;
 }) => Promise<Buffer>;
 

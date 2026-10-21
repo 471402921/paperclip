@@ -2,7 +2,7 @@ export { CASE_HANDOFF_STATES, handoffCaseSchema, agentCaseHandoffSchema, doneCas
 export * from "./slack-app-manifest.js";
 export { composioAppSetupSchema, composioAppsRefreshSchema, composioAppsSyncSchema, composioAppAccountSchema, type ComposioAppSetupInput, type ComposioAppSetupResult, type ComposioAppAccountInput, type ComposioAppAccount, type ComposioAppSnapshot, type ComposioAppSyncState, type ComposioAppsResponse } from "./composio-app-setup.js";
 export { agentAdapterTypeSchema, optionalAgentAdapterTypeSchema } from "./adapter-type.js";
-export { readNotebookPublicationResult } from "./notebook-publication.js";
+export { readNotebookPublicationResult } from "./connectors/paperclip-notebook/publication.js";
 export {
   RUNNER_GOAL_MAX_OBJECTIVE_CHARS,
   runnerGoalAvailabilitySchema,
@@ -288,8 +288,8 @@ export {
   isAppStoreVisibleSlug,
   recommendedDefaultsForApp,
   resolveConnectionMethodServerUrl,
-  isNotebookApplicationKey,
 } from "./app-definitions.js";
+export { getAppDefinitionForApplicationKey, isConnectorFeatureEnabled, resolveConnectorAvailability } from "./connector-availability.js";
 export {
   connectionSetupStateForApp,
   connectionSetupStateForMethod,

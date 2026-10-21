@@ -1,4 +1,4 @@
-import { NOTEBOOK_APP_SLUG, notebookAppConfiguration } from "../services/notebook-connection.js";
+import { applyConnectorAppConfiguration } from "../services/connectors/lifecycle.js";
 import { isCrossSiteOAuthCallbackNavigation, oauthCallbackInterstitialHtml } from "../lib/oauth-browser-return.js";
 import { aiConnectionRouterPluginKey } from "@paperclipai/shared";
 import { aiConnectionRouterService } from "../services/ai-connection-router.js";
@@ -10,6 +10,7 @@ import { agents, companies, connectionGrants, issueThreadInteractions, toolConne
 import { and, eq, or } from "drizzle-orm";
 import {
   APP_STORE_DEFINITIONS,
+  isConnectorFeatureEnabled,
   isMemoryConnectorId,
   GITHUB_CONNECTOR_PROFILES,
   GOOGLE_WORKSPACE_CONNECTOR_PROFILES,
@@ -820,7 +821,7 @@ function connectorEnrollmentPrincipal(req: Request): string {
         ? await options.paperclipCloudConnector.getCapabilities()
         : [];
     const vercelConnect = vercelConnectIntegrationStatus();
-    const { enableMemoryConnectors, enablePaperclipNotebook } = await instanceSettingsService(db).getExperimental();
+    const settings = await instanceSettingsService(db).getExperimental();
     let oauthCallbackUrl: string | undefined;
     try {
       // Setup must display the callback used by its initiating POST. Provider
@@ -851,9 +852,9 @@ function connectorEnrollmentPrincipal(req: Request): string {
             : "Vercel Connect setup is disabled on this Paperclip instance.",
         },
       },
-      apps: [...APP_STORE_DEFINITIONS.filter((app) => (enableMemoryConnectors || !isMemoryConnectorId(app.slug))
-        && (enablePaperclipNotebook || app.slug !== NOTEBOOK_APP_SLUG)).map((app) =>
-        appWithPaperclipCloudConnectorAvailability(notebookAppConfiguration(app), advertisedProfiles)
+      apps: [...APP_STORE_DEFINITIONS.filter((app) => (settings.enableMemoryConnectors || !isMemoryConnectorId(app.slug))
+        && isConnectorFeatureEnabled(app, settings)).map((app) =>
+        appWithPaperclipCloudConnectorAvailability(applyConnectorAppConfiguration(app), advertisedProfiles)
       ), ...await aiConnectionRouterService(db).catalog()],
     });
   });

@@ -1,17 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { getConnectableAppDefinition } from "@paperclipai/shared";
-import { isNotebookConnection, notebookAccountIdentity, notebookAppConfiguration, revokeNotebookToken } from "../services/notebook-connection.js";
+import { notebookAppConfiguration } from "../services/connectors/paperclip-notebook/index.js";
+import { notebookAccountIdentity } from "../services/connectors/paperclip-notebook/oauth.js";
 
 describe("Notebook connection", () => {
   const app = getConnectableAppDefinition("paperclip-notebook")!;
-
-  it("recognizes curated Notebook identity without blacklisting independent MCP endpoints", () => {
-    expect(isNotebookConnection({ config: { sourceTemplateKey: "paperclip-notebook" } })).toBe(true);
-    expect(isNotebookConnection({ transportConfig: { sourceTemplateKey: "paperclip-notebook" } })).toBe(true);
-    expect(isNotebookConnection({}, "app-gallery:paperclip-notebook:44444444-4444-4444-8444-444444444444")).toBe(true);
-    expect(isNotebookConnection({ config: { url: "https://notebook.paperclip.app/mcp" } }, "custom-mcp")).toBe(false);
-    expect(isNotebookConnection({}, "paperclip-notebook-lookalike")).toBe(false);
-  });
 
   it("uses the canonical service by default and retains direct OAuth scopes for overrides", () => {
     vi.stubEnv("PAPERCLIP_NOTEBOOK_MCP_URL", undefined);
@@ -60,15 +53,4 @@ describe("Notebook connection", () => {
       .rejects.toMatchObject({ message: "Notebook could not confirm the connected account. Try signing in again.", details: { code: "notebook_account_unavailable" } });
   });
 
-  it("revokes using the token endpoint's first-party sibling and bounds network work", async () => {
-    const send = vi.fn(async (url: URL, init: RequestInit) => {
-      expect(url.href).toBe("https://notebook.example.test/oauth/revoke");
-      expect(init.signal).toBeInstanceOf(AbortSignal);
-      expect(new URLSearchParams(init.body as string).get("token")).toBe("test-refresh");
-      expect(new URLSearchParams(init.body as string).get("client_id")).toBe("client");
-      return new Response(null, { status: 200 });
-    });
-    await revokeNotebookToken({ endpoint: "https://notebook.example.test/mcp", clientId: "client", token: "test-refresh", refresh: true, send });
-    expect(send).toHaveBeenCalledOnce();
-  });
 });

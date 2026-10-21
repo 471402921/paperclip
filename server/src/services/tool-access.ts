@@ -1,4 +1,6 @@
-import { NOTEBOOK_APP_SLUG, isNotebookConnection, notebookAppConfiguration, notebookAccountIdentity, revokeNotebookToken } from "./notebook-connection.js";
+import { applyConnectorAppConfiguration, connectorAppDefinition, connectorOAuthLifecycle } from "./connectors/lifecycle.js";
+import { revokeOAuthToken, selectOAuthRevocationAuthMethod } from "./oauth-revocation.js";
+import { isConnectorFeatureEnabled } from "@paperclipai/shared";
 import { stableHash, descriptorHash } from "./tool-catalog-hash.js";
 import { assertProfileEntryInputs } from "./tool-profile-entry-validation.js";
 import { DAYTONA_TOOLS, daytonaClient, daytonaRisk, isDaytonaConnection, isDaytonaToolName } from "./daytona.js";
@@ -523,6 +525,8 @@ type OAuthProviderEndpoints = {
   authorizationUrl: string;
   tokenUrl: string;
   registrationUrl?: string | null;
+  revocationUrl?: string | null;
+  revocationEndpointAuthMethodsSupported?: string[];
   codeChallengeMethodsSupported?: string[];
   tokenEndpointAuthMethodsSupported?: string[];
   grantTypesSupported?: string[];
@@ -3211,7 +3215,7 @@ export function toolAccessService(
     return cachedCloudConnector;
   };
   async function appForConnectionSetup(app: AppDefinition): Promise<AppDefinition> {
-    app = notebookAppConfiguration(app);
+    app = applyConnectorAppConfiguration(app);
     if (!app.methods.some((method) => isPaperclipCloudConnectorStrategy(method.oauthStrategy))) {
       return app;
     }
@@ -6471,9 +6475,31 @@ export function toolAccessService(
     return { owned, retained };
   }
 
-  async function revokeNotebookGrants(connection: typeof toolConnections.$inferSelect, grantIds: string[], database = db) {
+  function isOAuthRevocableConnection(connection: typeof toolConnections.$inferSelect) {
+    const oauth = oauthConfig(connection);
+    return connection.authKind === "oauth" && connection.credentialSource === "paperclip_vault"
+      && !isPaperclipCloudConnectorStrategy(oauth.strategy)
+      && (typeof oauth.revocationUrl === "string" || (oauth.revocationUrl !== null && typeof oauth.metadataUrl === "string"));
+  }
+
+  async function oauthRevocationMetadata(connection: typeof toolConnections.$inferSelect) {
+    const oauth = oauthConfig(connection);
+    if (typeof oauth.revocationUrl === "string") return {
+      url: assertOAuthEndpointUrl("token", oauth.revocationUrl),
+      authMethods: oauth.revocationEndpointAuthMethodsSupported,
+    };
+    if (oauth.revocationUrl === null || typeof oauth.metadataUrl !== "string") return null;
+    const endpoints = await endpointsFromMetadataUrl(connection, oauth.metadataUrl);
+    if (!endpoints || endpoints.authorizationUrl !== oauth.authorizationUrl || endpoints.tokenUrl !== oauth.tokenUrl
+      || (typeof oauth.issuer === "string" && (!endpoints.issuer || !sameOAuthIssuer(oauth.issuer, endpoints.issuer)))) {
+      throw new HttpError(502, "OAuth revocation metadata is temporarily unavailable.", { code: "oauth_revocation_pending" });
+    }
+    return endpoints.revocationUrl ? { url: endpoints.revocationUrl, authMethods: endpoints.revocationEndpointAuthMethodsSupported } : null;
+  }
+
+  async function revokeOAuthGrants(connection: typeof toolConnections.$inferSelect, grantIds: string[], database = db) {
     const pending = new Set<string>();
-    if (!await isSavedNotebookConnection(connection, database)) return pending;
+    if (!isOAuthRevocableConnection(connection)) return pending;
     for (const grantId of grantIds) {
       const [grant] = await database.select().from(connectionGrants).where(and(eq(connectionGrants.companyId, connection.companyId),
         eq(connectionGrants.connectionId, connection.id), eq(connectionGrants.id, grantId)));
@@ -6482,12 +6508,16 @@ export function toolAccessService(
         ?? grant.credentialSecretRefs.find(ref => ref.configPath === "oauth.access_token");
       if (!ref) continue;
       try {
+        const endpoint = await oauthRevocationMetadata(connection);
+        if (!endpoint) continue;
         const resolved = await resolveConnectionGrantSecret(database, connection, grant, ref, {
-          consumerType: "tool_connection", consumerId: connection.id, actorType: "system", actorId: "notebook-revocation",
+          consumerType: "tool_connection", consumerId: connection.id, actorType: "system", actorId: "oauth-revocation",
         });
-        const clientId = oauthConfig(connection).clientId;
-        if (typeof clientId !== "string" || !clientId) throw new Error();
-        await revokeNotebookToken({ endpoint: remoteEndpoint(connection.config), clientId, token: resolved.value,
+        const clientConnection = { ...connection, credentialSecretRefs: [...connection.credentialSecretRefs, ...grant.credentialSecretRefs.filter(ref => ref.configPath === "oauth.client_secret")] };
+        const client = await oauthClientForConnection(clientConnection, String(oauthConfig(connection).provider ?? "generic"), undefined, database, "revocation");
+        if (!client.clientId) throw new Error("OAuth client id is missing");
+        await revokeOAuthToken({ revocationUrl: endpoint.url, clientId: client.clientId, clientSecret: client.clientSecret,
+          authMethod: selectOAuthRevocationAuthMethod({ advertised: endpoint.authMethods, fallback: storedOAuthTokenEndpointAuthMethod(oauthConfig(connection), client.clientSecret), hasSecret: Boolean(client.clientSecret) }), token: resolved.value,
           refresh: ref.configPath === "oauth.refresh_token", send: requestRemoteHttpEndpoint });
       } catch {
         pending.add(grant.id);
@@ -6496,27 +6526,31 @@ export function toolAccessService(
     return pending;
   }
 
-  async function finishNotebookGrantRevocations(connection: typeof toolConnections.$inferSelect,
+  async function finishOAuthGrantRevocations(connection: typeof toolConnections.$inferSelect,
     grants: typeof connectionGrants.$inferSelect[], pendingIds: Set<string>, database = db) {
     const successful = grants.filter(grant => !pendingIds.has(grant.id));
     const { owned } = await classifyConnectionSecrets(connection, successful.flatMap(grant => grant.credentialSecretRefs.map(ref => ref.secretId)), database);
+    const siblings = await database.select({ credentialSecretRefs: connectionGrants.credentialSecretRefs }).from(connectionGrants)
+      .where(and(eq(connectionGrants.companyId, connection.companyId), eq(connectionGrants.connectionId, connection.id),
+        ...(successful.length ? [notInArray(connectionGrants.id, successful.map(grant => grant.id))] : [])));
+    const retained = new Set([...connection.credentialSecretRefs.map(ref => ref.secretId), ...siblings.flatMap(row => row.credentialSecretRefs.map(ref => ref.secretId))]);
     const secretClient = database === db ? secrets : secretService(database);
-    for (const secretId of owned) await secretClient.remove(secretId);
+    for (const secretId of owned) if (!retained.has(secretId)) await secretClient.remove(secretId);
     if (successful.length > 0) await database.update(connectionGrants).set({ credentialSecretRefs: [], updatedAt: now() })
       .where(and(inArray(connectionGrants.id, successful.map(grant => grant.id)), eq(connectionGrants.status, "revoked")));
     await database.update(toolConnections).set({
-      config: sql`${toolConnections.config} || ${JSON.stringify({ notebookRevocationPending: pendingIds.size > 0 })}::jsonb`,
-      transportConfig: sql`${toolConnections.transportConfig} || ${JSON.stringify({ notebookRevocationPending: pendingIds.size > 0 })}::jsonb`,
+      config: sql`${toolConnections.config} || ${JSON.stringify({ oauthRevocationPending: pendingIds.size > 0 })}::jsonb`,
+      transportConfig: sql`${toolConnections.transportConfig} || ${JSON.stringify({ oauthRevocationPending: pendingIds.size > 0 })}::jsonb`,
       updatedAt: now(),
     }).where(eq(toolConnections.id, connection.id));
   }
 
   // The claim is shared across processes, and the row locks fence reconnects.
   // Only revoked credentials are retried here; ordinary dispatch stays closed.
-  async function withNotebookRevocationClaim(connectionId: string, companyId: string,
+  async function withOAuthRevocationClaim(connectionId: string, companyId: string,
     operation: (connection: typeof toolConnections.$inferSelect, transaction: DbTransaction) => Promise<boolean>) {
     return db.transaction(async tx => {
-      const result = await tx.execute<{ claimed: boolean }>(sql`SELECT pg_try_advisory_xact_lock(hashtextextended(${"paperclip.notebook_revocation:" + connectionId}, 0)) AS claimed`);
+      const result = await tx.execute<{ claimed: boolean }>(sql`SELECT pg_try_advisory_xact_lock(hashtextextended(${"paperclip.oauth_revocation:" + connectionId}, 0)) AS claimed`);
       if (!result[0]?.claimed) return null;
       await tx.select({ id: connectionGrants.id }).from(connectionGrants)
         .where(and(eq(connectionGrants.companyId, companyId), eq(connectionGrants.connectionId, connectionId)))
@@ -6527,42 +6561,34 @@ export function toolAccessService(
         .for("update", { of: toolApplications });
       const [connection] = await tx.select().from(toolConnections)
         .where(and(eq(toolConnections.id, connectionId), eq(toolConnections.companyId, companyId))).for("update");
-      if (!connection || connection.config.notebookRevocationPending !== true
-        || !await isSavedNotebookConnection(connection, tx as unknown as Db)) return false;
+      if (!connection || connection.config.oauthRevocationPending !== true
+        || !isOAuthRevocableConnection(connection)) return false;
       return operation(connection, tx);
     });
   }
 
-  let nextNotebookRevocationSweepAt = 0;
-  async function sweepNotebookRevocations() {
-    if (now().getTime() < nextNotebookRevocationSweepAt) return { checked: 0, pending: 0 };
-    nextNotebookRevocationSweepAt = now().getTime() + 60_000;
+  let nextOAuthRevocationSweepAt = 0;
+  async function sweepOAuthRevocations() {
+    if (now().getTime() < nextOAuthRevocationSweepAt) return { checked: 0, pending: 0 };
+    nextOAuthRevocationSweepAt = now().getTime() + 60_000;
     const rows = await db.select({ connection: toolConnections }).from(toolConnections)
-      .innerJoin(toolApplications, and(eq(toolApplications.id, toolConnections.applicationId), eq(toolApplications.companyId, toolConnections.companyId)))
-      .where(and(
-        or(
-          sql`${toolConnections.config} ->> 'sourceTemplateKey' = ${NOTEBOOK_APP_SLUG}`,
-          sql`${toolConnections.transportConfig} ->> 'sourceTemplateKey' = ${NOTEBOOK_APP_SLUG}`,
-          eq(toolApplications.applicationKey, NOTEBOOK_APP_SLUG),
-          sql`${toolApplications.applicationKey} ~* ${"^app-gallery:paperclip-notebook:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"}`,
-        ),
-        sql`${toolConnections.config} ->> 'notebookRevocationPending' = 'true'`,
-      )).orderBy(asc(toolConnections.updatedAt)).limit(2);
+      .where(sql`${toolConnections.config} ->> 'oauthRevocationPending' = 'true'`)
+      .orderBy(asc(toolConnections.updatedAt)).limit(2);
 
     let pending = 0;
     for (const { connection: selected } of rows) {
       try {
-        const stillPending = await withNotebookRevocationClaim(selected.id, selected.companyId, async (connection, tx) => {
+        const stillPending = await withOAuthRevocationClaim(selected.id, selected.companyId, async (connection, tx) => {
           if (connection.status === "archived") {
             const result = await toolAccessService(tx as unknown as Db, options).archiveConnection(connection.id, connection.companyId,
-              { actorType: "system", actorId: "notebook-revocation" });
-            return result.removal.notebookRevocationPending === true;
+              { actorType: "system", actorId: "oauth-revocation" });
+            return result.removal.oauthRevocationPending === true;
           }
           const database = tx as unknown as Db;
           const grants = await tx.select().from(connectionGrants).where(and(eq(connectionGrants.connectionId, connection.id),
             eq(connectionGrants.companyId, connection.companyId), eq(connectionGrants.status, "revoked")));
-          const pendingIds = await revokeNotebookGrants(connection, grants.map(grant => grant.id), database);
-          await finishNotebookGrantRevocations(connection, grants, pendingIds, database);
+          const pendingIds = await revokeOAuthGrants(connection, grants.map(grant => grant.id), database);
+          await finishOAuthGrantRevocations(connection, grants, pendingIds, database);
           return pendingIds.size > 0;
         });
         if (stillPending !== false) pending += 1;
@@ -6609,7 +6635,7 @@ export function toolAccessService(
 
   async function removeConnectionUnlocked(connectionId: string, companyId?: string, actor?: ActorInfo): Promise<ToolConnectionRemovalResult> {
     const connection = await getConnectionRow(connectionId, companyId);
-    const notebook = await isSavedNotebookConnection(connection);
+    const revokeProvider = isOAuthRevocableConnection(connection);
     forgetMcpHttpSessions(connection.id);
     const now = new Date();
     const binding = actorBinding(actor);
@@ -6908,7 +6934,7 @@ export function toolAccessService(
       const [updatedConnection] = await tx
         .update(toolConnections)
         .set({ status: "archived", enabled: false, updatedAt: now,
-          ...(notebook ? { config: { ...connection.config, notebookRevocationPending: true } } : {}) })
+          ...(revokeProvider ? { config: { ...connection.config, oauthRevocationPending: true } } : {}) })
         .where(eq(toolConnections.id, connection.id))
         .returning();
       if (!updatedConnection) throw notFound("Tool connection not found");
@@ -6953,9 +6979,10 @@ export function toolAccessService(
     // `secrets.remove` marks the row deleted before it calls the provider, so a
     // provider error leaves an unresolvable secret and a resumable removal
     // rather than a half-open app.
-    const pendingNotebookGrantIds = await revokeNotebookGrants(connection, grantRows.map(grant => grant.id));
-    const pendingNotebookSecretIds = new Set(grantRows.filter(grant => pendingNotebookGrantIds.has(grant.id))
-      .flatMap(grant => grant.credentialSecretRefs.map(ref => ref.secretId)));
+    const pendingOAuthGrantIds = await revokeOAuthGrants(connection, grantRows.map(grant => grant.id));
+    const pendingOAuthSecretIds = new Set([...grantRows.filter(grant => pendingOAuthGrantIds.has(grant.id))
+      .flatMap(grant => grant.credentialSecretRefs.map(ref => ref.secretId)),
+      ...(pendingOAuthGrantIds.size ? connection.credentialSecretRefs.filter(ref => ref.configPath === "oauth.client_secret").map(ref => ref.secretId) : [])]);
     const candidateSecretIds = [
       ...Object.values(asRecord(connection.config.aggregatorDiscovery)).flatMap(value => typeof asRecord(value).secretId === "string" ? [asRecord(value).secretId as string] : []),
       ...connection.credentialRefs.map((ref) => ref.secretId),
@@ -6970,20 +6997,21 @@ export function toolAccessService(
     );
     let secretsRevoked = 0;
     for (const secretId of owned) {
-      if (pendingNotebookSecretIds.has(secretId)) continue;
+      if (pendingOAuthSecretIds.has(secretId)) continue;
       const removed = await secrets.remove(secretId);
       if (removed) secretsRevoked += 1;
     }
 
+    const retainedClientRefs = pendingOAuthGrantIds.size ? connection.credentialSecretRefs.filter(ref => ref.configPath === "oauth.client_secret") : [];
     const credentialRefsCleared =
-      connection.credentialRefs.length + connection.credentialSecretRefs.length;
+      connection.credentialRefs.length + connection.credentialSecretRefs.length - retainedClientRefs.length;
     const [cleared] = await db
       .update(toolConnections)
       .set({
         credentialRefs: [],
-        credentialSecretRefs: [],
-        config: { ...withoutInlineOAuthTokens(connection.config), ...(notebook ? { notebookRevocationPending: pendingNotebookGrantIds.size > 0 } : {}) },
-        transportConfig: { ...withoutInlineOAuthTokens(connection.transportConfig), ...(notebook ? { notebookRevocationPending: pendingNotebookGrantIds.size > 0 } : {}) },
+        credentialSecretRefs: retainedClientRefs,
+        config: { ...withoutInlineOAuthTokens(connection.config), ...(revokeProvider ? { oauthRevocationPending: pendingOAuthGrantIds.size > 0 } : {}) },
+        transportConfig: { ...withoutInlineOAuthTokens(connection.transportConfig), ...(revokeProvider ? { oauthRevocationPending: pendingOAuthGrantIds.size > 0 } : {}) },
         updatedAt: now,
       })
       .where(eq(toolConnections.id, connection.id))
@@ -6998,7 +7026,7 @@ export function toolAccessService(
           and(
             eq(connectionGrants.companyId, connection.companyId),
             eq(connectionGrants.connectionId, connection.id),
-            ...(pendingNotebookGrantIds.size > 0 ? [notInArray(connectionGrants.id, [...pendingNotebookGrantIds])] : []),
+            ...(pendingOAuthGrantIds.size > 0 ? [notInArray(connectionGrants.id, [...pendingOAuthGrantIds])] : []),
           ),
         );
     }
@@ -7023,7 +7051,7 @@ export function toolAccessService(
         gatewaySessionsRevoked,
         applicationArchived: archived.applicationArchived,
         externalCredentialCleanup,
-        ...(notebook ? { notebookRevocationPending: pendingNotebookGrantIds.size > 0 } : {}),
+        ...(revokeProvider ? { oauthRevocationPending: pendingOAuthGrantIds.size > 0 } : {}),
       },
     };
   }
@@ -7291,7 +7319,7 @@ export function toolAccessService(
     unavailableServices: string[] = [],
   ): Promise<McpToolDescriptor[]> {
     assertSupportedConnection(connection);
-    await assertNotebookConnectionSetupEnabled(connection);
+    await assertConnectorConnectionSetupEnabled(connection);
     let headers = credentialHeaders ?? {
       ...projectedConnectionHeaders(connection),
       ...(await resolveCredentialHeaders(connection, actor)),
@@ -7499,6 +7527,8 @@ export function toolAccessService(
               provider: endpoints.provider,
               authorizationUrl: endpoints.authorizationUrl,
               tokenUrl: endpoints.tokenUrl,
+              revocationUrl: endpoints.revocationUrl,
+              revocationEndpointAuthMethodsSupported: endpoints.revocationEndpointAuthMethodsSupported,
               registrationUrl: endpoints.registrationUrl ?? null,
               metadataUrl: endpoints.metadataUrl ?? null,
               scopes: endpoints.scopes,
@@ -7671,7 +7701,7 @@ export function toolAccessService(
     unavailableServices: string[] = [],
   ): Promise<McpToolDescriptor[]> {
     assertSupportedConnection(connection);
-    await assertNotebookConnectionSetupEnabled(connection);
+    await assertConnectorConnectionSetupEnabled(connection);
     if (connection.connectionPurpose === "ai") throw unprocessable("AI connections provide runtime authentication, not tool actions");
     if (isDaytonaConnection(connection)) {
       const headers = credentialHeaders ?? await resolveCredentialHeaders(connection, actor);
@@ -7792,7 +7822,7 @@ export function toolAccessService(
   ): Promise<ToolConnectionHealthCheckResult> {
     const connection = await getConnectionRow(connectionId);
     if (connection.connectionPurpose === "ai") return { connection: toConnection(connection), runtimeSlot: null };
-    await assertNotebookConnectionSetupEnabled(connection);
+    await assertConnectorConnectionSetupEnabled(connection);
     const unavailableServices: string[] = [];
     try {
       assertSupportedConnection(connection);
@@ -7940,7 +7970,7 @@ export function toolAccessService(
   ): Promise<ToolCatalogRefreshResult> {
     const connection = await getConnectionRow(connectionId);
     if (connection.connectionPurpose === "ai") throw unprocessable("AI connections do not have a tool catalog");
-    await assertNotebookConnectionSetupEnabled(connection);
+    await assertConnectorConnectionSetupEnabled(connection);
     const refreshedAt = now();
     const unavailableServices: string[] = [];
     let descriptors: McpToolDescriptor[];
@@ -9116,6 +9146,8 @@ export function toolAccessService(
     connection: typeof toolConnections.$inferSelect,
     provider: string,
     actor?: ActorInfo,
+    database = db,
+    credentialAccess: "connection" | "revocation" = "connection",
   ) {
     const configured = configuredOAuthClientForConnection(connection, provider);
     if (configured.clientId) return configured;
@@ -9144,7 +9176,7 @@ export function toolAccessService(
         (ref) => ref.configPath === "oauth.client_secret",
       )
     ) {
-      const [personalGrant] = await db
+      const [personalGrant] = await database
         .select({
           credentialSecretRefs: connectionGrants.credentialSecretRefs,
         })
@@ -9167,18 +9199,19 @@ export function toolAccessService(
       : credentialSecretRefs.find(
           (ref) => ref.configPath === "oauth.client_secret",
         );
+    const accessContext = {
+      consumerType: "tool_connection" as const,
+      consumerId: connection.id,
+      configPath: "oauth.client_secret",
+      actorType: actor?.actorType ?? "system" as const,
+      actorId: actor?.actorId ?? null,
+    };
     const clientSecret = clientSecretRef
-      ? await secrets.resolveSecretValue(
+      ? await (database === db ? secrets : secretService(database)).resolveSecretValue(
           connection.companyId,
           clientSecretRef.secretId,
           clientSecretRef.versionSelector ?? "latest",
-          {
-            consumerType: "tool_connection",
-            consumerId: connection.id,
-            configPath: "oauth.client_secret",
-            actorType: actor?.actorType ?? "system",
-            actorId: actor?.actorId ?? null,
-          },
+          credentialAccess === "revocation" ? { accessContext } : accessContext,
         )
       : null;
     return {
@@ -9504,6 +9537,8 @@ export function toolAccessService(
       rejections,
       firstPartyOrigin,
     );
+    let revocationUrl = safeOAuthEndpointUrl("token", metadata.revocation_endpoint, rejections, firstPartyOrigin);
+    let revocationEndpointAuthMethodsSupported = normalizeOauthScopes(metadata.revocation_endpoint_auth_methods_supported);
     let scopes = normalizeOauthScopes(metadata.scopes_supported);
     let offlineAccessSupported = Boolean(
       authorizationUrl && scopes.includes("offline_access"),
@@ -9579,6 +9614,8 @@ export function toolAccessService(
           rejections,
           firstPartyOrigin,
         );
+      revocationUrl = revocationUrl ?? safeOAuthEndpointUrl("token", authMetadata.revocation_endpoint, rejections, firstPartyOrigin);
+      if (!revocationEndpointAuthMethodsSupported.length) revocationEndpointAuthMethodsSupported = normalizeOauthScopes(authMetadata.revocation_endpoint_auth_methods_supported);
       issuer = issuer ?? advertisedIssuer ?? candidate.issuer;
       offlineAccessSupported = offlineAccessSupported ||
         normalizeOauthScopes(authMetadata.scopes_supported).includes("offline_access");
@@ -9613,6 +9650,8 @@ export function toolAccessService(
       authorizationUrl,
       tokenUrl,
       registrationUrl,
+      revocationUrl,
+      revocationEndpointAuthMethodsSupported,
       codeChallengeMethodsSupported,
       tokenEndpointAuthMethodsSupported,
       grantTypesSupported,
@@ -9681,8 +9720,7 @@ export function toolAccessService(
       // without adopting a different issuer or changing their requested tool scopes.
       let refreshMetadata: OAuthProviderEndpoints | null = null;
       if (
-        !connection.config.sourceTemplateKey &&
-        typeof oauth.offlineAccessSupported !== "boolean" &&
+        ((!connection.config.sourceTemplateKey && typeof oauth.offlineAccessSupported !== "boolean") || oauth.revocationUrl === undefined) &&
         typeof oauth.metadataUrl === "string"
       ) {
         const discovered = await endpointsFromMetadataUrl(
@@ -9703,6 +9741,8 @@ export function toolAccessService(
           : refreshMetadata?.offlineAccessSupported,
         authorizationUrl: configuredAuthorizationUrl,
         tokenUrl: configuredTokenUrl,
+        revocationEndpointAuthMethodsSupported: Array.isArray(oauth.revocationEndpointAuthMethodsSupported) ? normalizeOauthScopes(oauth.revocationEndpointAuthMethodsSupported) : refreshMetadata?.revocationEndpointAuthMethodsSupported,
+        revocationUrl: typeof oauth.revocationUrl === "string" ? safeOAuthEndpointUrl("token", oauth.revocationUrl, rejections, firstPartyOrigin) : oauth.revocationUrl === null ? null : refreshMetadata?.revocationUrl,
         registrationUrl: safeOAuthEndpointUrl(
           "registration",
           oauth.registrationUrl,
@@ -10338,6 +10378,8 @@ export function toolAccessService(
         provider: input.endpoints.provider,
         authorizationUrl: input.endpoints.authorizationUrl,
         tokenUrl: input.endpoints.tokenUrl,
+        revocationUrl: input.endpoints.revocationUrl,
+        revocationEndpointAuthMethodsSupported: input.endpoints.revocationEndpointAuthMethodsSupported,
         registrationUrl: input.endpoints.registrationUrl,
         metadataUrl: input.endpoints.metadataUrl ?? null,
         scopes: input.endpoints.scopes,
@@ -10406,6 +10448,8 @@ export function toolAccessService(
         provider: input.endpoints.provider,
         authorizationUrl: input.endpoints.authorizationUrl,
         tokenUrl: input.endpoints.tokenUrl,
+        revocationUrl: input.endpoints.revocationUrl,
+        revocationEndpointAuthMethodsSupported: input.endpoints.revocationEndpointAuthMethodsSupported,
         registrationUrl: input.endpoints.registrationUrl ?? null,
         metadataUrl: input.endpoints.metadataUrl ?? null,
         scopes: input.endpoints.scopes,
@@ -11237,6 +11281,7 @@ export function toolAccessService(
             },
           )
         : null;
+    const lifecycle = connectorOAuthLifecycle(await connectorAppForConnection(connection));
     let token: Awaited<ReturnType<typeof exchangeOAuthToken>>;
     try {
       token = await exchangeOAuthToken({
@@ -11253,6 +11298,7 @@ export function toolAccessService(
             ? normalizeOauthScopes(oauth.scopes)
             : normalizeOauthScopes(oauth.scope),
         refreshToken,
+        ...(refreshToken && lifecycle?.refreshTokenRetry === "idempotency-key" ? { idempotencyKey: createHash("sha256").update(refreshToken).digest("hex") } : {}),
         // Refreshing must stay bound to the same MCP server the original grant
         // named, or the authorization server may widen the token's audience.
         resource:
@@ -11839,7 +11885,7 @@ export function toolAccessService(
 
     // Resolve identity before taking the refresh lease or entering any locked
     // write, including deployments with a one-connection database pool.
-    const notebook = await isSavedNotebookConnection(connection);
+    const lifecycle = connectorOAuthLifecycle(await connectorAppForConnection(connection));
     return singleFlight(oauthGrantRefreshFlights, initialGrant.id, async () => {
       const lease = await acquireOAuthGrantRefreshLease(
         connection,
@@ -11901,7 +11947,7 @@ export function toolAccessService(
                   ? normalizeOauthScopes(oauth.scopes)
                   : normalizeOauthScopes(oauth.scope),
             refreshToken: refreshSecret.value,
-            ...(notebook
+            ...(lifecycle?.refreshTokenRetry === "idempotency-key"
               ? { idempotencyKey: createHash("sha256").update(refreshSecret.value).digest("hex") } : {}),
             resource:
               typeof oauth.resource === "string" && oauth.resource
@@ -12567,30 +12613,29 @@ export function toolAccessService(
   }
 
   async function assertExperimentalConnectorSetupEnabled(provider: unknown, existing = false) {
-    if (provider === NOTEBOOK_APP_SLUG
-      && !(await instanceSettingsService(db).getExperimental()).enablePaperclipNotebook) {
-      throw forbidden("Paperclip Notebook is unavailable on this instance", { code: "paperclip_notebook_disabled" });
+    const app = typeof provider === "string" ? getConnectableAppDefinition(provider) : null;
+    if (!app?.experimentalFeatureKey && (existing || !isMemoryConnectorId(provider))) return;
+    const settings = await instanceSettingsService(db).getExperimental();
+    if (app && !isConnectorFeatureEnabled(app, settings)) {
+      throw forbidden(`${app.name} is unavailable on this instance`, { code: "connector_disabled" });
     }
-    if (!existing && isMemoryConnectorId(provider)
-      && !(await instanceSettingsService(db).getExperimental()).enableMemoryConnectors) {
+    if (!existing && isMemoryConnectorId(provider) && !settings.enableMemoryConnectors) {
       throw forbidden("Enable memory connectors in Settings → Experimental to set up this connection", { code: "memory_connectors_disabled" });
     }
   }
 
-  async function isSavedNotebookConnection(connection: Parameters<typeof isNotebookConnection>[0] & { applicationId?: string; companyId?: string }, database = db, applicationKey?: unknown): Promise<boolean> {
-    if (isNotebookConnection(connection, applicationKey)) return true;
-    // Config is editable. A saved curated application retains its identity even
-    // if an older client clears or relabels the connection's template marker.
+  async function connectorAppForConnection(connection: { config?: Record<string, unknown>; transportConfig?: Record<string, unknown>; applicationId?: string; companyId?: string }, database = db, applicationKey?: unknown): Promise<AppDefinition | null> {
     if (applicationKey === undefined && connection.applicationId && connection.companyId) {
       const [application] = await database.select({ applicationKey: toolApplications.applicationKey }).from(toolApplications)
         .where(and(eq(toolApplications.companyId, connection.companyId), eq(toolApplications.id, connection.applicationId))).limit(1);
       applicationKey = application?.applicationKey;
     }
-    return isNotebookConnection(connection, applicationKey);
+    return connectorAppDefinition(connection, applicationKey);
   }
 
-  async function assertNotebookConnectionSetupEnabled(connection: Parameters<typeof isNotebookConnection>[0] & { applicationId?: string; companyId?: string }, applicationKey?: unknown) {
-    if (await isSavedNotebookConnection(connection, db, applicationKey)) await assertExperimentalConnectorSetupEnabled(NOTEBOOK_APP_SLUG);
+  async function assertConnectorConnectionSetupEnabled(connection: { config?: Record<string, unknown>; transportConfig?: Record<string, unknown>; applicationId?: string; companyId?: string; status?: string }, applicationKey?: unknown) {
+    const app = await connectorAppForConnection(connection, db, applicationKey);
+    if (app) await assertExperimentalConnectorSetupEnabled(app.slug, connection.status !== "draft");
   }
 
   async function connectGalleryApp(
@@ -12605,8 +12650,8 @@ export function toolAccessService(
       throw notFound("Tool app gallery entry not found");
 
     const galleryEntry = definition ? await appForConnectionSetup(definition) : null;
-    if (galleryEntry?.slug === NOTEBOOK_APP_SLUG && galleryEntry.availability?.available === false) {
-      throw unprocessable(galleryEntry.availability.reason ?? "Paperclip Notebook is not configured", { code: "notebook_not_configured" });
+    if (galleryEntry?.availability?.available === false) {
+      throw unprocessable(galleryEntry.availability.reason ?? "This connector is not configured", { code: "connector_unavailable" });
     }
 
     let existingApplication: typeof toolApplications.$inferSelect | null = null;
@@ -12715,7 +12760,7 @@ export function toolAccessService(
       }
     }
 
-    await assertNotebookConnectionSetupEnabled(requestedResumeConnection ?? {}, existingApplication?.applicationKey);
+    await assertConnectorConnectionSetupEnabled(requestedResumeConnection ?? {}, existingApplication?.applicationKey);
     const requestedName =
       input.name ??
       existingApplication?.name ??
@@ -12812,8 +12857,8 @@ export function toolAccessService(
             .limit(1)
         : [undefined];
     const retainedConnection = requestedResumeConnection ?? recoveredConnection;
-    if (retainedConnection?.config.notebookRevocationPending === true) {
-      throw conflict("Notebook authorization revocation is still pending. It will retry automatically; reconnect after cleanup finishes.", { code: "notebook_revocation_pending" });
+    if (retainedConnection?.config.oauthRevocationPending === true) {
+      throw conflict("OAuth authorization revocation is still pending. It will retry automatically; reconnect after cleanup finishes.", { code: "oauth_revocation_pending" });
     }
     let applicationName = existingApplication?.name ?? requestedName;
     let name = retainedConnection?.name ?? requestedName;
@@ -14220,7 +14265,7 @@ export function toolAccessService(
     actor?: ActorInfo,
   ): Promise<FinishToolAppResult> {
     const connection = await getConnectionRow(connectionId, companyId);
-    await assertNotebookConnectionSetupEnabled(connection);
+    await assertConnectorConnectionSetupEnabled(connection);
     if (connection.status === "archived")
       throw conflict("Archived app connections cannot be finished");
     if (connection.config.mcpPreserveAccess === true && isRemoteMcpConnectorMethod(connection.config.sourceTemplateKey, connection.config.connectionMethodKey)) {
@@ -14716,7 +14761,7 @@ export function toolAccessService(
   ): Promise<ToolConnectionHealthCheckResult> {
     const connection = await getConnectionRow(connectionId, companyId);
     assertSupportedConnection(connection);
-    await assertNotebookConnectionSetupEnabled(connection);
+    await assertConnectorConnectionSetupEnabled(connection);
     await assertExperimentalConnectorSetupEnabled(connection.config.sourceTemplateKey, connection.status !== "draft");
     if (connection.status === "archived")
       throw conflict("Archived app connections cannot be reconnected");
@@ -14901,8 +14946,8 @@ export function toolAccessService(
   ): Promise<ToolOAuthStartResult> {
     let connection = await getConnectionRow(connectionId, companyId);
     assertSupportedConnection(connection);
-    await assertNotebookConnectionSetupEnabled(connection);
-    if (connection.config.notebookRevocationPending === true) throw conflict("Notebook authorization revocation is still pending. It will retry automatically.", { code: "notebook_revocation_pending" });
+    await assertConnectorConnectionSetupEnabled(connection);
+    if (connection.config.oauthRevocationPending === true) throw conflict("OAuth authorization revocation is still pending. It will retry automatically.", { code: "oauth_revocation_pending" });
     await assertExperimentalConnectorSetupEnabled(connection.config.sourceTemplateKey, connection.status !== "draft");
     if (connection.status === "archived")
       throw conflict("Archived app connections cannot start sign in");
@@ -15447,6 +15492,8 @@ export function toolAccessService(
         provider: endpoints.provider,
         authorizationUrl: endpoints.authorizationUrl,
         tokenUrl: endpoints.tokenUrl,
+        revocationUrl: endpoints.revocationUrl,
+              revocationEndpointAuthMethodsSupported: endpoints.revocationEndpointAuthMethodsSupported,
         registrationUrl: endpoints.registrationUrl ?? null,
         metadataUrl: endpoints.metadataUrl ?? null,
         // Curated apps persist only the reviewed scopes attached to this OAuth
@@ -16529,8 +16576,8 @@ export function toolAccessService(
       status: connection.status,
       enabled: connection.enabled,
     };
-    await assertNotebookConnectionSetupEnabled(connection);
-    const notebook = await isSavedNotebookConnection(connection);
+    await assertConnectorConnectionSetupEnabled(connection);
+    const lifecycle = connectorOAuthLifecycle(await connectorAppForConnection(connection));
     const sourceTemplateKey =
       typeof connection.config.sourceTemplateKey === "string"
         ? connection.config.sourceTemplateKey
@@ -16580,8 +16627,8 @@ export function toolAccessService(
       token.scope = googleWorkspaceEffectiveScopes(authorizedScopes, normalizeOauthScopes(token.scope)).join(" ");
       if (!token.scope) throw unprocessable("Google did not grant any selected service permissions", { code: "oauth_scope_grant_invalid" });
     }
-    const notebookAccount = notebook
-      ? await notebookAccountIdentity(await resolvedRemoteEndpoint(connection, input.actor), token.accessToken, requestRemoteHttpEndpoint)
+    const connectedAccount = lifecycle?.accountIdentity
+      ? await lifecycle.accountIdentity({ endpoint: await resolvedRemoteEndpoint(connection, input.actor), accessToken: token.accessToken, send: requestRemoteHttpEndpoint })
       : null;
     const connectedAt = now();
     const expiresAt = token.expiresIn
@@ -16628,9 +16675,9 @@ export function toolAccessService(
           )
           .limit(1)
           .for("update");
-        if (notebook && existingUserGrant?.status === "revoked"
+        if (existingUserGrant?.status === "revoked"
           && existingUserGrant.revokedAt && existingUserGrant.revokedAt >= stateRow.createdAt) {
-          throw conflict("Notebook authorization was revoked after this sign in began. Start sign in again.", { code: "notebook_authorization_revoked" });
+          throw conflict("OAuth authorization was revoked after this sign in began. Start sign in again.", { code: "oauth_authorization_revoked" });
         }
         await tx.select({ id: toolApplications.id }).from(toolApplications)
           .where(and(eq(toolApplications.id, connection.applicationId), eq(toolApplications.companyId, connection.companyId)))
@@ -16638,8 +16685,8 @@ export function toolAccessService(
         const [lockedConnection] = await tx.select({ id: toolConnections.id, status: toolConnections.status, config: toolConnections.config }).from(toolConnections)
           .where(and(eq(toolConnections.id, connection.id), eq(toolConnections.companyId, connection.companyId)))
           .for("update");
-        if (notebook && (!lockedConnection || lockedConnection.status === "archived" || lockedConnection.config.notebookRevocationPending === true)) {
-          throw conflict("Notebook authorization was removed while sign in was in progress. Reconnect after revocation finishes.", { code: "notebook_revocation_pending" });
+        if (!lockedConnection || lockedConnection.status === "archived" || lockedConnection.config.oauthRevocationPending === true) {
+          throw conflict("OAuth authorization was removed while sign in was in progress. Reconnect after revocation finishes.", { code: "oauth_revocation_pending" });
         }
         const subjectCredentialSecretRefs =
           existingUserGrant?.credentialSecretRefs ?? [];
@@ -16695,7 +16742,7 @@ export function toolAccessService(
         const grantValues = {
           providerTenant: {
             ...(existingUserGrant?.providerTenant ?? {}),
-            ...(notebookAccount ? { name: notebookAccount.email, externalId: notebookAccount.id } : {}),
+            ...(connectedAccount ? { name: connectedAccount.name, externalId: connectedAccount.externalId } : {}),
             oauth: {
               ...asRecord(asRecord(existingUserGrant?.providerTenant).oauth),
               strategy: "direct_oauth",
@@ -16742,6 +16789,8 @@ export function toolAccessService(
             provider: endpoints.provider,
             authorizationUrl: endpoints.authorizationUrl,
             tokenUrl: endpoints.tokenUrl,
+            revocationUrl: endpoints.revocationUrl,
+              revocationEndpointAuthMethodsSupported: endpoints.revocationEndpointAuthMethodsSupported,
             metadataUrl: endpoints.metadataUrl ?? null,
             scopes: authorizedScopes,
             clientIdEnv: client.clientIdEnv,
@@ -16771,7 +16820,7 @@ export function toolAccessService(
         const [updatedConnection] = await tx
           .update(toolConnections)
           .set({
-            ...(notebookAccount ? { name: `Paperclip Notebook · ${notebookAccount.email}`.slice(0, 160) } : {}),
+            ...(connectedAccount ? { name: connectedAccount.connectionName } : {}),
             status: "active",
             enabled: true,
             authKind: "oauth",
@@ -17021,6 +17070,8 @@ export function toolAccessService(
           provider: endpoints.provider,
           authorizationUrl: endpoints.authorizationUrl,
           tokenUrl: endpoints.tokenUrl,
+          revocationUrl: endpoints.revocationUrl,
+              revocationEndpointAuthMethodsSupported: endpoints.revocationEndpointAuthMethodsSupported,
           metadataUrl: endpoints.metadataUrl ?? null,
           scopes: authorizedScopes,
           clientIdEnv: client.clientIdEnv,
@@ -18647,7 +18698,7 @@ export function toolAccessService(
       const config = normalizeGoogleSheetsConnectionConfig(
         input.config ?? input.transportConfig ?? {},
       );
-      await assertNotebookConnectionSetupEnabled({ config }, applicationNamespace);
+      await assertConnectorConnectionSetupEnabled({ config, applicationId, companyId });
       // Validate company-scoped references before touching a caller-supplied
       // network endpoint. Besides failing fast, this keeps cross-company
       // authorization errors from being masked by DNS or SSRF validation.
@@ -18663,7 +18714,7 @@ export function toolAccessService(
       if (applicationId) {
         const app = await assertApplication(companyId, applicationId);
         applicationNamespace = app.applicationKey ?? app.name;
-        await assertNotebookConnectionSetupEnabled({ config }, applicationNamespace);
+        await assertConnectorConnectionSetupEnabled({ config }, applicationNamespace);
         if (
           (transport === "mcp_remote" && app.type !== "mcp_http") ||
           (transport === "local_stdio" && app.type !== "mcp_stdio")
@@ -19260,9 +19311,8 @@ export function toolAccessService(
         // provider-level disconnect must warn that it removes every profile.
         providerRevocation = "local_only_shared_client";
       }
-      let notebook = false;
+      const revokeProvider = isOAuthRevocableConnection(connection);
       const grant = await db.transaction(async (tx) => {
-        notebook = await isSavedNotebookConnection(connection, tx as unknown as Db);
         const [lockedGrant] = await tx.select({ id: connectionGrants.id }).from(connectionGrants)
           .where(and(eq(connectionGrants.id, grantId), eq(connectionGrants.companyId, connection.companyId), eq(connectionGrants.connectionId, connection.id)))
           .for("update");
@@ -19318,19 +19368,19 @@ export function toolAccessService(
             })),
           );
         }
-        if (notebook) {
-          await tx.update(toolConnections).set({ config: sql`${toolConnections.config} || '{"notebookRevocationPending":true}'::jsonb`, updatedAt: now() }).where(eq(toolConnections.id, connection.id));
+        if (revokeProvider) {
+          await tx.update(toolConnections).set({ config: sql`${toolConnections.config} || '{"oauthRevocationPending":true}'::jsonb`, updatedAt: now() }).where(eq(toolConnections.id, connection.id));
         }
         return updated;
       });
       if (!grant) throw notFound("Connection grant not found");
-      if (notebook) {
-        const stillPending = await withNotebookRevocationClaim(connection.id, connection.companyId, async (current, tx) => {
+      if (revokeProvider) {
+        const stillPending = await withOAuthRevocationClaim(connection.id, connection.companyId, async (current, tx) => {
           const database = tx as unknown as Db;
           const grants = await tx.select().from(connectionGrants).where(and(eq(connectionGrants.connectionId, connection.id),
             eq(connectionGrants.companyId, connection.companyId), eq(connectionGrants.status, "revoked")));
-          const pendingIds = await revokeNotebookGrants(current, grants.map(row => row.id), database);
-          await finishNotebookGrantRevocations(current, grants, pendingIds, database);
+          const pendingIds = await revokeOAuthGrants(current, grants.map(row => row.id), database);
+          await finishOAuthGrantRevocations(current, grants, pendingIds, database);
           return pendingIds.size > 0;
         });
         providerRevocation = stillPending === false ? "success" : "pending";
@@ -19642,6 +19692,8 @@ export function toolAccessService(
       const config = normalizeGoogleSheetsConnectionConfig(
         input.config ?? input.transportConfig ?? existing.config,
       );
+      if (Object.prototype.hasOwnProperty.call(existing.config, "oauthRevocationPending")) config.oauthRevocationPending = existing.config.oauthRevocationPending === true;
+      else delete config.oauthRevocationPending;
       if (input.config?.methodConfig !== undefined && typeof config.sourceTemplateKey === "string") {
         const app = getConnectableAppDefinition(config.sourceTemplateKey);
         if (app) normalizeConnectionMethodConfig(connectionMethodForConnection(app, { ...existing, config }), asRecord(config.methodConfig));
@@ -19745,7 +19797,7 @@ export function toolAccessService(
 
     sweepGitHubConnectionContinuity,
 
-    sweepNotebookRevocations,
+    sweepOAuthRevocations,
 
     listCatalog: async (
       connectionId: string,

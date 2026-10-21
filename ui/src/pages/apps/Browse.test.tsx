@@ -935,6 +935,17 @@ describe("Connectors landing page", () => {
     },
   );
 
+  it("uses availability metadata for a non-Notebook connector in cached gallery results", async () => {
+    const privateResearch = { ...getAppStoreDefinition("notion")!, slug: "private-research", name: "Private Research", experimentalFeatureKey: "enableCases" as const };
+    listGalleryMock.mockResolvedValue({ apps: [privateResearch, getAppStoreDefinition("context7")] });
+    const client = await renderBrowse();
+    expect(container.querySelector('[data-app-slug="private-research"]')).toBeNull();
+    expect(container.querySelector('[data-app-slug="context7"]')).not.toBeNull();
+    await act(() => { client.setQueryData(queryKeys.instance.experimentalSettings, { enableCases: true }); });
+    await flushReact();
+    expect(container.querySelector('[data-app-slug="private-research"]')).not.toBeNull();
+  });
+
   it("hides cached Notebook catalog entries until explicitly enabled", async () => {
     listGalleryMock.mockResolvedValue({ apps: ["paperclip-notebook", "notion"].map(getAppStoreDefinition) });
     const client = await renderBrowse();

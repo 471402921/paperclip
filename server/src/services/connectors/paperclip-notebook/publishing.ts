@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import type { createAssignedMcpTools } from "./assigned-mcp-tools.js";
-import type { RemoteWorkspaceFileReader } from "./native-runner-file-handoff.js";
-import { assertRunnerWorkspacePathAllowed, readWorkspaceUploadFile } from "./runner-bridge-tools.js";
-import { guardedRemoteHttpFetch } from "../remote-http-fetch.js";
+import { notebookPublicationClient } from "./publication-client.js";
+import type { createAssignedMcpTools } from "../../native-runtime/assigned-mcp-tools.js";
+import type { RemoteWorkspaceFileReader } from "../../native-runtime/native-runner-file-handoff.js";
+import { assertRunnerWorkspacePathAllowed, readWorkspaceUploadFile } from "../../native-runtime/runner-bridge-tools.js";
+import { guardedRemoteHttpFetch } from "../../remote-http-fetch.js";
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const path = z.string().min(1).max(1000).refine(value => !/^[a-z]+:|[\\\x00-\x1f\x7f?#%]/i.test(value)
@@ -32,12 +33,12 @@ export async function publishNotebookWorkspaceFiles(input: {
   if (args.pageId && args.expectedVersion === undefined) throw new Error("notebook_expected_version_required");
   if (new Set(args.files.map(file => file.path)).size !== args.files.length || !args.files.some(file => file.path === args.entryFile)
     || args.files.reduce((sum, file) => sum + file.size, 0) > MAX_BYTES) throw new Error("notebook_manifest_invalid");
-  if (!input.tools.notebookConnectionIds().includes(args.connectionId)) throw new Error("assigned_notebook_tool_unavailable");
-  await input.tools.assertNotebookConnectionAvailable(args.connectionId);
+  const client = notebookPublicationClient(input.tools);
+  await client.assertAvailable(args.connectionId);
   for (const file of args.files) assertRunnerWorkspacePathAllowed(file.source);
   const call = async <T>(name: string, parameters: Record<string, unknown>): Promise<T> => {
     await input.authorize();
-    return await input.tools.executeNotebookTool(args.connectionId, name, parameters, "standard") as T;
+    return await client.call(args.connectionId, name, parameters) as T;
   };
   const read = async (file: typeof args.files[number]) => {
     await input.authorize();
@@ -47,8 +48,6 @@ export async function publishNotebookWorkspaceFiles(input: {
     if (bytes.length !== file.size || createHash("sha256").update(bytes).digest("hex") !== file.sha256) throw new Error("notebook_workspace_file_changed");
     await input.authorize(); return bytes;
   };
-  // Validate all sources before a page mutation or upload. Read again for each
-  // ticket so files changed after preparation cannot be published accidentally.
   for (const file of args.files) await read(file);
   const page = args.pageId ? { id: args.pageId, version: args.expectedVersion! }
     : await call<{ id: string; version: number }>("notebook_create_page", { title: args.title ?? args.entryFile,

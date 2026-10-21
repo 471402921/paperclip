@@ -29,8 +29,8 @@ import { emitConnectionInvoked } from "./connector-telemetry.js";
 import { resolveManagedGitHubIdentitySelection } from "./git-credentials.js";
 import { extractRemoteMcpPending } from "./remote-mcp-pending.js";
 import { logger } from "../middleware/logger.js";
-import { isNotebookUploadRequest, prepareNotebookUploadResult, restoreNotebookUploadTickets, type NotebookUploadTickets } from "./notebook-upload-transport.js";
-import { isNotebookConnection } from "./notebook-connection.js";
+import { connectorTransfers, type ConnectorTransferProjection } from "./connectors/private-transfer.js";
+import { getAppDefinitionForApplicationKey, isConnectorFeatureEnabled } from "@paperclipai/shared";
 import { instanceSettingsService } from "./instance-settings.js";
 import { spawn } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -398,8 +398,7 @@ interface ExecuteGatewayToolInput {
   approvedActionRequestId?: string | null;
   idempotencyKey?: string | null;
   callerHeaders?: Record<string, string | string[] | undefined>;
-  /** Internal local-file transfer only; never forwarded from MCP/tool-call bodies. */
-  notebookUploadTransport?: { connectionId: string };
+  privateTransfer?: { connectionId: string };
 }
 
 interface ExecuteTestCallInput {
@@ -452,8 +451,7 @@ type HeaderPolicySummary = {
 
 type RemoteHttpExecutionResult = {
   result: unknown;
-  /** Ephemeral URLs only. Never include this projection in persisted results or events. */
-  notebookUploadTickets?: NotebookUploadTickets;
+  privateTransfer?: ConnectorTransferProjection;
   headerSummary?: HeaderPolicySummary;
   execution?: RemoteHttpExecutionAudit;
 };
@@ -1443,11 +1441,11 @@ export function createToolGatewayService(
       return connectionRow ? [{ catalogEntry, ...connectionRow }] : [];
     });
 
-    const notebookEnabled = !connectionRows.some(({ connection, application }) => isNotebookConnection(connection, application.applicationKey))
-      || (await instanceSettingsService(db).getExperimental()).enablePaperclipNotebook;
+    const featureSettings = connectionRows.some(({ application }) => getAppDefinitionForApplicationKey(application.applicationKey)?.experimentalFeatureKey)
+      ? await instanceSettingsService(db).getExperimental() : undefined;
     const eligibleRows = rows.filter(
       ({ catalogEntry, connection, application }) =>
-        (notebookEnabled || !isNotebookConnection(connection, application.applicationKey)) &&
+        (!featureSettings || isConnectorFeatureEnabled(getAppDefinitionForApplicationKey(application.applicationKey), featureSettings)) &&
         !isRetiredComposioConnection(connection) &&
         !(isDaytonaConnection(connection) && !isCurrentDaytonaCatalogEntry(catalogEntry)) &&
         !(isRailwayEndpoint(connection.config.url) && (isRailwayToolBlocked(catalogEntry.toolName) || (normalizeRailwayToolName(catalogEntry.toolName).startsWith(RAILWAY_TOOL_PREFIX) && connection.config.railwayApiStatus !== "available"))) &&
@@ -6048,11 +6046,9 @@ export function createToolGatewayService(
       session,
       tool,
     );
-    // Approved executions also reach this path directly. Check the current
-    // rollout before resolving any credential or contacting Notebook.
-    if (isNotebookConnection(connection, tool.applicationKey)
-      && !(await instanceSettingsService(db).getExperimental()).enablePaperclipNotebook) {
-      throw new ToolGatewayHttpError(403, "Paperclip Notebook is unavailable on this instance.", "paperclip_notebook_disabled");
+    const app = getAppDefinitionForApplicationKey(tool.applicationKey);
+    if (app?.experimentalFeatureKey && !isConnectorFeatureEnabled(app, await instanceSettingsService(db).getExperimental())) {
+      throw new ToolGatewayHttpError(403, "This connector is unavailable on this instance.", "connector_unavailable");
     }
     // Recheck immediately before dispatch, including previously approved calls
     // and connections whose stored grant/catalog predates scope reduction.
@@ -6454,12 +6450,12 @@ export function createToolGatewayService(
         false,
         sourceTemplateKey,
       );
-      const notebookUpload = prepareNotebookUploadResult(result, tool, parameters);
+      const prepared = connectorTransfers.prepare(result, tool, parameters);
       await markCallHealth(
         "ok",
         "Remote MCP server responded to tools/call.",
       );
-      return { result: notebookUpload.result, notebookUploadTickets: notebookUpload.uploadTickets, headerSummary, execution };
+      return { ...prepared, headerSummary, execution };
     } catch (error) {
       if (error instanceof McpHttpResponseError) {
         const failure = error.reason === "too_large" ? responseTooLargeError()
@@ -10131,9 +10127,9 @@ export function createToolGatewayService(
         }
       }
       let tool = await findToolForSession(session, input.tool);
-      if (input.notebookUploadTransport && (!session.agentId || !session.runId
-        || input.notebookUploadTransport.connectionId !== tool.connectionId || !isNotebookUploadRequest(tool, input.parameters))) {
-        throw new ToolGatewayHttpError(403, "Notebook upload transport requires the selected Notebook upload action in an active agent run.", "notebook_upload_transport_denied");
+      if (input.privateTransfer && (!session.agentId || !session.runId
+        || input.privateTransfer.connectionId !== tool.connectionId || !connectorTransfers.supports(tool, input.parameters))) {
+        throw new ToolGatewayHttpError(403, "Private transfer requires an eligible action on the selected connection in an active agent run.", "connector_transfer_denied");
       }
       if (tool.providerType === "paperclip_slack_chat") {
         const definition = SLACK_TOOLS.find(t => t.name === tool.upstreamToolName);
@@ -11023,8 +11019,8 @@ export function createToolGatewayService(
           status: "completed" as const,
           tool: virtualToolName ?? tool.name,
           targetTool: virtualToolName ? tool.name : undefined,
-          result: input.notebookUploadTransport && connectedMcpExecution?.notebookUploadTickets
-            ? restoreNotebookUploadTickets(resultValidation.value, connectedMcpExecution.notebookUploadTickets)
+          result: input.privateTransfer && connectedMcpExecution?.privateTransfer
+            ? connectedMcpExecution.privateTransfer.restore(resultValidation.value)
             : resultValidation.value,
         };
       } catch (err) {

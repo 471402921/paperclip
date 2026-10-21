@@ -688,6 +688,17 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
     expect(startOAuthMock).not.toHaveBeenCalled();
   });
 
+  it("uses the saved application identity when its mutable provider marker has changed", async () => {
+    mockSearch.value = "source=notion&reconnect=existing-notebook";
+    getConnectionMock.mockResolvedValue({ id: "existing-notebook", applicationId: "notebook-app", status: "active", config: { sourceTemplateKey: "notion" } });
+    listConnectionsMock.mockResolvedValue({ connections: [{ id: "existing-notebook", applicationId: "notebook-app", status: "active", config: { sourceTemplateKey: "notion" } }] });
+    listApplicationsMock.mockResolvedValue({ applications: [{ id: "notebook-app", applicationKey: "app-gallery:paperclip-notebook:11111111-1111-4111-8111-111111111111", metadata: { sourceTemplateKey: "notion" } }] });
+    await render();
+    expect(container.textContent).toContain("Paperclip Notebook is not available on this instance");
+    expect(connectAppMock).not.toHaveBeenCalled();
+    expect(startOAuthMock).not.toHaveBeenCalled();
+  });
+
   it("waits for Notebook settings and fails closed when they cannot be loaded", async () => {
     mockSearch.value = "source=paperclip-notebook";
     let reject!: (error: Error) => void;
@@ -696,7 +707,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
     expect(container.textContent).toContain("Loading connection settings");
     await act(async () => { reject(new Error("Settings unavailable")); });
     await flushReact();
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Could not load Notebook availability");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Could not load connector availability");
     expect(connectAppMock).not.toHaveBeenCalled();
     expect(startOAuthMock).not.toHaveBeenCalled();
   });

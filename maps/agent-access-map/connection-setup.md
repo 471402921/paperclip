@@ -45,6 +45,10 @@ administration.
 
 Notebook is internally gated by `enablePaperclipNotebook` (default off, no settings toggle). Disabled instances hide setup/discovery and deny curated Notebook dispatch and publishing; removal and revocation remain available.
 
+The connector catalog declares the feature key. Shared availability checks use
+the saved application identity. Account lookup and file-transfer protocols live
+in trusted connector adapters; runtime and gateway interfaces remain generic.
+
 Notebook source addition: `paperclip-notebook` is discoverable through
 `connections_search` and requestable through `connection_request`. Its standard
 personal authorization requests read, write, share, and delete scopes. Notebook

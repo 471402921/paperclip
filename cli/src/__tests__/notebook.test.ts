@@ -51,9 +51,9 @@ describe("Notebook local publication through the active run gateway", { timeout:
         if (mode === "redirect") { res.writeHead(302, { location: `${origin}/redirected` }); res.end(); return; }
         reply([...names, ...(mode === "intact-replay" ? [] : ["notebook_get_operation"])].map(name => ({ name: `gateway:${name}`, upstreamToolName: name, applicationKey, connectionId: mode === "wrong-connection" ? "another-notebook" : connection }))); return;
       }
-      if (["/api/tool-gateway/tools/call", "/api/tool-gateway/notebook/uploads/call"].includes(url.pathname)) {
+      if (["/api/tool-gateway/tools/call", "/api/tool-gateway/connector-transfers/call"].includes(url.pathname)) {
         const body = JSON.parse(bytes.toString()); calls.push(body);
-        if (url.pathname === "/api/tool-gateway/notebook/uploads/call") {
+        if (url.pathname === "/api/tool-gateway/connector-transfers/call") {
           expect(body.connectionId).toBe(connection);
           expect(body.tool.endsWith("notebook_begin_upload") || body.tool.endsWith("notebook_get_operation")
             && body.parameters.receipt?.kind === "begin_upload").toBe(true);
