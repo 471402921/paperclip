@@ -237,9 +237,6 @@ export async function nativeCompletionFeedback(
   if (readiness.unresolvedBlockerCount > 0) {
     return `Completion report accepted; this task still has unresolved dependencies. Explain the blockers on [this task](/issues/${issue.identifier ?? issue.id}); do not say the task is done.`;
   }
-  // A provider can mistake the immutable current admission for a system
-  // blocker. Correct that report before acceptance, using the exact live task
-  // receipt. Keep real access, approval, dependency, and Stop gates authoritative.
   if (result.reportedWorkDisposition === "blocked" && result.blocker?.owner.kind === "system" &&
       result.blocker.scope === "current_track" && result.blocker.reasonCode === "repository_checkout_pending" &&
       !result.completionClaim.objectiveSatisfied && result.completionClaim.remainingWork.some(work => work.blocksCompletion) &&

@@ -230,7 +230,6 @@ describe("native final-response feedback", () => {
     await expect(nativeCompletionFeedback(db, value.runId, report)).rejects.toThrow('paperclip_finish with reportedWorkDisposition="yielded"');
     await expect(nativeCompletionFeedback(db, value.runId, { ...report, evidence: [{ ref: `repository-preparation:${randomUUID()}` }] }))
       .resolves.toContain("Blocker report accepted");
-    // A real access restriction must remain a blocker even while a repository is pending.
     await expect(nativeCompletionFeedback(db, value.runId, { ...report, blocker: { ...report.blocker!, reasonCode: "missing_access" } }))
       .resolves.toContain("Blocker report accepted");
     await expect(nativeCompletionFeedback(db, value.runId, { ...report, blocker: { ...report.blocker!, owner: { kind: "user", name: "Owner" } } }))
@@ -244,7 +243,6 @@ describe("native final-response feedback", () => {
       payload: { version: 1, questions: [{ id: "branch", prompt: "Which private branch?", selectionMode: "single", required: true, allowOther: true, options: [] }] } }).returning();
     await expect(nativeCompletionFeedback(db, value.runId, report)).resolves.toContain(`Pending request: ${question.id}`);
     await db.update(issueThreadInteractions).set({ status: "answered" }).where(eq(issueThreadInteractions.id, question.id));
-    // A pending request elsewhere is not authority to continue this task.
     await db.update(executionWorkspaceRepositories).set({ requestedByIssueId: null }).where(eq(executionWorkspaceRepositories.id, repository.id));
     await expect(nativeCompletionFeedback(db, value.runId, report)).resolves.toContain("Blocker report accepted");
     await db.update(executionWorkspaceRepositories).set({ requestedByIssueId: value.issueId, state: "failed" }).where(eq(executionWorkspaceRepositories.id, repository.id));
