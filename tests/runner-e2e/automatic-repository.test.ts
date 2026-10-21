@@ -3,7 +3,8 @@ import { automaticRepositoryApiState, automaticRepositoryStopReason, gradeAutoma
 
 const sha = "a".repeat(40);
 const reference = "c".repeat(64);
-const valid: AutomaticRepositoryObservation = { reference, issueDone: true, runCount: 2,
+const valid: AutomaticRepositoryObservation = { expectedModel: "gpt-6.1-sol", expectedProvider: "codex",
+  actualProviders: [{ model: "gpt-6.1-sol", kind: "codex" }, { model: "gpt-6.1-sol", kind: "codex" }], reference, issueDone: true, runCount: 2,
   successfulCommittedRuns: 2, sourceContinuation: "same_agent", successorSource: "native_status_decision", workspaceIds: ["workspace", "workspace"],
   readyRepository: true, savedContext: `${reference}\n`, firstSavedContext: `${reference}\n`, firstContextAttributed: true,
   firstContextObservedAt: 1000, successorStartedAt: 2000, predecessorFinishedAt: 1900, predecessorRetagged: false,
@@ -37,6 +38,9 @@ it.each<Partial<AutomaticRepositoryObservation>>([
   { workspaceIds: ["old", "new"] }, { savedContext: null }, { firstSavedContext: null }, { firstContextAttributed: false },
   { firstSavedContext: `${"d".repeat(64)}\n` }, { firstSavedContext: "REFERENCE-fresh\n" },
   { firstContextObservedAt: null }, { firstContextObservedAt: 2000 }, { firstContextObservedAt: 3000 }, { successorStartedAt: null },
+  { actualProviders: [] }, { actualProviders: [{ model: "gpt-6.1-sol", kind: "codex" }] },
+  { actualProviders: [{ model: "gpt-5.6-sol", kind: "codex" }, valid.actualProviders[1]!] },
+  { actualProviders: [valid.actualProviders[0]!, { model: "gpt-6.1-sol", kind: "acpx:claude" }] },
   { readyRepository: false }, { downloaded: null }, { predecessorFinishedAt: null }, { predecessorFinishedAt: 2001 },
   { predecessorRetagged: true }, { continuationReceipt: null },
   { continuationReceipt: { ...valid.continuationReceipt!, dispatchId: valid.continuationReceipt!.intentId } },

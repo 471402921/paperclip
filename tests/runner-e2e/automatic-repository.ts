@@ -29,6 +29,9 @@ export const automaticRepositoryTask: RunnerTaskFixture = {
 };
 
 export interface AutomaticRepositoryObservation {
+  expectedModel: string;
+  expectedProvider: string;
+  actualProviders: Array<{ model: string | null; kind: string | null }>;
   reference: string;
   issueDone: boolean;
   runCount: number;
@@ -94,6 +97,9 @@ export function gradeAutomaticRepository(value: AutomaticRepositoryObservation) 
       /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value.continuationReceipt.dispatchId) &&
       value.continuationReceipt.intentId !== value.continuationReceipt.dispatchId,
       "The saved same-agent intent must bind a distinct successor dispatch after the unmodified predecessor finishes, without a timer or user message."),
+    check("configured-provider", value.actualProviders.length === 2 && value.actualProviders.every(provider =>
+      provider.model === value.expectedModel && provider.kind === value.expectedProvider),
+      "Both admitted runs must retain the configured provider and model."),
     check("retained-workspace", value.workspaceIds.length === 2 && Boolean(value.workspaceIds[0]) && value.workspaceIds.every(id => id === value.workspaceIds[0]) && value.readyRepository,
       "Both admissions must retain the same task workspace and its prepared repository."),
     check("retained-context", value.firstContextAttributed && value.firstContextObservedAt !== null && value.successorStartedAt !== null &&
