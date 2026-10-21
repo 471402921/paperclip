@@ -1,8 +1,7 @@
-import { isDeepStrictEqual } from "node:util";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { continuationScenario, continuationTasks, necessaryQuestionContract } from "./continuation-cases.js";
-import { questionResumedOnce, validResumeQuestionForm } from "./question-resume-scoring.js";
+import { questionResumedOnce, sameQuestion, validResumeQuestionForm } from "./question-resume-scoring.js";
 import type { ContinuationCheckpoint } from "./continuation-scoring.js";
 import type { RunnerTaskFixture } from "./types.js";
 
@@ -31,8 +30,7 @@ export function gradeNecessaryQuestion(checkpoints: ContinuationCheckpoint[], an
     check("necessary-question.visible", initial?.questionPresentation?.interactionId === question?.id &&
       initial?.questionPresentation?.promptVisible === true && initial?.questionPresentation?.contextVisible === true,
       "The browser must observe the actual question and context, not only its title."),
-    check("necessary-question.answer", finished.length === 1 && resolved?.id === question?.id && resolved?.sourceRunId === question?.sourceRunId &&
-      isDeepStrictEqual(question?.payload, resolved?.payload) && resolved?.status === "answered" &&
+    check("necessary-question.answer", finished.length === 1 && !!question && sameQuestion(question, resolved) && resolved?.status === "answered" &&
       typeof resolved.resolvedByUserId === "string" && !!resolved.resolvedByUserId && !resolved.resolvedByAgentId &&
       Array.isArray(response) && response.length === 1 && response[0]?.questionId === field?.id && response[0]?.otherText === answer &&
       !response[0]?.optionIds?.length,

@@ -46,7 +46,7 @@ export function validResumeQuestionForm(checkpoint: ContinuationCheckpoint, i: R
     (fields.length === 1 || (path === "provider" && isSingleClaudeQuestion(fields)));
 }
 
-function sameQuestion(a: Row, b?: Row) {
+export function sameQuestion(a: Row, b?: Row) {
   return !!b && ["id", "kind", "sourceRunId", "issueId", "companyId", "createdByAgentId", "idempotencyKey", "continuationPolicy"]
     .every(k => a[k] === b[k]) && isDeepStrictEqual(a.payload, b.payload);
 }
