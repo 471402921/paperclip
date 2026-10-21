@@ -156,3 +156,13 @@ through the real service and prepares verified bytes on the reused task root,
 with only remote clone transport replaced by an owned local repository. The
 queued sixth campaign was cancelled during its build, before provider execution,
 when this review finding made that candidate an uninformative paid retry.
+
+
+The necessary-question journey now extends the existing continuation flow. Four
+explicit development cells require a visible free-text prompt and context, one
+real user answer retained on the unchanged question, an exactly bound provider
+resume or semantic successor, and an independently read exact saved confirmation
+with a visible link. Calibration preserves the existing continuation and question
+suites. These cells use production instructions and the recorded models, but
+retain explicit API-key/per-turn differences and do not count as Slack or staging
+qualification. Actual provider measurement is still required.
