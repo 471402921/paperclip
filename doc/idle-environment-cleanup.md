@@ -68,8 +68,8 @@ the database. A sweep flushes registered runtimes as well as its own startup spo
 this reaches a producer runtime's buffer even when it differs from the heartbeat's
 runtime. The registry retains only runtimes with unresolved buffer ownership.
 
-A spool read failure still allows persisted lease cleanup, then fails the sweep so
-recovery stays scheduled. Buffer overflow leaves the spool dirty so the next
+A spool read failure still allows other runtimes to flush their buffers and
+persisted leases to clean up, then fails the sweep so recovery stays scheduled. Buffer overflow leaves the spool dirty so the next
 concrete retry can load entries after capacity is freed. No empty-spool filesystem
 or database polling is introduced. Existing limits on a simultaneous database,
 spool, and buffer-capacity failure remain; this is not a new durable queue.

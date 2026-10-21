@@ -145,13 +145,23 @@ describe.skipIf(!support.supported)("environment cleanup scheduling", () => {
     available = true; await settle(60_000); expect(flush).toHaveBeenCalledTimes(2);
     await settle(300_000); expect(releases).toHaveBeenCalledTimes(1); await quiet();
   });
-  it("retries a failed spool read without starving persisted cleanup", async () => {
+  it("retries a failed spool read without starving other buffers or persisted cleanup", async () => {
     const lease = await pending();
     const stop = registerDeferredEnvironmentCleanup(db, async () => { throw new Error("spool unavailable"); });
     disposers.push(stop);
+    let stopHealthy!: () => void;
+    let bufferedLeaseId: string | undefined;
+    const healthy = vi.fn(async () => {
+      bufferedLeaseId = (await pending()).id;
+      stopHealthy();
+      return { recovered: 1, pending: 0 };
+    });
+    stopHealthy = registerDeferredEnvironmentCleanup(db, healthy); disposers.push(stopHealthy);
     await start();
-    expect(releases).toHaveBeenCalledTimes(1);
+    expect(healthy).toHaveBeenCalledTimes(1);
+    expect(releases).toHaveBeenCalledTimes(2);
     expect((await environmentService(db).getLeaseById(lease.id))?.status).toBe("expired");
+    expect((await environmentService(db).getLeaseById(bufferedLeaseId!))?.status).toBe("expired");
     expect(errors).toHaveLength(1); errors.length = 0;
     draining = true; const count = reads.mock.calls.length;
     await settle(90_000); expect(reads).toHaveBeenCalledTimes(count);

@@ -1299,8 +1299,8 @@ async function startServerWithDatabaseTeardown(
   // foreign-company insert tears the provisioned sandbox down. If that teardown
   // also fails, the acquire records a lease-less `pending_cleanup` lease row. No
   // other path releases that sandbox, so the master pending-cleanup sweep retries
-  // the provider teardown and releases the orphan. The sweep runs on startup and
-  // on the scheduler interval.
+  // the provider teardown and releases the orphan. The sweep runs on startup,
+  // committed writes, and deadlines derived from unresolved cleanup.
   //
   // This backstop is independent of the heartbeat scheduler toggle. A leaked
   // provider sandbox costs money whether or not the instance schedules
@@ -1310,8 +1310,8 @@ async function startServerWithDatabaseTeardown(
   // The master pending-cleanup sweep is the single owner of these rows. Its
   // atomic per-attempt claim makes two overlapping sweeps safe, so the enabled
   // path can also run the sweep from the orphaned-run reaper without a second
-  // teardown. The heartbeat scheduler owns the sweep when it is enabled; the
-  // disabled path creates its own runtime to own the same sweep.
+  // teardown. The delivery coordinator owns pending-work scheduling whether
+  // or not the heartbeat scheduler is enabled.
   const environmentLeaseCleanupHeartbeat = accountingHeartbeat;
   const chatCompletionDeliveries = chatCompletionDeliveryService(db as any, environmentLeaseCleanupHeartbeat);
   const connectionDeliveries = connectionIntentDeliveryService(db as any, environmentLeaseCleanupHeartbeat);

@@ -35,10 +35,15 @@ export function hasDeferredEnvironmentCleanup(db: object): boolean {
   return (deferred.get(db)?.flushers.size ?? 0) > 0;
 }
 export async function flushDeferredEnvironmentCleanup(db: object, additional: Iterable<Flush> = []): Promise<{ recovered: number; pending: number }> {
-  let recovered = 0, pending = 0;
+  let recovered = 0, pending = 0, failures = 0;
   for (const flush of new Set([...(deferred.get(db)?.flushers ?? []), ...additional])) {
-    const result = await flush();
-    recovered += result.recovered; pending += result.pending;
+    try {
+      const result = await flush();
+      recovered += result.recovered; pending += result.pending;
+    } catch { failures++; }
   }
+  // Attempt every runtime before retaining the retry. Provider/spool errors may
+  // contain credentials, so report only a count rather than their payloads.
+  if (failures > 0) throw new Error(`Deferred orphan cleanup failed for ${failures} runtime(s)`);
   return { recovered, pending };
 }
