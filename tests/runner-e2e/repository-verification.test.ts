@@ -46,7 +46,7 @@ describe("configured repository and conversion qualification", () => {
     expect(repositoryConfigurationDigest({ ...before, adapterConfig: { ...before.adapterConfig, env: {} } })).not.toBe(repositoryConfigurationDigest(before));
   });
   it("registers explicit development cells with staging models and production instructions", () => {
-    for (const id of ["configured-repository", "legacy-conversion"]) {
+    for (const id of ["configured-repository", "legacy-conversion", "automatic-repository-configured-models"]) {
       const suite = runnerSuites.find(suite => suite.id === id)!;
       expect(suite.manualOnly).toBe(true);
       expect(suite.groups).toEqual([]);
@@ -54,7 +54,7 @@ describe("configured repository and conversion qualification", () => {
       expect(suite.profiles.map(profile => profile.model)).toEqual(["gpt-6.1-sol", "claude-opus-5-5"]);
       expect(suite.definitionMetadata?.stagingQualification).toBe(false);
       expect(suite.tasks).toHaveLength(1);
-      expect(suite.tasks[0]?.flow).toBe("repository_verification");
+      expect(suite.tasks[0]?.flow).toBe(id === "automatic-repository-configured-models" ? "automatic_repository" : "repository_verification");
       expect(suite.tasks[0]?.automaticRetryPolicy).toBe("single_attempt");
     }
     expect(repositoryProofTasks.every(task => task.expectedRunCount === 1)).toBe(true);

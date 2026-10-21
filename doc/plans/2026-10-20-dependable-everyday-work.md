@@ -111,3 +111,14 @@ Configured checkouts keep strict validation, real Git roots still receive the
 exclusion, linked metadata stays rejected, and missing Git stays an error. The
 repair's Git and authorization cohort passes locally. Fresh provider
 remeasurement and the monitor-fallback defect remain open.
+
+
+Two additional Product E2E journeys now cover configured repository delivery and
+real legacy-to-native conversion followed by verified work. Each checks a fresh
+fixture-owned source file, its hash and Git commit, retained configuration and
+instructions, the actual native provider/model, and a registered download visible
+after reload. A third explicit selection replays automatic repository setup with
+the recorded Codex and Claude models. All twelve new cells declare development
+API-key authentication and per-turn lifecycle differences. None counts as staging
+subscription, warm lifecycle, Slack, or the complete 24-cell milestone. Fresh
+provider measurement remains required; catalog registration is not acceptance.
