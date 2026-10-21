@@ -1406,7 +1406,7 @@ function createSandboxEnvironmentDriver(
 
   const flushDeferredOrphanCleanups = async (): Promise<{ recovered: number; pending: number }> => {
     // Load the durable spool into the buffer first, so a restart-recovered record
-    // flushes on this tick. The load runs once, then a resolved promise returns.
+    // flushes on this pass. Reload only after a failed or capacity-limited load.
     await ensureSpoolLoaded();
     if (deferredOrphanCleanups.length === 0) {
       return { recovered: 0, pending: orphanIdleWork.size };

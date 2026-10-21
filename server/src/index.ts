@@ -1913,8 +1913,8 @@ async function startServerWithDatabaseTeardown(
   } else {
     // The heartbeat scheduler is disabled, but the orphan-sandbox cleanup sweep
     // is still required. A failed acquire can leak a paid provider sandbox, so
-    // this path retries the teardown at startup and on the interval, exactly as
-    // the enabled path does.
+    // this path registers the same startup recovery and pending-work deadlines
+    // as the enabled path.
     await startEnvironmentCleanup();
     startHeartbeatSchedulerInterval(() => {
       scheduleExternalObjectRefreshSweep(new Date());
