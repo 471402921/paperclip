@@ -2,7 +2,6 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 
-/** The source entry imports tool authority before the CLI can prepare these packages. */
 export async function prepareSourceServerDependencies(
   repositoryRoot: string,
   environment: NodeJS.ProcessEnv,

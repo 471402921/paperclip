@@ -19,7 +19,6 @@ export const taskRepositoryRunColumns = {
 };
 type TaskRepositoryRunIdentity = Pick<typeof heartbeatRuns.$inferSelect, "nativeIssueId" | "issueId" | "contextSnapshot">;
 
-/** Native JWTs retain the local-board marker; older controller actors omit it. */
 export function taskRepositoryResponsibleUserMatches(actorUserId: string | null | undefined, runUserId: string | null) {
   return (actorUserId ?? null) === runUserId || (runUserId === "local-board" && actorUserId == null);
 }

@@ -340,7 +340,6 @@ const support = await getEmbeddedPostgresTestSupport();
     const localBoard = principal === "local_board" || principal === "local_board_jwt";
     if (localBoard) await db.update(heartbeatRuns).set({ responsibleUserId: "local-board" }).where(eq(heartbeatRuns.id, f.runId));
     if (principal === "local_board_jwt") {
-      // The production local-trusted company route records this owner membership.
       await db.insert(authUsers).values({ id: "local-board", name: "Local Board", email: "local-board@example.invalid",
         emailVerified: true, createdAt: new Date(), updatedAt: new Date() }).onConflictDoNothing();
       await db.insert(companyMemberships).values({ companyId: f.companyId, principalType: "user", principalId: "local-board", membershipRole: "owner", status: "active" });

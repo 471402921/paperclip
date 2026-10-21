@@ -45,8 +45,6 @@ export async function runAutomaticRepositoryFlow(input: {
     observation.successorSource = runs[1]?.contextSnapshot?.source ?? null;
     observation.successorStartedAt = runs[1]?.startedAt ? Date.parse(runs[1].startedAt) : null;
     if (runs.length === 1 && runs[0]?.status === "running" && observation.firstContextObservedAt === null) {
-      // Observe the source artifact while its admission is still running. A
-      // successor-created file must never become the baseline for retention.
       const original = await readRegisteredArtifacts(api, issue.id, runs[0].id, [files.context]).catch(() => null);
       if (original?.[0]) {
         observation.firstSavedContext = original[0].content;
