@@ -17,3 +17,9 @@ Removing a connection closes local agent and human access first. Remote revocati
 The existing server scheduler retries at most two pending connections per sweep, at most once per minute, and honors idle-drain and shutdown controls. Initial removal and scheduled retries share the same cleanup claim. They use the current locked connection and revoked grants through remote cleanup, so an older request cannot remove a newly reconnected account. Successful cleanup deletes owned credentials while retaining secrets referenced by other active grants.
 
 Personal and shared callbacks check the locked connection and grant before saving credentials. They cannot restore an authorization revoked after sign-in began. A new sign-in after completed revocation remains permitted. Promotion of a personal identity to an active company identity is recorded separately from revocation, allowing a legitimate concurrent reconnect. Explicit grant revocation, membership removal or suspension, and connection removal clear that promotion exception. Promotion also verifies its locked source identity before committing copied credentials.
+
+## Revocation history and upgrades
+
+Private database watermarks record true grant revocation and full connection removal using the database clock. Reauthorization does not clear them. Both callback paths check them under the existing locks, so an older callback cannot replace a newer authorization or restore a removed connection before a replacement grant exists. Intentional personal-to-company promotion does not advance the true-revocation watermark.
+
+The migration backfills existing revocation history and clears pending OAuth sign-in states once. Pending browser sign-ins must restart after upgrade. Existing active grants and access or refresh credentials remain intact. The watermarks are not accepted from callers or returned by connection, grant, or support inspection APIs.

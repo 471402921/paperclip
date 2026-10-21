@@ -10697,13 +10697,19 @@ describeEmbeddedPostgres("tool access service", () => {
     const start = () => service.startOAuth(company.id, connected.connectionId, { redirectUri, actor, subjectUserId: userId });
     const complete = (authorizationUrl: string) => service.completeOAuthCallback({ state: new URL(authorizationUrl).searchParams.get("state")!, code: "reconnect", redirectUri, actor });
     await complete((await start()).authorizationUrl);
+    const priorRevocation = new Date("2026-01-01T00:00:00.000Z");
+    await db.update(connectionGrants).set({ authorizationRevokedAt: priorRevocation }).where(and(
+      eq(connectionGrants.connectionId, connected.connectionId), eq(connectionGrants.kind, "user"), eq(connectionGrants.subjectUserId, userId),
+    ));
     const reconnect = await start();
     await service.finalizeOAuthAccess(company.id, connected.connectionId, { grantKind: "organization" }, actor);
     const grants = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
     const personal = grants.find(grant => grant.kind === "user" && grant.subjectUserId === userId)!;
     const organization = grants.find(grant => grant.kind === "organization" && grant.isDefault)!;
     expect(personal.status).toBe("revoked");
+    expect(personal.authorizationRevokedAt).toEqual(priorRevocation);
     expect(organization.status).toBe("active");
+    expect(organization.authorizationRevokedAt).toBeNull();
     if (change === "promotion") {
       const installation = await service.addConnectionInstallation(connected.connectionId, {
         providerTenant: Object.assign({ name: "Caller metadata" }, { oauth: { supersededByGrantId: organization.id } }),
@@ -10714,7 +10720,8 @@ describeEmbeddedPostgres("tool access service", () => {
       expect(restored.status).toBe("active");
       expect(restored.providerTenant?.oauth?.supersededByGrantId).toBeUndefined();
     } else {
-      await service.revokeConnectionGrant(connected.connectionId, change === "personal revocation" ? personal.id : organization.id, actor);
+      const revoked = await service.revokeConnectionGrant(connected.connectionId, change === "personal revocation" ? personal.id : organization.id, actor);
+      expect(revoked).not.toHaveProperty("authorizationRevokedAt");
       await expect(complete(reconnect.authorizationUrl)).rejects.toMatchObject({ details: { code: "oauth_authorization_revoked" } });
       const [retained] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, personal.id));
       expect(retained.status).toBe("revoked");
@@ -10759,6 +10766,7 @@ describeEmbeddedPostgres("tool access service", () => {
     const grants = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
     const personal = grants.find(grant => grant.kind === "user" && grant.subjectUserId === userId)!;
     expect(personal.status).toBe("revoked");
+    expect(personal.authorizationRevokedAt).toBeInstanceOf(Date);
     expect(personal.providerTenant?.oauth?.supersededByGrantId).toBeUndefined();
     expect(grants.find(grant => grant.kind === "organization" && grant.isDefault)).toMatchObject({ status: "active" });
   });
