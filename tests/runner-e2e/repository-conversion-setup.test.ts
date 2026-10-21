@@ -18,6 +18,7 @@ describe("real legacy conversion prerequisites", () => {
       expect(agent.adapterType).toBe(profile.provider === "codex" ? "codex_local" : "claude_local");
       expect(agent.adapterConfig).toMatchObject({ model: profile.model, timeoutSec: 360, cwd: "/owned/workspace" });
       expect(agent.adapterConfig).not.toHaveProperty("extraArgs");
+      expect(agent.adapterConfig).not.toHaveProperty("maxTurnsPerRun");
       expect((agent.adapterConfig as Record<string, any>).env).toMatchObject(profile.provider === "codex"
         ? { OPENAI_API_KEY: { type: "secret_ref", secretId: "codex-reference", version: "latest" } }
         : { ANTHROPIC_API_KEY: { type: "secret_ref", secretId: "claude-reference", version: "latest" } });
