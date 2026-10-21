@@ -191,6 +191,19 @@ describe("customer-success read authority", () => {
       }),
     ).rejects.toThrow("not found");
   });
+  it("does not expose private OAuth watermarks through support inspection", async () => {
+    const [application] = await db.insert(schema.toolApplications).values({ companyId, applicationKey: "inspection-oauth", name: "OAuth fixture", type: "mcp_http" }).returning();
+    const [connection] = await db.insert(schema.toolConnections).values({ companyId, applicationId: application!.id,
+      name: "OAuth fixture", uid: "inspection-oauth", transport: "mcp_remote", authorizationRevokedAt: new Date() }).returning();
+    const [grant] = await db.insert(schema.connectionGrants).values({ companyId, connectionId: connection!.id,
+      kind: "organization", authorizationRevokedAt: new Date() }).returning();
+    for (const [resource, resourceId] of [["connections", connection!.id], ["connectionGrants", grant!.id]] as const) {
+      const value = await readCustomerSuccessResource(db, storage, { operation: "get", resource, resourceId, companyId });
+      expect(value).toMatchObject({ id: resourceId });
+      expect(value).not.toHaveProperty("authorizationRevokedAt");
+    }
+  });
+
   it("returns tasks/documents verbatim and uses existing adapter config redaction", async () => {
     await db
       .update(schema.agents)
