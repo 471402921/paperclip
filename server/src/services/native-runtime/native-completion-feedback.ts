@@ -239,9 +239,10 @@ export async function nativeCompletionFeedback(
   if (readiness.unresolvedBlockerCount > 0) {
     return `Completion report accepted; this task still has unresolved dependencies. Explain the blockers on [this task](/issues/${issue.identifier ?? issue.id}); do not say the task is done.`;
   }
+  const unfinishedWork = !result.completionClaim.objectiveSatisfied || result.completionClaim.remainingWork.some(work => work.blocksCompletion);
   if (result.reportedWorkDisposition === "blocked" && result.blocker?.owner.kind === "system" &&
       result.blocker.scope === "current_track" && result.blocker.reasonCode === "repository_checkout_pending" &&
-      !result.completionClaim.objectiveSatisfied && result.completionClaim.remainingWork.some(work => work.blocksCompletion) &&
+      unfinishedWork &&
       signals.actionableAttentionRequests.length === 0 && issue.workMode === "standard" &&
       issue.executionRunId === run.id && run.status === "running") {
     const repositoryIds = result.evidence.flatMap(evidence => {
@@ -262,7 +263,7 @@ export async function nativeCompletionFeedback(
     !isConversation(issue) &&
     result.reportedWorkDisposition === "yielded" &&
     result.continuation?.kind === "response_wake" &&
-    (!result.completionClaim.objectiveSatisfied || result.completionClaim.remainingWork.some((entry) => entry.blocksCompletion)) &&
+    unfinishedWork &&
     signals.actionableAttentionRequests.length === 0
   ) {
     const pause = await issueTreeControlService(db).getActivePauseHoldGate(
