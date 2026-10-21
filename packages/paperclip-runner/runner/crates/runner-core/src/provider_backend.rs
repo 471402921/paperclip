@@ -5313,11 +5313,15 @@ mod tests {
 
     #[test]
     fn terminal_tool_authority_preserves_controller_resolved_workspace_yields() {
-        for continuation in [None, Some(Value::Null), Some(json!({
-            "kind": "same_agent",
-            "summary": "Continue the prepared repository.",
-            "idempotencyKey": "repository:task:receipt:run"
-        }))] {
+        for continuation in [
+            None,
+            Some(Value::Null),
+            Some(json!({
+                "kind": "same_agent",
+                "summary": "Continue the prepared repository.",
+                "idempotencyKey": "repository:task:receipt:run"
+            })),
+        ] {
             let mut state = opencode_result_state();
             let mut result = valid_opencode_result();
             result["reportedWorkDisposition"] = json!("yielded");
@@ -5325,8 +5329,14 @@ mod tests {
                 result["continuation"] = value;
             }
             admit_terminal_tool_authority(&mut state, "paperclip_finish", &result, false).unwrap();
-            assert_eq!(state.active_provider_result_disposition.as_deref(), Some("yielded"));
-            assert_eq!(state.active_provider_result_fingerprint.as_deref(), Some(semantic_value_digest(&result).as_str()));
+            assert_eq!(
+                state.active_provider_result_disposition.as_deref(),
+                Some("yielded")
+            );
+            assert_eq!(
+                state.active_provider_result_fingerprint.as_deref(),
+                Some(semantic_value_digest(&result).as_str())
+            );
             assert!(state.validate().is_ok());
         }
     }
