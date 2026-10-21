@@ -6,7 +6,7 @@ import { expect, type Page } from "@playwright/test";
 import { pollUntil, type RunnerApi } from "./api.js";
 import { createTaskThroughUi } from "./user-actions.js";
 import { readRegisteredArtifacts } from "./registered-artifact.js";
-import { automaticRepositoryFiles, automaticRepositoryStopReason, gradeAutomaticRepository, type AutomaticRepositoryObservation } from "./automatic-repository.js";
+import { automaticRepositoryApiState, automaticRepositoryFiles, automaticRepositoryStopReason, gradeAutomaticRepository, type AutomaticRepositoryObservation } from "./automatic-repository.js";
 import type { LiveFixtureValues } from "./live-fixtures.js";
 import type { MatrixExecution } from "./types.js";
 
@@ -61,7 +61,10 @@ export async function runAutomaticRepositoryFlow(input: {
   }
   async function save(phase: string) {
     const checks = gradeAutomaticRepository(observation);
-    if (issue) input.observe(issue, runs, checks);
+    if (issue) {
+      input.observe(issue, runs, checks);
+      await input.evidence("api-state.json", automaticRepositoryApiState(phase, issue, runs, checks));
+    }
     await input.evidence("automatic-repository.json", { schema: "paperclip.e2e.automatic-repository.v1", phase, observation, checks,
       runs: runs.map(run => ({ id: run.id, status: run.status, nativePhase: run.nativePhase, source: run.contextSnapshot?.source,
         finalizationReason: run.resultJson?.finalizationReasonCode, startedAt: run.startedAt, finishedAt: run.finishedAt })) });
