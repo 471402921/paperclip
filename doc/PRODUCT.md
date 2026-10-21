@@ -1,5 +1,13 @@
 # Paperclip — Product Definition
 
+Reusable workflows stay inside the Cases experiment. A workflow is a company-shared
+name and Markdown prompt; a case may adopt, leave and revisit workflows without
+changing its primary task. The task's workflow document is the effective copy,
+so shared edits affect future adoptions and explicit refreshes. Existing handoffs
+record workflow/phase movement and document revisions, including names as they
+were at the time. Authoring starts with agents/APIs; the case UI reads current
+workflow information and history.
+
 ## What It Is
 
 Paperclip is the control plane for autonomous AI companies. One instance of Paperclip can run multiple companies. A **company** is a first-order object.
@@ -78,7 +86,7 @@ An explicit handoff to `done` closes the case when primary-task completion is
 accepted through the existing gates; review and human waits keep it open.
 
 Native agents can create, read and update case facts through dedicated tools.
-Creation always includes a kickoff and explicit `workflow_document_text`.
+Creation always includes a kickoff and either `workflowId` or explicit `workflow_document_text`.
 The latter becomes the primary task's Markdown `workflow` document, describing
 phase owners, routing, evidence and completion rules. Agents read it before
 choosing their next step. Recommended authoring includes both a Mermaid

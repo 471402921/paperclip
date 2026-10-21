@@ -1,3 +1,4 @@
+import { parseFinalizationCrashBinding, readFinalizationCrashBoundary, type FinalizationCrashBinding } from "./finalization-crash-boundary.js";
 import { parseRestartRunnerIdentity, type RestartRunnerIdentity } from "./process-tree-owner.js";
 import { usesInstalledCli, verifyInstalledCli } from "./installed-cli.js";
 import { runnerMatrix } from "./catalog.js";
@@ -253,6 +254,7 @@ interface RestartRequest {
   requestId: string;
   preserveRunner?: RestartRunnerIdentity;
   discardControllerCache?: boolean;
+  crashAfterResult?: FinalizationCrashBinding;
 }
 
 async function readRestartRequest(): Promise<RestartRequest | null> {
@@ -284,11 +286,15 @@ async function readRestartRequest(): Promise<RestartRequest | null> {
     const execution = runnerMatrix.find(row => row.id === id);
     return execution?.suite.id === "everyday-workflows" && execution.task.id === "recover-controller"
       && execution.environment.id === "daytona" && execution.profile.generation === "native" && execution.profile.provider === "codex";
-  })) {
-    throw new Error("Controller cache replacement requires the explicit remote Codex restart cell");
+  })) throw new Error("Controller cache replacement requires the explicit remote Codex restart cell");
+  const crashAfterResult = (value as { crashAfterResult?: unknown }).crashAfterResult;
+  if (crashAfterResult !== undefined && (preserveRunner !== undefined || discardControllerCache)) {
+    throw new Error("A finalization crash cannot preserve a running provider or discard its controller cache");
   }
   return { requestId, discardControllerCache,
-    ...(preserveRunner === undefined ? {} : { preserveRunner: parseRestartRunnerIdentity(preserveRunner) }) };
+    ...(preserveRunner === undefined ? {} : { preserveRunner: parseRestartRunnerIdentity(preserveRunner) }),
+    ...(crashAfterResult === undefined ? {} : { crashAfterResult: parseFinalizationCrashBinding(crashAfterResult) }) };
+
 }
 
 async function writeRestartAck(
@@ -296,6 +302,7 @@ async function writeRestartAck(
   status: "ready" | "failed",
   message?: string,
   controllerCacheDiscarded = false,
+  crashBoundary?: Awaited<ReturnType<typeof readFinalizationCrashBoundary>>,
 ) {
   const temporaryAckPath = `${restartAckPath}.${process.pid}.tmp`;
   await writeFile(
@@ -306,18 +313,25 @@ async function writeRestartAck(
       controllerCacheDiscarded,
       completedAt: new Date().toISOString(),
       ...(message ? { message } : {}),
+      ...(crashBoundary ? { crashBoundary } : {}),
     })}\n`,
     { encoding: "utf8", mode: 0o600 },
   );
   await rename(temporaryAckPath, restartAckPath);
 }
 
-async function restartServer({ requestId, preserveRunner, discardControllerCache }: RestartRequest) {
+async function restartServer({ requestId, preserveRunner, discardControllerCache, crashAfterResult }: RestartRequest) {
   activeRestartRequestId = requestId;
   appendLog(`\nRestart request ${requestId}: stopping Paperclip\n`);
   const previous = child;
   if (!previous) throw new Error("No Paperclip server is available to restart");
-  if (preserveRunner) await stopServer.forRestart(previous, preserveRunner);
+  const crashBoundary = crashAfterResult ? await readFinalizationCrashBoundary(async route => {
+    const response = await fetch(`http://127.0.0.1:${port}${route}`, { signal: AbortSignal.timeout(5_000), cache: "no-store" });
+    if (!response.ok) throw new Error("Finalization crash boundary could not be read");
+    return response.json();
+  }, crashAfterResult) : undefined;
+  if (crashBoundary) await stopServer.crashForRestart(previous);
+  else if (preserveRunner) await stopServer.forRestart(previous, preserveRunner);
   else await stopServer(previous);
   if (child === previous) child = null;
   // Do not mistake an orphaned old server for a healthy replacement. The port
@@ -338,7 +352,7 @@ async function restartServer({ requestId, preserveRunner, discardControllerCache
   if (shutdownRequested()) {
     throw new Error("Wrapper shutdown interrupted the Paperclip restart");
   }
-  await writeRestartAck(requestId, "ready", undefined, discardControllerCache);
+  await writeRestartAck(requestId, "ready", undefined, discardControllerCache, crashBoundary);
   appendLog(`Restart request ${requestId}: Paperclip is healthy\n`);
   activeRestartRequestId = null;
 }

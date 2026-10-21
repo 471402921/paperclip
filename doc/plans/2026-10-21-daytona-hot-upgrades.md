@@ -318,3 +318,11 @@ failures. Evidence: `/tmp/checkpoint-batch-tests.log`,
 `/tmp/hot-upgrade-cost-typecheck.log`, and `/tmp/hot-upgrade-cost-build.log`.
 The five-minute proof, full suite, and current-head PR review are recorded below
 when complete. Hosted Daytona qualification remains a separate outstanding gate.
+
+Master integration for the cost update preserves published Copilot v56/v57 and
+binds this branch's transport changes as v58. Master used migration 0371, so the
+checkpoint table is regenerated as additive, idempotent migration 0372 using
+master's complete snapshot. Both restart test faults remain: discard controller
+cache for the explicit remote recovery cell and crash after result for the
+finalization cell. They cannot be combined. The first full local suite was
+interrupted to integrate these conflicts and is not recorded as a pass.
