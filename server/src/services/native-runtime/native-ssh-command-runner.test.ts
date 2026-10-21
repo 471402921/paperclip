@@ -22,7 +22,7 @@ describe("native SSH deliverable output budget", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  const createRunner = () => createNativeSshCommandRunner({
+  const createRunner = (factory = createNativeSshCommandRunner) => factory({
     spec: {
       host: "fixture.invalid", port: 22, username: "fixture",
       remoteWorkspacePath: "/workspace", remoteCwd: "/workspace",
@@ -45,5 +45,23 @@ describe("native SSH deliverable output budget", () => {
     await writeFile(join(root, "response"), Buffer.alloc(4 * Math.ceil(MAX_REMOTE_DELIVERABLE_BYTES / 3) + 1, 65));
     const result = await createRunner().execute({ command: "node", args: ["unused"], timeoutMs: 10_000 });
     expect(result.exitCode).not.toBe(0);
+  });
+
+  it("reads workspace transfer chunks through the actual SSH adapter at a configured 1 MiB ceiling", async () => {
+    vi.stubEnv("PAPERCLIP_ATTACHMENT_MAX_BYTES", String(1024 * 1024));
+    vi.resetModules();
+    try {
+      const { createNativeSshCommandRunner: factory } = await import("./native-ssh-command-runner.js");
+      const { readVerifiedRemoteWorkspaceFile: read } = await import("./remote-deliverable-file.js");
+      const chunk = Buffer.alloc(1024 * 1024, 65), body = Buffer.concat([chunk, chunk, chunk]);
+      await writeFile(join(root, "response"), chunk.toString("base64"));
+      const result = await read({ runner: createRunner(factory), workspaceRoot: "/workspace", contentRef: "result.bin",
+        byteSize: body.length, sha256: createHash("sha256").update(body).digest("hex"), maxBytes: 25 * 1024 * 1024 });
+      expect(result.equals(body)).toBe(true);
+      await writeFile(join(root, "response"), Buffer.alloc(4 * Math.ceil(chunk.length / 3) + 1, 65));
+      expect((await createRunner(factory).execute({ command: "node", timeoutMs: 10_000 })).exitCode).not.toBe(0);
+    } finally {
+      vi.resetModules();
+    }
   });
 });

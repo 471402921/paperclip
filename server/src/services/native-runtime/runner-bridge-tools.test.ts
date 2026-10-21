@@ -26,6 +26,13 @@ describe("Runner workspace bridge", () => {
     expect((await readWorkspaceUploadFile(directory, "hello.txt")).toString()).toBe("updated");
     await expect(executeWorkspaceTool(directory, "workspace_read", { path: "outside/private.txt" }, authorize)).rejects.toThrow("symlink");
   });
+  it("requires a bounded server allowance for uploads larger than the ordinary limit", async () => {
+    const directory = await root(), bytes = Buffer.alloc(12 * 1024 * 1024, 0x61);
+    await writeFile(join(directory, "large.bin"), bytes);
+    await expect(readWorkspaceUploadFile(directory, "large.bin")).rejects.toThrow("file_size_limit");
+    expect((await readWorkspaceUploadFile(directory, "large.bin", bytes.length)).equals(bytes)).toBe(true);
+    await expect(readWorkspaceUploadFile(directory, "large.bin", 25 * 1024 * 1024 + 1)).rejects.toThrow("file_size_limit");
+  });
   it.each(["workspace", "skill"])("preserves Unicode characters across %s text pages", async mode => {
     const text = "a".repeat(5999) + "🌍" + "z".repeat(6000) + "🚀";
     const directory = await root();

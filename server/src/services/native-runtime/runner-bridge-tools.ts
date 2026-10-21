@@ -71,19 +71,20 @@ async function confined(root: string, name: string, newFile = false) {
   return target;
 }
 /** API uploads use the same operator-bound root and path confinement as workspace tools. */
-export async function readWorkspaceUploadFile(root: string, name: string): Promise<Buffer> {
+export async function readWorkspaceUploadFile(root: string, name: string, maxBytes = 10 * 1024 * 1024): Promise<Buffer> {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || maxBytes > 25 * 1024 * 1024) throw new Error("runner_bridge_file_size_limit");
   const handle = await openRunnerApiWorkspaceFile(await confined(root, name));
   try {
     const stat = await handle.stat();
-    if (!stat.isFile() || stat.size > 10 * 1024 * 1024) throw new Error("runner_bridge_file_size_limit");
-    const bytes = Buffer.alloc(10 * 1024 * 1024 + 1);
+    if (!stat.isFile() || stat.size > maxBytes) throw new Error("runner_bridge_file_size_limit");
+    const bytes = Buffer.alloc(maxBytes + 1);
     let length = 0;
     while (length < bytes.length) {
       const read = await handle.read(bytes, length, bytes.length - length, length);
       if (!read.bytesRead) break;
       length += read.bytesRead;
     }
-    if (length > 10 * 1024 * 1024) throw new Error("runner_bridge_file_size_limit");
+    if (length > maxBytes) throw new Error("runner_bridge_file_size_limit");
     return bytes.subarray(0, length);
   } finally { await handle.close(); }
 }

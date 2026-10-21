@@ -159,6 +159,33 @@ export async function createAssignedMcpTools(input: {
   }
 
   return {
+    connectionTools(currentWorkMode?: WorkMode): ToolGatewayDescriptor[] {
+      return [...tools.values()].filter(tool => tool.connectionId && permits(tool) && permits(tool, currentWorkMode)).map(tool => structuredClone(tool));
+    },
+    async assertConnectionTools(connectionId: string, upstreamNames: readonly string[], currentWorkMode?: WorkMode): Promise<void> {
+      const current = await input.gateway.listToolsForNamedGateway({ gatewayPublicId: input.gatewayPublicId, bearerToken: input.bearerToken });
+      const names = new Set(current.filter(tool => {
+        const pinned = tools.get(assignedToolName(tool.name));
+        return tool.connectionId === connectionId && permits(tool) && permits(tool, currentWorkMode)
+          && pinned?.name === tool.name && pinned.connectionId === connectionId
+          && pinned.applicationKey === tool.applicationKey && pinned.upstreamToolName === tool.upstreamToolName
+          && permits(pinned) && permits(pinned, currentWorkMode);
+      }).map(tool => tool.upstreamToolName));
+      if (!upstreamNames.every(name => names.has(name))) throw new Error("assigned_connection_tool_unavailable");
+    },
+    async callConnectionTool(connectionId: string, upstreamToolName: string, parameters: Record<string, unknown>, options: {
+      workMode?: WorkMode; privateTransfer?: boolean;
+    } = {}) {
+      const matches = [...tools.values()].filter(tool => tool.connectionId === connectionId && tool.upstreamToolName === upstreamToolName);
+      if (matches.length !== 1) throw new Error("assigned_connection_tool_unavailable");
+      const tool = matches[0]!;
+      if (!permits(tool) || !permits(tool, options.workMode)) throw new Error("paperclip_runner_tool_mode_denied");
+      await this.assertConnectionTools(connectionId, [upstreamToolName], options.workMode);
+      const result = await input.gateway.executeTool({ gatewayPublicId: input.gatewayPublicId, sessionToken: input.bearerToken,
+        tool: tool.name, parameters, ...(options.privateTransfer ? { privateTransfer: { connectionId } } : {}) });
+      if (result.status !== "completed" && result.status !== "replayed") throw new Error("assigned_mcp_tool_execution_incomplete");
+      return result;
+    },
     definitions(fits?: (definitions: ToolDefinition[]) => boolean): ToolDefinition[] {
       const direct = [...tools].filter(([, tool]) => permits(tool)).map(([name, tool]) => definition(name, tool));
       if (!fits || fits(direct)) return direct;

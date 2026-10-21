@@ -25,6 +25,7 @@ import { agentCommentaryToolInputSchema } from "@paperclipai/shared";
 import { submitAgentCommentary } from "../agent-commentary.js";
 import type { createAssignedMcpTools } from "./assigned-mcp-tools.js";
 import { captureRunnerToolResult, fitRunnerToolResultPage, READ_TOOL_RESULT, READ_TOOL_RESULT_DEFINITION, readToolResultSchema, RUNNER_TOOL_RESULT_MAX_BYTES } from "./runner-tool-results.js";
+import { connectorWorkspaceTools } from "../connectors/runtime-tools.js";
 import { assertAssignableAgent } from "../agent-assignability.js";
 import { approvalReadSqlCondition, canActorReadApproval, authorizationService, issueReadSqlCondition, type AuthorizationActor } from "../authorization.js";
 import { resolveCoreTrustPreset } from "../trust-preset-resolver.js";
@@ -161,6 +162,7 @@ type Binding = {
   /** Server-owned suppression for baseline evals; true never overrides operator opt-in. */
   connectorAssignments?: Pick<ConnectorAssignment, "tools">[];
   assignedMcpTools?: Awaited<ReturnType<typeof createAssignedMcpTools>>;
+  workspaceConnectionTools?: Awaited<ReturnType<typeof createAssignedMcpTools>>;
   apiToolsEnabled?: boolean;
   workMode?: "standard" | "planning" | "ask";
   casesEnabled?: boolean;
@@ -317,6 +319,10 @@ export class PaperclipRunnerToolAuthority {
     definitions.push(REUSE_CHAT_ATTACHMENT_TOOL_DEFINITION);
     if (this.binding.chatAttachmentReadScope) definitions.push(READ_CHAT_ATTACHMENT_TOOL_DEFINITION);
     if (this.binding.taskAttachmentRead) definitions.push(...TASK_ATTACHMENT_DEFINITIONS);
+    const workspaceConnectionTools = this.binding.workspaceConnectionTools ?? this.binding.assignedMcpTools;
+    if (!this.binding.firstPartyOnly && !this.binding.museRuntime && workMode === "standard" && this.binding.workspaceRoot
+      && (!this.binding.dotRuntime || this.binding.workspaceBridge)
+      && workspaceConnectionTools) definitions.push(...connectorWorkspaceTools.definitions(workspaceConnectionTools));
     definitions.push(...runnerBridgeDefinitions({ workspace: !this.binding.firstPartyOnly && !!this.binding.workspaceRoot && this.binding.workspaceBridge === true, skills: !!this.binding.runtimeContext, api: runnerApiToolsEnabled(this.binding.companyId, this.binding.apiToolsEnabled), mode: workMode }));
     const connectionTools = this.binding.firstPartyOnly ? [] : [...RUNTIME_CONNECTION_TOOL_DEFINITIONS,
       ...(this.binding.connectorAssignments ?? []).flatMap((assignment) => assignment.tools)];
@@ -367,6 +373,21 @@ export class PaperclipRunnerToolAuthority {
       if (!NATIVE_REVIEW_READ_TOOLS.has(call.tool)) {
         throw forbidden("This review run may only inspect the assigned task and resolve its review.");
       }
+    }
+    if (connectorWorkspaceTools.has(call.tool)) {
+      const workspaceConnectionTools = this.binding.workspaceConnectionTools ?? this.binding.assignedMcpTools;
+      const authorize = async () => {
+        const current = await this.#boundContext();
+        if (current.issue.workMode !== "standard" || this.binding.workMode && this.binding.workMode !== "standard"
+          || this.binding.firstPartyOnly || this.binding.museRuntime || !this.binding.workspaceRoot || !workspaceConnectionTools)
+          throw forbidden("Connector workspace tools are unavailable to this run");
+        if (this.binding.dotRuntime && (!this.binding.workspaceBridge || current.actor.adapterConfig?.dotWorkspaceAccess !== true))
+          throw forbidden("Dot workspace access is required for connector workspace tools");
+        await this.binding.assertBridgeAuthority?.();
+      };
+      return connectorWorkspaceTools.execute(call.tool, call.arguments, { tools: workspaceConnectionTools!,
+        workspaceRoot: this.binding.workspaceRoot!, executionTargetKind: this.binding.executionTargetKind,
+        readRemoteWorkspaceFile: this.binding.readRemoteWorkspaceFile, authorize });
     }
     if (Object.hasOwn(TASK_ATTACHMENT_SCHEMAS, call.tool)) {
       const authorize = async () => {

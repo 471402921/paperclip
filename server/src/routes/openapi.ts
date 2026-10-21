@@ -1315,6 +1315,7 @@ const BOARD_API_KEY_AUTH_SCHEME = "BoardApiKeyAuth";
 const AGENT_BEARER_AUTH_SCHEME = "AgentBearerAuth";
 const AGENT_RUN_AUTH_SCHEME = "AgentRunAuth";
 const RUNTIME_TOOLS_BEARER_AUTH_SCHEME = "RuntimeToolsBearerAuth";
+const CONNECTOR_TRANSFER_AUTH_SCHEME = "ConnectorTransferGatewayAuth";
 
 function securityRequirement(name: string): Record<string, string[]> {
   return { [name]: [] };
@@ -1835,6 +1836,12 @@ function applyDocumentFixups(document: any): any {
       bearerFormat: "Task-bound agent JWT",
       description: "Paperclip-issued JWT bound to an active task run. Agent API keys, board sessions, and connection-only tokens are rejected.",
     },
+    [CONNECTOR_TRANSFER_AUTH_SCHEME]: {
+      type: "apiKey",
+      in: "header",
+      name: "x-paperclip-tool-gateway-token",
+      description: "Tool gateway session token bound to the selected agent and its active run. Create it using the normal agent run credential at /api/tool-gateway/sessions.",
+    },
   };
   document.security = AUTHENTICATED_SECURITY;
 
@@ -1875,6 +1882,10 @@ function applyDocumentFixups(document: any): any {
       if (isVoiceSessionOperation(path)) {
         operation.security = [{[BOARD_SESSION_AUTH_SCHEME]: []}];
         operation["x-paperclip-authorization"] = {actor: "board", sessionBound: true};
+      }
+      if (method === "post" && path === "/api/tool-gateway/connector-transfers/call") {
+        operation.security = [securityRequirement(CONNECTOR_TRANSFER_AUTH_SCHEME)];
+        operation["x-paperclip-authorization"] = { actor: "agent", heartbeatBound: true, selectedConnectionBound: true };
       }
 
       const key = operationKey(method, path);
@@ -12458,6 +12469,22 @@ registerCurrentRoute({
     401: r.unauthorized,
     403: r.forbidden,
   },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/tool-gateway/connector-transfers/call",
+  tags: ["tool-gateway"],
+  summary: "Execute an assigned connector action for a private file transfer",
+  description: "Requires the normal gateway session for an active agent run, the selected connection ID, current agent assignment, and ordinary Allowed / Ask first / Off action policy. Only actions admitted by a trusted connector transfer adapter are accepted. The adapter validates and projects temporary transfer capabilities for its local uploader; ordinary MCP/model responses and audit logs remain redacted. Every response is Cache-Control: no-store. This endpoint does not grant new filesystem access or bypass approval.",
+  request: { body: jsonBody(toolGatewayCallSchema.extend({ connectionId: z.string().uuid() })) },
+  responses: Object.fromEntries(Object.entries({
+    200: r.ok(), 400: r.badRequest, 401: r.unauthorized,
+    403: r.forbidden, 404: r.notFound, 409: r.conflict,
+  }).map(([status, response]) => [status, {
+    ...response,
+    headers: { "Cache-Control": { schema: { type: "string", enum: ["no-store"] } } },
+  }])),
 });
 
 registerCurrentRoute({
