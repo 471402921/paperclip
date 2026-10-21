@@ -1323,6 +1323,7 @@ export const PLUGIN_CAPABILITIES = [
   // Data Read
   "companies.read",
   "projects.read",
+  "projects.instance-secrets",
   "project.workspaces.read",
   "execution.workspaces.read",
   "workspaces.manage",
@@ -1408,7 +1409,6 @@ export const PLUGIN_CAPABILITIES = [
   "api.routes.register",
   "http.outbound",
   "secrets.read-ref",
-  "secrets.manage-private",
   "environment.drivers.register",
   "local.folders",
   // Agent Tools

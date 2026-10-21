@@ -592,6 +592,9 @@ export interface PluginEventsClient {
 }
 
 export type ResourceLifecycleEvent = {
+  /** Native private credentials for this plugin/project. Only supplied to automatic
+   * project lifecycle callbacks with projects.instance-secrets. Never expose to UI. */
+  instanceSecrets?: Record<string, string>;
   id: string;
   companyId: string;
   resourceId: string;
@@ -609,6 +612,9 @@ export type ResourceLifecycleEvent = {
 export interface ResourceLifecycleResult {
   eventId: string;
   status: "acknowledged" | "retry" | "deferred";
+  /** Project-only patch, saved atomically with acknowledgment. Null removes a key.
+   * Up to 16 lowercase snake_case keys, each value at most 128 KiB. */
+  instanceSecrets?: Record<string, string | null>;
 }
 
 /**
@@ -684,9 +690,9 @@ export interface PluginHttpClient {
 }
 
 /**
- * `ctx.secrets` — resolve configured references and retain plugin-private credentials.
+ * `ctx.secrets` — resolve secret references.
  *
- * Reference resolution requires `secrets.read-ref`; private storage requires `secrets.manage-private`.
+ * Requires `secrets.read-ref` capability.
  *
  * Plugins store shared `{ type: "secret_ref", secretId, version? }` bindings in
  * company-scoped config. This client resolves a bound ref through the
@@ -695,15 +701,6 @@ export interface PluginHttpClient {
  * @see PLUGIN_SPEC.md §22 — Secrets
  */
 export interface PluginSecretsClient {
-  /** Read a credential owned by this installed plugin and company. Requires secrets.manage-private. */
-  getPrivate(input: { companyId: string; key: string }): Promise<{ version: number; value: string | null }>;
-  /**
-   * Encrypt and save a private credential, or erase it with null. Requires secrets.manage-private.
-   * Supply the version returned by getPrivate (0 if absent). A stale version fails without writing.
-   * Deleted entries retain their version to fence delayed writes. Never return values through UI, logs or state.
-   */
-  setPrivate(input: { companyId: string; key: string; value: string | null; expectedVersion: number }): Promise<{ version: number }>;
-
   /**
    * Resolve a secret reference to its current value.
    *
@@ -878,6 +875,10 @@ export interface PluginEntitiesClient {
  * @see PLUGIN_SPEC.md §7 — Project Workspaces
  */
 export interface PluginProjectsClient {
+  /** Trusted worker access to this plugin’s native project credentials.
+   * Requires projects.instance-secrets; never expose via UI/data handlers. */
+  getInstanceSecrets(projectId: string, companyId: string): Promise<Record<string, string>>;
+
   /**
    * List projects visible to the plugin.
    *

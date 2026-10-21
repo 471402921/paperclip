@@ -150,10 +150,8 @@ export interface HostServices {
     fetch(params: WorkerToHostMethods["http.fetch"][0]): Promise<WorkerToHostMethods["http.fetch"][1]>;
   };
 
-  /** Config-bound secret resolution and plugin-private credential storage. */
+  /** Provides `secrets.resolve`. */
   secrets: {
-    getPrivate(params: WorkerToHostMethods["secrets.getPrivate"][0], context?: WorkerHostCallContext): Promise<WorkerToHostMethods["secrets.getPrivate"][1]>;
-    setPrivate(params: WorkerToHostMethods["secrets.setPrivate"][0], context?: WorkerHostCallContext): Promise<WorkerToHostMethods["secrets.setPrivate"][1]>;
     resolve(
       params: WorkerToHostMethods["secrets.resolve"][0],
       context?: WorkerHostCallContext,
@@ -204,6 +202,7 @@ export interface HostServices {
   projects: {
     list(params: WorkerToHostMethods["projects.list"][0]): Promise<WorkerToHostMethods["projects.list"][1]>;
     get(params: WorkerToHostMethods["projects.get"][0]): Promise<WorkerToHostMethods["projects.get"][1]>;
+    getInstanceSecrets(params: WorkerToHostMethods["projects.getInstanceSecrets"][0]): Promise<WorkerToHostMethods["projects.getInstanceSecrets"][1]>;
     listWorkspaces(params: WorkerToHostMethods["projects.listWorkspaces"][0]): Promise<WorkerToHostMethods["projects.listWorkspaces"][1]>;
     getPrimaryWorkspace(params: WorkerToHostMethods["projects.getPrimaryWorkspace"][0]): Promise<WorkerToHostMethods["projects.getPrimaryWorkspace"][1]>;
     getWorkspaceForIssue(params: WorkerToHostMethods["projects.getWorkspaceForIssue"][0]): Promise<WorkerToHostMethods["projects.getWorkspaceForIssue"][1]>;
@@ -418,8 +417,6 @@ const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | n
 
   // Secrets
   "secrets.resolve": "secrets.read-ref",
-  "secrets.getPrivate": "secrets.manage-private",
-  "secrets.setPrivate": "secrets.manage-private",
 
   // Activity
   "activity.log": "activity.log.write",
@@ -444,6 +441,7 @@ const METHOD_CAPABILITY_MAP: Record<WorkerToHostMethodName, PluginCapability | n
   // Projects
   "projects.list": "projects.read",
   "projects.get": "projects.read",
+  "projects.getInstanceSecrets": "projects.instance-secrets",
   "projects.listWorkspaces": "project.workspaces.read",
   "projects.getPrimaryWorkspace": "project.workspaces.read",
   "projects.getWorkspaceForIssue": "project.workspaces.read",
@@ -787,14 +785,6 @@ export function createHostClientHandlers(
     }),
 
     // Secrets
-    "secrets.getPrivate": gated("secrets.getPrivate", async (params, context) => {
-      const companyId = resolveRequiredCompanyId("secrets.getPrivate", params, context);
-      return services.secrets.getPrivate({ ...params, companyId }, context);
-    }),
-    "secrets.setPrivate": gated("secrets.setPrivate", async (params, context) => {
-      const companyId = resolveRequiredCompanyId("secrets.setPrivate", params, context);
-      return services.secrets.setPrivate({ ...params, companyId }, context);
-    }),
     "secrets.resolve": gated("secrets.resolve", async (params, context) => {
       const companyId = resolveRequiredCompanyId("secrets.resolve", params, context);
       return services.secrets.resolve({ ...params, companyId }, context);
@@ -841,6 +831,10 @@ export function createHostClientHandlers(
     // Projects
     "projects.list": gated("projects.list", async (params) => {
       return services.projects.list(params);
+    }),
+    "projects.getInstanceSecrets": gated("projects.getInstanceSecrets", async (params, context) => {
+      const companyId = resolveRequiredCompanyId("projects.getInstanceSecrets", params, context);
+      return services.projects.getInstanceSecrets({ ...params, companyId });
     }),
     "projects.get": gated("projects.get", async (params) => {
       return services.projects.get(params);

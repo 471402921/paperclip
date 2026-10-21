@@ -1,5 +1,5 @@
 {
-  "id": "fbac36a0-ce5a-4d6d-bc07-ff282a853b7f",
+  "id": "fff40759-4194-4e63-b22d-bfbc18e31b7e",
   "prevId": "a9c12cbc-ed4b-4e5d-9d33-36f9a7fb746c",
   "version": "7",
   "dialect": "postgresql",
@@ -17114,6 +17114,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "owner_project_id": {
+          "name": "owner_project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "owner_plugin_id": {
           "name": "owner_plugin_id",
           "type": "uuid",
@@ -17348,6 +17354,40 @@
           "method": "btree",
           "with": {}
         },
+        "company_secrets_project_instance_owner_key_uq": {
+          "name": "company_secrets_project_instance_owner_key_uq",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "owner_project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "owner_plugin_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"company_secrets\".\"scope\" = 'instance' and \"company_secrets\".\"deleted_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "company_secrets_instance_owner_key_uq": {
           "name": "company_secrets_instance_owner_key_uq",
           "columns": [
@@ -17550,6 +17590,21 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "company_secrets_company_id_owner_project_id_projects_company_id_id_fk": {
+          "name": "company_secrets_company_id_owner_project_id_projects_company_id_id_fk",
+          "tableFrom": "company_secrets",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "company_id",
+            "owner_project_id"
+          ],
+          "columnsTo": [
+            "company_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -17558,7 +17613,7 @@
       "checkConstraints": {
         "company_secrets_scope_shape_check": {
           "name": "company_secrets_scope_shape_check",
-          "value": "(\n        \"company_secrets\".\"scope\" = 'company'\n        and \"company_secrets\".\"owner_user_id\" is null\n        and \"company_secrets\".\"user_secret_definition_id\" is null\n        and \"company_secrets\".\"owner_agent_id\" is null and \"company_secrets\".\"owner_plugin_id\" is null\n      ) or (\n        \"company_secrets\".\"scope\" = 'user'\n        and \"company_secrets\".\"owner_user_id\" is not null\n        and \"company_secrets\".\"user_secret_definition_id\" is not null\n        and \"company_secrets\".\"owner_agent_id\" is null and \"company_secrets\".\"owner_plugin_id\" is null\n      ) or (\n        \"company_secrets\".\"scope\" = 'instance'\n        and \"company_secrets\".\"owner_user_id\" is null and \"company_secrets\".\"user_secret_definition_id\" is null\n        and \"company_secrets\".\"owner_agent_id\" is not null and \"company_secrets\".\"owner_plugin_id\" is not null\n      )"
+          "value": "(\n        \"company_secrets\".\"scope\" = 'company'\n        and \"company_secrets\".\"owner_user_id\" is null\n        and \"company_secrets\".\"user_secret_definition_id\" is null\n        and \"company_secrets\".\"owner_agent_id\" is null and \"company_secrets\".\"owner_project_id\" is null and \"company_secrets\".\"owner_plugin_id\" is null\n      ) or (\n        \"company_secrets\".\"scope\" = 'user'\n        and \"company_secrets\".\"owner_user_id\" is not null\n        and \"company_secrets\".\"user_secret_definition_id\" is not null\n        and \"company_secrets\".\"owner_agent_id\" is null and \"company_secrets\".\"owner_project_id\" is null and \"company_secrets\".\"owner_plugin_id\" is null\n      ) or (\n        \"company_secrets\".\"scope\" = 'instance'\n        and \"company_secrets\".\"owner_user_id\" is null and \"company_secrets\".\"user_secret_definition_id\" is null\n        and (\"company_secrets\".\"owner_agent_id\" is not null) <> (\"company_secrets\".\"owner_project_id\" is not null)\n        and \"company_secrets\".\"owner_plugin_id\" is not null\n      )"
         }
       },
       "isRLSEnabled": false
@@ -45924,92 +45979,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.plugin_secrets": {
-      "name": "plugin_secrets",
-      "schema": "",
-      "columns": {
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "plugin_id": {
-          "name": "plugin_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version": {
-          "name": "version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "material": {
-          "name": "material",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "plugin_secrets_company_id_companies_id_fk": {
-          "name": "plugin_secrets_company_id_companies_id_fk",
-          "tableFrom": "plugin_secrets",
-          "tableTo": "companies",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "plugin_secrets_plugin_id_plugins_id_fk": {
-          "name": "plugin_secrets_plugin_id_plugins_id_fk",
-          "tableFrom": "plugin_secrets",
-          "tableTo": "plugins",
-          "columnsFrom": [
-            "plugin_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "plugin_secrets_company_id_plugin_id_key_pk": {
-          "name": "plugin_secrets_company_id_plugin_id_key_pk",
-          "columns": [
-            "company_id",
-            "plugin_id",
-            "key"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.plugin_state": {
       "name": "plugin_state",
       "schema": "",
@@ -47441,6 +47410,27 @@
         }
       },
       "indexes": {
+        "projects_company_id_uq": {
+          "name": "projects_company_id_uq",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "projects_company_idx": {
           "name": "projects_company_idx",
           "columns": [

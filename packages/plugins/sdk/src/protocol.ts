@@ -1704,14 +1704,6 @@ export interface WorkerToHostMethods {
   ];
 
   // Secrets
-  "secrets.getPrivate": [
-    params: { companyId: string; key: string },
-    result: { version: number; value: string | null },
-  ];
-  "secrets.setPrivate": [
-    params: { companyId: string; key: string; value: string | null; expectedVersion: number },
-    result: { version: number },
-  ];
   "secrets.resolve": [
     params: { secretRef: string | EnvSecretRefBinding; companyId?: string; configPath?: string },
     result: string,
@@ -1801,6 +1793,10 @@ export interface WorkerToHostMethods {
   "projects.list": [
     params: { companyId: string; limit?: number; offset?: number },
     result: Project[],
+  ];
+  "projects.getInstanceSecrets": [
+    params: { projectId: string; companyId: string },
+    result: Record<string, string>,
   ];
   "projects.get": [
     params: { projectId: string; companyId: string },

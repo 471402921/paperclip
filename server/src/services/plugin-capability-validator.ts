@@ -47,6 +47,7 @@ const OPERATION_CAPABILITIES: Record<string, readonly PluginCapability[]> = {
   "companies.get": ["companies.read"],
   "projects.list": ["projects.read"],
   "projects.get": ["projects.read"],
+  "projects.getInstanceSecrets": ["projects.instance-secrets"],
   "projects.managed.get": ["projects.managed"],
   "projects.managed.reconcile": ["projects.managed"],
   "projects.managed.reset": ["projects.managed"],
@@ -128,8 +129,6 @@ const OPERATION_CAPABILITIES: Record<string, readonly PluginCapability[]> = {
   "webhooks.receive": ["webhooks.receive"],
   "http.request": ["http.outbound"],
   "secrets.resolve": ["secrets.read-ref"],
-  "secrets.getPrivate": ["secrets.manage-private"],
-  "secrets.setPrivate": ["secrets.manage-private"],
 
   // Agent tools
   "agent.tools.register": ["agent.tools.register"],

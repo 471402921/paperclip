@@ -642,8 +642,6 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       },
 
       secrets: {
-        async getPrivate(input) { return callHost("secrets.getPrivate", input); },
-        async setPrivate(input) { return callHost("secrets.setPrivate", input); },
         async resolve(secretRef, options = {}): Promise<string> {
           return callHost("secrets.resolve", {
             secretRef,
@@ -731,6 +729,9 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
 
         async get(projectId: string, companyId: string) {
           return callHost("projects.get", { projectId, companyId });
+        },
+        async getInstanceSecrets(projectId, companyId) {
+          return callHost("projects.getInstanceSecrets", { projectId, companyId });
         },
 
         async listWorkspaces(projectId: string, companyId: string) {

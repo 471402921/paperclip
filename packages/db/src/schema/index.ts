@@ -258,5 +258,3 @@ export * from "./fast_responses.js";
 export { companyObservability } from "./company_observability.js";
 
 export * from "./prompt_injection_prevention.js";
-
-export { pluginSecrets } from "./plugin_secrets.js";

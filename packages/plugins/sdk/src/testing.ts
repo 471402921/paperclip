@@ -112,6 +112,7 @@ export interface TestHarness {
   seed(input: {
     companies?: Company[];
     lifecycleEvents?: ResourceLifecycleEvent[];
+    projectInstanceSecrets?: Array<{ companyId: string; projectId: string; values: Record<string, string> }>;
     projects?: Project[];
     issues?: Issue[];
     issueComments?: IssueComment[];
@@ -506,6 +507,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
   const lifecycleEvents = new Map<string, ResourceLifecycleEvent>();
   const lifecycleAcknowledgments = new Set<string>();
   const projects = new Map<string, Project>();
+  const projectInstanceSecrets = new Map<string, Record<string, string>>();
   const routines = new Map<string, Routine>();
   const routineRuns = new Map<string, RoutineRun>();
   const issues = new Map<string, Issue>();
@@ -749,7 +751,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
     throw new Error(`Plugin may only use originKind values under ${defaultPluginOriginKind}`);
   }
 
-  const privateSecrets = new Map<string, { version: number; value: string | null }>();
   const ctx: PluginContext = {
     manifest,
     config: {
@@ -952,18 +953,6 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       },
     },
     secrets: {
-      async getPrivate(input) {
-        requireCapability(manifest, capabilitySet, "secrets.manage-private");
-        return structuredClone(privateSecrets.get(JSON.stringify([input.companyId, input.key])) ?? { version: 0, value: null });
-      },
-      async setPrivate(input) {
-        requireCapability(manifest, capabilitySet, "secrets.manage-private");
-        const key = JSON.stringify([input.companyId, input.key]);
-        if ((privateSecrets.get(key)?.version ?? 0) !== input.expectedVersion) throw new Error("Private plugin secret version changed");
-        const version = input.expectedVersion + 1;
-        privateSecrets.set(key, { version, value: input.value });
-        return { version };
-      },
       async resolve(secretRef) {
         requireCapability(manifest, capabilitySet, "secrets.read-ref");
         return `resolved:${secretRef}`;
@@ -1043,6 +1032,14 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       },
     },
     projects: {
+      async getInstanceSecrets(projectId, companyId) {
+        requireCapability(manifest, capabilitySet, "projects.instance-secrets");
+        requireCapability(manifest, capabilitySet, "events.subscribe");
+        if (!manifest.resourceLifecycle?.includes("project")) throw new Error("Project instance secrets outside plugin scope");
+        const project = projects.get(projectId);
+        if (!isInCompany(project, companyId) || project.archivedAt) throw new Error("Project instance secrets unavailable");
+        return structuredClone(projectInstanceSecrets.get(JSON.stringify([companyId, projectId])) ?? {});
+      },
       async list(input) {
         requireCapability(manifest, capabilitySet, "projects.read");
         const companyId = requireCompanyId(input?.companyId);
@@ -2599,6 +2596,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       for (const row of input.lifecycleEvents ?? []) lifecycleEvents.set(row.id, row);
       for (const row of input.companies ?? []) companies.set(row.id, row);
       for (const row of input.projects ?? []) projects.set(row.id, row);
+      for (const row of input.projectInstanceSecrets ?? []) projectInstanceSecrets.set(JSON.stringify([row.companyId, row.projectId]), structuredClone(row.values));
       for (const row of input.issues ?? []) {
         issues.set(row.id, row);
         if (row.blockedBy) {
