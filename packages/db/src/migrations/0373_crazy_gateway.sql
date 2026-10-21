@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS "native_runner_checkpoints_headers_idx" ON "native_runner_checkpoints" USING btree ("run_id") WHERE "native_runner_checkpoints"."part" = 'header';

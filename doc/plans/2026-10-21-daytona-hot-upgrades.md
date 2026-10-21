@@ -335,3 +335,15 @@ passed 62 Postgres/restart/retention tests with five Docker-only skips. A new
 server integration fixture initially accessed runner-private store save methods;
 workspace typecheck rejected that fixture. It now exercises the public opaque
 checkpoint delta contract directly instead of expanding the production interface.
+
+The merged protocol/transport suite passed 490 tests. Full workspace typecheck,
+production build, and runner E2E typecheck passed. Final retention discovery uses
+a partial index over checkpoint header rows (migration 0373), so it does not
+need to enumerate event payloads or historical runs with no retained checkpoint.
+Fresh Postgres verification with that migration passed all 62 restart, delta,
+and retention tests (five Docker-only skips). Migration safety/numbering and
+server typecheck passed; the final snapshot set is 0369 through 0373.
+Logs: `/tmp/checkpoint-merged-protocol-tests.log`,
+`/tmp/hot-upgrade-cost-final-typecheck.log`, `/tmp/hot-upgrade-cost-merged-build.log`,
+`/tmp/hot-upgrade-cost-e2e-types.log`, `/tmp/checkpoint-final-postgres-tests.log`,
+`/tmp/checkpoint-final-migrations.log`, and `/tmp/checkpoint-final-server-types.log`.

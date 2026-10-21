@@ -104,14 +104,18 @@ Only one batch commit is in flight per connection. Semantic tool inputs and
 priority-zero events force an immediate durability barrier. Commands and
 authentication retain their persistence barriers. An acknowledgement covers only
 the committed prefix. Failed commits close the connection; unacknowledged events
-remain in the runner outbox for replay. Local journal writes and application
+remain in the runner outbox for replay. A crash can replay a larger unacknowledged
+prefix, so application callbacks retain their idempotency requirements. Local
+journal writes and application
 event callbacks still run for each event. This reduces checkpoint overhead, not
 all database work or all file I/O. At low event rates the timer can still produce
 one transaction per event.
 
 Completed checkpoints use the existing native harness backup maintenance sweep
 and its enabled, dry-run, and retention-days settings (seven days by default).
-The database pass also works with empty controller storage. Each page checks at
+The database pass also works with empty controller storage. A partial header index
+keeps candidate discovery separate from event payloads and runs with no retained
+checkpoint. Each page checks at
 most 200 candidates and deletes at most 50 run checkpoints. It keeps checkpoints
 unless every run in the session is finished and old, all related issues are old
 and closed, finalization has settled, and no execution pointer, recovery owner,

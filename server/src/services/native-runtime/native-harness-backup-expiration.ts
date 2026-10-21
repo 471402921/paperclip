@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { and, asc, eq, exists, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
   agentTaskSessions,
   environmentLeases,
@@ -240,20 +240,20 @@ export function nativeHarnessBackupExpirationService(
   async function expireCheckpoints(options: {
     closedBefore: Date; dryRun: boolean; maxEntries: number; maxRemovals: number; shouldContinue: () => boolean;
   }, result: NativeHarnessBackupExpirationResult) {
-    // Scan run identities, not encrypted event payloads. Each existence check
-    // uses the checkpoint primary key; pagination never gets stuck on a retained session.
+    // The partial header index enumerates retained checkpoints without reading
+    // event payloads or scanning runs that have no checkpoint left to expire.
     const candidates = await db.select({ runId: heartbeatRuns.id, sessionId: heartbeatRuns.nativeSessionId })
-      .from(nativeRunFinalizations)
+      .from(nativeRunnerCheckpoints)
+      .innerJoin(nativeRunFinalizations, eq(nativeRunFinalizations.runId, nativeRunnerCheckpoints.runId))
       .innerJoin(heartbeatRuns, eq(heartbeatRuns.id, nativeRunFinalizations.runId))
       .where(and(
-        checkpointCursor ? gt(nativeRunFinalizations.runId, checkpointCursor) : undefined,
+        sql`${nativeRunnerCheckpoints.part} = 'header'`,
+        checkpointCursor ? gt(nativeRunnerCheckpoints.runId, checkpointCursor) : undefined,
         lt(heartbeatRuns.finishedAt, options.closedBefore),
         inArray(nativeRunFinalizations.phase, SETTLED_FINALIZATION_PHASES),
         isNull(nativeRunFinalizations.leaseOwner), isNull(nativeRunFinalizations.recoveryState),
-        exists(db.select({ runId: nativeRunnerCheckpoints.runId }).from(nativeRunnerCheckpoints).where(and(
-          eq(nativeRunnerCheckpoints.runId, nativeRunFinalizations.runId), eq(nativeRunnerCheckpoints.part, "header")))),
       ))
-      .orderBy(asc(nativeRunFinalizations.runId)).limit(options.maxEntries + 1);
+      .orderBy(asc(nativeRunnerCheckpoints.runId)).limit(options.maxEntries + 1);
     let processed = 0;
     let removed = 0;
     for (const candidate of candidates) {
