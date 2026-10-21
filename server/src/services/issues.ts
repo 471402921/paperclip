@@ -1,3 +1,4 @@
+import { insertIssueComment } from "./issue-comment-writes.js";
 import { measureRunTransaction } from "./execution-transaction-timing.js";
 import { readNativeMonitorSource } from "./native-runtime/native-monitor-delivery.js";
 import { readNativeContinuationSource } from "./native-runtime/native-continuation-delivery.js";
@@ -7911,15 +7912,12 @@ export function issueService(db: Db) {
       );
     if (!parent) return null;
 
-    const [comment] = await dbOrTx
-      .insert(issueComments)
-      .values({
-        companyId: child.companyId,
-        issueId: parent.id,
-        authorType: "system",
-        body,
-      })
-      .returning();
+    const [comment] = await insertIssueComment(dbOrTx, {
+      companyId: child.companyId,
+      issueId: parent.id,
+      authorType: "system",
+      body,
+    });
     await dbOrTx
       .update(issues)
       .set({ updatedAt: new Date() })
@@ -12804,27 +12802,24 @@ export function issueService(db: Db) {
         }
       }
       if (!comment) {
-        [comment] = await measureRunPhase("response.write", () => dbOrTx
-          .insert(issueComments)
-          .values({
-            companyId: issue.companyId,
-            issueId,
-            authorAgentId: actor.agentId ?? null,
-            authorUserId: actor.userId ?? null,
-            onBehalfOfUserId,
-            authorType,
-            createdByRunId,
-            body: redactedBody,
-            clientRequestId: options?.clientRequestId ?? null,
-            presentation,
-            metadata,
-            sourceTrust: options?.sourceTrust ?? null,
-            createdAt: validCreatedAt ?? currentInsertTimestamp!,
-            ...(currentInsertTimestamp
-              ? { updatedAt: currentInsertTimestamp }
-              : {}),
-          })
-          .returning());
+        [comment] = await measureRunPhase("response.write", () => insertIssueComment(dbOrTx, {
+          companyId: issue.companyId,
+          issueId,
+          authorAgentId: actor.agentId ?? null,
+          authorUserId: actor.userId ?? null,
+          onBehalfOfUserId,
+          authorType,
+          createdByRunId,
+          body: redactedBody,
+          clientRequestId: options?.clientRequestId ?? null,
+          presentation,
+          metadata,
+          sourceTrust: options?.sourceTrust ?? null,
+          createdAt: validCreatedAt ?? currentInsertTimestamp!,
+          ...(currentInsertTimestamp
+            ? { updatedAt: currentInsertTimestamp }
+            : {}),
+        }));
       }
       if (!comment) throw new Error("Failed to create issue comment");
       if (options?.completionReply && actor.agentId && createdByRunId) await acknowledgeChatCompletionReply(dbOrTx, createdByRunId, comment.id);
