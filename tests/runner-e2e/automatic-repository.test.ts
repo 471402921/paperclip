@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { automaticRepositoryStopReason, gradeAutomaticRepository, type AutomaticRepositoryObservation } from "./automatic-repository.js";
+import { automaticRepositoryApiState, automaticRepositoryStopReason, gradeAutomaticRepository, type AutomaticRepositoryObservation } from "./automatic-repository.js";
 
 const sha = "a".repeat(40);
 const reference = "c".repeat(64);
@@ -47,4 +47,19 @@ it.each<Partial<AutomaticRepositoryObservation>>([
   { actualCommit: null }, { downloadVerified: false }, { visibleDelivery: false }, { pendingInteractions: 1 }, { monitorScheduled: true },
 ])("rejects a plausible incomplete or wrong result %j", fault => {
   expect(gradeAutomaticRepository({ ...valid, ...fault }).some(check => !check.passed)).toBe(true);
+});
+
+it("retains required lifecycle evidence while excluding provider content and unrelated task data", () => {
+  const issue = { id: "task", companyId: "company", status: "done", description: "private description", privateToken: "private token" };
+  const run = { id: "successor", companyId: "company", agentId: "agent", nativeIssueId: "task", status: "succeeded",
+    wakeupRequestId: "dispatch", contextSnapshot: { source: "native_status_decision", nativeStatusWakeIntentId: "intent", paperclipWake: { prompt: "private prompt" } },
+    resultJson: { finalizationPhase: "committed", nativeResult: { summary: "private provider text" } }, privateConfig: { secret: "private secret" } };
+  for (const phase of ["completed", "failed"]) {
+    const snapshot = automaticRepositoryApiState(phase, issue, [run], gradeAutomaticRepository(valid));
+    expect(snapshot).toMatchObject({ capturePhase: phase, issue: { id: "task", status: "done" },
+      runs: [{ id: "successor", wakeupRequestId: "dispatch", source: "native_status_decision", nativeStatusWakeIntentId: "intent", finalizationPhase: "committed" }] });
+    expect(JSON.stringify(snapshot)).not.toMatch(/private|description|paperclipWake|nativeResult/);
+  }
+  const malformed = automaticRepositoryApiState("failed", issue, [{ ...run, contextSnapshot: { source: { private: true }, nativeStatusWakeIntentId: { private: true } }, resultJson: { finalizationPhase: { private: true } } }], []);
+  expect(malformed.runs[0]).toMatchObject({ source: null, nativeStatusWakeIntentId: null, finalizationPhase: null });
 });
