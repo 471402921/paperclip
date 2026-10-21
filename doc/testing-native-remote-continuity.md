@@ -128,8 +128,14 @@ Rollback must use a controller that understands sparse checkpoints and the signe
 recovery cursor. A v2 decoder alone is insufficient. Runners admitted before this
 release do not acquire the new protocol capability or grace period retroactively.
 
-Completed checkpoints use the existing native harness backup maintenance sweep
-and its enabled, dry-run, and retention-days settings (seven days by default).
+Completed checkpoints are pruned opportunistically at server startup using the
+native harness backup enabled, dry-run, and retention-days settings (seven days
+by default). This is a minimum retention age, not a deletion deadline: a record
+that becomes eligible after startup remains until the next server restart.
+The shared delivery coordinator drains bounded startup pages, retries failed
+work, and preserves pending startup work across admission drain. It becomes
+quiet after completing the pass, including when protected history remains.
+The existing hourly filesystem sweep does not query database checkpoints.
 The database pass also works with empty controller storage. A partial header index
 keeps candidate discovery separate from event payloads and runs with no retained
 checkpoint. Each page checks at
@@ -141,6 +147,12 @@ Expiration locks finalizations and increments their controller generation before
 deletion to fence late writers, including warm predecessors. Business records and
 tool receipts remain. Closed sessions with saved resume pointers can therefore
 outlive the retention age; age alone never authorizes deletion.
+
+Expired-controller recovery reuses the existing orphan sweep's active-run
+inventory. Checkpoint lookups occur only for native runs with an expired lease
+and no tracked execution. There is no additional idle checkpoint scan; startup
+recovery remains the first adoption path and the orphan cadence retries concrete
+unowned active runs while ownership is unresolved.
 
 Plugin-owned workspace tasks use the same journal and recovery window. Their
 task owner verifies the saved identity and running status through the task API,

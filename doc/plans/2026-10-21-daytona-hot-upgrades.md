@@ -442,3 +442,38 @@ Fresh final-cache five-minute evidence, full-suite results and current-head CI
 are recorded in the PR's Verification section rather than inferred from prior
 commits. Hosted Daytona remains unqualified because its builder failed before
 sandbox launch.
+
+
+### Lean-design review follow-up
+
+The final cache revision passed a 300-second outage with the controller directory
+deleted in 327.36 seconds total. Logs: `/tmp/lean-final-five-minute-proof.log`.
+Workspace typecheck/build also passed at `7ca5e0b890`.
+
+Review found a stale Copilot v58 digest assertion and idle checkpoint scans. The
+assertion now matches the generated identity; all 55 installation tests passed.
+Recovery reuses the existing active-run inventory and queries checkpoints only
+for expired, untracked native controllers. Empty/terminal inventories create no
+extra query. Startup remains the first recovery path; the existing orphan cadence
+retries only concrete unresolved active ownership.
+
+Checkpoint retention is now explicitly opportunistic at startup, using the shared
+delivery coordinator for bounded pages, failure retry, drain/resume, and shutdown.
+Seven days is a minimum age, not a cleanup deadline. Protected or newly eligible
+records wait until the next restart. This avoids adding notifications to every
+run/issue/session/lease writer or a permanent cleanup scan. The original hourly
+filesystem cleanup is unchanged and never queries database checkpoints. Live
+ownership, saved resume pointers, and late-writer fencing remain protected.
+
+The focused real-Postgres recovery/retention suite passed 70 tests, including
+three former hourly periods with no additional DB reads for empty storage or
+retained history, next-startup cleanup, and startup drain/resume. Logs:
+`/tmp/lean-idle-recovery-retention.log`, `/tmp/lean-copilot-digest-tests.log`.
+
+The final recovery/retention rerun passed 71 tests, adding a blocked-disposition
+case so the reused inventory cannot overwrite native recovery's fresh decision.
+Startup wiring passed 39 tests. A parallel retention invocation hit the existing
+20-second embedded-Postgres setup timeout before tests; the subsequent isolated
+rerun passed. Logs: `/tmp/lean-final-idle-tests.log` and
+`/tmp/lean-startup-retention-tests.log`. Workspace typecheck/build passed after
+startup wiring; final-head validation is tracked in the PR.

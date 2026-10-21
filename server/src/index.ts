@@ -1259,7 +1259,7 @@ async function startServerWithDatabaseTeardown(
     nativeHarnessBackupExpirationInFlight = true;
     trackHeartbeatSchedulerWork(nativeHarnessBackupExpiration.tick()
       .then((result) => {
-        if (result.candidates > 0 || result.checkpointCandidates > 0 || result.failed > 0) {
+        if (result.candidates > 0 || result.failed > 0) {
           logger.info({ ...result, dryRun: config.nativeHarnessBackupExpirationDryRun }, "native harness backup expiration");
         }
         if (result.truncated && !heartbeatSchedulerStopped) {
@@ -1324,6 +1324,9 @@ async function startServerWithDatabaseTeardown(
     resolveNativeQuestion: (interaction) => deliverNativeQuestionResponse(db as any, interaction),
   });
   const deliveryWork = app.locals.deliveryWork as ReturnType<typeof createDeliveryWorkCoordinator>;
+  if (config.nativeHarnessBackupExpirationEnabled) {
+    nativeHarnessBackupExpiration.registerCheckpointExpiration(deliveryWork);
+  }
   const executionSchedule = executionControlSchedule(db);
   registerExecutionControlWork(deliveryWork, [
     { queue: DELIVERY_QUEUES.executionFinalization, run: () => reconcileAbandonedExecutionControl(db), next: executionSchedule.finalization },

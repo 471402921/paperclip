@@ -2154,13 +2154,6 @@ export function createHeartbeatRecovery(db: Db, dependencies: HeartbeatRecoveryD
       }
     }
 
-    const remoteRecoveryRunIds = (await listExpiredNativeRunnerAuthorities(db, now))
-      .filter(runId => !activeRunExecutions.has(runId) && !runningProcesses.has(runId));
-    if (remoteRecoveryRunIds.length) {
-      const recovery = await recoverNativeRunsAfterRestart(now, remoteRecoveryRunIds);
-      for (const claim of recovery.claims) resumedRunIds.add(claim.runId);
-    }
-
     // Find all runs stuck in "running" state (queued runs are legitimately waiting; resumeQueuedRuns handles them)
     const activeRuns = await db
       .select({
@@ -2183,6 +2176,20 @@ export function createHeartbeatRecovery(db: Db, dependencies: HeartbeatRecoveryD
         eq(nativeRunFinalizations.runId, heartbeatRuns.id),
       )
       .where(eq(heartbeatRuns.status, "running"));
+
+    // Reuse the orphan sweep's active-run inventory. Only an expired, untracked
+    // controller creates recovery work; idle sweeps add no checkpoint query.
+    const expiredNativeRunIds = activeRuns.filter(({ run, nativeCoordinatorPhase, nativeControllerLeaseExpiresAt }) =>
+      run.runtimeMode === "native" && nativeCoordinatorPhase === "observed"
+      && (!nativeControllerLeaseExpiresAt || nativeControllerLeaseExpiresAt <= now)
+      && !isNativeRunnerOwnershipHeld(run)
+      && !activeRunExecutions.has(run.id) && !runningProcesses.has(run.id),
+    ).map(({ run }) => run.id);
+    const remoteRecoveryRunIds = new Set(await listExpiredNativeRunnerAuthorities(db, now, expiredNativeRunIds));
+    if (remoteRecoveryRunIds.size) {
+      const recovery = await recoverNativeRunsAfterRestart(now, [...remoteRecoveryRunIds]);
+      for (const claim of recovery.claims) resumedRunIds.add(claim.runId);
+    }
 
     const monitorIssueIds = [
       ...new Set(
@@ -2228,6 +2235,9 @@ export function createHeartbeatRecovery(db: Db, dependencies: HeartbeatRecoveryD
       nativeControllerLeaseExpiresAt,
       nativeWorkspaceFinalizationPending,
     } of activeRuns) {
+      // Native recovery owns these dispositions. Its writes happened after this
+      // inventory was read; do not reap or overwrite them using the old row.
+      if (remoteRecoveryRunIds.has(run.id)) continue;
       // Authentication timeout requires an explicit ownership resolution, not
       // repeated reattachment or a process-gone guess on subsequent sweeps.
       if (isNativeRunnerOwnershipHeld(run)) continue;

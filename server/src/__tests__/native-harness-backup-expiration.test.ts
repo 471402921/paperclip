@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { promises as fs } from "node:fs";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import {
   agents,
@@ -20,6 +20,7 @@ import {
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
 import { nativeHarnessBackupExpirationService } from "../services/native-runtime/native-harness-backup-expiration.ts";
+import { createDeliveryWorkCoordinator } from "../services/delivery-work-coordinator.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -156,12 +157,98 @@ describeEmbeddedPostgres("native harness backup expiration", () => {
     })));
   }
 
+  it.each([false, true])("adds no periodic database work after startup (retained history: %s)", async retained => {
+    if (retained) {
+      const session = await seedSession({ finalization: { phase: "committed" } });
+      await seedCheckpoint(session); // Saved resume pointer deliberately protects it.
+      await fs.rm(stateBase, { recursive: true, force: true });
+    } else {
+      stateBase = await fs.mkdtemp(path.join(os.tmpdir(), "empty-checkpoint-retention-"));
+    }
+    const expiration = service();
+    const coordinator = createDeliveryWorkCoordinator({ owner: db, canRun: () => true, onError: error => { throw error; } });
+    const select = vi.spyOn(db, "select");
+    try {
+      await expiration.registerCheckpointExpiration(coordinator).ready;
+      expect(select).toHaveBeenCalled();
+      const reads = select.mock.calls.length;
+      expect(coordinator.nextWakeAt()).toBeNull();
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+      await vi.advanceTimersByTimeAsync(3 * 60 * 60 * 1000);
+      // The unchanged hourly filesystem sweep must not enumerate DB checkpoints.
+      for (let hour = 0; hour < 3; hour++) await expiration.tick();
+      expect(select).toHaveBeenCalledTimes(reads);
+      expect(coordinator.nextWakeAt()).toBeNull();
+    } finally {
+      await coordinator.stop();
+      select.mockRestore();
+      vi.useRealTimers();
+    }
+    if (retained) {
+      expect(await db.select().from(nativeRunnerCheckpoints)).toHaveLength(3);
+      await db.delete(agentTaskSessions);
+      const nextStartup = createDeliveryWorkCoordinator({ owner: db, canRun: () => true, onError: vi.fn() });
+      try {
+        await service().registerCheckpointExpiration(nextStartup).ready;
+        expect(await db.select().from(nativeRunnerCheckpoints)).toEqual([]);
+        expect(nextStartup.nextWakeAt()).toBeNull();
+      } finally { await nextStartup.stop(); }
+    }
+  });
+
+  it("preserves startup expiration across drain without querying while paused", async () => {
+    const session = await seedSession({ finalization: { phase: "committed" } });
+    await seedCheckpoint(session);
+    await db.delete(agentTaskSessions);
+    let draining = true;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const select = vi.spyOn(db, "select");
+    const onError = vi.fn();
+    const coordinator = createDeliveryWorkCoordinator({ owner: db, canRun: () => !draining, canReconcile: () => true, onError });
+    try {
+      await service().registerCheckpointExpiration(coordinator).ready;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(select).not.toHaveBeenCalled();
+      draining = false;
+      await vi.advanceTimersByTimeAsync(1000);
+      await vi.waitFor(() => expect(coordinator.nextWakeAt()).toBeNull());
+      await coordinator.stop(); // Await the DB transaction before asserting.
+      expect(onError).not.toHaveBeenCalled();
+      expect(await db.select().from(nativeRunnerCheckpoints)).toEqual([]);
+    } finally {
+      await coordinator.stop();
+      select.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries a failed checkpoint from an earlier page before startup cleanup goes quiet", async () => {
+    for (let index = 0; index < 2; index++) {
+      const session = await seedSession({ finalization: { phase: "committed" } });
+      await seedCheckpoint(session);
+    }
+    await db.delete(agentTaskSessions);
+    const transaction = vi.spyOn(db, "transaction").mockRejectedValueOnce(new Error("temporary retention failure"));
+    const coordinator = createDeliveryWorkCoordinator({ owner: db, canRun: () => true, onError: vi.fn() });
+    try {
+      const expiration = nativeHarnessBackupExpirationService(db, { now, maxEntries: 1 });
+      await expiration.registerCheckpointExpiration(coordinator).ready;
+      await vi.waitFor(async () => {
+        expect(await db.select().from(nativeRunnerCheckpoints)).toEqual([]);
+        expect(coordinator.nextWakeAt()).toBeNull();
+      }, { timeout: 5000 });
+    } finally {
+      await coordinator.stop();
+      transaction.mockRestore();
+    }
+  });
+
   it("expires unreferenced settled checkpoints even with an empty controller disk and fences old writers", async () => {
     const session = await seedSession({ finalization: { phase: "committed" } });
     await seedCheckpoint(session);
     await db.delete(agentTaskSessions);
     await fs.rm(stateBase, { recursive: true, force: true });
-    expect(await service().tick()).toMatchObject({ expiredCheckpoints: 1, checkpointCandidates: 1, failed: 0 });
+    expect(await service().tickCheckpoints()).toMatchObject({ expiredCheckpoints: 1, checkpointCandidates: 1, failed: 0 });
     expect(await db.select().from(nativeRunnerCheckpoints)).toEqual([]);
     const [authority] = await db.select().from(nativeRunFinalizations).where(eq(nativeRunFinalizations.runId, session.runId));
     expect(authority?.controllerGeneration).toBe(1);
@@ -186,7 +273,7 @@ describeEmbeddedPostgres("native harness backup expiration", () => {
       if (protection === "recent") await db.update(issues).set({ completedAt: now });
       if (protection === "open") await db.update(issues).set({ status: "in_progress" });
       if (protection === "execution") await db.update(issues).set({ executionRunId: session.runId });
-      expect(await service().tick({ dryRun: protection === "dry_run" })).toMatchObject({ expiredCheckpoints: 0, failed: 0 });
+      expect(await service().tickCheckpoints({ dryRun: protection === "dry_run" })).toMatchObject({ expiredCheckpoints: 0, failed: 0 });
       expect(await db.select().from(nativeRunnerCheckpoints)).toHaveLength(3);
       const [authority] = await db.select().from(nativeRunFinalizations);
       expect(authority?.controllerGeneration).toBe(0);
@@ -202,11 +289,11 @@ describeEmbeddedPostgres("native harness backup expiration", () => {
     }
     await fs.rm(stateBase, { recursive: true, force: true });
     const expiration = service();
-    expect(await expiration.tick({ maxEntries: 2 })).toMatchObject({ expiredCheckpoints: 0, truncated: true });
-    expect(await expiration.tick({ maxEntries: 2 })).toMatchObject({ expiredCheckpoints: 0, truncated: false });
+    expect(await expiration.tickCheckpoints({ maxEntries: 2 })).toMatchObject({ expiredCheckpoints: 0, truncated: true });
+    expect(await expiration.tickCheckpoints({ maxEntries: 2 })).toMatchObject({ expiredCheckpoints: 0, truncated: false });
     await db.delete(agentTaskSessions);
-    expect(await expiration.tick({ maxEntries: 2 })).toMatchObject({ expiredCheckpoints: 2, truncated: true });
-    expect(await expiration.tick({ maxEntries: 2 })).toMatchObject({ expiredCheckpoints: 1, truncated: false });
+    expect(await expiration.tickCheckpoints({ maxEntries: 2 })).toMatchObject({ expiredCheckpoints: 2, truncated: true });
+    expect(await expiration.tickCheckpoints({ maxEntries: 2 })).toMatchObject({ expiredCheckpoints: 1, truncated: false });
   });
 
   it("expires the backup of a session whose issue closed before the window and clears its resume pointer", async () => {

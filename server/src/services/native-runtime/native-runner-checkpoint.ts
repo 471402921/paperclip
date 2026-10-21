@@ -147,10 +147,12 @@ export async function hasNativeRunnerCheckpoint(db: Pick<Db, "select">, binding:
   return row !== undefined;
 }
 
-export async function listExpiredNativeRunnerAuthorities(db: Db, now: Date): Promise<string[]> {
+export async function listExpiredNativeRunnerAuthorities(db: Db, now: Date, runIds: string[]): Promise<string[]> {
+  if (!runIds.length) return [];
   const rows = await db.select({ runId: nativeRunFinalizations.runId }).from(nativeRunFinalizations)
     .innerJoin(heartbeatRuns, eq(heartbeatRuns.id, nativeRunFinalizations.runId))
-    .where(and(eq(heartbeatRuns.status, "running"), eq(nativeRunFinalizations.phase, "observed"),
+    .where(and(inArray(nativeRunFinalizations.runId, runIds),
+      eq(heartbeatRuns.status, "running"), eq(nativeRunFinalizations.phase, "observed"),
       isNull(nativeRunFinalizations.resultId),
       or(isNull(nativeRunFinalizations.leaseExpiresAt), lte(nativeRunFinalizations.leaseExpiresAt, now)),
       exists(db.select({ runId: nativeRunnerCheckpoints.runId }).from(nativeRunnerCheckpoints).where(and(

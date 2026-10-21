@@ -13,6 +13,7 @@ import { NATIVE_OWNERSHIP_UNVERIFIED_ERROR_CODE } from "../native-runtime/native
 import { allowLegacyShutdownWorkspaceCleanup, beginLegacyShutdownWorkspaceSettlement, finishLegacyShutdownWorkspaceSettlement, maintainLegacyShutdownWorkspaceSettlement, legacyShutdownWorkspaceResourceProtected, sweepLegacyShutdownWorkspaceSettlements } from "../legacy-shutdown-workspace-settlement.js";
 import { adapterExecutionControls, createAdapterExecutionControl } from "../adapter-execution-control.js";
 import { logger } from "../../middleware/logger.js";
+import { listExpiredNativeRunnerAuthorities } from "../native-runtime/native-runner-checkpoint.js";
 
 type Run = typeof heartbeatRuns.$inferSelect;
 
@@ -87,6 +88,12 @@ function guardedDatabase() {
   const access = vi.fn(() => { throw new Error("Unexpected recovery database access"); });
   return { db: new Proxy({}, { get: access }) as Db, access };
 }
+
+it("does not query checkpoint recovery without an expired active run", async () => {
+  const { db, access } = guardedDatabase();
+  expect(await listExpiredNativeRunnerAuthorities(db, new Date(), [])).toEqual([]);
+  expect(access).not.toHaveBeenCalled();
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -606,7 +613,7 @@ describePostgres("heartbeat recovery module ownership", () => {
     await vi.waitFor(() => expect(deps.activeRunExecutionPromises.size).toBe(0));
   });
 
-  it("retries durable remote takeover after the previous controller lease expires", async () => {
+  it.each(["bootstrap_incomplete", "blocked"] as const)("retries durable remote takeover and preserves its %s disposition", async kind => {
     const run = await seedRun();
     const deps = callbacks(db);
     await db.update(heartbeatRuns).set({ runtimeMode: "native", nativeIssueId: run.issueId }).where(eq(heartbeatRuns.id, run.id));
@@ -620,13 +627,21 @@ describePostgres("heartbeat recovery module ownership", () => {
       await recovery.reapOrphanedRuns();
       expect(native.claims).not.toHaveBeenCalled();
       await db.update(nativeRunFinalizations).set({ leaseExpiresAt: new Date(Date.now() - 1) }).where(eq(nativeRunFinalizations.runId, run.id));
-      const claim: NativeRestartRecoveryClaim = { kind: "bootstrap_incomplete", runId: run.id, leaseOwner: "new-server",
-        controllerGeneration: 2, providerAttempt: 0, restartKind: "hard", recoveryRequestId: null };
+      const claim: NativeRestartRecoveryDisposition = kind === "blocked"
+        ? { kind, runId: run.id, reason: "fixture_ambiguous_owner" }
+        : { kind, runId: run.id, leaseOwner: "new-server",
+          controllerGeneration: 2, providerAttempt: 0, restartKind: "hard", recoveryRequestId: null };
+      // Force the old inventory down the unverified-owner path unless recovery
+      // dispositions fence it. The runtime's decision must own this run.
+      await db.update(nativeRunFinalizations).set({ recoveryState: null }).where(eq(nativeRunFinalizations.runId, run.id));
       native.claims.mockResolvedValue([claim]);
       await recovery.reapOrphanedRuns();
       expect(native.claims).toHaveBeenCalledWith(expect.objectContaining({ runIds: [run.id] }));
-      expect(deps.executeRun).toHaveBeenCalledExactlyOnceWith(run.id, { nativeLeaseOwner: "new-server", nativeRestartRecovery: claim });
+      if (kind === "blocked") expect(deps.executeRun).not.toHaveBeenCalled();
+      else expect(deps.executeRun).toHaveBeenCalledExactlyOnceWith(run.id, { nativeLeaseOwner: "new-server", nativeRestartRecovery: claim });
       expect(deps.setRunStatusFromLive).not.toHaveBeenCalled();
+      expect((await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, run.id)))[0].errorCode)
+        .not.toBe(NATIVE_OWNERSHIP_UNVERIFIED_ERROR_CODE);
       await Promise.all([...deps.activeRunExecutionPromises]);
       await db.update(heartbeatRuns).set({ status: "cancelled" }).where(eq(heartbeatRuns.id, run.id));
       native.claims.mockClear();

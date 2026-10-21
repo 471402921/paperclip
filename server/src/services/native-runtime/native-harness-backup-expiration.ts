@@ -14,6 +14,8 @@ import {
 import { logger } from "../../middleware/logger.js";
 import { nativeHarnessStateBase } from "./native-harness-backup-stamp.js";
 import { nativeSessionScopeDigestIsBusy } from "./native-session-executor.js";
+import type { createDeliveryWorkCoordinator } from "../delivery-work-coordinator.js";
+import { DELIVERY_QUEUES } from "../delivery-work-notifications.js";
 
 export const NATIVE_HARNESS_BACKUP_EXPIRATION_INTERVAL_MS = 60 * 60 * 1000;
 export const NATIVE_HARNESS_BACKUP_EXPIRATION_STARTUP_DELAY_MS = 2 * 60 * 1000;
@@ -422,9 +424,43 @@ export function nativeHarnessBackupExpirationService(
       }
     }
     if (!result.truncated) cursor = null;
-    if (shouldContinue()) await expireCheckpoints({ closedBefore, dryRun, maxEntries, maxRemovals, shouldContinue }, result);
     return result;
   }
 
-  return { tick };
+  async function tickCheckpoints(options: NativeHarnessBackupExpirationOptions = {}) {
+    const closedForDays = Math.max(1, options.closedForDays ?? defaults.closedForDays ?? NATIVE_HARNESS_BACKUP_EXPIRATION_DEFAULT_DAYS);
+    const result = emptyResult();
+    const shouldContinue = options.shouldContinue ?? defaults.shouldContinue ?? (() => true);
+    if (!shouldContinue()) return { ...result, truncated: true };
+    await expireCheckpoints({
+      closedBefore: new Date((options.now ?? defaults.now ?? new Date()).getTime() - closedForDays * DAY_MS),
+      dryRun: options.dryRun ?? defaults.dryRun ?? false,
+      maxEntries: Math.max(1, options.maxEntries ?? defaults.maxEntries ?? 200),
+      maxRemovals: Math.max(1, options.maxRemovals ?? defaults.maxRemovals ?? 50),
+      shouldContinue,
+    }, result);
+    return result;
+  }
+
+  function registerCheckpointExpiration(coordinator: ReturnType<typeof createDeliveryWorkCoordinator>) {
+    // Opportunistic startup retention, not a recurring expiry obligation. A
+    // protected/recent checkpoint is reconsidered on the next server startup.
+    // Persisted rows remain safe; seven days is a minimum age, not a deadline.
+    let pending = true;
+    let retryFailedPage = false;
+    return coordinator.register(DELIVERY_QUEUES.nativeCheckpointExpiration, {
+      retryMs: 1000,
+      pausePassiveMaintenance: true,
+      run: async () => {
+        const result = await tickCheckpoints();
+        retryFailedPage ||= result.failed > 0;
+        pending = result.truncated || retryFailedPage;
+        if (!result.truncated) retryFailedPage = false;
+        if (result.checkpointCandidates || result.failed) logger.info(result, "startup native checkpoint expiration");
+      },
+      hasPending: async () => pending,
+    });
+  }
+
+  return { tick, tickCheckpoints, registerCheckpointExpiration };
 }
