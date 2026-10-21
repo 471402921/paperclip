@@ -19,7 +19,7 @@ export const automaticRepositoryTask: RunnerTaskFixture = {
       "Verify a repository in this projectless task and deliver the result. Do not create a project or another task.",
       `Before repository setup, generate a fresh unpredictable 32-byte hexadecimal reference using the operating system random source. Save that reference followed by one LF in ${files.context} in the task directory. Do not include its value in comments or the final answer.`,
       `Before requesting repository preparation, register ${files.context} as a downloadable artifact with that exact title. This records the first admission's original bytes.`,
-      "Use the task's managed repository capability to prepare https://github.com/octocat/Hello-World. Keep the task directory as the root.",
+      "Use the task's managed repository capability to prepare the following repository. Keep the task directory as the root.\nhttps://github.com/octocat/Hello-World",
       "When the checkout is ready, read its committed README and HEAD commit. Read the saved context file again; preserve its original reference. If the file is missing or invalid, report the failure and stop. Never recreate, overwrite, or recover it from an attachment or earlier conversation.",
       `Write ${files.result} as JSON with exactly these fields: reference (the saved reference without its trailing LF), readme (the complete committed README bytes as text), and commit (the full HEAD SHA).`,
       `Register ${files.result} as a downloadable artifact work product with that exact title. Deliver its accessible link and finish the verification. Repository setup alone does not complete this request.`,

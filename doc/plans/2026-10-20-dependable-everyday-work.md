@@ -79,3 +79,20 @@ reproduces the rejection before the fix. The repaired authorization cohort passe
 workspace cases. A committed setup blocker now ends the E2E attempt immediately
 instead of consuming its remaining deadline. The failed pilot remains evidence;
 these regressions do not replace a fresh provider run.
+
+The next provider attempt passed that identity boundary and staged its repository,
+but then submitted a system blocker instead of yielding. The provider-facing
+completion description had omitted the saved workspace continuation. The server
+also accepted a `repository_checkout_pending` blocker that cited the exact pending
+repository on the active task. The repair clarifies the existing completion tool
+and rejects this report before acceptance with the normal yield action. It does
+not rewrite an accepted result or create another recovery mechanism. Real access
+restrictions, approvals, dependencies, paused tasks, cancelled tasks, changed run
+ownership, and failed or unrelated repository receipts retain their gates.
+
+The real PostgreSQL completion regression fails before the repair. The repaired
+completion/context cohort passes 50 checks, the runner cohort passes 107, and
+E2E support checks pass 38. Server, runner, and E2E typechecks pass. Copilot v54
+binds the changed shared completion guidance; v53 remains a historical identity.
+The three development pilot failures remain retained. These checks do not count
+as the required staging matrix, and a fresh provider run remains necessary.

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { agents, companies, createDb, documentRevisions, heartbeatRuns, issues, issueThreadInteractions, issueDocuments } from "@paperclipai/db";
+import { agents, companies, createDb, documentRevisions, executionWorkspaces, executionWorkspaceRepositories, heartbeatRuns, issues, issueThreadInteractions, issueTreeHolds, issueDocuments } from "@paperclipai/db";
 import { startEmbeddedPostgresTestDatabase } from "../../__tests__/helpers/embedded-postgres.js";
 import type { PrpStructuredRunResult } from "../../vendor/paperclip-runner/index.js";
 import { documentService } from "../documents.js";
@@ -211,6 +211,53 @@ describe("native final-response feedback", () => {
     } } } } }).where(eq(heartbeatRuns.id, current.runId));
     const feedback = await nativeCompletionFeedback(db, current.runId, done);
     expect(feedback).not.toContain("#document-"); expect(feedback).not.toContain("foreign.example");
+  });
+  it("corrects a repository-admission blocker before accepting the result", async () => {
+    const value = await fixture();
+    const [workspace] = await db.insert(executionWorkspaces).values({ companyId: value.companyId,
+      sourceIssueId: value.issueId, mode: "isolated", strategyType: "task_directory", name: "Task files" }).returning();
+    const [repository] = await db.insert(executionWorkspaceRepositories).values({ companyId: value.companyId,
+      executionWorkspaceId: workspace.id, requestedByIssueId: value.issueId, repositoryIdentity: "public/example",
+      repoUrl: "https://github.com/public/example", relativePath: ".paperclip-repositories/example", requestKey: "prepare" }).returning();
+    await db.update(issues).set({ executionWorkspaceId: workspace.id }).where(eq(issues.id, value.issueId));
+    const report: PrpStructuredRunResult = { ...done, reportedWorkDisposition: "blocked",
+      completionClaim: { ...done.completionClaim, objectiveSatisfied: false,
+        remainingWork: [{ description: "Read the prepared checkout and deliver the result", blocksCompletion: true }] },
+      evidence: [{ ref: `repository-preparation:${repository.id}` }],
+      blocker: { reasonCode: "repository_checkout_pending", owner: { kind: "system", name: "Workspace admission" },
+        scope: "current_track", unblockAction: "Start the next normal admission" },
+    };
+    await expect(nativeCompletionFeedback(db, value.runId, report)).rejects.toThrow('paperclip_finish with reportedWorkDisposition="yielded"');
+    await expect(nativeCompletionFeedback(db, value.runId, { ...report, evidence: [{ ref: `repository-preparation:${randomUUID()}` }] }))
+      .resolves.toContain("Blocker report accepted");
+    // A real access restriction must remain a blocker even while a repository is pending.
+    await expect(nativeCompletionFeedback(db, value.runId, { ...report, blocker: { ...report.blocker!, reasonCode: "missing_access" } }))
+      .resolves.toContain("Blocker report accepted");
+    await expect(nativeCompletionFeedback(db, value.runId, { ...report, blocker: { ...report.blocker!, owner: { kind: "user", name: "Owner" } } }))
+      .resolves.toContain("Blocker report accepted");
+    const [hold] = await db.insert(issueTreeHolds).values({ companyId: value.companyId, rootIssueId: value.issueId, mode: "pause" }).returning();
+    await expect(nativeCompletionFeedback(db, value.runId, report)).resolves.toContain("Blocker report accepted");
+    await db.update(issueTreeHolds).set({ status: "released" }).where(eq(issueTreeHolds.id, hold.id));
+    const [question] = await db.insert(issueThreadInteractions).values({ companyId: value.companyId,
+      issueId: value.issueId, sourceRunId: value.runId, createdByAgentId: value.agentId,
+      kind: "ask_user_questions", status: "pending", continuationPolicy: "wake_assignee",
+      payload: { version: 1, questions: [{ id: "branch", prompt: "Which private branch?", selectionMode: "single", required: true, allowOther: true, options: [] }] } }).returning();
+    await expect(nativeCompletionFeedback(db, value.runId, report)).resolves.toContain(`Pending request: ${question.id}`);
+    await db.update(issueThreadInteractions).set({ status: "answered" }).where(eq(issueThreadInteractions.id, question.id));
+    // A pending request elsewhere is not authority to continue this task.
+    await db.update(executionWorkspaceRepositories).set({ requestedByIssueId: null }).where(eq(executionWorkspaceRepositories.id, repository.id));
+    await expect(nativeCompletionFeedback(db, value.runId, report)).resolves.toContain("Blocker report accepted");
+    await db.update(executionWorkspaceRepositories).set({ requestedByIssueId: value.issueId, state: "failed" }).where(eq(executionWorkspaceRepositories.id, repository.id));
+    await expect(nativeCompletionFeedback(db, value.runId, report)).resolves.toContain("Blocker report accepted");
+    await db.update(executionWorkspaceRepositories).set({ state: "pending" }).where(eq(executionWorkspaceRepositories.id, repository.id));
+    await db.update(issues).set({ executionWorkspaceId: null }).where(eq(issues.id, value.issueId));
+    await expect(nativeCompletionFeedback(db, value.runId, report)).resolves.toContain("Blocker report accepted");
+    await db.update(issues).set({ executionWorkspaceId: workspace.id, status: "cancelled" }).where(eq(issues.id, value.issueId));
+    await expect(nativeCompletionFeedback(db, value.runId, report)).resolves.toContain("already cancelled");
+    const newerRunId = randomUUID();
+    await db.insert(heartbeatRuns).values({ id: newerRunId, companyId: value.companyId, agentId: value.agentId, nativeIssueId: value.issueId, status: "running", runtimeMode: "native" });
+    await db.update(issues).set({ status: "in_progress", executionRunId: newerRunId }).where(eq(issues.id, value.issueId));
+    await expect(nativeCompletionFeedback(db, value.runId, report)).resolves.toContain("newer run owns");
   });
   it("asks a blocked provider to explain the cause and action instead of describing completed work", async () => {
     const value = await fixture();

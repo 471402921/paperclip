@@ -1,3 +1,4 @@
+import { pendingTaskRepository } from "../task-workspace-tools.js";
 import { eligibleIssueMonitorWait } from "../issue-monitors.js";
 import { assertNativeCaseHandoffResult } from "./native-case-handoff.js";
 import { activeIssueInteractionCondition, ordinaryQuestionCondition } from "../issue-question-context.js";
@@ -235,6 +236,25 @@ export async function nativeCompletionFeedback(
   const readiness = await issueService(db).getDependencyReadiness(issue.id, db);
   if (readiness.unresolvedBlockerCount > 0) {
     return `Completion report accepted; this task still has unresolved dependencies. Explain the blockers on [this task](/issues/${issue.identifier ?? issue.id}); do not say the task is done.`;
+  }
+  // A provider can mistake the immutable current admission for a system
+  // blocker. Correct that report before acceptance, using the exact live task
+  // receipt. Keep real access, approval, dependency, and Stop gates authoritative.
+  if (result.reportedWorkDisposition === "blocked" && result.blocker?.owner.kind === "system" &&
+      result.blocker.scope === "current_track" && result.blocker.reasonCode === "repository_checkout_pending" &&
+      !result.completionClaim.objectiveSatisfied && result.completionClaim.remainingWork.some(work => work.blocksCompletion) &&
+      signals.actionableAttentionRequests.length === 0 && issue.workMode === "standard" &&
+      issue.executionRunId === run.id && run.status === "running") {
+    const repositoryIds = result.evidence.flatMap(evidence => {
+      if (typeof evidence.ref !== "string") return [];
+      const match = /^repository-preparation:([a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.exec(evidence.ref);
+      return match ? [match[1]!] : [];
+    });
+    const repository = await pendingTaskRepository(db, { companyId: run.companyId, issueId: issue.id, workspaceId: issue.executionWorkspaceId, repositoryIds });
+    if (repository &&
+        !(await issueTreeControlService(db).getActivePauseHoldGate(run.companyId, issue.id))) {
+      throw new Error('This task has a saved repository preparation for its next admission. This is routine setup, not a blocker. Call paperclip_finish with reportedWorkDisposition="yielded" and omit continuation (or use null); Paperclip will select the saved workspace continuation. Preserve the completed work and explain what remains. Do not repeat setup, set a timer, or ask the user to restart.');
+    }
   }
   if (result.reportedWorkDisposition === "yielded" && result.continuation?.kind === "monitor") {
     return `Monitor wait accepted. The task remains active and Paperclip will wake its assignee at or after ${issue.monitorNextCheckAt!.toISOString()} with issue_monitor_due. End this turn; do not poll or mark the task done.`;

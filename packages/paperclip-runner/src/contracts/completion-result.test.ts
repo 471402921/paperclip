@@ -115,6 +115,9 @@ describe("provider-neutral completion result schema", () => {
     expect(finish.inputSchema).toEqual(PRP_COMPLETION_RESULT_PROVIDER_INPUT_SCHEMA);
     expect(block.inputSchema).toEqual(PRP_BLOCK_RESULT_PROVIDER_INPUT_SCHEMA);
     expect(finish.description).toBe(PRP_COMPLETION_TOOL_DESCRIPTION);
+    expect(finish.description).toContain("saved repository-preparation continuation");
+    expect(finish.inputSchema.properties.continuation.description).toContain("repository-preparation continuation");
+    expect(block.description).toContain("Routine repository preparation is not a blocker");
     expect(block.description).toBe(PRP_BLOCK_TOOL_DESCRIPTION);
   });
 
