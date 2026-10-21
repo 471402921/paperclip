@@ -257,3 +257,23 @@ paused-agent cases.
 All 2,048 real-HTTP, API-contract, and tool-authority tests passed after the fix,
 including all three completed-write cases, and server typecheck passed. Logs:
 `/tmp/daytona-api-alias-tests.log` and `/tmp/daytona-api-alias-types.log`.
+
+CI at `84f80db58f` caught a recovery compatibility regression: normalized API
+validation threw for an unknown operation where recovery previously returned no
+recoverable result. Recovery now preserves that behavior for an absent API
+operation while propagating other validation and authority failures. The broader
+restart integration test covers this case. The hire regression compares stable
+agent identity fields so asynchronous agent setup cannot affect its duplicate
+creation assertion.
+
+The same CI attempt also failed the unchanged browser draft-restoration test at
+`board-attachment-receipts.spec.ts:358` (expected the full newer draft, received
+`nding.`). That fixture assigns no agent and never starts a runner. The cause is
+unestablished; its original job log is `/tmp/daytona-alias-e2e-job.log`. Runner
+failure evidence is `/tmp/daytona-alias-runner-ci.log`.
+
+The compatibility fix passed all 2,079 API/tool-authority and real-process restart
+tests (five Docker-only cases skipped), plus server typecheck. This includes the
+unknown-operation regression and the completed API-backed write regressions.
+Logs: `/tmp/daytona-api-recovery-compat-tests.log` and
+`/tmp/daytona-api-recovery-compat-types.log`.

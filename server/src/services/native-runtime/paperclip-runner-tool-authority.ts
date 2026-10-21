@@ -398,9 +398,16 @@ export class PaperclipRunnerToolAuthority {
         if (!parsed.success) return null;
         request = taskBridgeApiRequest(call.tool, parsed.data as Record<string, any>);
       } else if (call.tool === "hire_agent") request = hireAgentApiRequest(input, this.binding);
-      const { input: apiInput, operation } = validateRunnerApiCall(request, {
-        ...this.binding, issueIdentifier: context.issue.identifier, workMode: context.issue.workMode,
-      });
+      let validated: ReturnType<typeof validateRunnerApiCall>;
+      try {
+        validated = validateRunnerApiCall(request, {
+          ...this.binding, issueIdentifier: context.issue.identifier, workMode: context.issue.workMode,
+        });
+      } catch (error) {
+        if (error instanceof HttpError && error.status === 404) return null;
+        throw error;
+      }
+      const { input: apiInput, operation } = validated;
       if (readOnlyApiMethod(operation.method)) return { result: await this.execute(call) };
       const api = record(record(run.resultJson?.apiToolReceipts)[callKey]);
       if (api.state !== "completed" || api.digest !== toolInputDigest(apiInput)) return null;

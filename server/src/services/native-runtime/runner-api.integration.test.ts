@@ -367,7 +367,7 @@ else if(m.id!==undefined) send({id:m.id,result:{}});
     const effects = async () => {
       const snapshot = await fixture.snapshot();
       return { comments: snapshot.comments, revisions: snapshot.documentRevisions, approvals: snapshot.approvals,
-        agents: await server.db.select().from(agents).where(eq(agents.companyId, fixture.companyId)),
+        agents: await server.db.select({ id: agents.id, name: agents.name }).from(agents).where(eq(agents.companyId, fixture.companyId)).orderBy(agents.id),
         calls: snapshot.activity.filter(row => row.action === "runner.api_called") };
     };
     const before = await effects();
