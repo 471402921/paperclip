@@ -19,6 +19,7 @@ import {
 import { resolveRunnerE2ESource } from "./source.js";
 import { runnerE2ESummaryLinks } from "./summary-links.js";
 import type { RunnerE2EResult } from "./types.js";
+import { gradeRetainedDependableResults, type DependableQualification } from "./dependable-qualification.js";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../..");
 
@@ -268,6 +269,14 @@ async function main() {
   }
 
   await mkdir(output, { recursive: true });
+  const qualificationConfigPath = process.env.PAPERCLIP_DEPENDABLE_QUALIFICATION_MANIFEST;
+  const dependable = qualificationConfigPath ? gradeRetainedDependableResults(
+    JSON.parse(await readFile(qualificationConfigPath, "utf8")) as DependableQualification,
+    [...candidates.values()].flat(),
+  ) : null;
+  if (dependable) {
+    await writeFile(path.join(output, "dependable-qualification.json"), `${JSON.stringify(dependable, null, 2)}\n`);
+  }
   const [stagedEvidence] = await Promise.all([
     stageDashboardEvidence(selected, output),
     stageDashboardBrandAssets(output),
@@ -344,6 +353,7 @@ async function main() {
     "",
     `Passed: ${normalized.passed}/${selected.length}`,
     "",
+    ...(dependable ? [`Dependable-work checkpoint: ${dependable.complete ? "complete" : "incomplete"}; ${dependable.cells.filter(cell => cell.complete).length}/24 cells; ${dependable.failedAttempts} retained failed attempts; ${dependable.unclassifiedResults.length} results without observer receipts.`, ""] : []),
     ...(summaryLinks.length > 0
       ? [
           "## View results",
@@ -390,7 +400,7 @@ async function main() {
   const junit = `<?xml version="1.0" encoding="UTF-8"?><testsuite name="Runner Full-Stack E2E" tests="${selected.length}" failures="${failures}">${cases}</testsuite>\n`;
   await writeFile(path.join(output, "junit.xml"), junit);
   console.log(summaryLines.join("\n"));
-  if (failures > 0) process.exitCode = 1;
+  if (failures > 0 || (dependable && (!dependable.complete || dependable.unclassifiedResults.length > 0))) process.exitCode = 1;
 }
 
 await main().catch((error) => {

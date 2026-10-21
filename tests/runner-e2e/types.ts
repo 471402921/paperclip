@@ -294,6 +294,12 @@ export interface RunnerE2EResult {
     ref: string | null;
     workflowRunUrl: string | null;
   };
+  dependableWork?: {
+    campaignId: string;
+    cell: import("./dependable-qualification.js").DependableCell;
+    phase: "candidate" | "staging";
+    evidence: Omit<import("./dependable-qualification.js").DependableAttempt["evidence"], "manifestVerified" | "secretScanPassed">;
+  };
   rankingSnapshot?: {
     snapshotId: string;
     capturedAt: string;

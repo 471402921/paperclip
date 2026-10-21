@@ -1,5 +1,36 @@
 # Paid runner full-stack E2E
 
+## Dependable-work qualification checkpoint
+
+`dependable-qualification.ts` defines the six everyday journeys across Codie
+and Claude, through Paperclip and Slack: 24 cells. The checkpoint requires three
+fresh candidate passes per cell, followed by a staging pass for that cell. It
+compares the recorded source, start/end serving revisions, model, effective
+settings hash, production instructions hash, case definition, and runner artifact.
+Repeated tasks or runs cannot count as fresh attempts. Each journey requires
+its independent durable-state, output, rendered-conversation, and delivery checks.
+An agent's success prose cannot satisfy these checks.
+
+Set `PAPERCLIP_DEPENDABLE_QUALIFICATION_MANIFEST` to a private JSON file matching
+`DependableQualification` when generating the ordinary Product E2E report. It
+writes `dependable-qualification.json` beside the existing report and makes an
+incomplete checkpoint fail that report command. The checkpoint reads the entire
+retained attempt pool before best-attempt selection. Failed attempts and missing
+observer receipts remain visible after later successes. The ordinary report's
+costs, timings, evidence scanning, and attempt records remain authoritative.
+
+The observer receipt is typed and validated as `RunnerE2EResult.dependableWork`;
+it contains no credentials or provider prose. `dependableDailyExecutions` returns
+four exact execution IDs per UTC day, rotating all cells in six days. It refuses
+to select a journey absent from the catalog. The existing bounded operations
+manifest and shared journal must own spending and scheduling; this checkpoint
+does not start work, retry it, or create a second scheduler.
+
+The complete journey registrations and staging/Slack observers are still being
+implemented. Existing development cells do not emit qualifying observer receipts
+and do not count toward this checkpoint. A green support test is calibration of
+the checkpoint, not a live qualification result.
+
 ## Automatic repository continuation
 
 The explicit-only `automatic-repository` suite is an early repair check for
