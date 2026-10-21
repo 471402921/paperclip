@@ -89,6 +89,38 @@ heartbeat discovers eligible runs through the native runtime. Tool recovery uses
 the current tool authority, including receipt decoding and read policy. Transport
 adapters retain ownership of protocol response envelopes.
 
+Checkpoint v2 stores a small cursor separately from authority metadata and derives
+record order from sequence keys. Event-only captures serialize changed events;
+they reuse previously serialized authority and command records. The callback
+supplies changed records, exact removed keys, and an initial replacement flag.
+Postgres applies that write set under the same owner lock. The decoder also reads
+v1 checkpoints. Older server builds that only understand v1 cannot read v2;
+rollback requires a build with the v2 decoder. No database schema change is needed
+for this encoding change.
+
+Ordinary output events share a commit until 32 events, 256 KiB of input envelopes,
+or a 20 ms timer triggers a flush. The timer is subject to event-loop scheduling.
+Only one batch commit is in flight per connection. Semantic tool inputs and
+priority-zero events force an immediate durability barrier. Commands and
+authentication retain their persistence barriers. An acknowledgement covers only
+the committed prefix. Failed commits close the connection; unacknowledged events
+remain in the runner outbox for replay. Local journal writes and application
+event callbacks still run for each event. This reduces checkpoint overhead, not
+all database work or all file I/O. At low event rates the timer can still produce
+one transaction per event.
+
+Completed checkpoints use the existing native harness backup maintenance sweep
+and its enabled, dry-run, and retention-days settings (seven days by default).
+The database pass also works with empty controller storage. Each page checks at
+most 200 candidates and deletes at most 50 run checkpoints. It keeps checkpoints
+unless every run in the session is finished and old, all related issues are old
+and closed, finalization has settled, and no execution pointer, recovery owner,
+live environment lease, or saved task-session pointer refers to the session.
+Expiration locks finalizations and increments their controller generation before
+deletion to fence late writers, including warm predecessors. Business records and
+tool receipts remain. Closed sessions with saved resume pointers can therefore
+outlive the retention age; age alone never authorizes deletion.
+
 Plugin-owned workspace tasks use the same journal and recovery window. Their
 task owner verifies the saved identity and running status through the task API,
 then reconnects using the original active lease. It never fabricates a local PID

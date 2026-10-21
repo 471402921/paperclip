@@ -13,6 +13,7 @@ import {
   heartbeatRuns,
   issues,
   nativeRunFinalizations,
+  nativeRunnerCheckpoints,
 } from "@paperclipai/db";
 import {
   getEmbeddedPostgresTestSupport,
@@ -133,7 +134,7 @@ describeEmbeddedPostgres("native harness backup expiration", () => {
         metadata: { nativeHarnessBackup: { sessionScopeSha256: scope } },
       });
     }
-    return { companyId, agentId: agent!.id, issueId: issue!.id, sessionId, scope, root, current };
+    return { companyId, agentId: agent!.id, issueId: issue!.id, runId: run!.id, sessionId, scope, root, current };
   }
 
   function service() {
@@ -148,6 +149,65 @@ describeEmbeddedPostgres("native harness backup expiration", () => {
   async function taskSessionCount(agentId: string) {
     return (await db.select().from(agentTaskSessions).where(eq(agentTaskSessions.agentId, agentId))).length;
   }
+
+  async function seedCheckpoint(session: Awaited<ReturnType<typeof seedSession>>) {
+    await db.insert(nativeRunnerCheckpoints).values(["header", "cursor", "event:1"].map(part => ({
+      companyId: session.companyId, issueId: session.issueId, runId: session.runId, part, material: { encrypted: true },
+    })));
+  }
+
+  it("expires unreferenced settled checkpoints even with an empty controller disk and fences old writers", async () => {
+    const session = await seedSession({ finalization: { phase: "committed" } });
+    await seedCheckpoint(session);
+    await db.delete(agentTaskSessions);
+    await fs.rm(stateBase, { recursive: true, force: true });
+    expect(await service().tick()).toMatchObject({ expiredCheckpoints: 1, checkpointCandidates: 1, failed: 0 });
+    expect(await db.select().from(nativeRunnerCheckpoints)).toEqual([]);
+    const [authority] = await db.select().from(nativeRunFinalizations).where(eq(nativeRunFinalizations.runId, session.runId));
+    expect(authority?.controllerGeneration).toBe(1);
+    expect(await db.select().from(heartbeatRuns)).toHaveLength(1);
+  });
+
+  it.each(["resume", "lease", "lease_stamp", "recovery", "running", "recent", "open", "execution", "dry_run"])(
+    "preserves a checkpoint protected by %s without its controller disk", async protection => {
+      const session = await seedSession({ finalization: { phase: "committed" } });
+      await seedCheckpoint(session);
+      await fs.rm(stateBase, { recursive: true, force: true });
+      if (protection !== "resume") await db.delete(agentTaskSessions);
+      if (protection === "lease") await db.insert(environmentLeases).values({
+        companyId: session.companyId, issueId: session.issueId, status: "retained",
+      });
+      if (protection === "lease_stamp") await db.insert(environmentLeases).values({
+        companyId: session.companyId, status: "retained",
+        metadata: { nativeHarnessBackup: { normalizedSessionId: session.sessionId } },
+      });
+      if (protection === "recovery") await db.update(nativeRunFinalizations).set({ recoveryState: "pending" });
+      if (protection === "running") await db.update(heartbeatRuns).set({ status: "running" });
+      if (protection === "recent") await db.update(issues).set({ completedAt: now });
+      if (protection === "open") await db.update(issues).set({ status: "in_progress" });
+      if (protection === "execution") await db.update(issues).set({ executionRunId: session.runId });
+      expect(await service().tick({ dryRun: protection === "dry_run" })).toMatchObject({ expiredCheckpoints: 0, failed: 0 });
+      expect(await db.select().from(nativeRunnerCheckpoints)).toHaveLength(3);
+      const [authority] = await db.select().from(nativeRunFinalizations);
+      expect(authority?.controllerGeneration).toBe(0);
+      // Break the issue/run reference cycle before the shared teardown.
+      if (protection === "execution") await db.update(issues).set({ executionRunId: null });
+    },
+  );
+
+  it("continues checkpoint expiration past retained sessions within bounded pages", async () => {
+    for (let index = 0; index < 3; index++) {
+      const session = await seedSession({ finalization: { phase: "committed" } });
+      await seedCheckpoint(session);
+    }
+    await fs.rm(stateBase, { recursive: true, force: true });
+    const expiration = service();
+    expect(await expiration.tick({ maxEntries: 2 })).toMatchObject({ expiredCheckpoints: 0, truncated: true });
+    expect(await expiration.tick({ maxEntries: 2 })).toMatchObject({ expiredCheckpoints: 0, truncated: false });
+    await db.delete(agentTaskSessions);
+    expect(await expiration.tick({ maxEntries: 2 })).toMatchObject({ expiredCheckpoints: 2, truncated: true });
+    expect(await expiration.tick({ maxEntries: 2 })).toMatchObject({ expiredCheckpoints: 1, truncated: false });
+  });
 
   it("expires the backup of a session whose issue closed before the window and clears its resume pointer", async () => {
     const session = await seedSession();

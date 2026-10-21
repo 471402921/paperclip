@@ -277,3 +277,44 @@ tests (five Docker-only cases skipped), plus server typecheck. This includes the
 unknown-operation regression and the completed API-backed write regressions.
 Logs: `/tmp/daytona-api-recovery-compat-tests.log` and
 `/tmp/daytona-api-recovery-compat-types.log`.
+
+## Checkpoint cost reduction after durable-harness research
+
+The runner retains ownership of serialization and batching. Checkpoint v2 moves
+the changing cursor out of the authority header and removes the historical key
+arrays. Its callback supplies an atomic delta plus exact evictions; the server
+keeps encryption and owner fencing. Ordinary events group at 32 events, 256 KiB,
+or a 20 ms timer. Semantic input and priority-zero events remain immediate
+barriers. No acknowledgement precedes persistence. This does not adopt replay of
+unknown external effects, change provider process ownership, or add a workflow
+service. Local journal writes and the application commit callback still run per
+event; metadata mutations still capture the full bounded checkpoint.
+
+The existing backup expiration owner also expires old, unreferenced checkpoints
+from Postgres. It uses the existing maintenance schedule and settings. It checks
+the whole session's runs, closed issues, finalization, environment leases, and
+resume pointers before locking and retiring controller generations. It does not
+need the old controller disk. Protected sessions remain retained beyond the age
+threshold. Business history and receipts are not deleted.
+
+On a fixed 4,096-event protocol fixture, the previous header is 54,460 bytes;
+the new cursor is 79 bytes. For one new event with one eviction, changed plaintext
+record payload falls from 55,281 to 900 bytes (98.4%). The eviction predicate uses
+one removed key instead of 4,097 retained keys. A controlled 32-event burst makes
+one checkpoint commit with 33 records instead of 32 checkpoint commits. These are
+fixture byte and transaction counts, not production throughput, WAL, encryption
+size, CPU, or cost measurements. Low-rate events may still commit individually.
+Reproduce the size comparison with `PAPERCLIP_CHECKPOINT_COST_REPORT=1` and the
+`keeps the checkpoint header` test in the runner package; use Vitest's
+`--disableConsoleIntercept` to print the report.
+
+Initial verification: 133 controller protocol tests passed; 60 Postgres/restart
+and retention tests passed with five Docker-only cases skipped. Workspace
+typecheck and production build passed. The first pnpm invocation failed to fetch
+its pinned version, and sandboxed socket tests/typechecks were blocked by EPERM;
+the installed pnpm 9.15.4 and explicit local-socket access resolved those setup
+failures. Evidence: `/tmp/checkpoint-batch-tests.log`,
+`/tmp/checkpoint-postgres-tests.log`, `/tmp/checkpoint-cost-comparison.log`,
+`/tmp/hot-upgrade-cost-typecheck.log`, and `/tmp/hot-upgrade-cost-build.log`.
+The five-minute proof, full suite, and current-head PR review are recorded below
+when complete. Hosted Daytona qualification remains a separate outstanding gate.

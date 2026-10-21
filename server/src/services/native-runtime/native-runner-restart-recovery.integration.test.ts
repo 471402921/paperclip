@@ -725,6 +725,43 @@ describeEmbeddedPostgres("native runner restart recovery with real processes", (
     await authority.stop();
   });
 
+  it("applies checkpoint deltas in Postgres without rewriting authority and removes only evicted events", async () => {
+    const fixture = await seedRun("CHECKPOINT-DELTA");
+    const root = resolve(runtimeRoot, fixture.runId);
+    const options = transportOptions(fixture, root);
+    const binding = { companyId, issueId: fixture.issueId, runId: fixture.runId };
+    await fixture.db.update(nativeRunFinalizations).set({ controllerBootId: successor.bootId,
+      controllerGeneration: 1, leaseOwner: "delta-controller", leaseExpiresAt: new Date(Date.now() + 60_000),
+    }).where(eq(nativeRunFinalizations.runId, fixture.runId));
+    const authority = new DurablePrpControlPlane({ stateDirectory: resolve(root, "control-plane"),
+      identity: options.prpIdentity, expectedRunnerVersion: "delta-test", expectedRunnerDigest: `sha256:${"a".repeat(64)}` });
+    const event = (sourceSeq: number) => ({ sourceSeq, sourceEventId: `delta-${sourceSeq}`, eventType: "item.delta",
+      priority: 2 as const, envelope: { text: "output" }, deliveryCount: 1, logicalEffectCount: 1 as const });
+    try {
+      authority.store.state.committedEvents = [event(1), event(2)];
+      authority.store.state.ackedSourceSeq = 2;
+      authority.store.save();
+      await registerNativeRunnerCheckpoint({ db: fixture.db, binding, bootId: successor.bootId, authority });
+      const before = await fixture.db.select().from(nativeRunnerCheckpoints).where(eq(nativeRunnerCheckpoints.runId, fixture.runId));
+      const evicted = authority.store.state.committedEvents.shift()!;
+      const added = event(3);
+      authority.store.state.committedEvents.push(added);
+      authority.store.state.ackedSourceSeq = 3;
+      authority.store.saveEvent(added, evicted);
+      await authority.flushCheckpoint();
+      const after = await fixture.db.select().from(nativeRunnerCheckpoints).where(eq(nativeRunnerCheckpoints.runId, fixture.runId));
+      for (const part of ["header", "event:2"]) {
+        expect(after.find(row => row.part === part)).toEqual(before.find(row => row.part === part));
+      }
+      expect(after.map(row => row.part).sort()).toEqual(["cursor", "event:2", "event:3", "header"]);
+      const restored = await loadNativeRunnerCheckpoint(fixture.db, binding);
+      expect(JSON.parse(restored!.records.get("cursor")!).ackedSourceSeq).toBe(3);
+      expect(restored!.records.has("event:1")).toBe(false);
+    } finally {
+      await authority.stop();
+    }
+  });
+
   it.each([null, process.pid])("claims sandbox recovery without interpreting remote PID %s locally", async (remotePid) => {
     const fixture = await seedRun(`remote-${remotePid ?? "warm"}`);
     await fixture.db.update(heartbeatRuns).set({

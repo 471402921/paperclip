@@ -68,6 +68,11 @@ class CommandJournalLimitError extends Error {
 // polling turn regains the event loop. Match the transport's explicit deferred
 // event bound so a valid burst is not compacted before it can be observed.
 const maxCommittedEventWindow = 4_096;
+// Only ordinary event acknowledgements are grouped. Semantic inputs and P0
+// control events remain immediate durability barriers.
+const checkpointBatchEvents = 32;
+const checkpointBatchBytes = 256 * 1024;
+const checkpointBatchDelayMs = 20;
 const maxStateBytes = 256 * 1024 * 1024;
 const authChallengeTtlMs = 5_000;
 const stableIdPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$/;
@@ -284,17 +289,20 @@ export interface DurablePrpCheckpoint {
   readonly runId: string;
   readonly predecessor: { readonly runId: string; readonly normalizedSessionId: string } | null;
   readonly records: ReadonlyMap<string, string>;
+  /** Atomic write set relative to the preceding callback for this run. */
+  readonly changedRecords: ReadonlyMap<string, string>;
+  readonly removedRecords: readonly string[];
+  /** First write for a run replaces any older checkpoint atomically. */
+  readonly reset: boolean;
   readonly workCommandIds: readonly string[];
   restoreSessionDirectory(root: string): void;
 }
 
 type CheckpointHeader = {
-  schema: "paperclip.runner.controller-checkpoint.v1";
+  schema: "paperclip.runner.controller-checkpoint.v2";
   runnerVersion: string;
   runnerDigest: string;
-  state: Omit<StoredCoreState, "commands" | "committedEvents">;
-  commands: string[];
-  events: string[];
+  state: Omit<StoredCoreState, "commands" | "committedEvents" | "ackedSourceSeq" | "replayDeliveries">;
 };
 
 function checkpointRunId(state: StoredCoreState): string {
@@ -304,66 +312,88 @@ function checkpointRunId(state: StoredCoreState): string {
   return next?.identity?.runId ?? state.identity.runId;
 }
 
-function captureCheckpoint(state: StoredCoreState, runnerVersion: string, runnerDigest: string): DurablePrpCheckpoint {
-  const { commands, committedEvents, ...metadata } = state;
-  const records = new Map<string, string>();
-  const commandKeys = commands.map(command => {
-    const key = `command:${command.controllerSeq}`;
-    records.set(key, JSON.stringify(command));
-    return key;
-  });
-  const eventKeys = committedEvents.map(event => {
-    const key = `event:${event.sourceSeq}`;
-    records.set(key, JSON.stringify(event));
-    return key;
-  });
-  const header: CheckpointHeader = { schema: "paperclip.runner.controller-checkpoint.v1",
-    runnerVersion, runnerDigest, state: metadata, commands: commandKeys, events: eventKeys };
-  records.set("header", JSON.stringify(header));
+function captureCheckpoint(state: StoredCoreState, runnerVersion: string, runnerDigest: string,
+  previous?: DurablePrpCheckpoint, events?: ReadonlyMap<string, DurableRecoveryCommittedEvent | null>): DurablePrpCheckpoint {
   const runId = checkpointRunId(state);
+  const reset = !previous || previous.runId !== runId;
+  // Event-only revisions reuse serialized authority and command records. No
+  // clone/serialization of retained payloads or attachment material on this path.
+  const incremental = !reset && events !== undefined;
+  const records = incremental ? new Map(previous.records) : new Map<string, string>();
+  if (incremental) {
+    for (const [key, event] of events) {
+      if (event === null) records.delete(key);
+      else records.set(key, JSON.stringify(event));
+    }
+  } else {
+    const { commands, committedEvents, ackedSourceSeq: _cursor, replayDeliveries: _replays, ...metadata } = state;
+    for (const command of commands) records.set(`command:${command.controllerSeq}`, JSON.stringify(command));
+    for (const event of committedEvents) records.set(`event:${event.sourceSeq}`, JSON.stringify(event));
+    const header: CheckpointHeader = { schema: "paperclip.runner.controller-checkpoint.v2",
+      runnerVersion, runnerDigest, state: metadata };
+    records.set("header", JSON.stringify(header));
+  }
+  records.set("cursor", JSON.stringify({ ackedSourceSeq: state.ackedSourceSeq, replayDeliveries: state.replayDeliveries,
+    commandCount: state.commands.length, eventCount: state.committedEvents.length }));
+  const changedRecords = new Map([...records].filter(([key, value]) => reset || previous.records.get(key) !== value));
+  const removedRecords = reset ? [] : [...previous.records.keys()].filter(key => !records.has(key));
   const maintenance = new Set(["runner.drain", "runner.suspend", "session.snapshot", "session.close"]);
   return {
-    runnerVersion, runnerDigest, runId, records,
+    runnerVersion, runnerDigest, runId, records, changedRecords, removedRecords, reset,
     predecessor: state.identity.runId === runId ? null
       : { runId: state.identity.runId, normalizedSessionId: state.identity.normalizedSessionId },
-    workCommandIds: commands.filter(command => !maintenance.has(command.type)).map(command => command.commandId),
+    workCommandIds: incremental ? previous.workCommandIds
+      : state.commands.filter(command => !maintenance.has(command.type)).map(command => command.commandId),
     restoreSessionDirectory(root) {
       mkdirSync(root, { recursive: true, mode: 0o700 });
       verifyPrivateDirectory(root);
       const directory = resolve(root, "control-plane");
       mkdirSync(directory, { recursive: true, mode: 0o700 });
       verifyPrivateDirectory(directory);
-      atomicPrivateWrite(resolve(directory, "control-plane-state.json"), JSON.stringify(state));
+      atomicPrivateWrite(resolve(directory, "control-plane-state.json"), JSON.stringify(checkpointState(records).state));
     },
   };
 }
 
-export function decodeDurablePrpCheckpoint(records: ReadonlyMap<string, string>): DurablePrpCheckpoint {
+function checkpointState(records: ReadonlyMap<string, string>) {
   const header: unknown = JSON.parse(records.get("header") ?? "null");
-  if (!isRecord(header) || header.schema !== "paperclip.runner.controller-checkpoint.v1"
+  if (!isRecord(header) || !["paperclip.runner.controller-checkpoint.v1", "paperclip.runner.controller-checkpoint.v2"].includes(String(header.schema))
     || typeof header.runnerVersion !== "string" || !header.runnerVersion
     || typeof header.runnerDigest !== "string" || !runnerDigestPattern.test(header.runnerDigest)
-    || !isRecord(header.state) || !exactIdentity(header.state.identity)
-    || !Array.isArray(header.commands) || header.commands.length > maxCommands
-    || !Array.isArray(header.events) || header.events.length > maxCommittedEventWindow
-    || header.commands.some(key => typeof key !== "string" || !/^command:\d+$/.test(key))
-    || header.events.some(key => typeof key !== "string" || !/^event:\d+$/.test(key))
-    || new Set(header.commands).size !== header.commands.length
-    || new Set(header.events).size !== header.events.length) throw new Error("native_runner_checkpoint_invalid");
+    || !isRecord(header.state) || !exactIdentity(header.state.identity)) throw new Error("native_runner_checkpoint_invalid");
   const read = (key: string): unknown => {
     const value = records.get(key);
     if (value === undefined) throw new Error("native_runner_checkpoint_incomplete");
     return JSON.parse(value);
   };
-  const commandKeys = header.commands;
-  const eventKeys = header.events;
-  const state = { ...header.state, commands: commandKeys.map(read), committedEvents: eventKeys.map(read) };
+  const v2 = header.schema === "paperclip.runner.controller-checkpoint.v2";
+  const keys = (prefix: string) => [...records.keys()].filter(key => key.startsWith(prefix))
+    .sort((a, b) => Number(a.slice(prefix.length)) - Number(b.slice(prefix.length)));
+  const commandKeys = v2 ? keys("command:") : header.commands;
+  const eventKeys = v2 ? keys("event:") : header.events;
+  if (!Array.isArray(commandKeys) || commandKeys.length > maxCommands
+    || !Array.isArray(eventKeys) || eventKeys.length > maxCommittedEventWindow
+    || commandKeys.some(key => typeof key !== "string" || !/^command:\d+$/.test(key))
+    || eventKeys.some(key => typeof key !== "string" || !/^event:\d+$/.test(key))
+    || new Set(commandKeys).size !== commandKeys.length || new Set(eventKeys).size !== eventKeys.length) {
+    throw new Error("native_runner_checkpoint_invalid");
+  }
+  const cursor = v2 ? read("cursor") : header.state;
+  if (!isRecord(cursor) || (v2 && (cursor.commandCount !== commandKeys.length || cursor.eventCount !== eventKeys.length
+    || records.size !== commandKeys.length + eventKeys.length + 2))) throw new Error("native_runner_checkpoint_incomplete");
+  const state = { ...header.state, ackedSourceSeq: cursor.ackedSourceSeq, replayDeliveries: cursor.replayDeliveries,
+    commands: commandKeys.map(read), committedEvents: eventKeys.map(read) };
   if (!isStoredCoreState(state, header.state.identity)) throw new Error("native_runner_checkpoint_invalid");
   if (state.commands.some((command, index) => commandKeys[index] !== `command:${command.controllerSeq}`)
     || state.committedEvents.some((event, index) => eventKeys[index] !== `event:${event.sourceSeq}`)) {
     throw new Error("native_runner_checkpoint_invalid");
   }
-  return captureCheckpoint(state, header.runnerVersion, header.runnerDigest);
+  return { state, runnerVersion: header.runnerVersion, runnerDigest: header.runnerDigest };
+}
+
+export function decodeDurablePrpCheckpoint(records: ReadonlyMap<string, string>): DurablePrpCheckpoint {
+  const decoded = checkpointState(records);
+  return captureCheckpoint(decoded.state, decoded.runnerVersion, decoded.runnerDigest);
 }
 
 export interface RunnerProcessResult {
@@ -1310,6 +1340,8 @@ class DurableCoreStore {
   #state: StoredCoreState;
   #writeIndeterminate = false;
   revision = 0;
+  fullCheckpointRequired = true;
+  readonly changedEvents = new Map<string, DurableRecoveryCommittedEvent | null>();
 
   constructor(directory: string, identity: DurableRecoveryIdentity) {
     try {
@@ -1345,7 +1377,19 @@ class DurableCoreStore {
     return this.#state;
   }
 
+  saveEvent(event: DurableRecoveryCommittedEvent, removed?: DurableRecoveryCommittedEvent): void {
+    this.assertWritable();
+    if (removed) this.changedEvents.set(`event:${removed.sourceSeq}`, null);
+    this.changedEvents.set(`event:${event.sourceSeq}`, event);
+    this.write();
+  }
+
   save(): void {
+    this.fullCheckpointRequired = true;
+    this.write();
+  }
+
+  private write(): void {
     this.assertWritable();
     atomicPrivateWrite(this.path, `${JSON.stringify(this.#state, null, 2)}\n`);
     this.revision += 1;
@@ -1364,6 +1408,7 @@ class DurableCoreStore {
     try {
       atomicPrivateWrite(this.path, `${JSON.stringify(candidate, null, 2)}\n`);
       this.#state = candidate;
+      this.fullCheckpointRequired = true;
       this.revision += 1;
     } catch (error) {
       // Rename may already have succeeded before directory fsync failed.
@@ -1617,8 +1662,13 @@ export class DurablePrpControlPlane {
   #connectionLeaseTtlMs: number;
   #persistCheckpoint: ((checkpoint: DurablePrpCheckpoint) => Promise<void>) | null = null;
   #persistedRevision = -1;
+  #lastCheckpoint?: DurablePrpCheckpoint;
   #persistenceTail = Promise.resolve();
   #sendQueues = new Map<AuthorityConnection, Promise<void>>();
+  #eventBatches = new Map<AuthorityConnection, {
+    identity: DurableRecoveryIdentity; count: number; bytes: number; timer: ReturnType<typeof setTimeout>;
+  }>();
+  #eventFlushes = new Map<AuthorityConnection, Promise<void>>();
 
   constructor(options: DurablePrpControlPlaneOptions) {
     if (
@@ -1674,13 +1724,55 @@ export class DurablePrpControlPlane {
     if (!this.#persistCheckpoint || this.#persistedRevision === this.#store.revision) {
       return this.#persistenceTail;
     }
-    const checkpoint = captureCheckpoint(structuredClone(this.#store.state),
-      this.#expectedRunnerVersion, this.#expectedRunnerDigest);
+    const checkpoint = captureCheckpoint(this.#store.state,
+      this.#expectedRunnerVersion, this.#expectedRunnerDigest, this.#lastCheckpoint,
+      this.#store.fullCheckpointRequired ? undefined : this.#store.changedEvents);
+    this.#lastCheckpoint = checkpoint;
+    this.#store.fullCheckpointRequired = false;
+    this.#store.changedEvents.clear();
     this.#persistedRevision = this.#store.revision;
     const persist = this.#persistCheckpoint;
     this.#persistenceTail = this.#persistenceTail.then(() => persist(checkpoint));
     void this.#persistenceTail.catch(() => this.disconnectActiveRunner());
     return this.#persistenceTail;
+  }
+
+  #clearEventBatch(connection: AuthorityConnection): void {
+    const batch = this.#eventBatches.get(connection);
+    if (batch) clearTimeout(batch.timer);
+    this.#eventBatches.delete(connection);
+  }
+
+  #flushEventBatch(connection: AuthorityConnection): Promise<void> {
+    const batch = this.#eventBatches.get(connection);
+    if (!batch) return this.#eventFlushes.get(connection) ?? Promise.resolve();
+    this.#clearEventBatch(connection);
+    const flushing = (this.#eventFlushes.get(connection) ?? Promise.resolve()).then(async () => {
+      // Capture the acknowledged prefix before awaiting the commit. Events
+      // admitted while it is in flight must not be covered by this ACK.
+      const cursor = this.#store.state.ackedSourceSeq;
+      await this.flushCheckpoint();
+      if (this.#eventOwner !== connection || this.#identity !== batch.identity) return;
+      this.#sendJson(connection, this.#controlEnvelope(connection, `ack_${cursor}`, "ack", { ackedSourceSeq: cursor }));
+    });
+    this.#eventFlushes.set(connection, flushing);
+    const finish = () => {
+      if (this.#eventFlushes.get(connection) === flushing) this.#eventFlushes.delete(connection);
+    };
+    void flushing.then(finish, () => { finish(); connection.close(); });
+    return flushing;
+  }
+
+  async #groupEventCheckpoint(connection: AuthorityConnection, bytes: number): Promise<void> {
+    let batch = this.#eventBatches.get(connection);
+    if (!batch) {
+      batch = { identity: this.#identity, count: 0, bytes: 0,
+        timer: setTimeout(() => { void this.#flushEventBatch(connection).catch(() => undefined); }, checkpointBatchDelayMs) };
+      this.#eventBatches.set(connection, batch);
+    }
+    batch.count++;
+    batch.bytes += bytes;
+    if (batch.count >= checkpointBatchEvents || batch.bytes >= checkpointBatchBytes) await this.#flushEventBatch(connection);
   }
 
   #sendJson(connection: AuthorityConnection, value: unknown): void {
@@ -1798,8 +1890,9 @@ export class DurablePrpControlPlane {
         throw new Error("Connection processing drain requires stopped ingress.");
     };
     assertIngressStopped();
-    while (this.#connectionProcessing.size > 0) {
-      await Promise.allSettled([...this.#connectionProcessing.values()]);
+    while (this.#connectionProcessing.size > 0 || this.#eventBatches.size > 0 || this.#eventFlushes.size > 0) {
+      for (const connection of this.#eventBatches.keys()) void this.#flushEventBatch(connection).catch(() => undefined);
+      await Promise.allSettled([...this.#connectionProcessing.values(), ...this.#eventFlushes.values()]);
       assertIngressStopped();
     }
   }
@@ -1808,7 +1901,8 @@ export class DurablePrpControlPlane {
    * external effect keeps its committed input pending for reconciliation;
    * it must never overwrite the successor controller's durable state. */
   retireSemanticToolCallbacks(): void {
-    if (this.#server !== null || this.#connections.size !== 0 || this.#connectionProcessing.size !== 0) {
+    if (this.#server !== null || this.#connections.size !== 0 || this.#connectionProcessing.size !== 0
+      || this.#eventBatches.size !== 0 || this.#eventFlushes.size !== 0) {
       throw new Error("Semantic callback retirement requires drained, stopped ingress.");
     }
     this.#semanticCallbacksRetired = true;
@@ -2268,6 +2362,7 @@ export class DurablePrpControlPlane {
         void tail.then(release, release);
       },
       onClose: () => {
+        void this.#flushEventBatch(connection).catch(() => undefined);
         this.#connections.delete(connection);
         if (connection.secureChannel !== null && this.activeRunnerConnectionCount() === 0)
           this.#runnerDisconnectedAt ??= Date.now();
@@ -3276,6 +3371,9 @@ export class DurablePrpControlPlane {
     connection: AuthorityConnection,
     envelope: Record<string, unknown>,
   ): Promise<void> {
+    // One database batch in flight per connection bounds snapshots and applies
+    // backpressure when storage is slow, without acknowledging uncommitted work.
+    await this.#eventFlushes.get(connection);
     if (this.#eventOwner !== connection) return;
     const identity = this.#identity;
     if (this.#protocolIntegrityError !== null) {
@@ -3427,6 +3525,7 @@ export class DurablePrpControlPlane {
       return;
     }
 
+    let removedEvent: DurableRecoveryCommittedEvent | undefined;
     if (existing !== undefined) {
       existing.deliveryCount += 1;
       this.#store.state.replayDeliveries += 1;
@@ -3442,7 +3541,7 @@ export class DurablePrpControlPlane {
           connection.close();
           return;
         }
-        this.#store.state.committedEvents.splice(currentEviction, 1);
+        [removedEvent] = this.#store.state.committedEvents.splice(currentEviction, 1);
       }
       this.#store.state.committedEvents.push({
         sourceSeq,
@@ -3455,7 +3554,12 @@ export class DurablePrpControlPlane {
       });
       this.#store.state.ackedSourceSeq = sourceSeq;
     }
-    this.#store.save();
+    this.#store.saveEvent(existing ?? this.#store.state.committedEvents.at(-1)!, removedEvent);
+    if (this.#persistCheckpoint && !isSemanticInput && priority !== 0) {
+      await this.#groupEventCheckpoint(connection, Buffer.byteLength(JSON.stringify(envelope)));
+      return;
+    }
+    this.#clearEventBatch(connection);
     await this.flushCheckpoint();
     if (this.#eventOwner !== connection || this.#identity !== identity) return;
 

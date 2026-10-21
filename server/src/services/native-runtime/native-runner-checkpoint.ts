@@ -1,4 +1,4 @@
-import { and, eq, exists, gt, isNull, lte, notInArray, or, sql } from "drizzle-orm";
+import { and, eq, exists, gt, isNull, lte, inArray, or, sql } from "drizzle-orm";
 import { heartbeatRuns, issues, nativeRunFinalizations, nativeRunnerCheckpoints, type Db } from "@paperclipai/db";
 import { decodeDurablePrpCheckpoint, type DurablePrpCheckpoint, type DurablePrpControlPlane } from "../../vendor/paperclip-runner/index.js";
 import { localEncryptedProvider } from "../../secrets/local-encrypted-provider.js";
@@ -19,12 +19,10 @@ async function decryptPart(binding: Binding, part: string, material: Record<stri
 }
 
 export function nativeRunnerCheckpointWriter(db: Db, owner: Owner) {
-  let previous: ReadonlyMap<string, string> = new Map();
   let previousWork = new Set<string>();
   return async (checkpoint: DurablePrpCheckpoint): Promise<void> => {
     if (checkpoint.runId !== owner.runId) throw new Error("native_runner_checkpoint_binding_mismatch");
-    const parts = checkpoint.records;
-    const changed = await Promise.all([...parts].filter(([part, value]) => previous.get(part) !== value)
+    const changed = await Promise.all([...checkpoint.changedRecords]
       .map(async ([part, value]) => ({ companyId: owner.companyId, issueId: owner.issueId,
         runId: owner.runId, part, material: await encryptPart(owner, part, value) })));
     await db.transaction(async tx => {
@@ -57,15 +55,15 @@ export function nativeRunnerCheckpointWriter(db: Db, owner: Owner) {
           eq(heartbeatRuns.nativeSessionId, checkpoint.predecessor.normalizedSessionId)));
         if (!prior) throw new Error("native_runner_checkpoint_binding_mismatch");
       }
+      if (checkpoint.reset) await tx.delete(nativeRunnerCheckpoints).where(and(
+        eq(nativeRunnerCheckpoints.companyId, owner.companyId), eq(nativeRunnerCheckpoints.runId, owner.runId)));
+      else if (checkpoint.removedRecords.length) await tx.delete(nativeRunnerCheckpoints).where(and(
+        eq(nativeRunnerCheckpoints.companyId, owner.companyId), eq(nativeRunnerCheckpoints.runId, owner.runId),
+        inArray(nativeRunnerCheckpoints.part, [...checkpoint.removedRecords])));
       if (changed.length) await tx.insert(nativeRunnerCheckpoints).values(changed)
         .onConflictDoUpdate({ target: [nativeRunnerCheckpoints.runId, nativeRunnerCheckpoints.part],
           set: { material: sql`excluded.material`, updatedAt: sql`now()` } });
-      if (previous.size === 0 || [...previous.keys()].some(part => !parts.has(part))) {
-        await tx.delete(nativeRunnerCheckpoints).where(and(eq(nativeRunnerCheckpoints.companyId, owner.companyId),
-          eq(nativeRunnerCheckpoints.runId, owner.runId), notInArray(nativeRunnerCheckpoints.part, [...parts.keys()])));
-      }
     });
-    previous = parts;
     previousWork = new Set(checkpoint.workCommandIds);
   };
 }

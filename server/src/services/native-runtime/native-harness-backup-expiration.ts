@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { and, eq, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, exists, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
   agentTaskSessions,
   environmentLeases,
   heartbeatRuns,
   issues,
   nativeRunFinalizations,
+  nativeRunnerCheckpoints,
   type Db,
 } from "@paperclipai/db";
 import { logger } from "../../middleware/logger.js";
@@ -47,6 +48,8 @@ export type NativeHarnessBackupExpirationResult = {
   expired: number;
   reclaimedBytes: number;
   clearedTaskSessions: number;
+  expiredCheckpoints: number;
+  checkpointCandidates: number;
   failed: number;
   truncated: boolean;
   skipped: Record<string, number>;
@@ -66,6 +69,8 @@ function emptyResult(): NativeHarnessBackupExpirationResult {
     expired: 0,
     reclaimedBytes: 0,
     clearedTaskSessions: 0,
+    expiredCheckpoints: 0,
+    checkpointCandidates: 0,
     failed: 0,
     truncated: false,
     skipped: {},
@@ -129,8 +134,8 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 async function sessionRetentionBlocker(
   tx: Tx,
-  input: { scopeDigest: string; identity: SessionIdentity; closedBefore: Date },
-): Promise<{ reason: string } | { companyId: string; agentId: string }> {
+  input: { scopeDigest: string | null; identity: SessionIdentity; closedBefore: Date; checkpoint?: boolean },
+): Promise<{ reason: string } | { companyId: string; agentId: string; runIds: string[] }> {
   const [owner] = await tx
     .select({ companyId: heartbeatRuns.companyId, agentId: heartbeatRuns.agentId })
     .from(heartbeatRuns)
@@ -154,12 +159,14 @@ async function sessionRetentionBlocker(
   if (runs.some((run) => LIVE_RUN_STATUSES.includes(run.status) || !run.finishedAt)) {
     return { reason: "live_run" };
   }
+  if (input.checkpoint && runs.some(run => run.finishedAt! >= input.closedBefore)) return { reason: "recent_run" };
   const issueIds = [...new Set(runs.map((run) => run.issueId).filter((id): id is string => Boolean(id)))];
   if (issueIds.length === 0) return { reason: "issue_unknown" };
   const issueRows = await tx
     .select({
       id: issues.id,
       status: issues.status,
+      executionRunId: issues.executionRunId,
       closedAt: sql<Date | null>`coalesce(${issues.completedAt}, ${issues.cancelledAt})`,
     })
     .from(issues)
@@ -168,29 +175,33 @@ async function sessionRetentionBlocker(
   if (issueRows.length !== issueIds.length) return { reason: "issue_unknown" };
   for (const issue of issueRows) {
     if (!CLOSED_ISSUE_STATUSES.includes(issue.status)) return { reason: "issue_open" };
+    if (input.checkpoint && issue.executionRunId) return { reason: "live_run" };
     const closedAt = issue.closedAt ? new Date(issue.closedAt) : null;
     if (!closedAt || closedAt >= input.closedBefore) return { reason: "recently_closed" };
   }
   const runIds = runs.map((run) => run.id);
-  const [pending] = await tx
-    .select({ runId: nativeRunFinalizations.runId })
+  const finalizationQuery = tx
+    .select({ phase: nativeRunFinalizations.phase, recoveryState: nativeRunFinalizations.recoveryState,
+      leaseOwner: nativeRunFinalizations.leaseOwner })
     .from(nativeRunFinalizations)
-    .where(
-      and(
-        inArray(nativeRunFinalizations.runId, runIds),
-        or(
-          notInArray(nativeRunFinalizations.phase, SETTLED_FINALIZATION_PHASES),
-          sql`${nativeRunFinalizations.recoveryState} is not null`,
-          sql`${nativeRunFinalizations.leaseOwner} is not null`,
-        ),
-      ),
-    )
-    .limit(1);
-  if (pending) return { reason: "pending_finalization" };
+    .where(inArray(nativeRunFinalizations.runId, runIds))
+    .orderBy(asc(nativeRunFinalizations.runId));
+  const finalizations = await (input.checkpoint ? finalizationQuery.for("update") : finalizationQuery);
+  if ((input.checkpoint && finalizations.length !== runIds.length)
+    || finalizations.some(row => !SETTLED_FINALIZATION_PHASES.includes(row.phase) || row.recoveryState || row.leaseOwner)) {
+    return { reason: "pending_finalization" };
+  }
   const leaseReferences = [
-    sql`${environmentLeases.metadata}->'nativeHarnessBackup'->>'sessionScopeSha256' = ${input.scopeDigest}`,
     inArray(environmentLeases.heartbeatRunId, runIds),
   ];
+  if (input.scopeDigest) leaseReferences.push(
+    sql`${environmentLeases.metadata}->'nativeHarnessBackup'->>'sessionScopeSha256' = ${input.scopeDigest}`,
+  );
+  if (input.checkpoint) leaseReferences.push(
+    inArray(environmentLeases.issueId, issueIds),
+    and(eq(environmentLeases.companyId, owner.companyId),
+      sql`${environmentLeases.metadata}->'nativeHarnessBackup'->>'normalizedSessionId' = ${input.identity.normalizedSessionId}`)!,
+  );
   if (input.identity.environmentLeaseId) {
     leaseReferences.push(eq(environmentLeases.id, input.identity.environmentLeaseId));
   }
@@ -200,7 +211,7 @@ async function sessionRetentionBlocker(
     .where(and(inArray(environmentLeases.status, LIVE_LEASE_STATUSES), or(...leaseReferences)))
     .limit(1);
   if (lease) return { reason: "live_lease" };
-  return owner;
+  return { ...owner, runIds };
 }
 
 async function hasLiveRun(db: Db, owner: { companyId: string; agentId: string }, sessionId: string) {
@@ -224,6 +235,68 @@ export function nativeHarnessBackupExpirationService(
   defaults: NativeHarnessBackupExpirationOptions = {},
 ) {
   let cursor: string | null = null;
+  let checkpointCursor: string | null = null;
+
+  async function expireCheckpoints(options: {
+    closedBefore: Date; dryRun: boolean; maxEntries: number; maxRemovals: number; shouldContinue: () => boolean;
+  }, result: NativeHarnessBackupExpirationResult) {
+    // Scan run identities, not encrypted event payloads. Each existence check
+    // uses the checkpoint primary key; pagination never gets stuck on a retained session.
+    const candidates = await db.select({ runId: heartbeatRuns.id, sessionId: heartbeatRuns.nativeSessionId })
+      .from(nativeRunFinalizations)
+      .innerJoin(heartbeatRuns, eq(heartbeatRuns.id, nativeRunFinalizations.runId))
+      .where(and(
+        checkpointCursor ? gt(nativeRunFinalizations.runId, checkpointCursor) : undefined,
+        lt(heartbeatRuns.finishedAt, options.closedBefore),
+        inArray(nativeRunFinalizations.phase, SETTLED_FINALIZATION_PHASES),
+        isNull(nativeRunFinalizations.leaseOwner), isNull(nativeRunFinalizations.recoveryState),
+        exists(db.select({ runId: nativeRunnerCheckpoints.runId }).from(nativeRunnerCheckpoints).where(and(
+          eq(nativeRunnerCheckpoints.runId, nativeRunFinalizations.runId), eq(nativeRunnerCheckpoints.part, "header")))),
+      ))
+      .orderBy(asc(nativeRunFinalizations.runId)).limit(options.maxEntries + 1);
+    let processed = 0;
+    let removed = 0;
+    for (const candidate of candidates) {
+      if (!options.shouldContinue() || processed >= options.maxEntries || removed >= options.maxRemovals) {
+        result.truncated = true;
+        return;
+      }
+      processed++;
+      checkpointCursor = candidate.runId;
+      if (!candidate.sessionId) continue; // Unknown identity is never expiration evidence.
+      try {
+        const expired = await db.transaction(async tx => {
+          const blocker = await sessionRetentionBlocker(tx, {
+            scopeDigest: null, checkpoint: true, closedBefore: options.closedBefore,
+            identity: { runId: candidate.runId, normalizedSessionId: candidate.sessionId!, environmentLeaseId: null },
+          });
+          if ("reason" in blocker) return false;
+          const [resume] = await tx.select({ id: agentTaskSessions.id }).from(agentTaskSessions).where(and(
+            eq(agentTaskSessions.companyId, blocker.companyId), eq(agentTaskSessions.agentId, blocker.agentId),
+            or(inArray(agentTaskSessions.lastRunId, blocker.runIds),
+              sql`${agentTaskSessions.sessionParamsJson}->>'sessionId' = ${candidate.sessionId}`),
+          )).limit(1);
+          if (resume) return false;
+          result.checkpointCandidates++;
+          if (options.dryRun) return false;
+          // Serialize with checkpoint writers and retire every old authority for
+          // this session, including a predecessor authorized for warm handoff.
+          await tx.update(nativeRunFinalizations).set({
+            controllerGeneration: sql`${nativeRunFinalizations.controllerGeneration} + 1`,
+          }).where(inArray(nativeRunFinalizations.runId, blocker.runIds));
+          const rows = await tx.delete(nativeRunnerCheckpoints).where(and(
+            eq(nativeRunnerCheckpoints.companyId, blocker.companyId), eq(nativeRunnerCheckpoints.runId, candidate.runId),
+          )).returning({ part: nativeRunnerCheckpoints.part });
+          return rows.length > 0;
+        });
+        if (expired) { removed++; result.expiredCheckpoints++; }
+      } catch (err) {
+        result.failed++;
+        logger.warn({ err, runId: candidate.runId }, "native runner checkpoint expiration skipped a run");
+      }
+    }
+    checkpointCursor = null;
+  }
 
   async function settleLeftovers(backupRoot: string) {
     const current = path.join(backupRoot, "current");
@@ -349,6 +422,7 @@ export function nativeHarnessBackupExpirationService(
       }
     }
     if (!result.truncated) cursor = null;
+    if (shouldContinue()) await expireCheckpoints({ closedBefore, dryRun, maxEntries, maxRemovals, shouldContinue }, result);
     return result;
   }
 

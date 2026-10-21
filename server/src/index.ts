@@ -1257,7 +1257,7 @@ async function startServerWithDatabaseTeardown(
     nativeHarnessBackupExpirationInFlight = true;
     trackHeartbeatSchedulerWork(nativeHarnessBackupExpiration.tick()
       .then((result) => {
-        if (result.candidates > 0 || result.failed > 0) {
+        if (result.candidates > 0 || result.checkpointCandidates > 0 || result.failed > 0) {
           logger.info({ ...result, dryRun: config.nativeHarnessBackupExpirationDryRun }, "native harness backup expiration");
         }
         if (result.truncated && !heartbeatSchedulerStopped) {
