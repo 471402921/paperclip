@@ -34,6 +34,7 @@ import {
   defaultCapabilityRunnerdBinary,
   parseNativeExecutionInput,
   DurablePrpControlPlane,
+  decodeDurablePrpCheckpoint,
   readRunnerdArtifactBinding,
   type RunnerProcessHandle,
   type RunnerProcessLaunchSpec,
@@ -58,7 +59,7 @@ import { createIsolatedTestHome } from "../../__tests__/helpers/isolated-test-ho
 import { finalizeNativeRun } from "./native-run-finalizer.js";
 import { waitForPendingRunFailureReports } from "../run-failure-report.js";
 import { closeIdleWarmNativeSessionsForRestart, detachNativeSessionsForRestart, executePaperclipNativeSession, NativeControllerDetachedForRestartError } from "./native-session-executor.js";
-import { loadNativeRunnerCheckpoint, registerNativeRunnerCheckpoint, restoreNativeRunnerCheckpoint } from "./native-runner-checkpoint.js";
+import { loadNativeRunnerCheckpoint, nativeRunnerCheckpointWriter, registerNativeRunnerCheckpoint, restoreNativeRunnerCheckpoint } from "./native-runner-checkpoint.js";
 import { REMOTE_RUNNER_RECONNECT_GRACE_MS } from "./native-runner-recovery-contract.js";
 import { PaperclipRunnerToolAuthority } from "./paperclip-runner-tool-authority.js";
 
@@ -738,17 +739,21 @@ describeEmbeddedPostgres("native runner restart recovery with real processes", (
     const event = (sourceSeq: number) => ({ sourceSeq, sourceEventId: `delta-${sourceSeq}`, eventType: "item.delta",
       priority: 2 as const, envelope: { text: "output" }, deliveryCount: 1, logicalEffectCount: 1 as const });
     try {
-      authority.store.state.committedEvents = [event(1), event(2)];
-      authority.store.state.ackedSourceSeq = 2;
-      authority.store.save();
       await registerNativeRunnerCheckpoint({ db: fixture.db, binding, bootId: successor.bootId, authority });
+      const saved = (await loadNativeRunnerCheckpoint(fixture.db, binding))!;
+      const records = new Map(saved.records);
+      const cursor = JSON.parse(records.get("cursor")!);
+      for (const seq of [1, 2]) records.set(`event:${seq}`, JSON.stringify(event(seq)));
+      records.set("cursor", JSON.stringify({ ...cursor, ackedSourceSeq: 2, eventCount: 2 }));
+      const write = nativeRunnerCheckpointWriter(fixture.db, { ...binding, authorityRunId: fixture.runId,
+        bootId: successor.bootId, generation: 1, leaseOwner: "delta-controller" });
+      await write(decodeDurablePrpCheckpoint(records));
       const before = await fixture.db.select().from(nativeRunnerCheckpoints).where(eq(nativeRunnerCheckpoints.runId, fixture.runId));
-      const evicted = authority.store.state.committedEvents.shift()!;
-      const added = event(3);
-      authority.store.state.committedEvents.push(added);
-      authority.store.state.ackedSourceSeq = 3;
-      authority.store.saveEvent(added, evicted);
-      await authority.flushCheckpoint();
+      records.delete("event:1");
+      records.set("event:3", JSON.stringify(event(3)));
+      records.set("cursor", JSON.stringify({ ...cursor, ackedSourceSeq: 3, eventCount: 2 }));
+      await write({ ...decodeDurablePrpCheckpoint(records), reset: false, removedRecords: ["event:1"],
+        changedRecords: new Map(["event:3", "cursor"].map(key => [key, records.get(key)!])) });
       const after = await fixture.db.select().from(nativeRunnerCheckpoints).where(eq(nativeRunnerCheckpoints.runId, fixture.runId));
       for (const part of ["header", "event:2"]) {
         expect(after.find(row => row.part === part)).toEqual(before.find(row => row.part === part));

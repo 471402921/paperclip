@@ -326,3 +326,12 @@ master's complete snapshot. Both restart test faults remain: discard controller
 cache for the explicit remote recovery cell and crash after result for the
 finalization cell. They cannot be combined. The first full local suite was
 interrupted to integrate these conflicts and is not recorded as a pass.
+
+The optimized checkpoint revision passed the 300-second empty-controller-disk
+prepared-task test in 322.93 seconds (`/tmp/hot-upgrade-cost-five-minute.log`).
+The same real runner/provider process and active turn survived with one provider
+start. This run started before the master merge. The merged branch subsequently
+passed 62 Postgres/restart/retention tests with five Docker-only skips. A new
+server integration fixture initially accessed runner-private store save methods;
+workspace typecheck rejected that fixture. It now exercises the public opaque
+checkpoint delta contract directly instead of expanding the production interface.
