@@ -81,6 +81,9 @@ import {
 } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { DatabaseSync } from "node:sqlite";
+import { restoreNativeRunnerCheckpoint } from "./native-runner-checkpoint.js";
+import { recoverNativeSemanticInput } from "./native-semantic-recovery.js";
+import { REMOTE_CONTROLLER_LEASE_MS, REMOTE_RUNNER_RECONNECT_GRACE_MS } from "./native-runner-recovery-contract.js";
 import { basename, dirname, join, posix, resolve } from "node:path";
 import type {
   AdapterExecutionResult,
@@ -7520,28 +7523,28 @@ function startNativeSessionExecutionLeaseRenewal(input: {
   leaseOwner: string;
   attempt: number;
   controller: NativeControllerIdentity;
+  remote?: boolean;
 }): { stop: () => Promise<void> } {
   let leaseLost: Error | null = null;
   let renewal = Promise.resolve();
   const renew = () => {
     if (leaseLost) return;
     renewal = renewal
-      .then(() => renewNativeSessionExecutionLease(input))
+      .then(() => renewNativeSessionExecutionLease({ ...input,
+        leaseTtlMs: input.remote ? REMOTE_CONTROLLER_LEASE_MS : undefined }))
       .then(() => undefined)
       .catch(async (error: unknown) => {
         leaseLost =
           error instanceof Error
             ? error
             : new Error("native_session_lease_lost");
-        await cancelNativeSession(
-          input.runId,
-          "native session execution lease lost",
-        ).catch(() => undefined);
+        if (input.remote) await detachNativeSessionsForRestart([input.runId]).catch(() => undefined);
+        else await cancelNativeSession(input.runId, "native session execution lease lost").catch(() => undefined);
       });
   };
   const timer = setInterval(
     renew,
-    NATIVE_SESSION_EXECUTION_LEASE_RENEW_INTERVAL_MS,
+    input.remote ? REMOTE_CONTROLLER_LEASE_MS / 3 : NATIVE_SESSION_EXECUTION_LEASE_RENEW_INTERVAL_MS,
   );
   timer.unref?.();
   return {
@@ -7814,6 +7817,9 @@ export async function executePaperclipNativeSession(input: {
 async function executePaperclipNativeSessionWithinScope(
   input: Parameters<typeof executePaperclipNativeSession>[0],
 ): Promise<AdapterExecutionResult> {
+  const restoredController = input.restartRecovery?.kind === "reattach_remote_runner"
+    ? await restoreNativeRunnerCheckpoint(input.db, input.execution.binding, scopedRunnerdStateRoot(input.execution))
+    : null;
   const identityRedactor = createAgentIdentityRedactor(input.runnerEnvironment?.PAPERCLIP_AGENT_PRIVATE_KEY);
   const redactIdentityText = (text: string) => redactSensitiveText(
     identityRedactor.chunk("diagnostic", text) + identityRedactor.finish("diagnostic"),
@@ -7957,6 +7963,8 @@ async function executePaperclipNativeSessionWithinScope(
   const controller = await currentNativeControllerIdentity();
   const leaseNow = new Date();
   const leaseExpiresAt = new Date(leaseNow.getTime() + 20 * 60_000);
+  const executionLeaseTtlMs = input.runnerExecutionTarget?.kind === "remote"
+    ? REMOTE_CONTROLLER_LEASE_MS : NATIVE_SESSION_EXECUTION_LEASE_TTL_MS;
   let attempt: number;
   try {
     attempt = await trace.measure(
@@ -7986,7 +7994,7 @@ async function executePaperclipNativeSessionWithinScope(
             throw new Error("native_finalization_coordinator_missing");
           const leaseNow = new Date();
           const leaseExpiresAt = new Date(
-            leaseNow.getTime() + NATIVE_SESSION_EXECUTION_LEASE_TTL_MS,
+            leaseNow.getTime() + executionLeaseTtlMs,
           );
           // A durable result means provider execution already completed. The
           // recovery/finalization path must reconcile it; never reacquire a
@@ -8807,6 +8815,7 @@ async function executePaperclipNativeSessionWithinScope(
     leaseOwner,
     attempt,
     controller,
+    remote: input.runnerExecutionTarget?.kind === "remote",
   });
   try {
     const usesPluginTask = input.runnerExecutionTarget?.kind === "remote" && input.runnerExecutionTarget.transport === "sandbox" && !!input.runnerExecutionTarget.runnerTask;
@@ -8840,6 +8849,10 @@ async function executePaperclipNativeSessionWithinScope(
       input.useRunnerd && input.backend === undefined
         ? await timeController("backend_setup", () => createRunnerdBackend({
             ...input,
+            controllerPersistence: input.runnerExecutionTarget?.kind === "remote" ? {
+              bootId: controller.bootId,
+              runnerArtifact: restoredController ? { version: restoredController.runnerVersion, digest: restoredController.runnerDigest } : undefined,
+            } : undefined,
             ...(overlapGitHubPreparation ? { prepareRunnerEnvironment } : {}),
             // Durable scope and prior-run verification use the controller's
             // canonical workspace identity. createRunnerdBackend separately
@@ -8874,6 +8887,7 @@ async function executePaperclipNativeSessionWithinScope(
           nativeSessionConfigDigest(remoteWarmRecovery.previousExecution, "remote"), await recovered.session.snapshot());
         persistedWarmSession = loadWarmNativeCheckpoint(input.execution, warmConfigDigest!, "remote");
         runnerdBackend = await createRunnerdBackend({ ...input, runnerInstanceId: effectiveRunnerInstanceId,
+          controllerPersistence: input.runnerExecutionTarget?.kind === "remote" ? { bootId: controller.bootId } : undefined,
           durableEnvironmentLeaseId: durableRunnerBinding?.environmentLeaseId, trace, toolTrace });
       }
     }
@@ -11441,6 +11455,7 @@ export function remoteCheckpointIncompleteFailure(
 export async function createRunnerdBackend(input: {
   casesEnabled?: boolean;
   db: Db;
+  controllerPersistence?: { bootId: string; runnerArtifact?: { version: string; digest: string } };
   execution: NativeExecutionInput;
   runnerInstanceId: string;
   chatAttachmentReadScope?: NativeChatAttachmentReadScope;
@@ -12160,6 +12175,12 @@ async function createRunnerdBackendWithinSessionClaim(
       return;
     selectedRemoteMode = requiredMode;
     if (input.restartRecovery?.kind === "reattach_remote_runner" || input.remoteWarmRecovery) {
+      // The authenticated existing process, not the newly installed artifact,
+      // owns this turn. It must not be restaged during a server upgrade.
+      if (input.controllerPersistence?.runnerArtifact) {
+        remotePrepared = true;
+        return;
+      }
       await verifyRemoteRunner(requiredMode);
       if (requiresRemoteProviderPack && stagedRemoteProviderPackRoot) {
         await verifyRemoteProviderPack(stagedRemoteProviderPackRoot);
@@ -13340,11 +13361,20 @@ async function createRunnerdBackendWithinSessionClaim(
           : {}),
         stateDirectory: root,
         runnerBinary: controllerRunnerBinary,
+        runnerArtifact: input.controllerPersistence?.runnerArtifact,
+        recoverSemanticToolInput: input.controllerPersistence ? call => recoverNativeSemanticInput({
+          db: input.db, binding: { ...input.execution.binding, runId: call.correlation.runId }, call,
+          executeRead: async () => {
+            const current = sessionToolAuthorityEpochs.get(sessionScopeId);
+            if (!current || current.runId !== call.correlation.runId) throw new Error("native_tool_authority_epoch_revoked");
+            return current.execute({ tool: call.operationId, callId: call.callId, arguments: call.input });
+          },
+        }) : undefined,
         codexCommand: remoteCodexBinary ?? undefined,
         sourceCodexHome: remoteTarget
           ? resolveSourceCodexHome(resolveNativeProviderEnvironment(input.execution.provider, runnerEnvironment))
           : undefined,
-        runnerReconnectGraceMs: remoteTarget ? 120_000 : undefined,
+        runnerReconnectGraceMs: remoteTarget ? REMOTE_RUNNER_RECONNECT_GRACE_MS : undefined,
         environment: effectiveRunnerEnvironment,
         observability: input.observability,
         onDiagnostic: (message) => {
@@ -13452,6 +13482,18 @@ async function createRunnerdBackendWithinSessionClaim(
             adoptExistingRunner: adoptedProcess,
           },
           target,
+          controllerPersistence: input.controllerPersistence ? {
+            db: input.db, bootId: input.controllerPersistence.bootId, authorityRunId: input.execution.binding.runId,
+            onFailure: async runId => {
+              try { await detachNativeSessionsForRestart([runId]); }
+              finally {
+                await input.db.update(nativeRunFinalizations).set({ leaseExpiresAt: sql`clock_timestamp()` })
+                  .where(and(eq(nativeRunFinalizations.runId, runId),
+                    eq(nativeRunFinalizations.controllerBootId, input.controllerPersistence!.bootId),
+                    isNull(nativeRunFinalizations.resultId)));
+              }
+            },
+          } : undefined,
           binding: input.remoteWarmRecovery
             ? { ...input.execution.binding, runId: input.remoteWarmRecovery.identity.runId }
             : input.execution.binding,

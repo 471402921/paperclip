@@ -39,6 +39,7 @@ import {
   heartbeatRuns,
   issues,
   nativeRunFinalizations,
+  nativeRunnerCheckpoints,
 } from "@paperclipai/db";
 import { logger } from "../../middleware/logger.js";
 import {
@@ -914,18 +915,20 @@ export function createHeartbeatRecovery(db: Db, dependencies: HeartbeatRecoveryD
     };
   }
 
-  async function recoverNativeRunsAfterRestart(now = new Date()) {
-    await reconcileRetainedWorkspaces(db, environmentRuntime, resumeRemoteStopComments);
-    // A result committed before the old controller stopped outranks process
-    // recovery. Finish its durable workspace/status suffix before deciding
-    // whether any provider authority needs to be reopened.
-    await reconcileNativeFinalizations(db, undefined, {
-      environmentRuntime,
-      pluginWorkerManager: dependencies.pluginWorkerManager,
-      onWorkspaceSettled: settleRecoveredNativeWorkspace,
-    });
-    await preserveCancelledNativeWorkspaces(db);
-    scheduleRetainedNativeSessionCleanup();
+  async function recoverNativeRunsAfterRestart(now = new Date(), runIds?: string[]) {
+    if (!runIds) {
+      await reconcileRetainedWorkspaces(db, environmentRuntime, resumeRemoteStopComments);
+      // A result committed before the old controller stopped outranks process
+      // recovery. Finish its durable workspace/status suffix before deciding
+      // whether any provider authority needs to be reopened.
+      await reconcileNativeFinalizations(db, undefined, {
+        environmentRuntime,
+        pluginWorkerManager: dependencies.pluginWorkerManager,
+        onWorkspaceSettled: settleRecoveredNativeWorkspace,
+      });
+      await preserveCancelledNativeWorkspaces(db);
+      scheduleRetainedNativeSessionCleanup();
+    }
     const intent = await readHotRestartIntent().catch((error) => {
       logger.warn(
         { err: error },
@@ -966,6 +969,7 @@ export function createHeartbeatRecovery(db: Db, dependencies: HeartbeatRecoveryD
     }
     const dispositions = await claimNativeRestartRecoveries({
       db,
+      runIds,
       restartKind,
       recoveryRequestId: intent?.recoveryRequestId ?? null,
       coordinatedPreviousController: intent
@@ -1098,6 +1102,7 @@ export function createHeartbeatRecovery(db: Db, dependencies: HeartbeatRecoveryD
     const interruptedRunIds: string[] = [];
     const retryRunIds: string[] = [];
     const restartSuspendedRunIds: string[] = [];
+    const nativeController = await currentNativeControllerIdentity();
 
     const settlementDeadline = new Date(Date.now() + 30_000);
     const settlements = await Promise.allSettled(activeRuns.map(async ({ run, agent }) => {
@@ -1110,6 +1115,9 @@ export function createHeartbeatRecovery(db: Db, dependencies: HeartbeatRecoveryD
         run.runtimeMode === "native" &&
         agent.adapterType === "paperclip_runner"
       ) {
+        const [owner] = await db.select({ bootId: nativeRunFinalizations.controllerBootId })
+          .from(nativeRunFinalizations).where(eq(nativeRunFinalizations.runId, run.id));
+        if (owner?.bootId && owner.bootId !== nativeController.bootId) return;
         // A graceful shutdown relinquishes controller authority just like a
         // hot restart. Leaving the old event consumer attached lets its
         // finalizer interrupt/suspend Claude while the next server is adopting
@@ -1126,6 +1134,7 @@ export function createHeartbeatRecovery(db: Db, dependencies: HeartbeatRecoveryD
         await db
           .update(nativeRunFinalizations)
           .set({
+            leaseExpiresAt: now,
             recoveryState: "awaiting_runner_reattach",
             recoveryHistory: sql`(
               select coalesce(jsonb_agg(item order by ordinal), '[]'::jsonb)
@@ -1146,6 +1155,8 @@ export function createHeartbeatRecovery(db: Db, dependencies: HeartbeatRecoveryD
           .where(
             and(
               eq(nativeRunFinalizations.runId, run.id),
+              owner?.bootId ? eq(nativeRunFinalizations.controllerBootId, owner.bootId)
+                : isNull(nativeRunFinalizations.controllerBootId),
               isNull(nativeRunFinalizations.resultId),
             ),
           );
@@ -2144,6 +2155,27 @@ export function createHeartbeatRecovery(db: Db, dependencies: HeartbeatRecoveryD
           "native question cancellation recovery attempt failed",
         );
       }
+    }
+
+    // Startup can precede a crashed controller's lease expiry. Reuse this sweep
+    // to claim expired durable remote authorities, including overlap between
+    // old and new servers; no operator drain or separate polling loop is needed.
+    const expiredRemoteAuthorities = await db.select({ runId: nativeRunFinalizations.runId })
+      .from(nativeRunFinalizations)
+      .innerJoin(nativeRunnerCheckpoints, and(
+        eq(nativeRunnerCheckpoints.runId, nativeRunFinalizations.runId),
+        eq(nativeRunnerCheckpoints.companyId, nativeRunFinalizations.companyId),
+        eq(nativeRunnerCheckpoints.part, "header")))
+      .innerJoin(heartbeatRuns, eq(heartbeatRuns.id, nativeRunFinalizations.runId))
+      .where(and(eq(heartbeatRuns.status, "running"),
+        eq(nativeRunFinalizations.phase, "observed"), isNull(nativeRunFinalizations.resultId),
+        or(isNull(nativeRunFinalizations.leaseExpiresAt), lte(nativeRunFinalizations.leaseExpiresAt, now))))
+      .limit(100);
+    const remoteRecoveryRunIds = expiredRemoteAuthorities.map(row => row.runId)
+      .filter(runId => !activeRunExecutions.has(runId) && !runningProcesses.has(runId));
+    if (remoteRecoveryRunIds.length) {
+      const recovery = await recoverNativeRunsAfterRestart(now, remoteRecoveryRunIds);
+      for (const claim of recovery.claims) resumedRunIds.add(claim.runId);
     }
 
     // Find all runs stuck in "running" state (queued runs are legitimately waiting; resumeQueuedRuns handles them)

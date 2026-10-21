@@ -16,7 +16,9 @@ import {
   heartbeatRuns,
   issues,
   nativeRunFinalizations,
+  nativeRunnerCheckpoints,
 } from "@paperclipai/db";
+import { REMOTE_CONTROLLER_LEASE_MS } from "./native-runner-recovery-contract.js";
 import { readProcessStartedAt } from "../hot-restart.js";
 import { getServerInfoSnapshot } from "../../server-info.js";
 import { redactSensitiveText } from "../../redaction.js";
@@ -180,8 +182,15 @@ export async function evaluateNativeControllerTakeover(input: {
   isProcessAlive?: (pid: number) => boolean;
   readProcessStartedAt?: (pid: number) => Promise<Date | null>;
   requireStoppedController?: boolean;
+  /** Only for remote authorities whose every wire effect is fenced in Postgres. */
+  remoteLeaseFenced?: boolean;
 }): Promise<{ allowed: boolean; reason: string }> {
   const { owner, now } = input;
+  if (input.remoteLeaseFenced) {
+    return owner.leaseExpiresAt && owner.leaseExpiresAt > now
+      ? { allowed: false, reason: "remote_controller_lease_live" }
+      : { allowed: true, reason: "remote_controller_lease_released_or_expired" };
+  }
   const isAlive = input.isProcessAlive ?? processIsAlive;
   const readStartedAt = input.readProcessStartedAt ?? observedProcessStart;
   if ((!owner.leaseOwner || !owner.leaseExpiresAt) && !input.requireStoppedController) {
@@ -580,9 +589,24 @@ export async function claimNativeRestartRecoveries(input: {
         } as const;
       }
 
+      const profile = row.run.runnerProfileJson ?? {};
+      const remoteWorkspace = readNativeWorkspaceSyncReference(profile.nativeWorkspaceSync);
+      const [pluginTask] = await tx.select({ id: environmentLeases.id }).from(environmentLeases).where(and(
+        eq(environmentLeases.companyId, row.run.companyId), eq(environmentLeases.heartbeatRunId, row.run.id),
+        sql`${environmentLeases.metadata}->>'runnerTaskLease' = 'true'`,
+      )).limit(1);
+      const remoteSandbox = profile.nativeWorkspaceSync != null;
+      const remoteProcess = remoteSandbox || !!pluginTask;
+      const [durableAuthority] = remoteWorkspace ? await tx.select({ runId: nativeRunnerCheckpoints.runId })
+        .from(nativeRunnerCheckpoints).where(and(
+          eq(nativeRunnerCheckpoints.companyId, row.run.companyId),
+          eq(nativeRunnerCheckpoints.issueId, row.coordinator.issueId),
+          eq(nativeRunnerCheckpoints.runId, row.run.id),
+          eq(nativeRunnerCheckpoints.part, "header"))) : [];
       const takeover = await evaluateNativeControllerTakeover({
         owner: row.coordinator,
         now,
+        remoteLeaseFenced: Boolean(durableAuthority),
         coordinatedPreviousController:
           input.coordinatedPreviousController ?? null,
       });
@@ -624,16 +648,6 @@ export async function claimNativeRestartRecoveries(input: {
         } as const;
       }
 
-      const profile = row.run.runnerProfileJson ?? {};
-      const remoteWorkspace = readNativeWorkspaceSyncReference(
-        profile.nativeWorkspaceSync,
-      );
-      const [pluginTask] = await tx.select({ id: environmentLeases.id }).from(environmentLeases).where(and(
-        eq(environmentLeases.companyId, row.run.companyId), eq(environmentLeases.heartbeatRunId, row.run.id),
-        sql`${environmentLeases.metadata}->>'runnerTaskLease' = 'true'`,
-      )).limit(1);
-      const remoteSandbox = profile.nativeWorkspaceSync != null;
-      const remoteProcess = remoteSandbox || !!pluginTask;
       const runnerPidAlive =
         !remoteProcess && processIsAlive(row.run.processPid);
       const runnerGroupAlive =
@@ -981,7 +995,7 @@ export async function claimNativeRestartRecoveries(input: {
         .set({
           phase: "observed",
           leaseOwner,
-          leaseExpiresAt: new Date(now.getTime() + 20 * 60_000),
+          leaseExpiresAt: new Date(now.getTime() + (durableAuthority ? REMOTE_CONTROLLER_LEASE_MS : 20 * 60_000)),
           controllerBootId: controller.bootId,
           controllerPid: controller.pid,
           controllerProcessStartedAt: controller.processStartedAt,
