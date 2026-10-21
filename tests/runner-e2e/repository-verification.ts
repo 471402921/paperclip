@@ -9,8 +9,9 @@ export function repositoryProofFiles(nonce: string) {
 export function repositoryProofProfile(native: RunnerProfileFixture, legacy?: RunnerProfileFixture): RunnerProfileFixture {
   return { ...native, buildAgent(input) {
     const { instructionsBundle: _manual, ...agent } = (legacy ?? native).buildAgent(input);
-    return { ...agent, ...(legacy ? { runner: "legacy" } : {}), budgetMonthlyCents: 1000,
-      adapterConfig: { ...(agent.adapterConfig as Record<string, unknown>), model: native.model } };
+    const config = { ...(agent.adapterConfig as Record<string, unknown>), model: native.model };
+    if (legacy) delete (config as Record<string, unknown>).extraArgs;
+    return { ...agent, ...(legacy ? { runner: "legacy" } : {}), budgetMonthlyCents: 1000, adapterConfig: config };
   } };
 }
 
@@ -95,7 +96,7 @@ export function repositoryConfigurationDigest(agent: Record<string, any>) {
 
 export function repositoryProofDigest() {
   const hash = createHash("sha256");
-  for (const file of ["repository-verification.ts", "repository-verification-flow.ts", "registered-artifact.ts", "live-fixtures.ts", "runner.spec.ts", "catalog.ts", "stock-harness.ts"])
+  for (const file of ["repository-verification.ts", "repository-verification-flow.ts", "repository-conversion-setup.ts", "registered-artifact.ts", "live-fixtures.ts", "runner.spec.ts", "catalog.ts", "stock-harness.ts"])
     hash.update(file).update(readFileSync(new URL(file, import.meta.url)));
   return hash.digest("hex");
 }

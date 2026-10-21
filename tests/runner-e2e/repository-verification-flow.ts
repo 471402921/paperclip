@@ -6,6 +6,7 @@ import path from "node:path";
 import { expect, type Page } from "@playwright/test";
 import { pollUntil, type RunnerApi } from "./api.js";
 import { createTaskThroughUi } from "./user-actions.js";
+import { convertRepositoryProofAgent } from "./repository-conversion-setup.js";
 import { readRegisteredArtifacts } from "./registered-artifact.js";
 import { gradeRepositoryProof, repositoryConfigurationDigest, repositoryProofFiles, type RepositoryProofObservation } from "./repository-verification.js";
 import type { LiveFixtureValues } from "./live-fixtures.js";
@@ -85,7 +86,7 @@ export async function runRepositoryVerificationFlow(input: {
     observation.originalAdapter = before.adapterType;
     observation.configurationBefore = repositoryConfigurationDigest(before);
     observation.instructionsBefore = await instructionsDigest();
-    if (conversion) await api.patch(`/api/agents/${fixtures.agent.id}`, { runner: "paperclip" });
+    if (conversion) await convertRepositoryProofAgent(api, fixtures);
     const after = await api.get<Row>(`/api/agents/${fixtures.agent.id}`);
     observation.finalAdapter = after.adapterType;
     observation.configurationAfter = repositoryConfigurationDigest(after);
@@ -95,15 +96,6 @@ export async function runRepositoryVerificationFlow(input: {
     if (after.defaultEnvironmentId !== fixtures.environment.id || observation.configurationBefore !== observation.configurationAfter ||
         observation.instructionsBefore !== observation.instructionsAfter || !observation.permissionsPreserved || after.adapterType !== "paperclip_runner")
       throw new Error("Production runner selection did not retain the configured agent context");
-    if (conversion && execution.environment.id === "daytona" && execution.profile.provider === "codex") {
-      if (!/^.+@sha256:[a-f0-9]{64}$/i.test(String(fixtures.environment.config?.image ?? "")) || fixtures.environment.config?.snapshot)
-        throw new Error("Converted Codex requires the immutable fixture image");
-      const startedAt = Date.now();
-      const probe = await api.post<{ ok: boolean; details?: { platformQualificationRecorded?: boolean; leaseId?: string } }>(
-        `/api/environments/${fixtures.environment.id}/probe?companyId=${encodeURIComponent(fixtures.company.id)}`, {}, { timeout: 330_000 });
-      if (!probe.ok || !probe.details?.platformQualificationRecorded || !probe.details.leaseId) throw new Error("Converted Codex platform qualification was not recorded");
-      fixtures.setupProbe = { leaseId: probe.details.leaseId, durationMs: Date.now() - startedAt };
-    }
     await save("configured");
     const created = await createTaskThroughUi({ page, issuePrefix: fixtures.company.issuePrefix!, agentName: fixtures.agent.name,
       projectName: fixtures.project.name, title: execution.task.buildTitle(nonce), prompt: execution.task.buildPrompt(nonce), workMode: "standard", requireExplicitTitle: true });
