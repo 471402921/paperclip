@@ -33,7 +33,7 @@ const support = await getEmbeddedPostgresTestSupport();
   let db: ReturnType<typeof createDb>;
   let root: string;
   beforeAll(async () => { ({ db, root } = await context.setup()); }, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS);
-  afterEach(() => { vi.clearAllMocks(); vi.restoreAllMocks(); });
+  afterEach(() => { acquisition.materialize.mockReset(); vi.clearAllMocks(); vi.restoreAllMocks(); });
   afterAll(context.cleanup);
   const { fixture, lowTrustPeer, standardPeer, privateTask, localPrivateClone } = context;
 
@@ -334,7 +334,7 @@ const support = await getEmbeddedPostgresTestSupport();
     expect(acquisition.materialize).not.toHaveBeenCalled();
   });
 
-  it.each(["sponsored", "local_board", "local_board_jwt", "routine"] as const)("prepares public Git from an idle workspace for a trusted %s task and reuses verified bytes after trust downgrade", async principal => {
+  it.each(["sponsored", "sponsored_git_residue", "local_board", "local_board_jwt", "routine"] as const)("prepares public Git from an idle workspace for a trusted %s task and reuses verified bytes after trust downgrade", async principal => {
     const f = await fixture();
     await db.update(executionWorkspaces).set({ status: "idle" }).where(eq(executionWorkspaces.id, f.workspace.id));
     const localBoard = principal === "local_board" || principal === "local_board_jwt";
@@ -367,6 +367,10 @@ const support = await getEmbeddedPostgresTestSupport();
       await exec("git", ["-C", cwd, "remote", "set-url", "origin", input.repoUrl]);
       return result;
     });
+    if (principal === "sponsored_git_residue") {
+      await mkdir(path.join(f.admission.cwd, ".git", "info"), { recursive: true });
+      await writeFile(path.join(f.admission.cwd, ".git", "info", "exclude"), "/.paperclip-repositories/\n");
+    }
     const [prepared] = await f.service.prepareForAdmission(admission);
     expect(prepared.id).toBe(receipt.operationId);
     expect(await readFile(path.join(prepared.cwd, "public.txt"), "utf8")).toBe("Public fixture bytes\n");

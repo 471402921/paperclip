@@ -96,3 +96,18 @@ E2E support checks pass 38. Server, runner, and E2E typechecks pass. Copilot v54
 binds the changed shared completion guidance; v53 remains a historical identity.
 The three development pilot failures remain retained. These checks do not count
 as the required staging matrix, and a fresh provider run remains necessary.
+
+The fourth development attempt reached a successor through a monitor fallback,
+then failed before provider startup while applying Git exclusions to the task
+root. It is a failure of the required same-agent journey, even though a successor
+started. The log records Git's exact non-repository error. A real-Git and database
+reproduction shows the same error for a declared plain task directory containing
+inert Git metadata. The original attempt did not retain that metadata's contents
+or establish which component created it.
+
+The next narrow repair lets only an explicitly declared plain task root proceed
+past Git's exact non-repository result. It leaves the existing files intact.
+Configured checkouts keep strict validation, real Git roots still receive the
+exclusion, linked metadata stays rejected, and missing Git stays an error. The
+repair's Git and authorization cohort passes locally. Fresh provider
+remeasurement and the monitor-fallback defect remain open.
