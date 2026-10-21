@@ -1794,6 +1794,10 @@ export interface WorkerToHostMethods {
     params: { companyId: string; limit?: number; offset?: number },
     result: Project[],
   ];
+  "projects.getInstanceSecrets": [
+    params: { projectId: string; companyId: string },
+    result: Record<string, string>,
+  ];
   "projects.get": [
     params: { projectId: string; companyId: string },
     result: Project | null,

@@ -1373,3 +1373,29 @@ other Core-host filesystem operations are unavailable for managed storage.
 
 Use `createWorkspaceProviderHarness` from `@paperclipai/plugin-sdk/testing` to
 validate hook inputs and outputs without allocating an execution environment.
+
+
+### Private project instance credentials
+
+Project lifecycle plugins can opt into `projects.instance-secrets` alongside
+`events.subscribe` and `resourceLifecycle: ["project"]`. Automatic project
+callbacks receive `event.instanceSecrets`; return an `instanceSecrets` patch
+with an acknowledged result. Core stores the patch in the existing native
+instance-secret system and acknowledges the event in one transaction. A null
+value removes a key. Retry and deferred results do not store patches.
+
+Each company/project/installed-plugin owns its credentials. Up to 16 lowercase
+snake_case keys may change per result; nonempty string values are limited to
+128 KiB each. Core rejects replies if configuration, project sources, lifecycle
+state, or secret versions changed during the callback. A duplicate response to
+an acknowledged event cannot overwrite credentials. Deleted projects allow
+removal only; their secrets are also deleted by the native owner foreign key.
+
+Trusted worker code can use
+`ctx.projects.getInstanceSecrets(projectId, companyId)` during a company-scoped
+invocation to read its credentials without an external service call. Archived
+or missing projects cannot be read this way. Values never appear in ordinary
+lifecycle inbox listings or the company secret catalog. Do not expose values
+through plugin entities, state, data handlers, UI, or logs. Agent instance
+secrets retain their existing lifecycle contract. Back up the tenant's existing
+local secrets master key together with its database.
