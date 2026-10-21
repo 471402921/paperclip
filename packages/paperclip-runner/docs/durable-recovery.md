@@ -74,8 +74,9 @@ new delivery remains contiguous. Unacknowledged events use the existing outbox.
 A peer without this capability cannot attach to a sparse external checkpoint.
 New runners can still authenticate to older controllers that use full journals.
 
-There is no per-output external checkpoint timer. The local journal, existing
-application callbacks, bounded outbox, and backpressure remain. Losing the
+There is no per-output external checkpoint timer or remote-controller cache
+fsync. Local-only controllers retain their full file journal. Existing application
+callbacks, the bounded runner outbox, and backpressure remain. Losing the
 controller before acknowledged display output reaches its application log can
 leave a display tail gap; this must not trigger provider or tool reexecution.
 

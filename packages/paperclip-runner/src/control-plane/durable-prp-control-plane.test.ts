@@ -156,6 +156,7 @@ it("streams output without checkpoint writes and recovers its authenticated curs
     }
     await core.flushCheckpoint();
     expect(snapshots).toHaveLength(before);
+    expect(JSON.parse(readFileSync(core.store.path, "utf8")).ackedSourceSeq).toBe(0);
     const saved = snapshots.at(-1)!;
     expect(JSON.parse(saved.records.get("cursor")!).ackedSourceSeq).toBe(0);
     expect([...saved.records.keys()].filter(key => key.startsWith("event:"))).toEqual([]);
@@ -3287,6 +3288,7 @@ describe("DurablePrpControlPlane", () => {
       expectedRunnerVersion,
       expectedRunnerDigest,
     });
+    if (mode === "activate" || mode === "activate-v2") core.setCheckpointPersistence(async () => {});
     const nextIdentity = {
       ...identity,
       runId: "00000000-0000-4000-8000-000000000002",
@@ -3685,6 +3687,9 @@ describe("DurablePrpControlPlane", () => {
         await vi.waitFor(() =>
           expect(core.store.state.warmTransition).toBeUndefined(),
         );
+        if (mode === "activate" || mode === "activate-v2") {
+          expect(core.store.state.checkpointEventPolicy).toBe("control-v1");
+        }
         expect(core.store.state.schema).toBe(
           "paperclip.runner.durable.control-plane-state.v1",
         );

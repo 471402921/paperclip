@@ -10,6 +10,7 @@ import type { HarnessRuntimeRequest } from "../contracts/harness-driver.js";
 // event pump, registered handler, and request emission below all run unchanged.
 const peer = vi.hoisted(() => ({ current: null as TestPeer | null, readiness: {} as Record<string, unknown> }));
 interface TestPeer {
+  readonly recoveredSourceSeq: number;
   store: { state: { identity: DurableRecoveryIdentity; committedEvents: DurableRecoveryCommittedEvent[]; commands: Array<Record<string, unknown>> } };
   emit(type: string, payload: Record<string, unknown>): void;
 }
@@ -19,6 +20,7 @@ vi.mock("../control-plane/durable-prp-control-plane.js", async (importOriginal) 
     ...actual,
     spawnRunner: vi.fn(() => ({ child: { exitCode: null }, completion: new Promise(() => {}) })),
     DurablePrpControlPlane: class implements TestPeer {
+      readonly recoveredSourceSeq = 0;
       store: TestPeer["store"];
       connectUrl = "ws://fixture.invalid";
       constructor(options: { identity: DurableRecoveryIdentity }) {

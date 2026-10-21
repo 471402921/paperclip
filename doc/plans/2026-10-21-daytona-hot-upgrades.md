@@ -29,13 +29,15 @@ and legacy server-owned stdio adapters are outside this first contract.
 | Existing runs and differing server/runner artifacts | Preserve admitted execution and runner identity; unsupported historical state remains explicit | Compatibility and artifact-identity tests |
 | Explicit Stop and changed authority | Recovery cannot undo cancellation or bypass company/budget controls | Stop/reconnect and cross-company negative cases |
 
-## Lean recovery revision (in progress)
+## Lean recovery revision
 
 The per-output Postgres journal and its 20 ms batching timer are superseded.
 Persist authentication, commands/results, pending requests, and lifecycle/result
 events before exposing their effects. Streaming `item.delta` events do not enter
 the recovery checkpoint. Usage updates are coalesced into the next control
-checkpoint. The existing run-log/accounting paths remain their owners.
+checkpoint. The existing run-log/accounting paths remain their owners. Remote controller
+cache files also skip per-chunk writes; local-only controllers retain their full
+file journals. Control changes retain file and database durability barriers.
 
 The runner already persists its acknowledged source sequence. Bind that value
 into the authenticated reconnect challenge so a replacement controller can skip
@@ -47,11 +49,11 @@ trust the unauthenticated hello or silently downgrade a sparse checkpoint.
 
 | Outcome | Evidence required | Remaining work |
 | --- | --- | --- |
-| No recovery DB transactions during ordinary output streaming | Writer call count across streamed events | Implement and measure |
-| Empty-controller recovery across an output-only cursor gap | Same runner/provider/turn plus authenticated reconnect | Protocol and real-process test |
-| Tool/result safety remains durable | Commit failure, replay, stale-owner and completion tests | Re-run affected coverage |
-| Recovery state stays bounded and preserves current session/turn anchors | Long stream and eviction tests | Implement retention selection |
-| Five-minute outage still meets the original contract | Existing 300-second real-process proof on revised code | Re-run after targeted proof |
+| No recovery DB transactions during ordinary output streaming | 64 streamed chunks: zero external callbacks and unchanged controller cache | Passed |
+| Empty-controller recovery across an output-only cursor gap | Both real-Postgres variants preserve runner/provider/turn across a 64-event cursor gap | Passed |
+| Tool/result safety remains durable | 95 Rust durability tests; focused server and controller suites | Passed |
+| Recovery state stays bounded and preserves current session/turn anchors | Full-window retention and warm-handoff controller tests | Passed |
+| Five-minute outage still meets the original contract | First lean proof passed in 339.39 s; final cache optimization proof tracked in PR | Verification tracked in PR |
 
 The tradeoff is explicit: the checkpoint no longer supplies a duplicate copy of
 every displayed output chunk. Recovery-critical state remains durable; a crash
@@ -416,3 +418,27 @@ Logs: `/tmp/lean-controller-tests.log`, `/tmp/lean-rust-durable-tests.log`,
 `/tmp/lean-postgres-empty-disk-fresh.log`, `/tmp/lean-workspace-typecheck.log`,
 and `/tmp/lean-workspace-build.log`. The five-minute proof and broader revised
 suites are tracked separately; prior-head CI is not evidence for this revision.
+
+
+The lean protocol/transport suite passed 422 tests. A 300-second outage with the
+controller directory deleted passed in 339.39 seconds total, before the final
+cache optimization. After merging master `92cfd701c3`, all 69 Postgres restart and
+retention tests passed (five Docker-only skips), and workspace typecheck/build
+passed. An additional server recovery/tool run passed 87 tests, with 35 external
+warm-transition-fixture cases and five Docker-only cases skipped.
+
+The final cache optimization stops remote-controller file writes for ordinary
+text/usage as well as Postgres checkpoint calls; the runner owns the durable ACK
+and unacknowledged outbox. Control commits remain durable. Local-only controllers
+keep their existing full file path. The policy persists through warm handoff.
+The focused controller/permission suite passed 162 tests and runner typecheck
+passed. CI at `66e980561d` exposed 21 permission-ordering timeouts: mocked peers
+omitted the new recovery-cursor property, making their pump cursor NaN. Both
+permission mocks now declare and implement that property; production fallback
+behavior was not weakened. Logs: `/tmp/lean-ci-runner-failure.log`,
+`/tmp/lean-final-controller-permission-tests.log`,
+`/tmp/lean-merged-postgres-retention.log`, and `/tmp/lean-five-minute-proof.log`.
+Fresh final-cache five-minute evidence, full-suite results and current-head CI
+are recorded in the PR's Verification section rather than inferred from prior
+commits. Hosted Daytona remains unqualified because its builder failed before
+sandbox launch.

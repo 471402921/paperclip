@@ -1381,10 +1381,14 @@ class DurableCoreStore {
 
   saveEvent(event: DurableRecoveryCommittedEvent): void {
     this.assertWritable();
-    this.write();
     // Output ACKs depend on the runner's durable cursor, not a database timer.
     // The next control change captures the latest usage and removes old records.
-    if (!isStreamingEvent(event)) this.revision += 1;
+    if (isStreamingEvent(event)) {
+      if (this.#state.checkpointEventPolicy !== "control-v1") this.write();
+      return;
+    }
+    this.write();
+    this.revision += 1;
   }
 
   save(): void {
@@ -1407,6 +1411,7 @@ class DurableCoreStore {
   /** Persist a complete candidate before publishing any new authority in memory. */
   commit(candidate: StoredCoreState): void {
     this.assertWritable();
+    candidate.checkpointEventPolicy ??= this.#state.checkpointEventPolicy;
     try {
       atomicPrivateWrite(this.path, `${JSON.stringify(candidate, null, 2)}\n`);
       this.#state = candidate;
@@ -1724,6 +1729,8 @@ export class DurablePrpControlPlane {
       throw new Error("runner_controller_persistence_already_active");
     }
     this.#persistCheckpoint = persist;
+    this.#store.state.checkpointEventPolicy = "control-v1";
+    this.#store.save();
   }
 
   flushCheckpoint(): Promise<void> {

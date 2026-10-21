@@ -101,8 +101,9 @@ There is no event batching timer. Streaming text/usage does not call the externa
 checkpoint writer. Authentication, commands/results, semantic inputs, lifecycle
 and other control events still commit before their acknowledgement or effect is
 released. A failed control commit closes the connection, leaving the unacknowledged
-input in the runner outbox. Local file writes and existing application event/log
-callbacks remain; this does not remove normal run accounting or business writes.
+input in the runner outbox. Remote controller caches also skip per-chunk file
+writes; local-only controllers retain their full file journal. Existing application
+event/log callbacks remain; this does not remove accounting or business writes.
 Unknown event kinds retain the conservative persist-before-ack behavior.
 
 A sparse checkpoint is marked `checkpointEventPolicy: "control-v1"`. Its peer must
