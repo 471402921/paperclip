@@ -54,6 +54,25 @@ export interface AutomaticRepositoryObservation {
   monitorScheduled: boolean;
 }
 
+export function automaticRepositoryApiState(phase: string, issue: Record<string, unknown>, runs: readonly {
+  id?: string; companyId?: string; agentId?: string; issueId?: string | null; nativeIssueId?: string | null;
+  status?: string; runtimeMode?: string; nativePhase?: string | null; startedAt?: string | null; finishedAt?: string | null;
+  errorCode?: string | null; wakeupRequestId?: string | null;
+  contextSnapshot?: { source?: unknown; nativeStatusWakeIntentId?: unknown } | null;
+  resultJson?: { finalizationPhase?: unknown } | null;
+}[], checks: ReturnType<typeof gradeAutomaticRepository>) {
+  return { capturePhase: phase,
+    issue: { id: issue.id, companyId: issue.companyId, identifier: issue.identifier, status: issue.status,
+      assigneeAgentId: issue.assigneeAgentId, executionWorkspaceId: issue.executionWorkspaceId, statusVersion: issue.statusVersion },
+    runs: runs.map(run => ({ id: run.id, companyId: run.companyId, agentId: run.agentId, issueId: run.issueId,
+      nativeIssueId: run.nativeIssueId, status: run.status, runtimeMode: run.runtimeMode, nativePhase: run.nativePhase,
+      startedAt: run.startedAt, finishedAt: run.finishedAt, errorCode: run.errorCode, wakeupRequestId: run.wakeupRequestId,
+      source: typeof run.contextSnapshot?.source === "string" ? run.contextSnapshot.source : null,
+      nativeStatusWakeIntentId: typeof run.contextSnapshot?.nativeStatusWakeIntentId === "string" ? run.contextSnapshot.nativeStatusWakeIntentId : null,
+      finalizationPhase: typeof run.resultJson?.finalizationPhase === "string" ? run.resultJson.finalizationPhase : null })),
+    checks };
+}
+
 export function automaticRepositoryStopReason(issue: { status: string }, runs: readonly { status: string }[]) {
   if (runs.length > 2) return "Unexpected extra provider admission";
   if (runs.some(run => ["failed", "cancelled", "timed_out"].includes(run.status))) return "A provider admission failed";
