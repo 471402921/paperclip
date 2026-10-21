@@ -289,7 +289,7 @@ export {
   recommendedDefaultsForApp,
   resolveConnectionMethodServerUrl,
 } from "./app-definitions.js";
-export { getAppDefinitionForApplicationKey, isConnectorFeatureEnabled, resolveConnectorAvailability } from "./connector-availability.js";
+export { isConnectorFeatureEnabled } from "./connector-availability.js";
 export {
   connectionSetupStateForApp,
   connectionSetupStateForMethod,
