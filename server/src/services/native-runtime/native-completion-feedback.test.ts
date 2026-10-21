@@ -251,6 +251,10 @@ describe("native final-response feedback", () => {
         scope: "current_track", unblockAction: "Start the next normal admission" },
     };
     await expect(nativeCompletionFeedback(db, value.runId, report)).rejects.toThrow('paperclip_finish with reportedWorkDisposition="yielded"');
+    await expect(nativeCompletionFeedback(db, value.runId, { ...report, completionClaim: { ...report.completionClaim, remainingWork: [] } }))
+      .rejects.toThrow('paperclip_finish with reportedWorkDisposition="yielded"');
+    await expect(nativeCompletionFeedback(db, value.runId, { ...report, completionClaim: { ...report.completionClaim, objectiveSatisfied: true } }))
+      .rejects.toThrow('paperclip_finish with reportedWorkDisposition="yielded"');
     await expect(nativeCompletionFeedback(db, value.runId, { ...report, evidence: [{ ref: `repository-preparation:${randomUUID()}` }] }))
       .resolves.toContain("Blocker report accepted");
     await expect(nativeCompletionFeedback(db, value.runId, { ...report, blocker: { ...report.blocker!, reasonCode: "missing_access" } }))
