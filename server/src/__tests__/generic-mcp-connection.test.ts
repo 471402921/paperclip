@@ -51,6 +51,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import * as connectorLifecycle from "../services/connectors/lifecycle.js";
 import { toolAccessService } from "../services/tool-access.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { connectionIntentService } from "../services/connection-intents.js";
@@ -100,13 +101,14 @@ const FIXTURE_TOOLS = [
 type FixtureOptions = {
   notebookAccount?: { id: string; email: string; emailVerified: boolean };
   notebookToolResult?: (name: string, arguments_: Record<string, unknown>) => unknown | Promise<unknown>;
-  revocationStatus?: () => number;
   revocationEndpoint?: string;
   revocationEndpointAuthMethods?: string[];
+  revocationStatus?: () => number;
   dcrClientSecret?: string;
   dropFirstRefreshResponse?: boolean;
   dropFirstRefreshResponseBody?: boolean;
   scopes?: string[];
+
   /** How the MCP endpoint authenticates. */
   auth?: "public" | "oauth" | "header";
   /** For `auth: "header"`, the header the endpoint requires and its value. */
@@ -267,6 +269,10 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
     const servedMetadataUrl = options.wellKnownStyle === "oidc-suffix" ? oidcSuffixUrl : rfc8414Url;
     if (href === servedMetadataUrl) return jsonResponse(authorizationServerMetadata());
 
+    if (href === `${MCP_ORIGIN}/account` && method === "GET") {
+      if (headers.authorization !== `Bearer ${accessToken}`) return jsonResponse({}, 401);
+      return jsonResponse({ id: "provider-owner", email: "owner@example.test" });
+    }
     if (href === (options.revocationEndpoint ?? `${MCP_ORIGIN}/oauth/revoke`) && method === "POST" && (options.revocationEndpoint || options.notebookAccount)) {
       return jsonResponse({}, options.revocationStatus?.() ?? 200);
     }
@@ -301,28 +307,27 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
         const issued = issuedCodes.get(body.get("code") ?? "");
         if (!issued) return jsonResponse({ error: "invalid_grant" }, 400);
       }
-      const receiptKey = grantType === "refresh_token" && options.notebookAccount ? headers["idempotency-key"] : null;
+      const receiptKey = grantType === "refresh_token" ? headers["idempotency-key"] : null;
       if (receiptKey && refreshReceipts.has(receiptKey)) return jsonResponse(refreshReceipts.get(receiptKey));
       accessToken = `fixture-access-${randomUUID()}`;
-      const tokenResponse = {
+      const response = {
         access_token: accessToken,
         refresh_token: "fixture-refresh",
         expires_in: 3600,
         token_type: "Bearer",
         scope: options.scopes?.join(" ") ?? "mcp:read",
       };
-      if (receiptKey) refreshReceipts.set(receiptKey, tokenResponse);
+      if (receiptKey) refreshReceipts.set(receiptKey, response);
       if (receiptKey && options.dropFirstRefreshResponse && !refreshResponseDropped) {
-        refreshResponseDropped = true;
-        throw new TypeError("Fixture dropped a committed refresh response");
+        refreshResponseDropped = true; throw new TypeError("Fixture dropped a committed refresh response");
       }
       if (receiptKey && options.dropFirstRefreshResponseBody && !refreshResponseDropped) {
         refreshResponseDropped = true;
-        const response = jsonResponse(tokenResponse);
-        response.json = async () => { throw new TypeError("Fixture dropped the committed refresh response body"); };
-        return response;
+        const result = jsonResponse(response);
+        result.json = async () => { throw new TypeError("Fixture dropped the committed refresh response body"); };
+        return result;
       }
-      return jsonResponse(tokenResponse);
+      return jsonResponse(response);
     }
 
     // 404 rather than throw: discovery legitimately probes several well-known
@@ -449,6 +454,210 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
   afterAll(async () => {
     if (externalTestDatabaseUrl) await closeRegisteredClients(externalTestDatabaseUrl);
     await tempDb?.cleanup();
+  });
+
+  function installLifecycleAdapter() {
+    const actualConfiguration = connectorLifecycle.applyConnectorAppConfiguration;
+    const actualLifecycle = connectorLifecycle.connectorOAuthLifecycle;
+    vi.spyOn(connectorLifecycle, "applyConnectorAppConfiguration").mockImplementation(app => app.slug !== "fireflies" ? actualConfiguration(app) : {
+      ...app, methods: [{ ...app.methods.find(method => method.key === "mcp-oauth")!, grantKinds: ["user"],
+        defaults: { serverUrl: MCP_URL, scopesHint: ["mcp:read", "mcp:write"] } }],
+    });
+    vi.spyOn(connectorLifecycle, "connectorOAuthLifecycle").mockImplementation(app => app?.slug !== "fireflies" ? actualLifecycle(app) : {
+      refreshTokenRetry: "idempotency-key",
+      accountIdentity: async ({ endpoint, accessToken, send }) => {
+        const response = await send(new URL("/account", endpoint), { method: "GET", headers: { Authorization: `Bearer ${accessToken}` } });
+        if (!response.ok) throw new Error("fixture_account_unavailable");
+        const account = await response.json() as { id: string; email: string };
+        return { name: account.email, externalId: account.id, connectionName: `Example · ${account.email}` };
+      },
+    });
+  }
+
+  it.each(["headers", "body"])("uses a compiled lifecycle adapter across reconnect, keyed refresh %s loss, and revocation recovery", async responseLoss => {
+    installLifecycleAdapter();
+    const scopes = ["mcp:read", "mcp:write"];
+    let revocationStatus = 503;
+    const fixture = installMcpOAuthFixture({ auth: "oauth", scopes, revocationEndpoint: `${ISSUER}/vendor/disconnect`,
+      dropFirstRefreshResponse: responseLoss === "headers", dropFirstRefreshResponseBody: responseLoss === "body",
+      revocationStatus: () => revocationStatus,
+      tools: [{ name: "list_records", annotations: { readOnlyHint: true } }, { name: "create_record", annotations: { readOnlyHint: false } },
+        { name: "share_record", annotations: { readOnlyHint: false } }, { name: "delete_record", annotations: { readOnlyHint: false, destructiveHint: true } }] });
+    const company = await createCompany(db);
+    const serviceDb = responseLoss === "body" ? createDb(externalTestDatabaseUrl ?? tempDb!.connectionString, { maxConnections: 1 }) : db;
+    const service = toolAccessService(serviceDb, { paperclipCloudConnector: null });
+    const actor = { actorType: "user" as const, actorId: "board-user" };
+    const gallery = await request(createRouteApp(db)).get(`/api/companies/${company.id}/tools/gallery`).expect(200);
+    expect(gallery.body.apps.find((app: { slug: string }) => app.slug === "fireflies").methods[0].defaults.serverUrl).toBe(MCP_URL);
+    const connected = await service.connectGalleryApp(company.id, { galleryKey: "fireflies", connectionMethodKey: "mcp-oauth" }, actor);
+    const authorize = async () => {
+      const start = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+      expect(start.registrationSource).toBe("dcr");
+      const authorization = new URL(start.authorizationUrl);
+      expect(authorization.searchParams.get("resource")).toBe(MCP_URL);
+      expect(authorization.searchParams.get("scope")?.split(" ")).toEqual(scopes);
+      return service.completeOAuthCallback({ state: authorization.searchParams.get("state")!, code: fixture.issueAuthorizationCode(start.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor });
+    };
+    const completed = await authorize();
+    expect(completed.connection).toMatchObject({ name: "Example · owner@example.test", credentialPolicy: "per_user" });
+    const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
+    expect(grant).toMatchObject({ kind: "user", subjectUserId: actor.actorId, providerTenant: { name: "owner@example.test", externalId: "provider-owner" } });
+    expect(JSON.stringify(completed)).not.toContain("fixture-access-");
+    const stored = await db.select().from(companySecrets).where(inArray(companySecrets.id, grant!.credentialSecretRefs.map(ref => ref.secretId)));
+    expect(stored).toHaveLength(2);
+    expect(stored.every(secret => secret.scope === "user" && secret.ownerUserId === actor.actorId)).toBe(true);
+    const saved = await service.getConnection(connected.connectionId, company.id);
+    const config = { ...saved.config }; delete config.sourceTemplateKey;
+    if (responseLoss === "body") config.sourceTemplateKey = "custom-mcp";
+    await service.updateConnection(connected.connectionId, { config });
+    await db.update(connectionGrants).set({ providerTenant: { ...grant!.providerTenant, oauth: {
+      ...grant!.providerTenant?.oauth, accessTokenExpiresAt: new Date(0).toISOString(),
+    } } }).where(eq(connectionGrants.id, grant!.id));
+    await service.refreshCatalog(connected.connectionId, actor);
+    const refreshes = fixture.requestsTo("/token").filter(request => (request.body as URLSearchParams).get("grant_type") === "refresh_token");
+    expect(refreshes).toHaveLength(2);
+    expect(refreshes[0]!.headers["idempotency-key"]).toMatch(/^[a-f0-9]{64}$/);
+    expect(refreshes[0]!.headers["idempotency-key"]).toBe(refreshes[1]!.headers["idempotency-key"]);
+    const removed = await service.archiveConnection(connected.connectionId, company.id, actor);
+    expect(removed.removal.oauthRevocationPending).toBe(true);
+    await expect(service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor })).rejects.toMatchObject({ details: { code: "oauth_revocation_pending" } });
+    const [pending] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
+    expect(pending).toMatchObject({ status: "revoked" });
+    expect(pending!.credentialSecretRefs).toHaveLength(2);
+    revocationStatus = 200;
+    await expect(service.sweepOAuthRevocations()).resolves.toEqual({ checked: 1, pending: 0 });
+    const [cleared] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
+    expect(cleared!.credentialSecretRefs).toEqual([]);
+    expect(fixture.requestsTo("/vendor/disconnect")).toHaveLength(2);
+    await service.connectGalleryApp(company.id, { galleryKey: "fireflies", applicationId: connected.application.id, grantKind: "user" }, actor);
+    await authorize();
+    const staleSignIn = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+    const [renewed] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
+    const secretIds = renewed!.credentialSecretRefs.map(ref => ref.secretId);
+    revocationStatus = 503;
+    await service.revokeConnectionGrant(connected.connectionId, grant!.id, actor);
+    const [pendingIndividual] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
+    expect(pendingIndividual!.credentialSecretRefs.map(ref => ref.secretId)).toEqual(secretIds);
+    expect(await db.select().from(companySecrets).where(inArray(companySecrets.id, secretIds))).toHaveLength(2);
+    revocationStatus = 200;
+    await expect(toolAccessService(serviceDb, { paperclipCloudConnector: null }).sweepOAuthRevocations()).resolves.toEqual({ checked: 1, pending: 0 });
+    expect(await db.select().from(companySecrets).where(inArray(companySecrets.id, secretIds))).toEqual([]);
+    await expect(service.completeOAuthCallback({ state: new URL(staleSignIn.authorizationUrl).searchParams.get("state")!,
+      code: fixture.issueAuthorizationCode(staleSignIn.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor })).rejects.toMatchObject({ details: { code: "oauth_authorization_revoked" } });
+  });
+
+  it("does not let a stale generic OAuth revocation sweep remove a reconnected account", async () => {
+    installLifecycleAdapter();
+    let status = 503;
+    const fixture = installMcpOAuthFixture({ auth: "oauth", revocationEndpoint: `${ISSUER}/vendor/disconnect`, revocationStatus: () => status });
+    const company = await createCompany(db), actor = { actorType: "user" as const, actorId: "board-user" };
+    const service = toolAccessService(db, { paperclipCloudConnector: null });
+    const connected = await service.connectGalleryApp(company.id, { galleryKey: "fireflies", grantKind: "user" }, actor);
+    const authorize = async () => {
+      const start = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+      return service.completeOAuthCallback({ state: new URL(start.authorizationUrl).searchParams.get("state")!, code: fixture.issueAuthorizationCode(start.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor });
+    };
+    await authorize();
+    await service.archiveConnection(connected.connectionId, company.id, actor);
+    status = 200;
+    let selected!: () => void, release!: () => void;
+    const paused = new Promise<void>(resolve => { selected = resolve; }), resume = new Promise<void>(resolve => { release = resolve; });
+    const transaction = db.transaction.bind(db);
+    vi.spyOn(db, "transaction").mockImplementationOnce(async (...args) => { selected(); await resume; return transaction(...args); });
+    const stale = service.sweepOAuthRevocations();
+    try {
+      await paused;
+      const other = toolAccessService(db, { paperclipCloudConnector: null });
+      await expect(other.sweepOAuthRevocations()).resolves.toEqual({ checked: 1, pending: 0 });
+      await other.connectGalleryApp(company.id, { galleryKey: "fireflies", applicationId: connected.application.id, grantKind: "user" }, actor);
+      await authorize();
+    } finally { release(); }
+    await expect(stale).resolves.toEqual({ checked: 1, pending: 0 });
+    const [connection] = await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId));
+    const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
+    expect(connection).toMatchObject({ status: "active", enabled: true });
+    expect(grant).toMatchObject({ status: "active" });
+    expect(grant!.credentialSecretRefs).toHaveLength(2);
+  });
+
+  it("retains a confidential client used by another active grant while generic revocation fences stale callbacks", async () => {
+    const fixture = installMcpOAuthFixture({ auth: "oauth", revocationEndpoint: `${ISSUER}/vendor/disconnect`,
+      dcrClientSecret: "fixture-shared-registration-secret", tokenEndpointAuthMethods: ["client_secret_basic"] });
+    const company = await createCompany(db);
+    await db.insert(companyMemberships).values({ companyId: company.id, principalType: "user", principalId: "second-user", status: "active", membershipRole: "admin" });
+    const service = toolAccessService(db, { paperclipCloudConnector: null });
+    const firstActor = { actorType: "user" as const, actorId: "board-user" }, secondActor = { actorType: "user" as const, actorId: "second-user" };
+    const connected = await service.connectGalleryApp(company.id, { link: MCP_URL, name: "Independent MCP", grantKind: "organization" }, firstActor);
+    const start = (actor: typeof firstActor) => service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, subjectUserId: actor.actorId, actor });
+    const finish = (authorizationUrl: string, actor: typeof firstActor) => service.completeOAuthCallback({ state: new URL(authorizationUrl).searchParams.get("state")!, code: fixture.issueAuthorizationCode(authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor });
+    await finish((await start(firstActor)).authorizationUrl, firstActor);
+    await finish((await start(secondActor)).authorizationUrl, secondActor);
+    const grants = await db.select().from(connectionGrants).where(and(eq(connectionGrants.connectionId, connected.connectionId), eq(connectionGrants.kind, "user")));
+    expect(grants).toHaveLength(2);
+    const first = grants.find(grant => grant.subjectUserId === firstActor.actorId)!, second = grants.find(grant => grant.subjectUserId === secondActor.actorId)!;
+    const saved = await service.getConnection(connected.connectionId, company.id), clientRef = saved.credentialSecretRefs.find(ref => ref.configPath === "oauth.client_secret")!;
+    for (const grant of grants) await db.update(connectionGrants).set({ credentialSecretRefs: [...grant.credentialSecretRefs, clientRef] }).where(eq(connectionGrants.id, grant.id));
+    const stale = await start(firstActor);
+    await service.revokeConnectionGrant(connected.connectionId, first.id, firstActor);
+    await expect(finish(stale.authorizationUrl, firstActor)).rejects.toMatchObject({ details: { code: "oauth_authorization_revoked" } });
+    expect(await db.select().from(companySecrets).where(eq(companySecrets.id, clientRef.secretId))).toHaveLength(1);
+    const [active] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, second.id));
+    expect(active!.status).toBe("active");
+    expect(active!.credentialSecretRefs).toContainEqual(clientRef);
+    await expect(service.refreshCatalog(connected.connectionId, secondActor)).resolves.toMatchObject({ connection: { status: "active" } });
+    expect(fixture.requestsTo("/vendor/disconnect")).toHaveLength(1);
+  });
+
+  it.each(["advertised", "legacy", "unsupported"])("uses advertised generic OAuth revocation metadata without provider-name routing (endpoint=%s)", async mode => {
+    const advertised = mode !== "unsupported";
+    let status = 503;
+    const revocationEndpoint = `${ISSUER}/vendor/disconnect`;
+    const fixture = installMcpOAuthFixture({ auth: "oauth", ...(advertised ? { revocationEndpoint } : {}),
+      dcrClientSecret: "fixture-registration-secret", tokenEndpointAuthMethods: [mode === "legacy" ? "client_secret_post" : "client_secret_basic"],
+      revocationEndpointAuthMethods: ["client_secret_basic"], revocationStatus: () => status });
+    const company = await createCompany(db);
+    const serviceDb = createDb(externalTestDatabaseUrl ?? tempDb!.connectionString, { maxConnections: 1 });
+    const service = toolAccessService(serviceDb, { paperclipCloudConnector: null });
+    const actor = { actorType: "user" as const, actorId: "board-user" };
+    const connected = await service.connectGalleryApp(company.id, { link: MCP_URL, name: "Independent MCP", grantKind: "user" }, actor);
+    const start = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+    await service.completeOAuthCallback({ state: new URL(start.authorizationUrl).searchParams.get("state")!, code: fixture.issueAuthorizationCode(start.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor });
+    const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
+    const saved = await service.getConnection(connected.connectionId, company.id);
+    const clientRef = saved.credentialSecretRefs.find(ref => ref.configPath === "oauth.client_secret")!;
+    expect(clientRef).toBeDefined();
+    const staleStart = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+    if (mode === "legacy") {
+      const current = await service.getConnection(connected.connectionId, company.id);
+      const oauth = { ...(current.config.oauth as Record<string, unknown>) };
+      expect(oauth.clientTokenEndpointAuthMethod).toBe("client_secret_post");
+      delete oauth.revocationUrl;
+      delete oauth.revocationEndpointAuthMethodsSupported;
+      const legacyConfig = { ...current.config, oauth };
+      await db.update(toolConnections).set({ config: legacyConfig, transportConfig: legacyConfig }).where(eq(toolConnections.id, connected.connectionId));
+    }
+    const removed = await service.archiveConnection(connected.connectionId, company.id, actor);
+    if (advertised) {
+      expect(removed.removal.oauthRevocationPending).toBe(true);
+      const [pending] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
+      expect(pending!.credentialSecretRefs).toHaveLength(2);
+      expect(removed.connection.credentialSecretRefs).toContainEqual(clientRef);
+      expect(removed.removal.credentialRefsCleared).toBe(0);
+      expect(await db.select().from(companySecrets).where(eq(companySecrets.id, clientRef.secretId))).toHaveLength(1);
+      expect(fixture.requestsTo("/vendor/disconnect")).toHaveLength(1);
+      expect(fixture.requestsTo("/vendor/disconnect")[0]!.headers.authorization).toMatch(/^Basic /);
+      status = 200;
+      await expect(service.sweepOAuthRevocations()).resolves.toEqual({ checked: 1, pending: 0 });
+      expect(fixture.requestsTo("/vendor/disconnect")).toHaveLength(2);
+      const [cleared] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
+      expect(cleared!.credentialSecretRefs).toEqual([]);
+      expect(await db.select().from(companySecrets).where(eq(companySecrets.id, clientRef.secretId))).toEqual([]);
+    } else {
+      expect(removed.removal.oauthRevocationPending).not.toBe(true);
+      expect(fixture.requestsTo("/vendor/disconnect")).toEqual([]);
+      expect(fixture.requestsTo("/oauth/revoke")).toEqual([]);
+    }
+    await expect(service.completeOAuthCallback({ state: new URL(staleStart.authorizationUrl).searchParams.get("state")!, code: fixture.issueAuthorizationCode(staleStart.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor })).rejects.toBeDefined();
   });
 
   async function waitForBlockedMembershipUpdate() {
@@ -639,82 +848,6 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     expect(revokedConnection!.config.oauthRevocationPending).toBe(false);
   });
 
-  it("does not let a stale Notebook revocation sweep remove a reconnected account", async () => {
-    await instanceSettingsService(db).updateExperimental({ enablePaperclipNotebook: true });
-    vi.stubEnv("PAPERCLIP_NOTEBOOK_MCP_URL", MCP_URL);
-    let revocationStatus = 503;
-    const fixture = installMcpOAuthFixture({ auth: "oauth", notebookAccount: { id: "cloud-owner", email: "owner@example.test", emailVerified: true },
-      revocationStatus: () => revocationStatus });
-    const company = await createCompany(db);
-    const actor = { actorType: "user" as const, actorId: "board-user" };
-    const service = toolAccessService(db, { paperclipCloudConnector: null });
-    const connected = await service.connectGalleryApp(company.id, { galleryKey: "paperclip-notebook", grantKind: "user" }, actor);
-    const authorize = async () => {
-      const start = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
-      return service.completeOAuthCallback({ state: new URL(start.authorizationUrl).searchParams.get("state")!,
-        code: fixture.issueAuthorizationCode(start.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor });
-    };
-    await authorize();
-    await service.archiveConnection(connected.connectionId, company.id, actor);
-    revocationStatus = 200;
-    let releaseStaleSweep!: () => void;
-    let selectedStaleRow!: () => void;
-    const staleSweepPaused = new Promise<void>(resolve => { selectedStaleRow = resolve; });
-    const staleSweepReleased = new Promise<void>(resolve => { releaseStaleSweep = resolve; });
-    const transaction = db.transaction.bind(db);
-    vi.spyOn(db, "transaction").mockImplementationOnce(async (...args) => {
-      selectedStaleRow();
-      await staleSweepReleased;
-      return transaction(...args);
-    });
-    const staleSweep = service.sweepOAuthRevocations();
-    try {
-      await staleSweepPaused;
-      const otherService = toolAccessService(db, { paperclipCloudConnector: null });
-      await expect(otherService.sweepOAuthRevocations()).resolves.toEqual({ checked: 1, pending: 0 });
-      await otherService.connectGalleryApp(company.id, { galleryKey: "paperclip-notebook", applicationId: connected.application.id, grantKind: "user" }, actor);
-      await authorize();
-    } finally { releaseStaleSweep(); }
-    await expect(staleSweep).resolves.toEqual({ checked: 1, pending: 0 });
-    const [current] = await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId));
-    const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
-    expect(current).toMatchObject({ status: "active", enabled: true });
-    expect(grant).toMatchObject({ status: "active" });
-    expect(grant!.credentialSecretRefs).toHaveLength(2);
-    expect(fixture.requestsTo("/oauth/revoke")).toHaveLength(2);
-    await expect(service.refreshCatalog(connected.connectionId, actor)).resolves.toMatchObject({ connection: { status: "active" } });
-  });
-
-  it.each(["missing", "relabelled"])("does not let an earlier Notebook sign-in reactivate a revoked grant after %s markers", async marker => {
-    await instanceSettingsService(db).updateExperimental({ enablePaperclipNotebook: true });
-    vi.stubEnv("PAPERCLIP_NOTEBOOK_MCP_URL", MCP_URL);
-    const fixture = installMcpOAuthFixture({ auth: "oauth", notebookAccount: { id: "cloud-owner", email: "owner@example.test", emailVerified: true } });
-    const company = await createCompany(db);
-    const actor = { actorType: "user" as const, actorId: "board-user" };
-    const service = toolAccessService(db, { paperclipCloudConnector: null });
-    const connected = await service.connectGalleryApp(company.id, { galleryKey: "paperclip-notebook", grantKind: "user" }, actor);
-    const start = () => service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
-    const finish = (authorizationUrl: string) => service.completeOAuthCallback({ state: new URL(authorizationUrl).searchParams.get("state")!,
-      code: fixture.issueAuthorizationCode(authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor });
-    await finish((await start()).authorizationUrl);
-    const staleSignIn = await start();
-    const saved = await service.getConnection(connected.connectionId, company.id);
-    const config = { ...saved.config }; delete config.sourceTemplateKey;
-    if (marker === "relabelled") config.sourceTemplateKey = "custom-mcp";
-    await service.updateConnection(connected.connectionId, { config });
-    const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
-    await service.revokeConnectionGrant(connected.connectionId, grant!.id, actor);
-    const [connection] = await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId));
-    expect(connection).toMatchObject({ status: "active", config: { oauthRevocationPending: false } });
-    await expect(finish(staleSignIn.authorizationUrl)).rejects.toMatchObject({ details: { code: "oauth_authorization_revoked" } });
-    const [revoked] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
-    expect(revoked).toMatchObject({ status: "revoked", credentialSecretRefs: [] });
-    await expect(finish((await start()).authorizationUrl)).resolves.toMatchObject({ connection: { status: "active" } });
-    const [reconnected] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
-    expect(reconnected).toMatchObject({ status: "active" });
-    expect(reconnected!.credentialSecretRefs).toHaveLength(2);
-  });
-
   it.each(["create response", "upload response", "approval result"])("recovers complete Notebook publication receipts through the real gateway after a lost %s", async (lostResponse) => {
     await instanceSettingsService(db).updateExperimental({ enablePaperclipNotebook: true });
     vi.stubEnv("PAPERCLIP_NOTEBOOK_MCP_URL", MCP_URL);
@@ -903,86 +1036,6 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
       await request(app).post("/api/tool-gateway/connector-transfers/call").set("x-paperclip-tool-gateway-token", token.token)
         .send({ ...body, connectionId: connected.connectionId }).expect(401);
     } finally { await rm(workspace, { recursive: true, force: true }); }
-  });
-
-  it("retains a confidential client used by another active grant while generic revocation fences stale callbacks", async () => {
-    const fixture = installMcpOAuthFixture({ auth: "oauth", revocationEndpoint: `${ISSUER}/vendor/disconnect`,
-      dcrClientSecret: "fixture-shared-registration-secret", tokenEndpointAuthMethods: ["client_secret_basic"] });
-    const company = await createCompany(db);
-    await db.insert(companyMemberships).values({ companyId: company.id, principalType: "user", principalId: "second-user", status: "active", membershipRole: "admin" });
-    const service = toolAccessService(db, { paperclipCloudConnector: null });
-    const firstActor = { actorType: "user" as const, actorId: "board-user" }, secondActor = { actorType: "user" as const, actorId: "second-user" };
-    const connected = await service.connectGalleryApp(company.id, { link: MCP_URL, name: "Independent MCP", grantKind: "organization" }, firstActor);
-    const start = (actor: typeof firstActor) => service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, subjectUserId: actor.actorId, actor });
-    const finish = (authorizationUrl: string, actor: typeof firstActor) => service.completeOAuthCallback({ state: new URL(authorizationUrl).searchParams.get("state")!, code: fixture.issueAuthorizationCode(authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor });
-    await finish((await start(firstActor)).authorizationUrl, firstActor);
-    await finish((await start(secondActor)).authorizationUrl, secondActor);
-    const grants = await db.select().from(connectionGrants).where(and(eq(connectionGrants.connectionId, connected.connectionId), eq(connectionGrants.kind, "user")));
-    expect(grants).toHaveLength(2);
-    const first = grants.find(grant => grant.subjectUserId === firstActor.actorId)!, second = grants.find(grant => grant.subjectUserId === secondActor.actorId)!;
-    const saved = await service.getConnection(connected.connectionId, company.id), clientRef = saved.credentialSecretRefs.find(ref => ref.configPath === "oauth.client_secret")!;
-    for (const grant of grants) await db.update(connectionGrants).set({ credentialSecretRefs: [...grant.credentialSecretRefs, clientRef] }).where(eq(connectionGrants.id, grant.id));
-    const stale = await start(firstActor);
-    await service.revokeConnectionGrant(connected.connectionId, first.id, firstActor);
-    await expect(finish(stale.authorizationUrl, firstActor)).rejects.toMatchObject({ details: { code: "oauth_authorization_revoked" } });
-    expect(await db.select().from(companySecrets).where(eq(companySecrets.id, clientRef.secretId))).toHaveLength(1);
-    const [active] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, second.id));
-    expect(active!.status).toBe("active");
-    expect(active!.credentialSecretRefs).toContainEqual(clientRef);
-    await expect(service.refreshCatalog(connected.connectionId, secondActor)).resolves.toMatchObject({ connection: { status: "active" } });
-    expect(fixture.requestsTo("/vendor/disconnect")).toHaveLength(1);
-  });
-
-  it.each(["advertised", "legacy", "unsupported"])("uses advertised generic OAuth revocation metadata without provider-name routing (endpoint=%s)", async mode => {
-    const advertised = mode !== "unsupported";
-    let status = 503;
-    const revocationEndpoint = `${ISSUER}/vendor/disconnect`;
-    const fixture = installMcpOAuthFixture({ auth: "oauth", ...(advertised ? { revocationEndpoint } : {}),
-      dcrClientSecret: "fixture-registration-secret", tokenEndpointAuthMethods: [mode === "legacy" ? "client_secret_post" : "client_secret_basic"],
-      revocationEndpointAuthMethods: ["client_secret_basic"], revocationStatus: () => status });
-    const company = await createCompany(db);
-    const serviceDb = createDb(externalTestDatabaseUrl ?? tempDb!.connectionString, { maxConnections: 1 });
-    const service = toolAccessService(serviceDb, { paperclipCloudConnector: null });
-    const actor = { actorType: "user" as const, actorId: "board-user" };
-    const connected = await service.connectGalleryApp(company.id, { link: MCP_URL, name: "Independent MCP", grantKind: "user" }, actor);
-    const start = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
-    await service.completeOAuthCallback({ state: new URL(start.authorizationUrl).searchParams.get("state")!, code: fixture.issueAuthorizationCode(start.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor });
-    const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
-    const saved = await service.getConnection(connected.connectionId, company.id);
-    const clientRef = saved.credentialSecretRefs.find(ref => ref.configPath === "oauth.client_secret")!;
-    expect(clientRef).toBeDefined();
-    const staleStart = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
-    if (mode === "legacy") {
-      const current = await service.getConnection(connected.connectionId, company.id);
-      const oauth = { ...(current.config.oauth as Record<string, unknown>) };
-      expect(oauth.clientTokenEndpointAuthMethod).toBe("client_secret_post");
-      delete oauth.revocationUrl;
-      delete oauth.revocationEndpointAuthMethodsSupported;
-      const legacyConfig = { ...current.config, oauth };
-      await db.update(toolConnections).set({ config: legacyConfig, transportConfig: legacyConfig }).where(eq(toolConnections.id, connected.connectionId));
-    }
-    const removed = await service.archiveConnection(connected.connectionId, company.id, actor);
-    if (advertised) {
-      expect(removed.removal.oauthRevocationPending).toBe(true);
-      const [pending] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
-      expect(pending!.credentialSecretRefs).toHaveLength(2);
-      expect(removed.connection.credentialSecretRefs).toContainEqual(clientRef);
-      expect(removed.removal.credentialRefsCleared).toBe(0);
-      expect(await db.select().from(companySecrets).where(eq(companySecrets.id, clientRef.secretId))).toHaveLength(1);
-      expect(fixture.requestsTo("/vendor/disconnect")).toHaveLength(1);
-      expect(fixture.requestsTo("/vendor/disconnect")[0]!.headers.authorization).toMatch(/^Basic /);
-      status = 200;
-      await expect(service.sweepOAuthRevocations()).resolves.toEqual({ checked: 1, pending: 0 });
-      expect(fixture.requestsTo("/vendor/disconnect")).toHaveLength(2);
-      const [cleared] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, grant!.id));
-      expect(cleared!.credentialSecretRefs).toEqual([]);
-      expect(await db.select().from(companySecrets).where(eq(companySecrets.id, clientRef.secretId))).toEqual([]);
-    } else {
-      expect(removed.removal.oauthRevocationPending).not.toBe(true);
-      expect(fixture.requestsTo("/vendor/disconnect")).toEqual([]);
-      expect(fixture.requestsTo("/oauth/revoke")).toEqual([]);
-    }
-    await expect(service.completeOAuthCallback({ state: new URL(staleStart.authorizationUrl).searchParams.get("state")!, code: fixture.issueAuthorizationCode(staleStart.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor })).rejects.toBeDefined();
   });
 
   it.each(["mcp-oauth", "mcp-api-key"])("connects Fireflies through %s with vaulted credentials and its stable meeting tools", async (methodKey) => {
@@ -1920,7 +1973,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
   it("completes organization OAuth with a single database connection", async () => {
     const fixture = installMcpOAuthFixture({ auth: "oauth" });
     const company = await createCompany(db);
-    const callbackDb = createDb((externalTestDatabaseUrl ?? tempDb!.connectionString), { maxConnections: 1 });
+    const callbackDb = createDb(externalTestDatabaseUrl ?? tempDb!.connectionString, { maxConnections: 1 });
     const service = toolAccessService(callbackDb);
     let deadline: ReturnType<typeof setTimeout> | null = null;
 
@@ -2004,8 +2057,8 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
   it("serializes organization OAuth completion behind membership revocation", async () => {
     const fixture = installMcpOAuthFixture({ auth: "oauth" });
     const company = await createCompany(db);
-    const callbackDb = createDb((externalTestDatabaseUrl ?? tempDb!.connectionString), { maxConnections: 1 });
-    const removalDb = createDb((externalTestDatabaseUrl ?? tempDb!.connectionString), { maxConnections: 1 });
+    const callbackDb = createDb(externalTestDatabaseUrl ?? tempDb!.connectionString, { maxConnections: 1 });
+    const removalDb = createDb(externalTestDatabaseUrl ?? tempDb!.connectionString, { maxConnections: 1 });
     const service = toolAccessService(callbackDb);
     const actor = { actorType: "user" as const, actorId: "board-user" };
     let releaseRemoval!: () => void;
@@ -2775,7 +2828,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
       // serialize the two callbacks and prove nothing. With two connections both
       // callbacks can read a live state row before either deletes it, so the
       // atomic `DELETE … RETURNING` is what picks the winner.
-      const otherDb = createDb((externalTestDatabaseUrl ?? tempDb!.connectionString));
+      const otherDb = createDb(externalTestDatabaseUrl ?? tempDb!.connectionString);
       const otherService = toolAccessService(otherDb);
       let settled: PromiseSettledResult<unknown>[];
       try {

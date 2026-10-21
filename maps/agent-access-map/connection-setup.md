@@ -157,6 +157,10 @@ Capability ID: `connection-setup/draft-recovery`.
 
 Review: `baseline`.
 
+OAuth removal closes local access before remote revocation. A pending provider
+cleanup retains encrypted cleanup credentials, blocks reconnect, and retries
+through the server scheduler. This does not grant agents setup or cleanup access.
+
 API: `present` — representative operation IDs:
 
 - `POST /api/connection-intents/{interactionId}/phase`.

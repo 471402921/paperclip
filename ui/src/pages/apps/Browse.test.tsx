@@ -1369,9 +1369,10 @@ describe("Connectors landing page", () => {
     expect(navigateMock).toHaveBeenCalledWith("/apps/conn-expired/permissions");
   });
 
-  it("removes a connection from the overflow menu only after destructive confirmation", async () => {
+  it.each([false, true])("removes a connection after confirmation and reports pending OAuth revocation=%s", async (pending) => {
     listApplicationsMock.mockResolvedValue({ applications: [application()] });
     listConnectionsMock.mockResolvedValue({ connections: [connection()] });
+    archiveConnectionMock.mockResolvedValue(connection({ status: "archived", removal: { oauthRevocationPending: pending } }));
 
     await renderBrowse();
 
@@ -1418,6 +1419,7 @@ describe("Connectors landing page", () => {
       expect.objectContaining({
         title: "Connection removed",
         tone: "success",
+        ...(pending ? { body: "This connection is disconnected here. Remote authorization revocation is pending and will retry automatically." } : {}),
       }),
     );
   });

@@ -47,7 +47,7 @@ describe("native SSH deliverable output budget", () => {
     expect(result.exitCode).not.toBe(0);
   });
 
-  it("reads Notebook chunks through the actual SSH adapter at a configured 1 MiB ceiling", async () => {
+  it("reads workspace transfer chunks through the actual SSH adapter at a configured 1 MiB ceiling", async () => {
     vi.stubEnv("PAPERCLIP_ATTACHMENT_MAX_BYTES", String(1024 * 1024));
     vi.resetModules();
     try {

@@ -26,6 +26,7 @@ import { issueService } from "../issues.js";
 import { PaperclipRunnerToolAuthority } from "./paperclip-runner-tool-authority.js";
 import { PaperclipRunnerSemanticAuthority } from "./runner-semantic-authority.js";
 import { createAssignedMcpTools } from "./assigned-mcp-tools.js";
+import { connectorWorkspaceTools, createConnectorWorkspaceTools } from "../connectors/runtime-tools.js";
 import type { ToolGatewayDescriptor, ToolGatewayService } from "../tool-gateway.js";
 import { READ_CURRENT_WAKE_COMMENTS_TOOL_NAME } from "./current-wake-comments.js";
 import { buildLowTrustSourceTrust, buildPromotedSourceTrust, LOW_TRUST_QUARANTINED_BODY } from "../source-trust.js";
@@ -869,6 +870,48 @@ describe("PaperclipRunnerToolAuthority", () => {
     expect(authority.definitions().map((tool) => tool.name)).not.toContain(
       "set_dependencies",
     );
+  });
+
+  it("runs contributed file transfers only from a bound standard workspace and the selected assigned connection", async () => {
+    const content = Buffer.from("synthetic export"), sha256 = createHash("sha256").update(content).digest("hex");
+    const executeTool = vi.fn(async () => ({ status: "completed", result: { exported: true } }));
+    const descriptor = { name: "fixture:export", upstreamToolName: "export", applicationKey: "fireflies", connectionId: "assigned-export",
+      risk: "write", providerType: "mcp_remote_http", displayName: "Export", description: "Export", pluginId: "fixture", parametersSchema: { type: "object" } } as ToolGatewayDescriptor;
+    const list = vi.fn().mockResolvedValue([descriptor]);
+    const tools = await createAssignedMcpTools({ gateway: { listToolsForNamedGateway: list, executeTool } as unknown as ToolGatewayService,
+      gatewayPublicId: "native-gateway", bearerToken: "controller-only-token" });
+    const registry = createConnectorWorkspaceTools([{ name: "export_workspace", definitions: client => client.connectionTools().map(tool => ({
+      name: "export_workspace", description: "Export a workspace file", inputSchema: { type: "object", properties: { connectionId: { enum: [tool.connectionId] } } },
+    })), execute: async (_args, context) => {
+      await context.tools.assertConnectionTools("assigned-export", ["export"]);
+      const body = await context.readRemoteWorkspaceFile!({ contentRef: "dist/report.txt", byteSize: content.length, sha256, maxBytes: 1024 });
+      return context.tools.callConnectionTool("assigned-export", "export", { text: body.toString() });
+    } }]);
+    const spies = [vi.spyOn(connectorWorkspaceTools, "definitions").mockImplementation(registry.definitions),
+      vi.spyOn(connectorWorkspaceTools, "has").mockImplementation(registry.has), vi.spyOn(connectorWorkspaceTools, "execute").mockImplementation(registry.execute)];
+    const readRemoteWorkspaceFile = vi.fn(async () => content);
+    const binding = { companyId, agentId, issueId, runId, workspaceConnectionTools: tools, workspaceRoot: "/runtime-only",
+      executionTargetKind: "remote" as const, readRemoteWorkspaceFile };
+    const authority = new PaperclipRunnerToolAuthority(db, binding);
+    const call = { tool: "export_workspace", callId: "export-native", arguments: {} };
+    try {
+      expect(authority.definitions().find(tool => tool.name === call.tool)?.inputSchema).toMatchObject({ properties: { connectionId: { enum: ["assigned-export"] } } });
+      expect(new PaperclipRunnerToolAuthority(db, { ...binding, workMode: "planning" }).definitions().some(tool => tool.name === call.tool)).toBe(false);
+      expect(new PaperclipRunnerToolAuthority(db, { ...binding, workspaceRoot: undefined }).definitions().some(tool => tool.name === call.tool)).toBe(false);
+      await expect(authority.execute(call)).resolves.toMatchObject({ status: "completed", result: { exported: true } });
+      expect(readRemoteWorkspaceFile).toHaveBeenCalledExactlyOnceWith({ contentRef: "dist/report.txt", byteSize: content.length, sha256, maxBytes: 1024 });
+      expect(executeTool).toHaveBeenCalledOnce();
+      list.mockResolvedValue([]);
+      await expect(authority.execute(call)).rejects.toThrow("assigned_connection_tool_unavailable");
+      expect(readRemoteWorkspaceFile).toHaveBeenCalledOnce();
+      await db.update(issues).set({ workMode: "ask" }).where(eq(issues.id, issueId));
+      try { await expect(authority.execute(call)).rejects.toThrow("unavailable to this run"); }
+      finally { await db.update(issues).set({ workMode: "standard" }).where(eq(issues.id, issueId)); }
+      await db.update(heartbeatRuns).set({ status: "succeeded" }).where(eq(heartbeatRuns.id, runId));
+      try { await expect(authority.execute(call)).rejects.toThrow("binding_not_authorized"); }
+      finally { await db.update(heartbeatRuns).set({ status: "running" }).where(eq(heartbeatRuns.id, runId)); }
+      expect(readRemoteWorkspaceFile).toHaveBeenCalledOnce();
+    } finally { spies.forEach(spy => spy.mockRestore()); }
   });
 
   it("publishes Notebook files only from a bound standard-mode workspace and a selected assigned connection", async () => {

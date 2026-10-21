@@ -97,6 +97,19 @@ remaining operations before qualifying the whole capability.
 Gaps: Scoped sessions remain agent/run-bound. MCP requires its existing protocol
 client; named gateways and gateway-token management retain board permissions.
 
+Connector-owned workspace contributions can call assigned tools through the
+same run-scoped gateway credential. `POST /api/tool-gateway/connector-transfers/call`
+is a private response channel for a compiled, trusted connector adapter. It
+requires the selected connection, a current agent run, and the ordinary action
+policy; it creates no new connection, filesystem, or management authority.
+Normal MCP results, approval receipts, audit records and HTTP logs receive the
+adapter's safe result. Temporary capabilities exist only in the live private
+response. The production contribution registries are empty in this foundation.
+[Gateway integration coverage](../../server/src/__tests__/connector-transfer-gateway.test.ts)
+uses a synthetic provider to exercise normal/transfer delivery, current run,
+selected connection, approval, replay and blocked actions. This is local fixture
+evidence, not an external provider qualification.
+
 Native assigned-tool results above 500,000 encoded bytes are stored as scoped response assets.
 `read_tool_result` reads bounded JSON pages without repeating the upstream call,
 including when generic `call_api` is disabled.

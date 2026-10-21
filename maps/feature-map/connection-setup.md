@@ -30,6 +30,8 @@ does not activate the service. See [service configuration](../../doc/prompt-inje
   host with the original task intent and identity choice intact.
 - `draft-recovery`: `connection-setup/draft-recovery` — cancel, Back, Save & exit, reload, Finish setup, and reconnect
   preserve the exact draft rather than creating duplicate connections.
+  Removing an OAuth connection closes local access first; if advertised remote
+  revocation fails, the UI reports pending cleanup and reconnect waits for retry.
 - `task-request`: `connection-setup/task-request` — only the addressed person resolves the requested connection;
   usable access releases the pending task request through normal continuation.
 - `channel-setup`: `connection-setup/channel-setup` — provider endpoint, represented agent, linked sender, and

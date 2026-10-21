@@ -39,7 +39,7 @@ describe("remote deliverable admission", () => {
       .rejects.toThrow("paperclip_runner_file_handoff_remote_read_failed");
   });
 
-  it("permits an empty Notebook file only through the explicit server-owned opt-in", async () => {
+  it("permits an empty workspace transfer file only through the explicit server-owned opt-in", async () => {
     const execute = vi.fn().mockResolvedValue({ ...success, stdout: "" });
     await expect(readVerifiedRemoteWorkspaceFile({ ...request, byteSize: 0, sha256: digest(Buffer.alloc(0)), allowEmpty: true, maxBytes: 25 * 1024 * 1024, runner: { execute } })).resolves.toEqual(Buffer.alloc(0));
     expect(execute).toHaveBeenCalledOnce();
@@ -51,7 +51,7 @@ describe("remote deliverable admission", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it("keeps the Notebook allowance bounded to 25 MiB before dispatch", async () => {
+  it("keeps the workspace transfer allowance bounded to 25 MiB before dispatch", async () => {
     const execute = vi.fn();
     await expect(readVerifiedRemoteWorkspaceFile({ ...request, byteSize: 25 * 1024 * 1024 + 1, maxBytes: 25 * 1024 * 1024, runner: { execute } })).rejects.toThrow("size_denied");
     expect(execute).not.toHaveBeenCalled();
@@ -75,7 +75,7 @@ describe("remote deliverable admission", () => {
     }
   });
 
-  it.each([1, -1, Number.MAX_VALUE])("rejects an unusable Notebook capture budget %j before dispatch", async ceiling => {
+  it.each([1, -1, Number.MAX_VALUE])("rejects an unusable workspace transfer capture budget %j before dispatch", async ceiling => {
     const read = await readerForAttachmentLimit(ceiling), execute = vi.fn();
     await expect(read({ ...request, byteSize: 1024, maxBytes: 25 * 1024 * 1024, runner: { execute } })).rejects.toThrow("capture_limit");
     expect(execute).not.toHaveBeenCalled();
@@ -86,7 +86,7 @@ describe("remote deliverable admission", () => {
     await expect(read({ ...request, byteSize: 1, sha256: digest(Buffer.from("a")), maxBytes: 25 * 1024 * 1024, runner: { execute } })).resolves.toEqual(Buffer.from("a"));
   });
 
-  it("bounds a whole Notebook read and each remaining command without waiting for the deadline", async () => {
+  it("bounds a whole workspace transfer read and each remaining command without waiting for the deadline", async () => {
     let elapsed = 0;
     const clock = vi.spyOn(performance, "now").mockImplementation(() => elapsed);
     const bytes = Buffer.alloc(3 * 1024 * 1024, 65);
@@ -152,7 +152,7 @@ describe.skipIf(!hasLinuxNode)("remote deliverable real Linux descriptor reads",
     expect(await readFile(join(workspaceRoot, "checklist.md"))).toEqual(body);
   });
 
-  it("reads a real 2 MiB Notebook asset and an explicitly admitted empty file", async () => {
+  it("reads a real 2 MiB workspace transfer asset and an explicitly admitted empty file", async () => {
     const bytes = Buffer.alloc(2 * 1024 * 1024, 65);
     await writeFile(join(workspaceRoot, "bundle.js"), bytes);
     await expect(readVerifiedRemoteWorkspaceFile({ workspaceRoot, contentRef: "bundle.js", byteSize: bytes.length, sha256: digest(bytes), runner })).resolves.toEqual(bytes);
@@ -242,7 +242,7 @@ describe.skipIf(!hasLinuxNode)("remote deliverable real Linux descriptor reads",
     expect(runner.execute).toHaveBeenCalledTimes(2 * Math.ceil(sizeMiB / Math.min(2, attachmentMiB)));
   }, 60_000);
 
-  it.each([10, 1])("reads the exact 25 MiB Notebook ceiling at a configured %i MiB capture ceiling", async attachmentMiB => {
+  it.each([10, 1])("reads the exact 25 MiB workspace transfer ceiling at a configured %i MiB capture ceiling", async attachmentMiB => {
     const reader = attachmentMiB === 10 ? readVerifiedRemoteWorkspaceFile : await readerForAttachmentLimit(attachmentMiB * 1024 * 1024);
     captureLimit = Math.min(4 * 1024 * 1024, 4 * Math.ceil(attachmentMiB * 1024 * 1024 / 3));
     const maximum = Buffer.alloc(25 * 1024 * 1024, 41);
@@ -256,7 +256,7 @@ describe.skipIf(!hasLinuxNode)("remote deliverable real Linux descriptor reads",
     }
   }, 60_000);
 
-  it("rejects a Notebook file replaced between chunk reads before returning bytes", async () => {
+  it("rejects a workspace transfer file replaced between chunk reads before returning bytes", async () => {
     captureLimit = 4 * 1024 * 1024;
     const maximum = Buffer.alloc(3 * 1024 * 1024, 43);
     await writeFile(join(workspaceRoot, "changing.bin"), maximum);

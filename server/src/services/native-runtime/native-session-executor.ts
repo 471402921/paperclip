@@ -150,6 +150,7 @@ import { appendNativeCredentialUpdate } from "./native-credential-updates.js";
 import { nativeSha256 } from "./canonical.js";
 import { PaperclipRunnerToolAuthority } from "./paperclip-runner-tool-authority.js";
 import { createAssignedMcpTools, getAssignedMcpGateway } from "./assigned-mcp-tools.js";
+import { connectorWorkspaceTools } from "../connectors/runtime-tools.js";
 import { getNativeReviewAssignment, readNativeReviewAssignmentContext } from "./native-review-participant.js";
 import { NativeChatAttachmentReadScope } from "./chat-attachment-read.js";
 import {
@@ -11625,7 +11626,7 @@ async function createRunnerdBackendWithinSessionClaim(
   // reach the host's HTTP origin (which may be private or loopback-only).
   const relayAssignedMcp = (remoteTarget !== null && input.execution.provider.kind === "codex") || input.execution.schema === "paperclip.native-execution-input.v6";
   const workspaceRoot = input.dotWorkspaceRoot ?? remoteTarget?.remoteCwd ?? input.execution.workspace.cwd ?? undefined;
-  const bindConnectionTools = relayAssignedMcp || Boolean(workspaceRoot && input.execution.task.workMode === "standard"
+  const bindConnectionTools = relayAssignedMcp || Boolean(connectorWorkspaceTools.hasContributions() && workspaceRoot && input.execution.task.workMode === "standard"
     && input.execution.provider.kind !== "grok_bot" && input.execution.provider.kind !== "muse" && !nativeReview);
   const assignedMcpUrl = input.runnerEnvironment?.PAPERCLIP_NATIVE_MCP_URL;
   const assignedMcpToken = input.runnerEnvironment?.PAPERCLIP_NATIVE_MCP_TOKEN;

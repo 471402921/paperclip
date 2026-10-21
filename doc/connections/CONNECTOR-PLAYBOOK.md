@@ -722,7 +722,9 @@ Keep optional endpoint configuration and authenticated account lookup in the
 connector module. Register these through `services/connectors/lifecycle.ts`.
 OAuth revocation uses discovered provider metadata and the shared cleanup
 lifecycle. A connector can declare refresh-response retry support only when its
-server supports the matching idempotency contract.
+server supports the matching idempotency contract. Only the bundled lifecycle
+registry can register an adapter; caller configuration cannot. See
+[Remote OAuth lifecycle](OAUTH-LIFECYCLE.md) for removal, retry, and callback rules.
 
 A local-file helper can use the trusted contracts in
 `services/connectors/runtime-tools.ts` and `private-transfer.ts`. The connector
@@ -737,6 +739,11 @@ Bind workspace contributions independently of ordinary MCP relay exposure. A
 local native run can use a connector's approved workspace helper while retaining
 its existing MCP transport. The separate `workspaceConnectionTools` binding does
 not expose ordinary relayed tools or saved-result tools.
+
+Remote workspace readers may receive an explicit server-owned byte allowance up
+to 25 MiB. The ordinary attachment ceiling stays unchanged. Transfer reads use
+bounded capture chunks, at most 256 commands and a 120-second total deadline,
+with descriptor confinement and a final whole-file checksum.
 
 **Resolve eligibility from current assignments and access.** An AgentMail account
 credential alone does not give an agent email capabilities. An active inbox

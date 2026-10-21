@@ -17,7 +17,7 @@ describe("connector contributions", () => {
     expect(prepared.privateTransfer!.restore(prepared.result)).toEqual(raw);
     expect(registry.supports(tool, "ordinary")).toBe(false);
     expect(registry.supports({ ...tool, applicationKey: "app-gallery:unknown:44444444-4444-4444-8444-444444444444" }, "transfer")).toBe(false);
-    expect(registry.supports({ ...tool, applicationKey: "paperclip-notebook" }, "transfer")).toBe(false);
+    expect(registry.supports({ ...tool, applicationKey: "notion" }, "transfer")).toBe(false);
     expect(registry.prepare(raw, tool, "ordinary")).toEqual({ result: raw });
     expect(prepare).toHaveBeenCalledOnce();
   });

@@ -9872,9 +9872,7 @@ export function toolAccessService(
       typeof connection.config.sourceTemplateKey === "string"
         ? connection.config.sourceTemplateKey
         : null;
-    const galleryEntry = sourceTemplateKey
-      ? getConnectableAppDefinition(sourceTemplateKey)
-      : null;
+    const galleryEntry = await connectorAppForConnection(connection);
     const galleryMethod = galleryEntry
       ? connectionMethodForConnection(galleryEntry, connection)
       : null;
@@ -12612,6 +12610,16 @@ export function toolAccessService(
     return `${base.slice(0, 151).trimEnd()} (${randomUUID().slice(0, 6)})`;
   }
 
+  async function connectorAppForConnection(connection: { config?: Record<string, unknown>; transportConfig?: Record<string, unknown>; applicationId?: string; companyId?: string }, database = db, applicationKey?: unknown): Promise<AppDefinition | null> {
+    if (applicationKey === undefined && connection.applicationId && connection.companyId) {
+      const [application] = await database.select({ applicationKey: toolApplications.applicationKey }).from(toolApplications)
+        .where(and(eq(toolApplications.companyId, connection.companyId), eq(toolApplications.id, connection.applicationId))).limit(1);
+      applicationKey = application?.applicationKey;
+    }
+    const app = connectorAppDefinition(connection, applicationKey);
+    return app ? applyConnectorAppConfiguration(app) : null;
+  }
+
   async function assertExperimentalConnectorSetupEnabled(provider: unknown, existing = false) {
     const app = typeof provider === "string" ? getConnectableAppDefinition(provider) : null;
     if (!app?.experimentalFeatureKey && (existing || !isMemoryConnectorId(provider))) return;
@@ -12622,15 +12630,6 @@ export function toolAccessService(
     if (!existing && isMemoryConnectorId(provider) && !settings.enableMemoryConnectors) {
       throw forbidden("Enable memory connectors in Settings → Experimental to set up this connection", { code: "memory_connectors_disabled" });
     }
-  }
-
-  async function connectorAppForConnection(connection: { config?: Record<string, unknown>; transportConfig?: Record<string, unknown>; applicationId?: string; companyId?: string }, database = db, applicationKey?: unknown): Promise<AppDefinition | null> {
-    if (applicationKey === undefined && connection.applicationId && connection.companyId) {
-      const [application] = await database.select({ applicationKey: toolApplications.applicationKey }).from(toolApplications)
-        .where(and(eq(toolApplications.companyId, connection.companyId), eq(toolApplications.id, connection.applicationId))).limit(1);
-      applicationKey = application?.applicationKey;
-    }
-    return connectorAppDefinition(connection, applicationKey);
   }
 
   async function assertConnectorConnectionSetupEnabled(connection: { config?: Record<string, unknown>; transportConfig?: Record<string, unknown>; applicationId?: string; companyId?: string; status?: string }, applicationKey?: unknown) {
@@ -14955,9 +14954,7 @@ export function toolAccessService(
       typeof connection.config.sourceTemplateKey === "string"
         ? connection.config.sourceTemplateKey
         : null;
-    const galleryEntry = sourceTemplateKey
-      ? getConnectableAppDefinition(sourceTemplateKey)
-      : null;
+    const galleryEntry = await connectorAppForConnection(connection);
     assertOAuthRedirectConstraints(galleryEntry, input.redirectUri);
     const galleryMethod = galleryEntry
       ? connectionMethodForConnection(galleryEntry, connection)
@@ -16582,9 +16579,7 @@ export function toolAccessService(
       typeof connection.config.sourceTemplateKey === "string"
         ? connection.config.sourceTemplateKey
         : null;
-    const galleryEntry = sourceTemplateKey
-      ? getConnectableAppDefinition(sourceTemplateKey)
-      : null;
+    const galleryEntry = await connectorAppForConnection(connection);
     assertOAuthRedirectConstraints(galleryEntry, input.redirectUri);
     const endpoints = await oauthEndpointsForConnection(
       connection,

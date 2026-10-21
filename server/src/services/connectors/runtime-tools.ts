@@ -22,6 +22,7 @@ export function createConnectorWorkspaceTools(contributions: readonly ConnectorW
   if (byName.size !== contributions.length) throw new Error("connector_workspace_tool_duplicate");
   return {
     definitions: (tools: AssignedConnectionTools) => contributions.flatMap(contribution => contribution.definitions(tools)),
+    hasContributions: () => byName.size > 0,
     has: (name: string) => byName.has(name),
     async execute(name: string, argumentsValue: unknown, context: ConnectorWorkspaceContext) {
       const contribution = byName.get(name);
