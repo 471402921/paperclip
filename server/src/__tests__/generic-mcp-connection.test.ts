@@ -1766,7 +1766,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
   it("completes organization OAuth with a single database connection", async () => {
     const fixture = installMcpOAuthFixture({ auth: "oauth" });
     const company = await createCompany(db);
-    const callbackDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
+    const callbackDb = createDb(externalTestDatabaseUrl ?? tempDb!.connectionString, { maxConnections: 1 });
     const service = toolAccessService(callbackDb);
     let deadline: ReturnType<typeof setTimeout> | null = null;
 
@@ -1850,8 +1850,8 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
   it("serializes organization OAuth completion behind membership revocation", async () => {
     const fixture = installMcpOAuthFixture({ auth: "oauth" });
     const company = await createCompany(db);
-    const callbackDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
-    const removalDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
+    const callbackDb = createDb(externalTestDatabaseUrl ?? tempDb!.connectionString, { maxConnections: 1 });
+    const removalDb = createDb(externalTestDatabaseUrl ?? tempDb!.connectionString, { maxConnections: 1 });
     const service = toolAccessService(callbackDb);
     const actor = { actorType: "user" as const, actorId: "board-user" };
     let releaseRemoval!: () => void;
@@ -2621,7 +2621,7 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
       // serialize the two callbacks and prove nothing. With two connections both
       // callbacks can read a live state row before either deletes it, so the
       // atomic `DELETE … RETURNING` is what picks the winner.
-      const otherDb = createDb(tempDb!.connectionString);
+      const otherDb = createDb(externalTestDatabaseUrl ?? tempDb!.connectionString);
       const otherService = toolAccessService(otherDb);
       let settled: PromiseSettledResult<unknown>[];
       try {
