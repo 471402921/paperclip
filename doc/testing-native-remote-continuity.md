@@ -89,6 +89,13 @@ heartbeat discovers eligible runs through the native runtime. Tool recovery uses
 the current tool authority, including receipt decoding and read policy. Transport
 adapters retain ownership of protocol response envelopes.
 
+Plugin-owned workspace tasks use the same journal and recovery window. Their
+task owner verifies the saved identity and running status through the task API,
+then reconnects using the original active lease. It never fabricates a local PID
+or submits another task during adoption. Shared recovery dispatches the task
+claim; the plugin module retains task-protocol parsing and process ownership.
+Local, SSH, and sandbox drivers retain their existing process identity checks.
+
 Remote execution leases expire after 60 seconds and renew every 20 seconds.
 Graceful shutdown detaches and releases the lease. Startup and the existing
 orphan sweep claim eligible expired owners; another container's PID is not

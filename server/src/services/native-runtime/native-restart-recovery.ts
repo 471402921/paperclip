@@ -58,7 +58,8 @@ export type NativeRestartRecoveryClaim =
       providerAttempt: number;
       restartKind: NativeRestartKind;
       recoveryRequestId: string | null;
-      remote: { providerLeaseId: string; remoteCwd: string };
+      remote: { kind?: "sandbox"; providerLeaseId: string; remoteCwd: string }
+        | { kind: "plugin_task"; leaseId: string };
     }
   | {
       kind: "resume_dead_runner";
@@ -593,10 +594,10 @@ export async function claimNativeRestartRecoveries(input: {
       const [pluginTask] = await tx.select({ id: environmentLeases.id }).from(environmentLeases).where(and(
         eq(environmentLeases.companyId, row.run.companyId), eq(environmentLeases.heartbeatRunId, row.run.id),
         sql`${environmentLeases.metadata}->>'runnerTaskLease' = 'true'`,
-      )).limit(1);
+      )).orderBy(desc(environmentLeases.createdAt)).limit(1);
       const remoteSandbox = profile.nativeWorkspaceSync != null;
       const remoteProcess = remoteSandbox || !!pluginTask;
-      const durableAuthority = remoteWorkspace && await hasNativeRunnerCheckpoint(tx, {
+      const durableAuthority = (remoteWorkspace || pluginTask) && await hasNativeRunnerCheckpoint(tx, {
         companyId: row.run.companyId, issueId: row.coordinator.issueId, runId: row.run.id,
       });
       const takeover = await evaluateNativeControllerTakeover({
@@ -823,7 +824,7 @@ export async function claimNativeRestartRecoveries(input: {
       }
 
       const classification = classifyNativeRunnerRecoveryEvidence({
-        remoteSandbox,
+        remoteSandbox: remoteSandbox || Boolean(pluginTask && durableAuthority),
         unclaimedBootstrap,
         runnerPidAlive,
         runnerGroupAlive,
@@ -1072,7 +1073,7 @@ export async function claimNativeRestartRecoveries(input: {
         return {
           kind: claimKind,
           ...common,
-          remote: {
+          remote: pluginTask ? { kind: "plugin_task", leaseId: pluginTask.id } : {
             providerLeaseId: remoteWorkspace!.providerLeaseId,
             remoteCwd: remoteWorkspace!.remoteCwd,
           },

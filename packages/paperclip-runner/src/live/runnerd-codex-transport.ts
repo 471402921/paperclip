@@ -5440,7 +5440,7 @@ class DurablePrpCodexTransport implements CodexAppServerTransport {
     });
     this.#core = core;
     let environmentPrepared: PreparedRunnerProviderLaunch | undefined;
-    if (this.options.prepareLaunch) {
+    if (this.options.prepareLaunch && !this.options.adoptExistingRunner) {
       const preparations = new RunnerLaunchPreparationStore(this.#root);
       const saved = preparations.load(desiredIdentity);
       const previous = preparations.load(controlPlaneIdentity(controlPlaneState!));

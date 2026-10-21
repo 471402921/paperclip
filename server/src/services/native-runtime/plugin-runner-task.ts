@@ -5,6 +5,22 @@ import { RUNNER_PRP_PROTOCOL_MIN, RUNNER_PRP_PROTOCOL_MAX, type RunnerProcessHan
   type DurablePrpControlPlane, type RunnerExecutionDriver, type RunnerLaunchPreparer, type DurableRecoveryIdentity } from "../../vendor/paperclip-runner/index.js";
 import { connectRunnerPrpIngress } from "../../realtime/runner-prp-outbound.js";
 
+export async function verifyPluginRunnerTaskReattachment(
+  task: (operation: unknown) => Promise<unknown>, identity: unknown,
+): Promise<void> {
+  const operation = environmentTaskOperationSchema.parse({ kind: "read_state", identity });
+  if (operation.kind !== "read_state") throw new Error("Plugin Runner recovery identity unavailable");
+  const status = environmentTaskResultSchema.parse(await task({ kind: "status" }));
+  if (status.kind !== "status" || status.executionStopped || status.phase !== "running") {
+    throw new Error("Plugin Runner is not running");
+  }
+  const result = environmentTaskResultSchema.parse(await task(operation));
+  if (result.kind !== "state" || result.state.schema !== "paperclip.runner.durable.state.v1"
+    || Object.entries(operation.identity).some(([key, value]) => result.state[key] !== value)) {
+    throw new Error("Plugin Runner adoption identity mismatch");
+  }
+}
+
 /** Adapts a lease-bound task provider to the existing native process owner.
  * No provider pid is treated as a local pid. Only executionStopped settles it.
  */
@@ -15,6 +31,7 @@ export function createPluginRunnerTaskOwner(input: {
   projectAuthCheckVersion?: 1;
   resumeFrom?: string;
   priorIdentity?: DurableRecoveryIdentity;
+  adoptExistingRunner?: DurableRecoveryIdentity;
   credentialIdentity?: string;
   accountIdentity?: string;
   credential?: PluginEnvironmentTaskCredential;
@@ -27,11 +44,11 @@ export function createPluginRunnerTaskOwner(input: {
   let registrationGeneration = 0;
   let activeOutbound: ReturnType<typeof connectRunnerPrpIngress> | null = null;
   let preparedLaunchId: string | undefined;
-  let preparedIdentity: DurableRecoveryIdentity | undefined;
-  let launched = false;
+  let preparedIdentity: DurableRecoveryIdentity | undefined = input.adoptExistingRunner;
+  let launched = input.adoptExistingRunner !== undefined;
   let stopRequested = false;
   let released = false;
-  let submitted = false;
+  let submitted = input.adoptExistingRunner !== undefined;
   let detached = false;
   let markReady!: () => void;
   let failReady!: (error: unknown) => void;
@@ -194,7 +211,9 @@ export function createPluginRunnerTaskOwner(input: {
       startupFailureCode: "runner_ingress_unavailable" as const,
       activate: () => {
         activation = (async () => {
-          await running;
+          if (input.adoptExistingRunner) {
+            await verifyPluginRunnerTaskReattachment(input.task, input.adoptExistingRunner);
+          } else await running;
           if (registrationReleased || signal?.aborted) throw new Error("Plugin Runner startup cancelled");
           const ingress = await endpoint();
           if (registrationReleased || signal?.aborted) throw new Error("Plugin Runner startup cancelled");
@@ -237,6 +256,11 @@ export function createPluginRunnerTaskOwner(input: {
   };
   const driver: RunnerExecutionDriver = {
     prepareLaunch, readRunnerState, runnerProcessLauncher: launcher,
+    ...(input.adoptExistingRunner ? { adoptExistingRunner: {
+      pid: null, processGroupId: null, startedAt: null,
+      isAlive: async () => !(await readStatus()).executionStopped,
+      signal: async () => { stopRequested = true; await stopAndConfirm(); return true; },
+    } } : {}),
     // The provider resolves the authorized retained task before each state operation.
     prepareExternalRunnerState: async () => {},
     archiveExternalRunnerState: async archive => {

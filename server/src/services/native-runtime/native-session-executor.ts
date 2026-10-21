@@ -6,7 +6,7 @@ import { registerPluginTaskCredentialHandoff, type PluginTaskCredentialWriteback
 import { resolvePluginTaskResume } from "../environment-task-runtime.js";
 import { environmentTaskResultSchema } from "@paperclipai/plugin-sdk";
 import { preparePluginRunnerCredentials } from "./plugin-runner-credentials.js";
-import { createPluginRunnerTaskOwner } from "./plugin-runner-task.js";
+import { createPluginRunnerTaskOwner, verifyPluginRunnerTaskReattachment } from "./plugin-runner-task.js";
 import { applyObservabilityEnvironment, type ProviderObservabilityLaunch } from "@paperclipai/adapter-utils/agent-observability";
 import { museRunnerBroker } from "../muse-runner-broker.js";
 import { nativeCaseHandoffResult } from "./native-case-handoff.js";
@@ -81,7 +81,7 @@ import {
 } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { DatabaseSync } from "node:sqlite";
-import { nativeRunnerCheckpointPersistence, restoreNativeRunnerCheckpoint } from "./native-runner-checkpoint.js";
+import { nativeRunnerCheckpointPersistence, registerNativeRunnerCheckpoint, restoreNativeRunnerCheckpoint } from "./native-runner-checkpoint.js";
 import { REMOTE_CONTROLLER_LEASE_MS, REMOTE_RUNNER_RECONNECT_GRACE_MS } from "./native-runner-recovery-contract.js";
 import { basename, dirname, join, posix, resolve } from "node:path";
 import type {
@@ -4917,6 +4917,16 @@ async function migrateRunnerdStateRootForExecution(input: {
       throw new Error("runner_state_identity_mismatch: bootstrap_not_proven_incomplete");
     }
     if (input.restartRecovery?.kind === "reattach_remote_runner") {
+      if (input.restartRecovery.remote.kind === "plugin_task") {
+        const target = input.runnerExecutionTarget;
+        if (target?.kind !== "remote" || target.transport !== "sandbox" || !target.runnerTask
+          || target.leaseId !== input.restartRecovery.remote.leaseId || identity.environmentLeaseId !== target.leaseId
+          || !durableIdentityMatchesExecution(identity, input.execution)) {
+          throw new Error("native_plugin_recovery_lease_mismatch");
+        }
+        await verifyPluginRunnerTaskReattachment(target.runnerTask, identity);
+        return;
+      }
       await verifyRemoteRunnerReattachment({
         claim: input.restartRecovery, target: input.runnerExecutionTarget, identity,
         runId: input.execution.binding.runId, normalizedSessionId: nativeSessionKey(input.execution),
@@ -11015,6 +11025,7 @@ export async function verifyRemoteRunnerReattachment(input: {
 }) {
   const { claim, target, identity } = input;
   if (
+    claim.remote.kind === "plugin_task" ||
     target?.kind !== "remote" ||
     target.transport !== "sandbox" ||
     !target.runner ||
@@ -11815,7 +11826,17 @@ async function createRunnerdBackendWithinSessionClaim(
     if (provider.kind !== "codex" && provider.kind !== "opencode" && provider.kind !== "acpx") throw new Error("Plugin Runner tasks require a workspace harness");
     const description = environmentTaskResultSchema.parse(await pluginTask({ kind: "describe" }));
     if (description.kind !== "description" || description.launchPreparationVersion !== 1 || description.projectAuthCheckVersion !== 1) throw new Error("Plugin Runner launch preparation v1 unavailable");
-    const prior = durableBinding ? durableIdentity as RunnerdDurableIdentity : undefined;
+    const saved = durableBinding ? durableIdentity as RunnerdDurableIdentity : undefined;
+    const prior = saved ? {
+      runnerInstanceId: saved.runnerInstanceId, environmentLeaseId: saved.environmentLeaseId,
+      runId: saved.runId, normalizedSessionId: saved.normalizedSessionId,
+      turnId: typeof saved.turnId === "string" ? saved.turnId : "",
+      itemId: typeof saved.itemId === "string" ? saved.itemId : "",
+    } : undefined;
+    const adopting = input.restartRecovery?.kind === "reattach_remote_runner";
+    if (adopting && (!prior || prior.environmentLeaseId !== remoteTarget.leaseId)) {
+      throw new Error("native_plugin_recovery_lease_mismatch");
+    }
     const resumeFrom = prior && prior.environmentLeaseId !== remoteTarget.leaseId
       ? await resolvePluginTaskResume(input.db, { companyId: input.execution.binding.companyId,
           leaseId: remoteTarget.leaseId!, priorIdentity: prior }) : undefined;
@@ -11831,12 +11852,8 @@ async function createRunnerdBackendWithinSessionClaim(
         credentials.accountIdentity, input.managedAiCredentialWriteback);
     }
     const owner = createPluginRunnerTaskOwner({ ...credentials, projectAuthCheckVersion: description.projectAuthCheckVersion, task: pluginTask, projectIds: remoteTarget.runnerTaskProjectIds ?? [],
-      harness: provider.kind === "acpx" ? provider.agent : provider.kind, resumeFrom, priorIdentity: prior ? {
-        runnerInstanceId: prior.runnerInstanceId, environmentLeaseId: prior.environmentLeaseId,
-        runId: prior.runId, normalizedSessionId: prior.normalizedSessionId,
-        turnId: typeof prior.turnId === "string" ? prior.turnId : "",
-        itemId: typeof prior.itemId === "string" ? prior.itemId : "",
-      } : undefined,
+      adoptExistingRunner: adopting ? prior : undefined,
+      harness: provider.kind === "acpx" ? provider.agent : provider.kind, resumeFrom, priorIdentity: prior,
       credentialIdentity: input.managedAiCredentialIdentity,
       onSessionRetained: async state => {
         savePluginRunnerCheckpoint(root, state, state);
@@ -11859,14 +11876,27 @@ async function createRunnerdBackendWithinSessionClaim(
       workingDirectoryAuthority: "remote_runner", dynamicTools, dynamicToolHandler: executeTool,
       completionFeedback: async result => { await authorityEpoch.definitions(); return nativeCompletionFeedback(input.db, input.execution.binding.runId, result); },
       codexTransportFactory: recovery => createRunnerdCodexTransport({ provider: provider.kind, stateDirectory: root,
-        ...owner.driver, runnerArtifact: description.runner,
+        ...owner.driver, runnerArtifact: input.controllerPersistence?.runnerArtifact ?? description.runner,
+        controlPlaneRegistration: input.controllerPersistence ? async (authority, identity, signal) => {
+          await registerNativeRunnerCheckpoint({
+            ...nativeRunnerCheckpointPersistence(input.db, input.controllerPersistence!.bootId,
+              input.execution.binding.runId, detachNativeSessionsForRestart),
+            authority, binding: input.execution.binding,
+          });
+          return owner.driver.controlPlaneRegistration!(authority, identity, signal);
+        } : owner.driver.controlPlaneRegistration,
+        recoverSemanticToolInput: input.controllerPersistence ? call => {
+          const current = sessionToolAuthorityEpochs.get(sessionScopeId);
+          if (!current || current.runId !== call.correlation.runId) throw new Error("native_tool_authority_epoch_revoked");
+          return current.recover({ tool: call.operationId, callId: call.callId, arguments: call.input });
+        } : undefined,
         ...(provider.kind === "acpx" ? { acpxAgent: provider.agent,
           acpxCandidateProfile: provider.agent === "pi" ? undefined : resolveAcpxQualification(provider, process.env),
           acpxPermissionMode: provider.permissionMode, acpxMode: provider.mode, piThinkingLevel: provider.piThinkingLevel,
           claudeEffort: "claudeEffort" in provider ? provider.claudeEffort : undefined,
           acpxPermissionModePinned: true } : {}),
         ...(provider.kind === "opencode" ? { opencodePermissionMode: provider.permissionMode } : {}),
-        runnerReconnectGraceMs: 120_000, lifecyclePolicy: { mode: "per_turn", idleTimeoutMs: null },
+        runnerReconnectGraceMs: REMOTE_RUNNER_RECONNECT_GRACE_MS, lifecyclePolicy: { mode: "per_turn", idleTimeoutMs: null },
         runtimeContext: "runtimeContext" in input.execution ? input.execution.runtimeContext : null,
         externallySandboxed: true, baseInstructions: recovery?.baseInstructions,
         resumeDynamicTools: dynamicTools, resumeCompletionContract: { revision: input.execution.completionContract.contract.revision,
@@ -11875,7 +11905,8 @@ async function createRunnerdBackendWithinSessionClaim(
         prpIdentity: { runnerInstanceId: prior?.runnerInstanceId ?? effectiveRunnerInstanceId,
           environmentLeaseId: prior?.environmentLeaseId ?? effectiveEnvironmentLeaseId,
           runId: input.execution.binding.runId, normalizedSessionId: nativeSessionKey(input.execution),
-          turnId: `turn-${input.execution.binding.runId}`, itemId: `item-${input.execution.binding.runId}` },
+          turnId: adopting ? prior!.turnId : `turn-${input.execution.binding.runId}`,
+          itemId: adopting ? prior!.itemId : `item-${input.execution.binding.runId}` },
       }).transport,
     });
     sessionToolAuthorityEpochs.get(sessionScopeId)?.revoke();

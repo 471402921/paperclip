@@ -85,7 +85,8 @@ callback retain their existing path. Verify opaque checkpoint round-trips and
 malformed persistence, receipt recovery under current authority, expired-owner
 discovery, external drivers, and actual empty-controller process recovery.
 
-Prior head CI/typecheck/build passed and its completed review was 5/5. Both hosted
+Prior head CI/typecheck/build passed. Its initial review was 5/5; a delayed review
+reported 4/5 for the API receipt shape fixed by this boundary revision. Both hosted
 Daytona campaigns (39613279281 and 39616972414) stopped before sandbox launch
 because the trusted image builder exhausted disk. That live acceptance gap
 remains; this boundary revision does not change fleet settings or image workflows.
@@ -170,3 +171,57 @@ Operational prerequisites: retain the same Postgres database and instance secret
 master key across replacement. A first rollout cannot extend the reconnect grace
 already baked into a runner launched by the previous release; the new contract
 applies to runners admitted with durable controller persistence and the new grace.
+
+
+## Integration with plugin-owned workspaces
+
+Master added plugin-owned Runner admission in #16978 during verification.
+The plugin task owner now uses the existing execution driver's adoption contract.
+It verifies running status and exact durable identity, reacquires the authenticated
+connection, and preserves the original task lease. It owns task protocol parsing,
+stop confirmation, and credential/session settlement. Heartbeat dispatches the
+recovery claim without interpreting plugin state. The environment orchestrator
+continues to enforce current company, agent, run, workspace, and lease ownership.
+
+The shared driver permits absent OS process identifiers for provider-owned tasks;
+local and sandbox consumers keep their real process identifiers and probes.
+Adoption uses the persisted running artifact and does not prepare or submit a
+new process. The transport no longer requires controller-local launch preparation
+files when it adopts a surviving process. Ordinary launch and dead-process
+recovery retain their existing preparation checks. A plugin run without the new
+Postgres journal retains the historical recovery path.
+
+The first focused run passed 147 tests and failed the new parameterized fixture
+because it reused an issue identifier. The next run passed executor adoption
+checks but exposed the fixture's missing explicit process owner and artifact.
+Both setup defects are corrected; the real prepared-runner empty-disk case then
+passed. Logs: `/tmp/daytona-plugin-focused.log`,
+`/tmp/daytona-plugin-recovery-recheck.log`, and
+`/tmp/daytona-plugin-prepared-recheck.log`. Initial typecheck failures from the new
+claim variant and a test mock's narrowed option type were corrected in place.
+
+The earlier broad matrix at boundary head `604395ce4c` completed all server,
+serialized, UI, CLI, database, adapter, and plugin lanes, with four failures in
+unchanged tests: Discord's child-process deadline, two CLI timeouts, and Gemini's
+skill-root refresh timeout. The Discord file passed all 74 tests on an isolated
+rerun; its identical base child script passed eight diagnostic runs. Both CLI
+cases passed serially with their original timeouts. The full adapter/plugin lane
+passed when rerun alone, including all 1,883 adapter-utils tests. No test or timeout
+was changed for these retries. The initial causes remain unestablished; the first
+matrix is not a clean pass. Evidence remains in
+`/tmp/daytona-boundary-test-shards/` and `/tmp/daytona-boundary-recheck-*.log`.
+
+GitHub's October 21 PR/webhook incident kept PR #17097 on old head `1122b3f887`
+after remote branch `604395ce4c` was confirmed. Its old checks and delayed review
+do not verify this revision. Current-head CI/review and hosted Daytona acceptance
+remain separate requirements; no production upgrade has been performed.
+
+The plugin-compatible revision passed 884 affected executor, task-owner, SDK,
+lease, and restart tests, 180 durable protocol/Copilot tests, and 18 external
+runner tests. Workspace typecheck and production build passed, followed by a
+clean server typecheck after the final fixture edit. Logs are
+`/tmp/daytona-plugin-regressions.log`, `/tmp/daytona-plugin-runner-regressions.log`,
+`/tmp/daytona-plugin-external-regressions.log`, `/tmp/daytona-plugin-final-types.log`,
+`/tmp/daytona-plugin-server-final-types2.log`, and `/tmp/daytona-plugin-build.log`.
+The separate five-minute prepared-task run writes its result to
+`/tmp/daytona-plugin-five-minute.log`; the PR records that final result.

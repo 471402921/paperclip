@@ -1,6 +1,7 @@
 import { enableRunFailureReporting } from "../../__tests__/helpers/run-failure-reporting.js";
 import { hasNativeLocalProcessStop } from "../native-local-process-stop.js";
 import { randomUUID } from "node:crypto";
+import { createRunnerProviderLaunch, runnerLaunchRequirementsDigest, type RunnerProviderLaunchRequirements } from "@paperclipai/paperclip-runner";
 import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -33,6 +34,9 @@ import {
   defaultCapabilityRunnerdBinary,
   parseNativeExecutionInput,
   DurablePrpControlPlane,
+  readRunnerdArtifactBinding,
+  type RunnerProcessHandle,
+  type RunnerProcessLaunchSpec,
 } from "../../vendor/paperclip-runner/index.js";
 import {
   getEmbeddedPostgresTestSupport,
@@ -752,8 +756,8 @@ describeEmbeddedPostgres("native runner restart recovery with real processes", (
     expect(run?.processPid).toBe(remotePid);
   });
 
-  realProcessIt("adopts the same runner from Postgres after losing the controller filesystem", async () => {
-    const fixture = await seedRun("EMPTY-CONTROLLER-DISK");
+  realProcessIt.each([false, true])("adopts the same runner from Postgres after losing the controller filesystem (prepared task: %s)", async preparedTask => {
+    const fixture = await seedRun(`EMPTY-CONTROLLER-DISK-${preparedTask}`);
     const controllerRoot = resolve(runtimeRoot, `${fixture.runId}-controller`);
     const sandboxRoot = resolve(runtimeRoot, `${fixture.runId}-sandbox`);
     const binding = { companyId, issueId: fixture.issueId, runId: fixture.runId };
@@ -762,12 +766,20 @@ describeEmbeddedPostgres("native runner restart recovery with real processes", (
     await mkdir(sandboxRoot, { recursive: true });
     await mkdir(resolve(sandboxRoot, "filesystem/codex-home"), { recursive: true });
     let bootId = randomUUID();
+    const taskLeaseId = randomUUID();
+    if (preparedTask) {
+      const [environment] = await fixture.db.insert(environments).values({ name: "Surviving plugin task", driver: "plugin", status: "active", config: {} }).returning();
+      await fixture.db.insert(environmentLeases).values({ id: taskLeaseId, companyId, environmentId: environment.id,
+        heartbeatRunId: fixture.runId, issueId: fixture.issueId, status: "active", leasePolicy: "ephemeral",
+        provider: "plugin", providerLeaseId: "saved-task", metadata: { agentId, runnerTaskLease: true, runnerTaskDispatched: true } });
+    }
     await fixture.db.update(nativeRunFinalizations).set({ controllerBootId: bootId,
       controllerGeneration: 1, controllerPid: process.pid, controllerProcessStartedAt: new Date(),
       leaseOwner: "original-controller", leaseExpiresAt: new Date(Date.now() + 60_000),
     }).where(eq(nativeRunFinalizations.runId, fixture.runId));
     const options = {
       ...transportOptions(fixture, controllerRoot),
+      ...(preparedTask ? { prpIdentity: { ...transportOptions(fixture, controllerRoot).prpIdentity, environmentLeaseId: taskLeaseId } } : {}),
       runnerStateDirectory: resolve(sandboxRoot, "runner"),
       runnerFilesystemRoot: resolve(sandboxRoot, "filesystem"),
       runnerReconnectGraceMs: REMOTE_RUNNER_RECONNECT_GRACE_MS,
@@ -778,7 +790,23 @@ describeEmbeddedPostgres("native runner restart recovery with real processes", (
         return registerRunnerPrpAuthority({ ...binding, authority });
       },
     };
-    const first = createRunnerdCodexTransport(options);
+    const prepareLaunch = vi.fn(async (requirements: RunnerProviderLaunchRequirements) => ({
+      configurationId: "provider-owned-configuration", requirementsDigest: runnerLaunchRequirementsDigest(requirements),
+      provider: createRunnerProviderLaunch(requirements, { options: { codexArgs: options.codexArgs },
+        root: sandboxRoot, cwd: sandboxRoot, codexHome: resolve(sandboxRoot, "filesystem/codex-home"),
+        codexCommand: fakeCodexAppServer, providerNodeCommand: process.execPath, opencodeProxyPath: "", acpxSidecarPath: "" }),
+    }));
+    const first = createRunnerdCodexTransport({ ...options, ...(preparedTask ? {
+      prepareLaunch, runnerArtifact: readRunnerdArtifactBinding(defaultCapabilityRunnerdBinary()),
+      runnerProcessLauncher: (spec: RunnerProcessLaunchSpec): RunnerProcessHandle => {
+        const child = spawn(spec.command, [...spec.args], { cwd: spec.cwd, env: { ...process.env, ...spec.environment },
+          detached: process.platform !== "win32", stdio: "ignore" });
+        return { child, processGroupId: child.pid ?? null, completion: new Promise((resolveExit, reject) => {
+          child.once("error", reject);
+          child.once("exit", (code, signal) => resolveExit({ code, signal, stdout: "", stderr: "" }));
+        }) };
+      },
+    } : {}) });
     let adopted: ReturnType<typeof createRunnerdCodexTransport> | undefined;
     let runnerPid: number | null = null;
     try {
@@ -791,9 +819,9 @@ describeEmbeddedPostgres("native runner restart recovery with real processes", (
       if (!startedAt) throw new Error("Runner start identity missing");
       await fixture.db.update(heartbeatRuns).set({ processPid: runnerPid, processStartedAt: new Date(startedAt),
         runnerProfileJson: { ...fixture.preparedProfile,
-          nativeWorkspaceSync: { schema: "paperclip.native-workspace-sync/v1", state: "prepared",
+          ...(!preparedTask ? { nativeWorkspaceSync: { schema: "paperclip.native-workspace-sync/v1", state: "prepared",
             descriptorSha256: "a".repeat(64), baselineSha256: "b".repeat(64),
-            workspaceId: "workspace", leaseId: "lease", providerLeaseId: "sandbox", remoteCwd: sandboxRoot },
+            workspaceId: "workspace", leaseId: "lease", providerLeaseId: "sandbox", remoteCwd: sandboxRoot } } : {}),
           sessionCheckpoint: { identity: { ...binding, agentId, sessionId: fixture.native.normalizedSessionId },
             providerSessionId: thread.id, process: { providerPid } },
         },
@@ -810,25 +838,29 @@ describeEmbeddedPostgres("native runner restart recovery with real processes", (
       const [claim] = await claimNativeRestartRecoveries({ db: fixture.db, controller: { ...successor, bootId },
         restartKind: "hard", runIds: [fixture.runId] });
       expect(claim).toMatchObject({ kind: "reattach_remote_runner", providerAttempt: 0, controllerGeneration: 2 });
+      if (preparedTask) expect(claim).toMatchObject({ remote: { kind: "plugin_task", leaseId: taskLeaseId } });
       const checkpoint = await restoreNativeRunnerCheckpoint(fixture.db, binding, controllerRoot);
       if (!checkpoint) throw new Error("Missing durable authority");
       const duplicateLauncher = vi.fn(() => { throw new Error("duplicate runner spawn attempted"); });
+      prepareLaunch.mockClear();
       adopted = createRunnerdCodexTransport({ ...options,
+        ...(preparedTask ? { prepareLaunch } : {}),
         runnerBinary: resolve(controllerRoot, "new-release-does-not-contain-old-runner"),
         runnerArtifact: { version: checkpoint.runnerVersion, digest: checkpoint.runnerDigest },
         resumeDynamicTools: [], runnerProcessLauncher: duplicateLauncher,
-        adoptExistingRunner: { pid: runnerPid, processGroupId: first.evidence().runnerProcessGroupId,
-          startedAt, isAlive: () => processAlive(runnerPid) },
+        adoptExistingRunner: { pid: preparedTask ? null : runnerPid, processGroupId: preparedTask ? null : first.evidence().runnerProcessGroupId,
+          startedAt: preparedTask ? null : startedAt, isAlive: () => processAlive(runnerPid) },
       });
       await expect(adopted.transport.request("thread/read", {})).resolves.toMatchObject({
         thread: { id: thread.id, turns: [{ id: turn.id, status: "inProgress" }] },
       });
       await adopted.transport.request("turn/steer", { input: [{ type: "text", text: "Continue the same turn." }],
         expectedTurnId: turn.id, correlationId: "after-empty-disk-restart" });
-      expect(adopted.evidence().runnerPid).toBe(runnerPid);
+      expect(adopted.evidence().runnerPid).toBe(preparedTask ? null : runnerPid);
       expect(adopted.evidence().providerPid).toBe(providerPid);
       expect(await readProcessStartedAt(runnerPid)).toBe(startedAt);
       expect(duplicateLauncher).not.toHaveBeenCalled();
+      expect(prepareLaunch).not.toHaveBeenCalled();
       const calls = await readFile(resolve(sandboxRoot, "calls.log"), "utf8");
       expect(calls.match(/^turn\/start$/gm)).toHaveLength(1);
       expect(calls.match(/^turn\/steer$/gm)).toHaveLength(1);
