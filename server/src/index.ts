@@ -1431,6 +1431,10 @@ async function startServerWithDatabaseTeardown(
         logger.error({ err }, "GitHub connection event poll failed");
       }));
   };
+  const scheduleOAuthRevocationSweep = () => {
+    if (isIdleTaskDrainActive() || heartbeatSchedulerStopped) return;
+    trackHeartbeatSchedulerWork(tools.sweepOAuthRevocations().catch((err) => logger.error({ err }, "OAuth authorization cleanup failed")));
+  };
   const scheduleGitHubConnectionContinuitySweep = () => {
     if (isIdleTaskDrainActive() || heartbeatSchedulerStopped) return;
     trackHeartbeatSchedulerWork(tools.sweepGitHubConnectionContinuity()
@@ -1449,6 +1453,7 @@ async function startServerWithDatabaseTeardown(
   await timeStartupRecovery("delivery_workers", () => Promise.all([fastResponseWorker, ...deliveryWorkers].map(worker => worker.ready)));
   scheduleGitHubConnectionEventPoll();
   scheduleGitHubConnectionContinuitySweep();
+  scheduleOAuthRevocationSweep();
 
   if (heartbeat) {
     const secretProposals = createSecretProposalsService(db as any);
@@ -1815,6 +1820,7 @@ async function startServerWithDatabaseTeardown(
         scheduleMergedPullRequestConfirmationSweep();
         scheduleGitHubConnectionEventPoll();
         scheduleGitHubConnectionContinuitySweep();
+        scheduleOAuthRevocationSweep();
         scheduleAdapterLoginReaperSweep();
         scheduleSetupTokenReaperSweep();
         scheduleEnvironmentLeaseCleanupSweep();
@@ -1976,6 +1982,7 @@ async function startServerWithDatabaseTeardown(
       scheduleEnvironmentLeaseCleanupSweep();
       scheduleGitHubConnectionEventPoll();
       scheduleGitHubConnectionContinuitySweep();
+      scheduleOAuthRevocationSweep();
     });
   }
   

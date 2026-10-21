@@ -271,6 +271,7 @@ export function accessService(db: Db) {
       .returning();
     if (grantIds.length > 0) {
       await tx.update(connectionGrants).set({
+        providerTenant: sql`${connectionGrants.providerTenant} #- '{oauth,supersededByGrantId}'`,
         status: "revoked",
         isDefault: false,
         revokedAt: now,
@@ -293,6 +294,7 @@ export function accessService(db: Db) {
           await tx.update(connectionGrants).set({
             credentialSecretRefs,
             ...(ownedGrantIds.has(grant.id) || grant.status === "revoked" ? {
+              providerTenant: sql`${connectionGrants.providerTenant} #- '{oauth,supersededByGrantId}'`,
               status: "revoked" as const,
               isDefault: false,
             } : {

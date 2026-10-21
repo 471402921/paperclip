@@ -712,6 +712,14 @@ as `agentmail_send` rather than extending core tools with provider-specific
 branches. Existing MCP connectors continue to use their normal MCP tool catalog;
 they do not need a duplicate native wrapper just to supply a skill.
 
+Keep optional endpoint configuration and authenticated account lookup in the
+connector module. Register these through `services/connectors/lifecycle.ts`.
+OAuth revocation uses discovered provider metadata and the shared cleanup
+lifecycle. A connector can declare refresh-response retry support only when its
+server supports the matching idempotency contract. The bundled lifecycle registry
+starts empty; caller configuration cannot register an adapter. See
+[Remote OAuth lifecycle](OAUTH-LIFECYCLE.md) for removal, retry, and callback rules.
+
 A local-file helper can use the trusted contracts in
 `services/connectors/runtime-tools.ts` and `private-transfer.ts`. The connector
 owns its upload protocol and operation receipts. Shared code supplies approved
