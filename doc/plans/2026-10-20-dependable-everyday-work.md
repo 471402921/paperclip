@@ -143,3 +143,16 @@ blocking remainingWork entries. A real-database reproduction accepts that invali
 report before repair. The same gate now also checks an unfinished objective.
 Current questions, approvals, pause holds, conversations, and authorized external
 response waits retain their earlier checks. No accepted result is rewritten.
+
+
+Review then found that shared-workspace restoration relabeled a retained task
+source as project_primary before repository admission. A new regression performs
+first workspace preparation and reuse against the real database; it fails at the
+source transition before repair. The corrected path retains task_session for an
+explicitly repository-free task directory, including its absent repository and
+ref instead of inheriting organizational defaults. Configured source pointers
+keep project classification. The composed regression also stages a repository
+through the real service and prepares verified bytes on the reused task root,
+with only remote clone transport replaced by an owned local repository. The
+queued sixth campaign was cancelled during its build, before provider execution,
+when this review finding made that candidate an uninformative paid retry.
