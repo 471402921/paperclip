@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { Writable } from "node:stream";
 import express from "express";
@@ -654,6 +655,65 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     expect(active!.credentialSecretRefs).toContainEqual(clientRef);
     await expect(service.refreshCatalog(connected.connectionId, secondActor)).resolves.toMatchObject({ connection: { status: "active" } });
     expect(fixture.requestsTo("/vendor/disconnect")).toHaveLength(1);
+  });
+
+  it("keeps durable authorization fences private and ignores caller-supplied values", async () => {
+    installMcpOAuthFixture();
+    const company = await createCompany(db), service = toolAccessService(db), app = createRouteApp(db);
+    const connected = await service.connectGalleryApp(company.id, { link: MCP_URL });
+    const installed = await request(app).post(`/api/tool-connections/${connected.connectionId}/grants/installations`)
+      .send({ authorizationRevokedAt: "2099-01-01T00:00:00.000Z", providerTenant: { name: "Public account" } }).expect(201);
+    expect(installed.body).not.toHaveProperty("authorizationRevokedAt");
+    const [stored] = await db.select().from(connectionGrants).where(eq(connectionGrants.id, installed.body.id));
+    expect(stored!.authorizationRevokedAt).toBeNull();
+    await db.update(connectionGrants).set({ authorizationRevokedAt: sql`clock_timestamp()` }).where(eq(connectionGrants.id, stored!.id));
+    await db.update(toolConnections).set({ authorizationRevokedAt: sql`clock_timestamp()` }).where(eq(toolConnections.id, connected.connectionId));
+    const before = await db.select({ fence: toolConnections.authorizationRevokedAt }).from(toolConnections).where(eq(toolConnections.id, connected.connectionId));
+    await request(app).patch(`/api/tool-connections/${connected.connectionId}`).send({ name: "Renamed", authorizationRevokedAt: null }).expect(200);
+    expect(await db.select({ fence: toolConnections.authorizationRevokedAt }).from(toolConnections).where(eq(toolConnections.id, connected.connectionId))).toEqual(before);
+    const listed = await request(app).get(`/api/tool-connections/${connected.connectionId}/grants`).expect(200);
+    expect(listed.body.grants.every((grant: Record<string, unknown>) => !("authorizationRevokedAt" in grant))).toBe(true);
+    expect(await service.getConnection(connected.connectionId, company.id)).not.toHaveProperty("authorizationRevokedAt");
+  });
+
+  it("backfills true revocations, preserves promotion, and restarts only pending legacy sign-ins", async () => {
+    const fixture = installMcpOAuthFixture({ auth: "oauth" });
+    const company = await createCompany(db), service = toolAccessService(db), actor = { actorType: "user" as const, actorId: "board-user" };
+    const connected = await service.connectGalleryApp(company.id, { link: MCP_URL });
+    const start = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+    await service.completeOAuthCallback({ state: new URL(start.authorizationUrl).searchParams.get("state")!,
+      code: fixture.issueAuthorizationCode(start.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor });
+    const [activeGrant] = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
+    const activeSecrets = await db.select().from(companySecrets).where(eq(companySecrets.companyId, company.id));
+    const versions = await db.select().from(companySecretVersions);
+    const pending = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+    const revokedAt = new Date("2026-10-20T12:00:00.000Z");
+    const [revoked, promoted] = await db.insert(connectionGrants).values([
+      { companyId: company.id, connectionId: connected.connectionId, kind: "user", subjectUserId: "legacy-revoked", status: "revoked", revokedAt },
+      { companyId: company.id, connectionId: connected.connectionId, kind: "user", subjectUserId: "legacy-promoted", status: "revoked", revokedAt,
+        providerTenant: { oauth: { supersededByGrantId: activeGrant!.id } } },
+    ]).returning();
+    const archived = await service.connectGalleryApp(company.id, { link: MCP_URL, name: "Legacy removed" });
+    await db.update(toolConnections).set({ status: "archived", updatedAt: revokedAt }).where(eq(toolConnections.id, archived.connectionId));
+    const migration = readFileSync(new URL("../../../packages/db/src/migrations/0371_illegal_darwin.sql", import.meta.url), "utf8");
+    const exchanges = fixture.requestsTo("/token").length;
+    const activeConnection = await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId));
+    for (let pass = 0; pass < 2; pass++) for (const statement of migration.split("--> statement-breakpoint")) {
+      if (statement.trim()) await db.execute(sql.raw(statement));
+    }
+    const rows = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
+    expect(rows.find(row => row.id === revoked!.id)!.authorizationRevokedAt).toEqual(revokedAt);
+    expect(rows.find(row => row.id === promoted!.id)!.authorizationRevokedAt).toBeNull();
+    expect(rows.find(row => row.id === activeGrant!.id)).toEqual(activeGrant);
+    const [removed] = await db.select().from(toolConnections).where(eq(toolConnections.id, archived.connectionId));
+    expect(removed!.authorizationRevokedAt).toEqual(revokedAt);
+    await expect(service.completeOAuthCallback({ state: new URL(pending.authorizationUrl).searchParams.get("state")!,
+      code: fixture.issueAuthorizationCode(pending.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor })).rejects.toMatchObject({ status: 400 });
+    expect(fixture.requestsTo("/token")).toHaveLength(exchanges);
+    expect(await db.select().from(companySecrets).where(eq(companySecrets.companyId, company.id))).toEqual(activeSecrets);
+    expect(await db.select().from(companySecretVersions)).toEqual(versions);
+    expect(await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId))).toEqual(activeConnection);
+    await expect(service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor })).resolves.toMatchObject({ provider: expect.any(String) });
   });
 
   it.each(["advertised", "legacy", "unsupported"])("uses advertised generic OAuth revocation metadata without provider-name routing (endpoint=%s)", async mode => {
@@ -2016,6 +2076,61 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
         mcpServer.closeAllConnections();
       });
     }
+  });
+
+  it.each([
+    { kind: "user" as const, established: true, removed: false, freshFirst: true },
+    { kind: "organization" as const, established: true, removed: false, freshFirst: true },
+    { kind: "user" as const, established: false, removed: true, freshFirst: true },
+    { kind: "user" as const, established: true, removed: true, freshFirst: true },
+    { kind: "user" as const, established: false, removed: true, freshFirst: false },
+  ])("does not let an older $kind callback replace fresh authorization after revocation (established=$established removed=$removed freshFirst=$freshFirst)", async ({ kind, established, removed, freshFirst }) => {
+    installLifecycleAdapter();
+    let pauseNext = false;
+    let entered!: () => void, release!: () => void;
+    const exchanging = new Promise<void>(resolve => { entered = resolve; });
+    const continueExchange = new Promise<void>(resolve => { release = resolve; });
+    const fixture = installMcpOAuthFixture({ auth: "oauth", revocationEndpoint: `${ISSUER}/vendor/disconnect`,
+      beforeCodeExchange: async () => { if (pauseNext) { pauseNext = false; entered(); await continueExchange; } },
+    });
+    const company = await createCompany(db), actor = { actorType: "user" as const, actorId: "board-user" };
+    const service = toolAccessService(db);
+    const connected = await service.connectGalleryApp(company.id, { ...(kind === "user" ? { galleryKey: "fireflies" } : { link: MCP_URL }), grantKind: kind }, actor);
+    const start = () => service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+    const complete = (authorizationUrl: string) => service.completeOAuthCallback({ state: new URL(authorizationUrl).searchParams.get("state")!,
+      code: fixture.issueAuthorizationCode(authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor });
+    const authorize = async () => complete((await start()).authorizationUrl);
+    if (established) await authorize();
+    if (established && removed) {
+      const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
+      await service.revokeConnectionGrant(connected.connectionId, grant!.id, actor);
+    }
+    pauseNext = true;
+    const older = authorize().then(value => ({ value, error: null }), (error: unknown) => ({ value: null, error }));
+    try {
+      await exchanging;
+      const [grant] = await db.select().from(connectionGrants).where(and(eq(connectionGrants.connectionId, connected.connectionId), eq(connectionGrants.kind, kind)));
+      if (removed) {
+        if (!established) expect(grant).toBeUndefined();
+        await service.archiveConnection(connected.connectionId, company.id, actor);
+        await service.connectGalleryApp(company.id, { galleryKey: "fireflies", applicationId: connected.application.id, grantKind: "user" }, actor);
+      } else await service.revokeConnectionGrant(connected.connectionId, grant!.id, actor);
+      const pendingFresh = freshFirst ? null : await start();
+      if (freshFirst) await expect(authorize()).resolves.toMatchObject({ connection: { status: "active", enabled: true } });
+      const freshGrants = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
+      const freshConnection = await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId));
+      const freshSecrets = await db.select().from(companySecrets).where(eq(companySecrets.companyId, company.id));
+      const freshVersions = await db.select().from(companySecretVersions);
+      release();
+      const outcome = await older;
+      expect(outcome.value).toBeNull();
+      expect(outcome.error).toMatchObject({ status: 409, details: { code: "oauth_authorization_revoked" } });
+      expect(await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId))).toEqual(freshGrants);
+      expect(await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId))).toEqual(freshConnection);
+      expect(await db.select().from(companySecrets).where(eq(companySecrets.companyId, company.id))).toEqual(freshSecrets);
+      expect(await db.select().from(companySecretVersions)).toEqual(freshVersions);
+      if (pendingFresh) await expect(complete(pendingFresh.authorizationUrl)).resolves.toMatchObject({ connection: { status: "active", enabled: true } });
+    } finally { release(); await older; }
   });
 
   it.each(["archive", "pending revocation", "completed revocation"] as const)("rejects organization OAuth credentials exchanged during %s", async change => {

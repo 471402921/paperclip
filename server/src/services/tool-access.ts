@@ -1682,8 +1682,9 @@ function redactedVercelGrant(
 }
 
 function toConnectionGrant(row: typeof connectionGrants.$inferSelect) {
+  const { authorizationRevokedAt: _authorizationRevokedAt, ...visible } = row;
   return {
-    ...row,
+    ...visible,
     externalCredential: redactedVercelGrant(row.externalCredential),
   };
 }
@@ -6661,7 +6662,7 @@ export function toolAccessService(
       await db.transaction(async tx => {
         await lease.assertOwned(tx);
         await tx.update(chatEndpoints).set({ status: "archived", updatedAt: new Date() }).where(eq(chatEndpoints.id, endpoint.id));
-        await tx.update(toolConnections).set({ status: "archived", enabled: false, updatedAt: new Date() }).where(eq(toolConnections.id, connection.id));
+        await tx.update(toolConnections).set({ status: "archived", enabled: false, authorizationRevokedAt: sql`clock_timestamp()`, updatedAt: new Date() }).where(eq(toolConnections.id, connection.id));
       });
       await removeSlackRegistration(db, endpoint.id, lease);
       return removeConnectionUnlocked(connectionId, companyId, actor);
@@ -6695,11 +6696,12 @@ export function toolAccessService(
         ),
       );
     const grantsToRevoke = grantRows.filter((row) => row.status !== "revoked" || row.providerTenant?.oauth?.supersededByGrantId);
-    if (grantsToRevoke.length > 0) {
+    if (grantRows.length > 0) {
       await db
         .update(connectionGrants)
         .set({
           providerTenant: sql`${connectionGrants.providerTenant} #- '{oauth,supersededByGrantId}'`,
+          authorizationRevokedAt: sql`clock_timestamp()`,
           status: "revoked",
           isDefault: false,
           revokedAt: now,
@@ -6712,7 +6714,7 @@ export function toolAccessService(
         .where(
           inArray(
             connectionGrants.id,
-            grantsToRevoke.map((row) => row.id),
+            grantRows.map((row) => row.id),
           ),
         );
     }
@@ -6970,7 +6972,7 @@ export function toolAccessService(
         .for("update");
       const [updatedConnection] = await tx
         .update(toolConnections)
-        .set({ status: "archived", enabled: false, updatedAt: now,
+        .set({ status: "archived", enabled: false, authorizationRevokedAt: sql`clock_timestamp()`, updatedAt: now,
           ...(revokeProvider ? { config: { ...connection.config, oauthRevocationPending: true } } : {}) })
         .where(eq(toolConnections.id, connection.id))
         .returning();
@@ -16666,13 +16668,20 @@ export function toolAccessService(
         await tx.select({ id: toolApplications.id }).from(toolApplications)
           .where(and(eq(toolApplications.id, connection.applicationId), eq(toolApplications.companyId, connection.companyId)))
           .for("update");
-        const [lockedConnection] = await tx.select({ id: toolConnections.id, status: toolConnections.status, config: toolConnections.config }).from(toolConnections)
+        const [lockedConnection] = await tx.select({ id: toolConnections.id, status: toolConnections.status, config: toolConnections.config,
+          authorizationRevokedAt: toolConnections.authorizationRevokedAt }).from(toolConnections)
           .where(and(eq(toolConnections.id, connection.id), eq(toolConnections.companyId, connection.companyId)))
           .for("update");
         if (!lockedConnection || lockedConnection.status === "archived" || lockedConnection.config.oauthRevocationPending === true) {
           throw conflict("OAuth authorization was removed while sign in was in progress. Reconnect after revocation finishes.", { code: "oauth_revocation_pending" });
         }
-        if (existingUserGrant?.status === "revoked"
+        if (lockedConnection.authorizationRevokedAt && lockedConnection.authorizationRevokedAt >= stateRow.createdAt) {
+          throw conflict("OAuth authorization was revoked after this sign in began. Start sign in again.", { code: "oauth_authorization_revoked" });
+        }
+        if (existingUserGrant?.authorizationRevokedAt && existingUserGrant.authorizationRevokedAt >= stateRow.createdAt) {
+          throw conflict("OAuth authorization was revoked after this sign in began. Start sign in again.", { code: "oauth_authorization_revoked" });
+        }
+        if (existingUserGrant?.status === "revoked" && (!existingUserGrant.authorizationRevokedAt || existingUserGrant.providerTenant?.oauth?.supersededByGrantId)
           && existingUserGrant.revokedAt && existingUserGrant.revokedAt >= stateRow.createdAt) {
           const supersededByGrantId = existingUserGrant.providerTenant?.oauth?.supersededByGrantId;
           const [promotedGrant] = supersededByGrantId ? await tx.select({ id: connectionGrants.id }).from(connectionGrants)
@@ -16999,7 +17008,8 @@ export function toolAccessService(
           "Only a company owner, admin, or member with connection-manager permission can share credentials with the organization.",
         );
       }
-      const organizationGrants = await tx.select({ id: connectionGrants.id, status: connectionGrants.status, revokedAt: connectionGrants.revokedAt }).from(connectionGrants)
+      const organizationGrants = await tx.select({ id: connectionGrants.id, status: connectionGrants.status, revokedAt: connectionGrants.revokedAt,
+        authorizationRevokedAt: connectionGrants.authorizationRevokedAt }).from(connectionGrants)
         .where(and(eq(connectionGrants.companyId, connection.companyId), eq(connectionGrants.connectionId, connection.id),
           eq(connectionGrants.kind, "organization")))
         .orderBy(connectionGrants.id)
@@ -17013,7 +17023,11 @@ export function toolAccessService(
       if (!lockedConnection || lockedConnection.status === "archived" || lockedConnection.config.oauthRevocationPending === true) {
         throw conflict("OAuth authorization was removed while sign in was in progress. Reconnect after revocation finishes.", { code: "oauth_revocation_pending" });
       }
-      if (organizationGrants.some(grant => grant.status === "revoked" && grant.revokedAt && grant.revokedAt >= stateRow.createdAt)) {
+      if (lockedConnection.authorizationRevokedAt && lockedConnection.authorizationRevokedAt >= stateRow.createdAt) {
+        throw conflict("OAuth authorization was revoked after this sign in began. Start sign in again.", { code: "oauth_authorization_revoked" });
+      }
+      if (organizationGrants.some(grant => grant.authorizationRevokedAt ? grant.authorizationRevokedAt >= stateRow.createdAt
+        : grant.status === "revoked" && grant.revokedAt && grant.revokedAt >= stateRow.createdAt)) {
         throw conflict("OAuth authorization was revoked after this sign in began. Start sign in again.", { code: "oauth_authorization_revoked" });
       }
       connection = lockedConnection;
@@ -19341,6 +19355,7 @@ export function toolAccessService(
           .update(connectionGrants)
           .set({
             providerTenant: sql`${connectionGrants.providerTenant} #- '{oauth,supersededByGrantId}'`,
+            authorizationRevokedAt: sql`clock_timestamp()`,
             status: "revoked",
             isDefault: false,
             revokedAt: new Date(),

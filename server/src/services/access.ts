@@ -272,6 +272,7 @@ export function accessService(db: Db) {
     if (grantIds.length > 0) {
       await tx.update(connectionGrants).set({
         providerTenant: sql`${connectionGrants.providerTenant} #- '{oauth,supersededByGrantId}'`,
+        authorizationRevokedAt: sql`clock_timestamp()`,
         status: "revoked",
         isDefault: false,
         revokedAt: now,
@@ -295,6 +296,7 @@ export function accessService(db: Db) {
             credentialSecretRefs,
             ...(ownedGrantIds.has(grant.id) || grant.status === "revoked" ? {
               providerTenant: sql`${connectionGrants.providerTenant} #- '{oauth,supersededByGrantId}'`,
+              authorizationRevokedAt: sql`clock_timestamp()`,
               status: "revoked" as const,
               isDefault: false,
             } : {
@@ -330,6 +332,7 @@ export function accessService(db: Db) {
             credentialSecretRefs,
             ...(!hasUnaffectedActiveGrant ? {
               status: "draft" as const,
+              authorizationRevokedAt: sql`clock_timestamp()`,
               enabled: false,
               healthStatus: "missing_secret" as const,
               healthMessage: "Personal credential owner no longer has company access. Reauthorize this connection.",

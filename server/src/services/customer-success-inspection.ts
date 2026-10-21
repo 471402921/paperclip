@@ -73,13 +73,13 @@ export const inspectionReaders: Record<InspectionResource, Reader> = {
   attachments: { table: schema.issueAttachments, parent: "issueId" },
   connections: {
     table: schema.toolConnections,
-    omit: ["externalCredential", "credentialRefs", "credentialSecretRefs"],
+    omit: ["externalCredential", "credentialRefs", "credentialSecretRefs", "authorizationRevokedAt"],
   },
   connectionInstalls: { table: schema.toolConnectionInstalls, parent: "connectionId" },
   connectionGrants: {
     table: schema.connectionGrants,
     parent: "connectionId",
-    omit: ["credentialSecretRefs", "externalCredential"],
+    omit: ["credentialSecretRefs", "externalCredential", "authorizationRevokedAt"],
   },
   connectionGrantMembers: { table: schema.connectionGrantMembers, parent: "grantId" },
   connectionCatalog: { table: schema.toolCatalogEntries, parent: "connectionId" },
