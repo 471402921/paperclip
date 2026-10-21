@@ -10,7 +10,10 @@ export function repositoryProofProfile(native: RunnerProfileFixture, legacy?: Ru
   return { ...native, buildAgent(input) {
     const { instructionsBundle: _manual, ...agent } = (legacy ?? native).buildAgent(input);
     const config = { ...(agent.adapterConfig as Record<string, unknown>), model: native.model };
-    if (legacy) delete (config as Record<string, unknown>).extraArgs;
+    if (legacy) {
+      delete (config as Record<string, unknown>).extraArgs;
+      delete (config as Record<string, unknown>).maxTurnsPerRun;
+    }
     return { ...agent, ...(legacy ? { runner: "legacy" } : {}), budgetMonthlyCents: 1000, adapterConfig: config };
   } };
 }
