@@ -1,7 +1,6 @@
 import { lazy } from "react";
 import { useDialogActions, useDialogState } from "../context/DialogContext";
 import { DeferredOverlay } from "./DeferredOverlay";
-// Task creation must be ready on click; its directory queries fill in after opening.
 import { NewIssueDialog } from "./NewIssueDialog";
 
 const NewProjectDialog = lazy(() => import("./NewProjectDialog").then((module) => ({ default: module.NewProjectDialog })));
