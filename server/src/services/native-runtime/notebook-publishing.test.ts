@@ -32,6 +32,35 @@ describe("native Notebook workspace publication", () => {
     const upload = vi.fn(async (_url: URL, init: RequestInit) => { uploaded.push(Buffer.from(init.body as Uint8Array)); return new Response(null, { status: 200 }); });
     return { tools, gateway, executeTool, authorize, upload, uploaded };
   }
+  it.each([
+    { label: "ASCII at 1024 bytes", path: `${`${"a".repeat(63)}/`.repeat(15)}${"b".repeat(64)}`, allowed: true },
+    { label: "ASCII at 1025 bytes", path: `${`${"a".repeat(63)}/`.repeat(15)}${"b".repeat(65)}`, allowed: false },
+    { label: "UTF-8 at 1024 bytes", path: `${`${"é".repeat(31)}/`.repeat(16)}${"é".repeat(8)}`, allowed: true },
+    { label: "UTF-8 at 1025 bytes", path: `${`${"é".repeat(31)}/`.repeat(16)}${"é".repeat(8)}b`, allowed: false },
+  ])("admits destination byte boundaries before reads or mutations: $label", async ({ path, allowed }) => {
+    const f = await fixture(), readRemoteWorkspaceFile = vi.fn(async () => body);
+    const input = { ...f, arguments: { ...arguments_(), entryFile: path, files: [{ ...arguments_().files[0], path }] },
+      workspaceRoot: "/workspace", executionTargetKind: "remote" as const, readRemoteWorkspaceFile };
+    if (allowed) {
+      await expect(publishNotebookWorkspaceFiles(input)).resolves.toMatchObject({ status: "ready" });
+      expect(f.executeTool.mock.calls[1][0].parameters).toMatchObject({ entryFile: path, assets: [{ path }] });
+      expect(f.uploaded).toEqual([body]);
+    } else {
+      await expect(publishNotebookWorkspaceFiles(input)).rejects.toThrow();
+      expect(readRemoteWorkspaceFile).not.toHaveBeenCalled();
+      expect(f.executeTool).not.toHaveBeenCalled();
+      expect(f.upload).not.toHaveBeenCalled();
+    }
+  });
+  it("keeps the independent workspace source limit before remote reads or mutations", async () => {
+    const f = await fixture(), readRemoteWorkspaceFile = vi.fn(async () => body);
+    const source = `${`${"a".repeat(63)}/`.repeat(15)}${"b".repeat(41)}`;
+    await expect(publishNotebookWorkspaceFiles({ ...f, arguments: { ...arguments_(), files: [{ ...arguments_().files[0], source }] },
+      workspaceRoot: "/workspace", executionTargetKind: "remote", readRemoteWorkspaceFile })).rejects.toThrow();
+    expect(readRemoteWorkspaceFile).not.toHaveBeenCalled();
+    expect(f.executeTool).not.toHaveBeenCalled();
+    expect(f.upload).not.toHaveBeenCalled();
+  });
   it("reads real local bytes and sends each action through the selected assigned gateway", async () => {
     const f = await fixture();
     const result = await publishNotebookWorkspaceFiles({ ...f, arguments: arguments_(), workspaceRoot: root });

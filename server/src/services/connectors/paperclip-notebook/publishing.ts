@@ -1,3 +1,4 @@
+import { isNotebookFilePath } from "@paperclipai/shared";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { notebookPublicationClient } from "./publication-client.js";
@@ -7,14 +8,15 @@ import { assertRunnerWorkspacePathAllowed, readWorkspaceUploadFile } from "../..
 import { guardedRemoteHttpFetch } from "../../remote-http-fetch.js";
 
 const MAX_BYTES = 25 * 1024 * 1024;
-const path = z.string().min(1).max(1000).refine(value => !/^[a-z]+:|[\\\x00-\x1f\x7f?#%]/i.test(value)
+const sourcePath = z.string().min(1).max(1000).refine(value => !/^[a-z]+:|[\\\x00-\x1f\x7f?#%]/i.test(value)
   && value.split("/").every(part => part && part !== "." && part !== "..") && !value.split("/").some(part => part === "__nb" || part.startsWith("__notebook")) && !value.startsWith(".well-known/"), "Use a canonical workspace-relative file path");
+const path = z.string().min(1).max(1024).refine(isNotebookFilePath, "Use a canonical Notebook file path of at most 1024 UTF-8 bytes");
 export const notebookPublicationSchema = z.object({
   connectionId: z.string().min(1).max(200), idempotencyKey: z.string().min(1).max(160),
   title: z.string().trim().min(1).max(200).optional(), description: z.string().max(2000).optional(),
   pageId: z.string().uuid().optional(), expectedVersion: z.number().int().positive().optional(),
   entryFile: path, spa: z.boolean().default(false),
-  files: z.array(z.object({ path, source: path, size: z.number().int().min(0).max(MAX_BYTES), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict()).min(1).max(200),
+  files: z.array(z.object({ path, source: sourcePath, size: z.number().int().min(0).max(MAX_BYTES), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict()).min(1).max(200),
 }).strict();
 export const NOTEBOOK_PUBLISH_TOOL = {
   name: "publish_notebook_files",

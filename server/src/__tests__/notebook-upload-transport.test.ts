@@ -13,6 +13,23 @@ function response(plan: Record<string, unknown> = { deploymentId, uploads: [{ pa
 }
 
 describe("Notebook upload transport", () => {
+  it.each([
+    { label: "ASCII at 1024 bytes", path: `${`${"a".repeat(63)}/`.repeat(15)}${"b".repeat(64)}`, allowed: true },
+    { label: "ASCII at 1025 bytes", path: `${`${"a".repeat(63)}/`.repeat(15)}${"b".repeat(65)}`, allowed: false },
+    { label: "UTF-8 at 1024 bytes", path: `${`${"é".repeat(31)}/`.repeat(16)}${"é".repeat(8)}`, allowed: true },
+    { label: "UTF-8 at 1025 bytes", path: `${`${"é".repeat(31)}/`.repeat(16)}${"é".repeat(8)}b`, allowed: false },
+  ])("retains only valid byte-boundary upload tickets: $label", ({ path, allowed }) => {
+    const input = response({ deploymentId, uploads: [{ path, url }] });
+    const prepared = prepareNotebookUploadResult(input, tool, {});
+    expect(JSON.stringify(prepared.result)).not.toContain(url);
+    if (allowed) {
+      expect(prepared.uploadTickets).toEqual({ deploymentId, uploads: [{ path, url }] });
+      expect(restoreNotebookUploadTickets(prepared.result, prepared.uploadTickets!).data.structuredContent.uploads)
+        .toEqual([{ path, url }]);
+    } else {
+      expect(prepared.uploadTickets).toBeUndefined();
+    }
+  });
   it("keeps exact SigV4 URL bytes only in a bounded in-memory transfer", () => {
     const input = response();
     const prepared = prepareNotebookUploadResult(input, tool, {});
@@ -76,7 +93,7 @@ describe("Notebook upload transport", () => {
     { deploymentId, uploads: [{ path: "/index.html", url }] },
     { deploymentId, uploads: [{ path: "__nb/index.html", url }] },
     { deploymentId, uploads: [{ path: "assets/%2e.html", url }] },
-    { deploymentId, uploads: [{ path: "a".repeat(1001), url }] },
+    { deploymentId, uploads: [{ path: "a".repeat(1025), url }] },
     { deploymentId, uploads: [{ path: "index.html", url }, { path: "index.html", url }] },
     { deploymentId, uploads: Array.from({ length: 201 }, (_, index) => ({ path: `${index}.html`, url })) },
     { deploymentId, uploads: [{ path: "index.html", url, headers: { authorization: 12 } }] },

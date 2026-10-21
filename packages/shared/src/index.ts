@@ -2,7 +2,7 @@ export { CASE_HANDOFF_STATES, handoffCaseSchema, agentCaseHandoffSchema, doneCas
 export * from "./slack-app-manifest.js";
 export { composioAppSetupSchema, composioAppsRefreshSchema, composioAppsSyncSchema, composioAppAccountSchema, type ComposioAppSetupInput, type ComposioAppSetupResult, type ComposioAppAccountInput, type ComposioAppAccount, type ComposioAppSnapshot, type ComposioAppSyncState, type ComposioAppsResponse } from "./composio-app-setup.js";
 export { agentAdapterTypeSchema, optionalAgentAdapterTypeSchema } from "./adapter-type.js";
-export { readNotebookPublicationResult } from "./connectors/paperclip-notebook/publication.js";
+export { isNotebookFilePath, readNotebookPublicationResult } from "./connectors/paperclip-notebook/publication.js";
 export {
   RUNNER_GOAL_MAX_OBJECTIVE_CHARS,
   runnerGoalAvailabilitySchema,

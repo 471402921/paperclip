@@ -1,3 +1,12 @@
+export function isNotebookFilePath(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 1024
+    && new TextEncoder().encode(value).byteLength <= 1024
+    && !/^[a-z][a-z0-9+.-]*:|[\\\x00-\x1f\x7f?#%]/i.test(value)
+    && value.split("/").every(part => part.length > 0 && part !== "." && part !== ".."
+      && part !== "__nb" && !part.startsWith("__notebook"))
+    && !value.startsWith(".well-known/");
+}
+
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }

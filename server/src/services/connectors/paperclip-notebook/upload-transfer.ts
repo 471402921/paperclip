@@ -1,4 +1,4 @@
-import { getAppDefinitionForApplicationKey } from "@paperclipai/shared";
+import { getAppDefinitionForApplicationKey, isNotebookFilePath } from "@paperclipai/shared";
 import type { ConnectorTransferAdapter } from "../private-transfer.js";
 
 type RecordValue = Record<string, unknown>;
@@ -35,14 +35,6 @@ export function isNotebookUploadRequest(tool: NotebookUploadTool, parameters: un
     && receipt?.kind === "begin_upload" && nonempty(receipt.idempotencyKey);
 }
 
-function canonicalPath(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0 && value.length <= 1000
-    && !/^[a-z][a-z0-9+.-]*:|[\\\x00-\x1f\x7f?#%]/i.test(value)
-    && value.split("/").every(part => part.length > 0 && part !== "." && part !== ".."
-      && part !== "__nb" && !part.startsWith("__notebook"))
-    && !value.startsWith(".well-known/");
-}
-
 function uploadUrl(value: unknown): value is string {
   if (typeof value !== "string" || value.length === 0 || value.length > MAX_URL_LENGTH
     || !/^https:\/\//i.test(value) || /[\\\x00-\x20\x7f#]/.test(value)
@@ -61,7 +53,7 @@ function readTickets(value: unknown): NotebookUploadTickets | undefined {
   const paths = new Set<string>();
   for (const value of plan.uploads) {
     const ticket = record(value);
-    if (!ticket || !canonicalPath(ticket.path) || paths.has(ticket.path) || !uploadUrl(ticket.url)
+    if (!ticket || !isNotebookFilePath(ticket.path) || paths.has(ticket.path) || !uploadUrl(ticket.url)
       || ticket.method !== undefined && ticket.method !== "PUT"
       || ticket.headers !== undefined && (!record(ticket.headers)
         || !Object.values(record(ticket.headers)!).every(header => typeof header === "string"))) return;

@@ -1,3 +1,4 @@
+import { isNotebookFilePath } from "@paperclipai/shared";
 import { constants } from "node:fs";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
@@ -95,26 +96,8 @@ const MIME: Record<string, string> = {
   ".wasm": "application/wasm",
 };
 export function canonicalFilePath(value: string): string {
-  if (
-    !value ||
-    value.startsWith("/") ||
-    /[\\\u0000-\u001f\u007f?#%]/.test(value) ||
-    value
-      .split("/")
-      .some((segment) => !segment || segment === "." || segment === "..")
-  )
-    throw new Error("File paths must be canonical relative paths.");
-  if (
-    value
-      .split("/")
-      .some(
-        (segment) => segment.startsWith("__notebook") || segment === "__nb",
-      ) ||
-    value.startsWith(".well-known/")
-  )
-    throw new Error("That file path is reserved by Notebook.");
-  if (Buffer.byteLength(value, "utf8") > 1024)
-    throw new Error("File paths must be at most 1024 bytes.");
+  if (!isNotebookFilePath(value))
+    throw new Error("File paths must be canonical Notebook paths of at most 1024 UTF-8 bytes.");
   return value;
 }
 function digest(bytes: Uint8Array) {
