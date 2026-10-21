@@ -68,11 +68,6 @@ class CommandJournalLimitError extends Error {
 // polling turn regains the event loop. Match the transport's explicit deferred
 // event bound so a valid burst is not compacted before it can be observed.
 const maxCommittedEventWindow = 4_096;
-// Only ordinary event acknowledgements are grouped. Semantic inputs and P0
-// control events remain immediate durability barriers.
-const checkpointBatchEvents = 32;
-const checkpointBatchBytes = 256 * 1024;
-const checkpointBatchDelayMs = 20;
 const maxStateBytes = 256 * 1024 * 1024;
 const authChallengeTtlMs = 5_000;
 const stableIdPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$/;
@@ -146,6 +141,8 @@ interface ConnectionLeaseRecord {
 interface StoredCoreState {
   schema: typeof coreStateSchema | typeof transitionCoreStateSchema;
   identity: DurableRecoveryIdentity;
+  /** External checkpoints contain control state, not a duplicate output log. */
+  checkpointEventPolicy?: "control-v1";
   warmTransition?: {
     receipt: DurableWarmRunTransition;
     phase: "awaiting_result" | "prepared" | "activated";
@@ -230,6 +227,7 @@ interface PendingChallenge {
   warmTransitionVersion?: 1;
   warmTransitionId?: string;
   requestedIdentity?: DurableRecoveryIdentity;
+  acknowledgedSourceSeq?: number;
 }
 
 interface SecureChannel {
@@ -312,29 +310,35 @@ function checkpointRunId(state: StoredCoreState): string {
   return next?.identity?.runId ?? state.identity.runId;
 }
 
+function isStreamingEvent(event: Pick<DurableRecoveryCommittedEvent, "eventType" | "priority">): boolean {
+  return event.priority !== 0 && ["item.delta", "usage.reported"].includes(event.eventType);
+}
+
+function evictionCandidate(state: StoredCoreState): number {
+  // Keep the latest identity/turn/result anchors through arbitrarily long text
+  // streams. Unsettled semantic inputs retain their existing stronger fence.
+  const anchors = new Set(["harness.ready", "session.started", "session.resumed", "turn.started",
+    "turn.completed", "turn.failed", "turn.cancelled", "turn.interrupted", "run.result.proposed", "usage.reported"]);
+  const latest = new Map<string, DurableRecoveryCommittedEvent>();
+  for (const event of state.committedEvents) if (anchors.has(event.eventType)) latest.set(event.eventType, event);
+  return state.committedEvents.findIndex(event => latest.get(event.eventType) !== event && !unsettledSemanticInput(event, state));
+}
+
 function captureCheckpoint(state: StoredCoreState, runnerVersion: string, runnerDigest: string,
-  previous?: DurablePrpCheckpoint, events?: ReadonlyMap<string, DurableRecoveryCommittedEvent | null>): DurablePrpCheckpoint {
+  previous?: DurablePrpCheckpoint): DurablePrpCheckpoint {
   const runId = checkpointRunId(state);
   const reset = !previous || previous.runId !== runId;
-  // Event-only revisions reuse serialized authority and command records. No
-  // clone/serialization of retained payloads or attachment material on this path.
-  const incremental = !reset && events !== undefined;
-  const records = incremental ? new Map(previous.records) : new Map<string, string>();
-  if (incremental) {
-    for (const [key, event] of events) {
-      if (event === null) records.delete(key);
-      else records.set(key, JSON.stringify(event));
-    }
-  } else {
-    const { commands, committedEvents, ackedSourceSeq: _cursor, replayDeliveries: _replays, ...metadata } = state;
-    for (const command of commands) records.set(`command:${command.controllerSeq}`, JSON.stringify(command));
-    for (const event of committedEvents) records.set(`event:${event.sourceSeq}`, JSON.stringify(event));
-    const header: CheckpointHeader = { schema: "paperclip.runner.controller-checkpoint.v2",
-      runnerVersion, runnerDigest, state: metadata };
-    records.set("header", JSON.stringify(header));
-  }
+  const records = new Map<string, string>();
+  const { commands, committedEvents, ackedSourceSeq: _cursor, replayDeliveries: _replays, ...metadata } = state;
+  const latestUsage = committedEvents.findLast(event => event.eventType === "usage.reported");
+  const recoveryEvents = committedEvents.filter(event => !isStreamingEvent(event) || event === latestUsage);
+  for (const command of commands) records.set(`command:${command.controllerSeq}`, JSON.stringify(command));
+  for (const event of recoveryEvents) records.set(`event:${event.sourceSeq}`, JSON.stringify(event));
+  const header: CheckpointHeader = { schema: "paperclip.runner.controller-checkpoint.v2",
+    runnerVersion, runnerDigest, state: { ...metadata, checkpointEventPolicy: "control-v1" } };
+  records.set("header", JSON.stringify(header));
   records.set("cursor", JSON.stringify({ ackedSourceSeq: state.ackedSourceSeq, replayDeliveries: state.replayDeliveries,
-    commandCount: state.commands.length, eventCount: state.committedEvents.length }));
+    commandCount: commands.length, eventCount: recoveryEvents.length }));
   const changedRecords = new Map([...records].filter(([key, value]) => reset || previous.records.get(key) !== value));
   const removedRecords = reset ? [] : [...previous.records.keys()].filter(key => !records.has(key));
   const maintenance = new Set(["runner.drain", "runner.suspend", "session.snapshot", "session.close"]);
@@ -342,8 +346,7 @@ function captureCheckpoint(state: StoredCoreState, runnerVersion: string, runner
     runnerVersion, runnerDigest, runId, records, changedRecords, removedRecords, reset,
     predecessor: state.identity.runId === runId ? null
       : { runId: state.identity.runId, normalizedSessionId: state.identity.normalizedSessionId },
-    workCommandIds: incremental ? previous.workCommandIds
-      : state.commands.filter(command => !maintenance.has(command.type)).map(command => command.commandId),
+    workCommandIds: commands.filter(command => !maintenance.has(command.type)).map(command => command.commandId),
     restoreSessionDirectory(root) {
       mkdirSync(root, { recursive: true, mode: 0o700 });
       verifyPrivateDirectory(root);
@@ -765,6 +768,7 @@ function isStoredCoreState(
     (value.schema !== coreStateSchema &&
       value.schema !== transitionCoreStateSchema) ||
     canonicalJson(value.identity) !== canonicalJson(identity) ||
+    (value.checkpointEventPolicy !== undefined && value.checkpointEventPolicy !== "control-v1") ||
     !isRecord(value.tickets) ||
     !isRecord(value.leases) ||
     !Array.isArray(commands) ||
@@ -1340,8 +1344,6 @@ class DurableCoreStore {
   #state: StoredCoreState;
   #writeIndeterminate = false;
   revision = 0;
-  fullCheckpointRequired = true;
-  readonly changedEvents = new Map<string, DurableRecoveryCommittedEvent | null>();
 
   constructor(directory: string, identity: DurableRecoveryIdentity) {
     try {
@@ -1377,22 +1379,22 @@ class DurableCoreStore {
     return this.#state;
   }
 
-  saveEvent(event: DurableRecoveryCommittedEvent, removed?: DurableRecoveryCommittedEvent): void {
+  saveEvent(event: DurableRecoveryCommittedEvent): void {
     this.assertWritable();
-    if (removed) this.changedEvents.set(`event:${removed.sourceSeq}`, null);
-    this.changedEvents.set(`event:${event.sourceSeq}`, event);
     this.write();
+    // Output ACKs depend on the runner's durable cursor, not a database timer.
+    // The next control change captures the latest usage and removes old records.
+    if (!isStreamingEvent(event)) this.revision += 1;
   }
 
   save(): void {
-    this.fullCheckpointRequired = true;
     this.write();
+    this.revision += 1;
   }
 
   private write(): void {
     this.assertWritable();
     atomicPrivateWrite(this.path, `${JSON.stringify(this.#state, null, 2)}\n`);
-    this.revision += 1;
   }
 
   assertWritable(): void {
@@ -1408,7 +1410,6 @@ class DurableCoreStore {
     try {
       atomicPrivateWrite(this.path, `${JSON.stringify(candidate, null, 2)}\n`);
       this.#state = candidate;
-      this.fullCheckpointRequired = true;
       this.revision += 1;
     } catch (error) {
       // Rename may already have succeeded before directory fsync failed.
@@ -1665,10 +1666,7 @@ export class DurablePrpControlPlane {
   #lastCheckpoint?: DurablePrpCheckpoint;
   #persistenceTail = Promise.resolve();
   #sendQueues = new Map<AuthorityConnection, Promise<void>>();
-  #eventBatches = new Map<AuthorityConnection, {
-    identity: DurableRecoveryIdentity; count: number; bytes: number; timer: ReturnType<typeof setTimeout>;
-  }>();
-  #eventFlushes = new Map<AuthorityConnection, Promise<void>>();
+  #recoveredCursor: { runId: string; sourceSeq: number } | null = null;
 
   constructor(options: DurablePrpControlPlaneOptions) {
     if (
@@ -1689,6 +1687,9 @@ export class DurablePrpControlPlane {
       options.stateDirectory,
       options.identity,
     );
+    if (this.#store.state.checkpointEventPolicy === "control-v1") {
+      this.#recoveredCursor = { runId: options.identity.runId, sourceSeq: this.#store.state.ackedSourceSeq };
+    }
     this.#expectedRunnerVersion = options.expectedRunnerVersion;
     this.#expectedRunnerDigest = options.expectedRunnerDigest;
     const transition = this.#store.state.warmTransition;
@@ -1713,6 +1714,11 @@ export class DurablePrpControlPlane {
     return this.#store;
   }
 
+  /** Sparse, already-acknowledged history; never permits gaps in new delivery. */
+  get recoveredSourceSeq(): number {
+    return this.#recoveredCursor?.runId === this.#identity.runId ? this.#recoveredCursor.sourceSeq : 0;
+  }
+
   setCheckpointPersistence(persist: (checkpoint: DurablePrpCheckpoint) => Promise<void>): void {
     if (this.#connections.size > 0 || this.#persistCheckpoint !== null) {
       throw new Error("runner_controller_persistence_already_active");
@@ -1725,54 +1731,13 @@ export class DurablePrpControlPlane {
       return this.#persistenceTail;
     }
     const checkpoint = captureCheckpoint(this.#store.state,
-      this.#expectedRunnerVersion, this.#expectedRunnerDigest, this.#lastCheckpoint,
-      this.#store.fullCheckpointRequired ? undefined : this.#store.changedEvents);
+      this.#expectedRunnerVersion, this.#expectedRunnerDigest, this.#lastCheckpoint);
     this.#lastCheckpoint = checkpoint;
-    this.#store.fullCheckpointRequired = false;
-    this.#store.changedEvents.clear();
     this.#persistedRevision = this.#store.revision;
     const persist = this.#persistCheckpoint;
     this.#persistenceTail = this.#persistenceTail.then(() => persist(checkpoint));
     void this.#persistenceTail.catch(() => this.disconnectActiveRunner());
     return this.#persistenceTail;
-  }
-
-  #clearEventBatch(connection: AuthorityConnection): void {
-    const batch = this.#eventBatches.get(connection);
-    if (batch) clearTimeout(batch.timer);
-    this.#eventBatches.delete(connection);
-  }
-
-  #flushEventBatch(connection: AuthorityConnection): Promise<void> {
-    const batch = this.#eventBatches.get(connection);
-    if (!batch) return this.#eventFlushes.get(connection) ?? Promise.resolve();
-    this.#clearEventBatch(connection);
-    const flushing = (this.#eventFlushes.get(connection) ?? Promise.resolve()).then(async () => {
-      // Capture the acknowledged prefix before awaiting the commit. Events
-      // admitted while it is in flight must not be covered by this ACK.
-      const cursor = this.#store.state.ackedSourceSeq;
-      await this.flushCheckpoint();
-      if (this.#eventOwner !== connection || this.#identity !== batch.identity) return;
-      this.#sendJson(connection, this.#controlEnvelope(connection, `ack_${cursor}`, "ack", { ackedSourceSeq: cursor }));
-    });
-    this.#eventFlushes.set(connection, flushing);
-    const finish = () => {
-      if (this.#eventFlushes.get(connection) === flushing) this.#eventFlushes.delete(connection);
-    };
-    void flushing.then(finish, () => { finish(); connection.close(); });
-    return flushing;
-  }
-
-  async #groupEventCheckpoint(connection: AuthorityConnection, bytes: number): Promise<void> {
-    let batch = this.#eventBatches.get(connection);
-    if (!batch) {
-      batch = { identity: this.#identity, count: 0, bytes: 0,
-        timer: setTimeout(() => { void this.#flushEventBatch(connection).catch(() => undefined); }, checkpointBatchDelayMs) };
-      this.#eventBatches.set(connection, batch);
-    }
-    batch.count++;
-    batch.bytes += bytes;
-    if (batch.count >= checkpointBatchEvents || batch.bytes >= checkpointBatchBytes) await this.#flushEventBatch(connection);
   }
 
   #sendJson(connection: AuthorityConnection, value: unknown): void {
@@ -1890,9 +1855,8 @@ export class DurablePrpControlPlane {
         throw new Error("Connection processing drain requires stopped ingress.");
     };
     assertIngressStopped();
-    while (this.#connectionProcessing.size > 0 || this.#eventBatches.size > 0 || this.#eventFlushes.size > 0) {
-      for (const connection of this.#eventBatches.keys()) void this.#flushEventBatch(connection).catch(() => undefined);
-      await Promise.allSettled([...this.#connectionProcessing.values(), ...this.#eventFlushes.values()]);
+    while (this.#connectionProcessing.size > 0) {
+      await Promise.allSettled([...this.#connectionProcessing.values()]);
       assertIngressStopped();
     }
   }
@@ -1901,8 +1865,7 @@ export class DurablePrpControlPlane {
    * external effect keeps its committed input pending for reconciliation;
    * it must never overwrite the successor controller's durable state. */
   retireSemanticToolCallbacks(): void {
-    if (this.#server !== null || this.#connections.size !== 0 || this.#connectionProcessing.size !== 0
-      || this.#eventBatches.size !== 0 || this.#eventFlushes.size !== 0) {
+    if (this.#server !== null || this.#connections.size !== 0 || this.#connectionProcessing.size !== 0) {
       throw new Error("Semantic callback retirement requires drained, stopped ingress.");
     }
     this.#semanticCallbacksRetired = true;
@@ -2362,7 +2325,6 @@ export class DurablePrpControlPlane {
         void tail.then(release, release);
       },
       onClose: () => {
-        void this.#flushEventBatch(connection).catch(() => undefined);
         this.#connections.delete(connection);
         if (connection.secureChannel !== null && this.activeRunnerConnectionCount() === 0)
           this.#runnerDisconnectedAt ??= Date.now();
@@ -2783,6 +2745,16 @@ export class DurablePrpControlPlane {
       connection.close();
       return;
     }
+    const requiresRecoveryCursor = this.#persistCheckpoint !== null || this.#store.state.checkpointEventPolicy === "control-v1";
+    const resume = payload.resume;
+    const acknowledgedSourceSeq = payload.recoveryCursorVersion === 1 && isRecord(resume)
+      && Number.isSafeInteger(resume.ackedSourceSeq) && (resume.ackedSourceSeq as number) >= 0
+      && Number.isSafeInteger(resume.nextSourceEventSeq) && (resume.nextSourceEventSeq as number) > (resume.ackedSourceSeq as number)
+      ? resume.ackedSourceSeq as number : undefined;
+    if ((requiresRecoveryCursor || payload.recoveryCursorVersion !== undefined) && acknowledgedSourceSeq === undefined) {
+      connection.close();
+      return;
+    }
     const serverNonce = randomUUID();
     const selectedVersion =
       authorization.kind === "lease"
@@ -2814,6 +2786,9 @@ export class DurablePrpControlPlane {
       ...(typeof payload.warmTransitionId === "string"
         ? { warmTransitionId: payload.warmTransitionId }
         : {}),
+      ...(acknowledgedSourceSeq !== undefined
+        ? { recoveryCursorVersion: 1, recoveryAckedSourceSeq: acknowledgedSourceSeq }
+        : {}),
     };
     const canonicalChallenge = canonicalJson(challengePayload);
     const serverProof = domainHmac(
@@ -2839,6 +2814,7 @@ export class DurablePrpControlPlane {
         ? { warmTransitionId: payload.warmTransitionId }
         : {}),
       requestedIdentity: structuredClone(authorization.identity),
+      acknowledgedSourceSeq,
     };
     this.#sendJson(connection, {
       protocol,
@@ -3005,6 +2981,16 @@ export class DurablePrpControlPlane {
         this.#identity = structuredClone(candidate.identity);
         lease = this.#store.state.leases[lease.credentialId]!;
       }
+    }
+    // The authenticated peer's durable ACK covers only events this authority
+    // previously released. Every control event was checkpointed before that ACK;
+    // only display/usage streaming may be absent from the restored event window.
+    if (pending.acknowledgedSourceSeq !== undefined
+      && (this.#persistCheckpoint !== null || this.#store.state.checkpointEventPolicy === "control-v1")
+      && canonicalJson(requestedIdentity) === canonicalJson(this.#store.state.identity)) {
+      const cursor = Math.max(this.#store.state.ackedSourceSeq, pending.acknowledgedSourceSeq);
+      this.#store.state.ackedSourceSeq = cursor;
+      this.#recoveredCursor = { runId: this.#identity.runId, sourceSeq: cursor };
     }
     connection.pendingChallenge = null;
     connection.lease = lease;
@@ -3371,9 +3357,6 @@ export class DurablePrpControlPlane {
     connection: AuthorityConnection,
     envelope: Record<string, unknown>,
   ): Promise<void> {
-    // One database batch in flight per connection bounds snapshots and applies
-    // backpressure when storage is slow, without acknowledging uncommitted work.
-    await this.#eventFlushes.get(connection);
     if (this.#eventOwner !== connection) return;
     const identity = this.#identity;
     if (this.#protocolIntegrityError !== null) {
@@ -3491,10 +3474,7 @@ export class DurablePrpControlPlane {
     const eventToEvict =
       existing === undefined &&
       this.#store.state.committedEvents.length >= maxCommittedEventWindow
-        ? this.#store.state.committedEvents.findIndex(
-            (candidate) =>
-              !unsettledSemanticInput(candidate, this.#store.state),
-          )
+        ? evictionCandidate(this.#store.state)
         : null;
     if (eventToEvict === -1) {
       connection.close();
@@ -3525,7 +3505,6 @@ export class DurablePrpControlPlane {
       return;
     }
 
-    let removedEvent: DurableRecoveryCommittedEvent | undefined;
     if (existing !== undefined) {
       existing.deliveryCount += 1;
       this.#store.state.replayDeliveries += 1;
@@ -3534,14 +3513,12 @@ export class DurablePrpControlPlane {
         // The awaited business commit may allow another authenticated owner
         // or a tool completion to advance the window. Re-evaluate, never use
         // an index sampled before that await to delete a different input.
-        const currentEviction = this.#store.state.committedEvents.findIndex(
-          (candidate) => !unsettledSemanticInput(candidate, this.#store.state),
-        );
+        const currentEviction = evictionCandidate(this.#store.state);
         if (currentEviction < 0) {
           connection.close();
           return;
         }
-        [removedEvent] = this.#store.state.committedEvents.splice(currentEviction, 1);
+        this.#store.state.committedEvents.splice(currentEviction, 1);
       }
       this.#store.state.committedEvents.push({
         sourceSeq,
@@ -3554,12 +3531,7 @@ export class DurablePrpControlPlane {
       });
       this.#store.state.ackedSourceSeq = sourceSeq;
     }
-    this.#store.saveEvent(existing ?? this.#store.state.committedEvents.at(-1)!, removedEvent);
-    if (this.#persistCheckpoint && !isSemanticInput && priority !== 0) {
-      await this.#groupEventCheckpoint(connection, Buffer.byteLength(JSON.stringify(envelope)));
-      return;
-    }
-    this.#clearEventBatch(connection);
+    this.#store.saveEvent(existing ?? this.#store.state.committedEvents.at(-1)!);
     await this.flushCheckpoint();
     if (this.#eventOwner !== connection || this.#identity !== identity) return;
 

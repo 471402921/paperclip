@@ -1765,6 +1765,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     finish_turn(&state_path, &mut state, "completed")?;
                 } else if emit_split_event_burst {
                     send_split_event_burst(&state, split_event_prefix_count)?;
+                } else if hold_turn && args.iter().any(|arg| arg == "--held-output") {
+                    for index in 0..64 {
+                        send(json!({"method": "item/agentMessage/delta", "params": {
+                            "threadId": state.thread_id, "turnId": provider_turn_id,
+                            "itemId": "held-output", "delta": format!("still computing {index} ")
+                        }}))?;
+                    }
                 } else if emit_question {
                     send_question(&state)?;
                 } else if !hold_turn {

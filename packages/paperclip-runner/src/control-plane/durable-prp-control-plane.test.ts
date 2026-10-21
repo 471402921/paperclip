@@ -139,101 +139,116 @@ function ordinaryOutput(sourceSeq: number): Record<string, unknown> {
   return envelope;
 }
 
-it.each(["commit", "fail"])("groups output and withholds its cumulative ACK until storage settles: %s", async outcome => {
-  const root = mkdtempSync(resolve(tmpdir(), "runner-checkpoint-batch-"));
-  const core = new DurablePrpControlPlane({ stateDirectory: root, identity, expectedRunnerVersion, expectedRunnerDigest });
+it("streams output without checkpoint writes and recovers its authenticated cursor on empty disk", async () => {
+  const root = mkdtempSync(resolve(tmpdir(), "runner-control-checkpoint-"));
+  const options = { stateDirectory: resolve(root, "control-plane"), identity, expectedRunnerVersion, expectedRunnerDigest };
+  const core = new DurablePrpControlPlane(options);
   const snapshots: DurablePrpCheckpoint[] = [];
-  let release!: () => void;
-  let entered!: () => void;
-  let pending: Promise<void> = Promise.resolve();
-  core.setCheckpointPersistence(async saved => {
-    entered?.();
-    await pending;
-    snapshots.push(saved);
-  });
+  core.setCheckpointPersistence(async saved => { snapshots.push(saved); });
+  let restored: DurablePrpControlPlane | undefined;
   try {
     await core.start();
     const client = (await authenticate(core, core.issueBootstrapTicket()))!;
     const before = snapshots.length;
-    const header = snapshots.at(-1)!.records.get("header");
-    const committing = new Promise<void>(resolveCommit => { entered = resolveCommit; });
-    pending = new Promise<void>((resolveCommit, rejectCommit) => {
-      release = () => outcome === "commit" ? resolveCommit() : rejectCommit(new Error("database unavailable"));
-    });
-    // Freeze just the batch timer so the event-count bound is deterministic.
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    let received = false;
-    const ack = receiveSecure(client).then(value => { received = true; return value; });
-    for (let seq = 1; seq <= 32; seq++) sendSecure(client, ordinaryOutput(seq));
-    await committing;
-    expect(core.store.state.ackedSourceSeq).toBe(32);
-    expect(received).toBe(false);
-    expect(snapshots).toHaveLength(before);
-    release();
-    const acknowledgement = await ack;
-    if (outcome === "commit") expect(acknowledgement).toMatchObject({ kind: "ack", payload: { ackedSourceSeq: 32 } });
-    else expect(acknowledgement).toBeNull();
-    if (outcome === "commit") {
-      expect(snapshots).toHaveLength(before + 1);
-      const saved = snapshots.at(-1)!;
-      expect(saved.records.get("header")).toBe(header);
-      expect(saved.changedRecords.size).toBe(33); // 32 events + one small cursor, no authority rewrite.
-      expect(saved.changedRecords.has("header")).toBe(false);
-      expect(decodeDurablePrpCheckpoint(saved.records).records).toEqual(saved.records);
+    for (let seq = 1; seq <= 64; seq++) {
+      sendSecure(client, ordinaryOutput(seq));
+      expect(await receiveSecure(client)).toMatchObject({ kind: "ack", payload: { ackedSourceSeq: seq } });
     }
+    await core.flushCheckpoint();
+    expect(snapshots).toHaveLength(before);
+    const saved = snapshots.at(-1)!;
+    expect(JSON.parse(saved.records.get("cursor")!).ackedSourceSeq).toBe(0);
+    expect([...saved.records.keys()].filter(key => key.startsWith("event:"))).toEqual([]);
+    const token = client.leaseToken!;
+    client.socket.destroy();
+    await core.stop();
+    await core.drainPendingConnectionProcessing();
+    rmSync(options.stateDirectory, { recursive: true });
+    decodeDurablePrpCheckpoint(saved.records).restoreSessionDirectory(root);
+    restored = new DurablePrpControlPlane(options);
+    restored.setCheckpointPersistence(async saved => { snapshots.push(saved); });
+    await restored.start();
+    const replacement = (await authenticate(restored, token, identity, expectedRunnerDigest, undefined, false, 1, 64))!;
+    expect(replacement.welcome.payload).toMatchObject({ ackedSourceSeq: 64 });
+    expect(restored.recoveredSourceSeq).toBe(64);
+    sendSecure(replacement, ordinaryOutput(65));
+    expect(await receiveSecure(replacement)).toMatchObject({ kind: "ack", payload: { ackedSourceSeq: 65 } });
+    // Commands remain an immediate durable barrier, without copying text.
+    const count = snapshots.length;
+    restored.queueCommand("session.snapshot", {}, "after-reconnect");
+    await restored.flushCheckpoint();
+    expect(snapshots).toHaveLength(count + 1);
+    expect([...snapshots.at(-1)!.records.values()].join("\n")).not.toContain("streaming output");
+    replacement.socket.destroy();
+  } finally {
+    await restored?.stop();
+    await core.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+it("excludes streamed output from checkpoints even when the live window is full", async () => {
+  const root = mkdtempSync(resolve(tmpdir(), "runner-checkpoint-window-"));
+  const core = new DurablePrpControlPlane({ stateDirectory: root, identity, expectedRunnerVersion, expectedRunnerDigest });
+  core.store.state.committedEvents = Array.from({ length: 4096 }, (_, index) => ({
+    sourceSeq: index + 1, sourceEventId: `output-${index + 1}`, eventType: "item.delta", priority: 2 as const,
+    envelope: ordinaryOutput(index + 1), deliveryCount: 1, logicalEffectCount: 1 as const,
+  }));
+  const anchor = core.store.state.committedEvents[0]!;
+  anchor.eventType = "turn.started";
+  (anchor.envelope.payload as Record<string, unknown>).eventType = "turn.started";
+  core.store.state.ackedSourceSeq = 4096;
+  core.store.save();
+  const snapshots: DurablePrpCheckpoint[] = [];
+  core.setCheckpointPersistence(async saved => { snapshots.push(saved); });
+  try {
+    await core.start();
+    const client = (await authenticate(core, core.issueBootstrapTicket()))!;
+    const before = snapshots.length;
+    sendSecure(client, ordinaryOutput(4097));
+    expect(await receiveSecure(client)).toMatchObject({ kind: "ack", payload: { ackedSourceSeq: 4097 } });
+    expect(snapshots).toHaveLength(before);
+    const checkpoint = snapshots.at(-1)!;
+    expect(core.store.state.committedEvents[0]!.eventType).toBe("turn.started");
+    expect(checkpoint.records.size).toBe(3); // authority + cursor + turn anchor, zero output rows.
+    expect(decodeDurablePrpCheckpoint(checkpoint.records).records).toEqual(checkpoint.records);
     client.socket.destroy();
   } finally {
-    release?.();
-    vi.useRealTimers();
     await core.stop();
     await core.drainPendingConnectionProcessing();
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-it("keeps the checkpoint header fixed as the event window grows and removes evicted records", async () => {
-  const root = mkdtempSync(resolve(tmpdir(), "runner-checkpoint-window-"));
+it.each(["unsupported", "invalid cursor", "invalid proof"])("does not advance recovery from an unauthenticated cursor: %s", async fault => {
+  const root = mkdtempSync(resolve(tmpdir(), "runner-recovery-cursor-auth-"));
   const core = new DurablePrpControlPlane({ stateDirectory: root, identity, expectedRunnerVersion, expectedRunnerDigest });
-  let checkpoint!: DurablePrpCheckpoint;
-  core.store.state.committedEvents = Array.from({ length: 4096 }, (_, index) => ({
-    sourceSeq: index + 1, sourceEventId: `output-${index + 1}`, eventType: "item.delta", priority: 2 as const,
-    envelope: ordinaryOutput(index + 1), deliveryCount: 1, logicalEffectCount: 1 as const,
-  }));
-  core.store.state.ackedSourceSeq = 4096;
-  core.store.save();
-  core.setCheckpointPersistence(async saved => { checkpoint = saved; });
+  core.setCheckpointPersistence(async () => {});
   try {
     await core.start();
-    const client = (await authenticate(core, core.issueBootstrapTicket()))!;
-    const header = checkpoint.records.get("header")!;
-    expect(header).not.toContain("event:4096");
-    sendSecure(client, ordinaryOutput(4097));
-    expect(await receiveSecure(client)).toMatchObject({ kind: "ack", payload: { ackedSourceSeq: 4097 } });
-    expect(checkpoint.records.get("header")).toBe(header);
-    expect([...checkpoint.changedRecords.keys()].sort()).toEqual(["cursor", "event:4097"]);
-    expect(checkpoint.removedRecords).toEqual(["event:1"]);
-    expect(checkpoint.records.has("event:1")).toBe(false);
-    expect(decodeDurablePrpCheckpoint(checkpoint.records).records).toEqual(checkpoint.records);
-    if (process.env.PAPERCLIP_CHECKPOINT_COST_REPORT === "1") {
-      const { commands, committedEvents, ...metadata } = core.store.state;
-      const oldHeader = JSON.stringify({ schema: "paperclip.runner.controller-checkpoint.v1",
-        runnerVersion: expectedRunnerVersion, runnerDigest: expectedRunnerDigest, state: metadata,
-        commands: commands.map(command => `command:${command.controllerSeq}`),
-        events: committedEvents.map(event => `event:${event.sourceSeq}`) });
-      console.log("checkpoint-payload-comparison", JSON.stringify({
-        retainedEvents: committedEvents.length,
-        oldHeaderBytes: Buffer.byteLength(oldHeader),
-        newCursorBytes: Buffer.byteLength(checkpoint.records.get("cursor")!),
-        oldChangedRecordBytes: Buffer.byteLength(oldHeader) + Buffer.byteLength(checkpoint.records.get("event:4097")!),
-        newChangedRecordBytes: [...checkpoint.changedRecords.values()].reduce((total, value) => total + Buffer.byteLength(value), 0),
-        oldEvictionKeyCount: checkpoint.records.size - 1,
-        newEvictionKeyCount: checkpoint.removedRecords.length,
-      }));
+    const material = credentialMaterial(core.issueBootstrapTicket());
+    const { socket, reader } = await upgradeSocket(core.connectUrl);
+    const hello = authHello(material.credentialId);
+    const payload = hello.payload as Record<string, unknown>;
+    payload.resume = { ackedSourceSeq: 50, nextSourceEventSeq: 51 };
+    if (fault === "unsupported") delete payload.recoveryCursorVersion;
+    if (fault === "invalid cursor") payload.resume = { ackedSourceSeq: 50, nextSourceEventSeq: 50 };
+    sendMaskedJson(socket, hello);
+    if (fault === "invalid proof") {
+      const challenge = (await reader.next())!.payload as Record<string, unknown>;
+      expect(challenge.recoveryAckedSourceSeq).toBe(50);
+      expect(core.store.state.ackedSourceSeq).toBe(0);
+      sendMaskedJson(socket, { protocol: "paperclip.runner", version: 1, kind: "auth_response", payload: {
+        credentialId: material.credentialId, clientNonce: challenge.clientNonce,
+        serverNonce: challenge.serverNonce, clientProof: "0".repeat(64),
+      } });
     }
-    client.socket.destroy();
+    expect(await reader.next()).toBeNull();
+    expect(core.store.state.ackedSourceSeq).toBe(0);
+    expect(core.recoveredSourceSeq).toBe(0);
+    socket.destroy();
   } finally {
     await core.stop();
-    await core.drainPendingConnectionProcessing();
     rmSync(root, { recursive: true, force: true });
   }
 });
@@ -1326,6 +1341,8 @@ function authHello(
       protocolMin: 1,
       protocolMax: 1,
       warmTransitionVersion: 1,
+      recoveryCursorVersion: 1,
+      resume: { ackedSourceSeq: 0, nextSourceEventSeq: 1 },
       ...selectedIdentity,
       runnerVersion: expectedRunnerVersion,
       runnerDigest: expectedRunnerDigest,
@@ -1341,11 +1358,13 @@ async function authenticate(
   warmTransitionId?: string,
   withoutWarmCapability = false,
   protocolMax = 1,
+  acknowledgedSourceSeq = 0,
 ): Promise<AuthenticatedClient | null> {
   const { socket, reader } = await upgradeSocket(controlPlane.connectUrl);
   const material = credentialMaterial(token);
   const hello = authHello(material.credentialId, selectedIdentity);
   (hello.payload as Record<string, unknown>).protocolMax = protocolMax;
+  (hello.payload as Record<string, unknown>).resume = { ackedSourceSeq: acknowledgedSourceSeq, nextSourceEventSeq: acknowledgedSourceSeq + 1 };
   (hello.payload as Record<string, unknown>).runnerDigest = runnerDigest;
   if (warmTransitionId !== undefined)
     (hello.payload as Record<string, unknown>).warmTransitionId =

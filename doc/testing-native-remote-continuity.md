@@ -89,27 +89,43 @@ heartbeat discovers eligible runs through the native runtime. Tool recovery uses
 the current tool authority, including receipt decoding and read policy. Transport
 adapters retain ownership of protocol response envelopes.
 
-Checkpoint v2 stores a small cursor separately from authority metadata and derives
-record order from sequence keys. Event-only captures serialize changed events;
-they reuse previously serialized authority and command records. The callback
-supplies changed records, exact removed keys, and an initial replacement flag.
-Postgres applies that write set under the same owner lock. The decoder also reads
-v1 checkpoints. Older server builds that only understand v1 cannot read v2;
-rollback requires a build with the v2 decoder. No database schema change is needed
-for this encoding change.
+Checkpoint v2 stores authority, command records, a small cursor, and recovery
+control events. It excludes ordinary `item.delta` output. `usage.reported` updates
+are coalesced: only the latest one is included when a control change triggers a
+checkpoint. Priority-zero events always retain their durability barrier. The
+writer receives changed records, exact removed keys, and an initial replacement
+flag and applies them under the owner lock. The format remains encrypted and
+company/run bound. The decoder reads v1 as well as v2 checkpoints.
 
-Ordinary output events share a commit until 32 events, 256 KiB of input envelopes,
-or a 20 ms timer triggers a flush. The timer is subject to event-loop scheduling.
-Only one batch commit is in flight per connection. Semantic tool inputs and
-priority-zero events force an immediate durability barrier. Commands and
-authentication retain their persistence barriers. An acknowledgement covers only
-the committed prefix. Failed commits close the connection; unacknowledged events
-remain in the runner outbox for replay. A crash can replay a larger unacknowledged
-prefix, so application callbacks retain their idempotency requirements. Local
-journal writes and application
-event callbacks still run for each event. This reduces checkpoint overhead, not
-all database work or all file I/O. At low event rates the timer can still produce
-one transaction per event.
+There is no event batching timer. Streaming text/usage does not call the external
+checkpoint writer. Authentication, commands/results, semantic inputs, lifecycle
+and other control events still commit before their acknowledgement or effect is
+released. A failed control commit closes the connection, leaving the unacknowledged
+input in the runner outbox. Local file writes and existing application event/log
+callbacks remain; this does not remove normal run accounting or business writes.
+Unknown event kinds retain the conservative persist-before-ack behavior.
+
+A sparse checkpoint is marked `checkpointEventPolicy: "control-v1"`. Its peer must
+advertise `recoveryCursorVersion: 1`. During reconnection the controller echoes the
+runner's durable `resume.ackedSourceSeq` as `recoveryAckedSourceSeq` in the signed
+authentication challenge. The runner verifies that exact value against its state;
+the controller uses it only after client proof and current-owner admission pass.
+The controller can then advance over already-acknowledged streaming output absent
+from Postgres. It still requires contiguous new events and validates retained
+replays. Unacknowledged output and control events replay from the runner's existing
+disk outbox. No second remote journal or new polling loop is introduced.
+
+The live event window keeps the latest identity, turn, result and usage anchors,
+as well as unsettled semantic inputs, through long output streams. The 4,096-event
+and 500-command limits remain. This checkpoint is intentionally not a complete
+transcript: an abrupt crash can lose display output already acknowledged but not
+yet projected to the existing run log. The same provider turn continues; recovery
+never reruns work to reconstruct display text. Tool outcomes and terminal state
+retain their durable barriers.
+
+Rollback must use a controller that understands sparse checkpoints and the signed
+recovery cursor. A v2 decoder alone is insufficient. Runners admitted before this
+release do not acquire the new protocol capability or grace period retroactively.
 
 Completed checkpoints use the existing native harness backup maintenance sweep
 and its enabled, dry-run, and retention-days settings (seven days by default).

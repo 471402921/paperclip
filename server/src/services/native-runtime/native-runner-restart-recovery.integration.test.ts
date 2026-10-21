@@ -769,7 +769,7 @@ describeEmbeddedPostgres("native runner restart recovery with real processes", (
     }).where(eq(nativeRunFinalizations.runId, fixture.runId));
     const authority = new DurablePrpControlPlane({ stateDirectory: resolve(root, "control-plane"),
       identity: options.prpIdentity, expectedRunnerVersion: "delta-test", expectedRunnerDigest: `sha256:${"a".repeat(64)}` });
-    const event = (sourceSeq: number) => ({ sourceSeq, sourceEventId: `delta-${sourceSeq}`, eventType: "item.delta",
+    const event = (sourceSeq: number) => ({ sourceSeq, sourceEventId: `control-${sourceSeq}`, eventType: "item.completed",
       priority: 2 as const, envelope: { text: "output" }, deliveryCount: 1, logicalEffectCount: 1 as const });
     try {
       await registerNativeRunnerCheckpoint({ db: fixture.db, binding, bootId: successor.bootId, authority });
@@ -859,7 +859,7 @@ describeEmbeddedPostgres("native runner restart recovery with real processes", (
       runnerFilesystemRoot: resolve(sandboxRoot, "filesystem"),
       runnerReconnectGraceMs: REMOTE_RUNNER_RECONNECT_GRACE_MS,
       codexArgs: ["--state-file", resolve(sandboxRoot, "provider.json"),
-        "--call-log", resolve(sandboxRoot, "calls.log"), "--linger-after-turn-start"],
+        "--call-log", resolve(sandboxRoot, "calls.log"), "--linger-after-turn-start", "--held-output"],
       controlPlaneRegistration: async (authority: DurablePrpControlPlane) => {
         await registerNativeRunnerCheckpoint({ db: fixture.db, binding, bootId, authority });
         return registerRunnerPrpAuthority({ ...binding, authority });
@@ -892,6 +892,15 @@ describeEmbeddedPostgres("native runner restart recovery with real processes", (
       if (!runnerPid || !providerPid) throw new Error("Runner/provider process identity missing");
       const startedAt = await readProcessStartedAt(runnerPid);
       if (!startedAt) throw new Error("Runner start identity missing");
+      await waitForCondition("streaming ACK advances without a recovery checkpoint", async () => {
+        const runner = JSON.parse(await readFile(resolve(sandboxRoot, "runner/runner-state.json"), "utf8"));
+        const checkpoint = await loadNativeRunnerCheckpoint(fixture.db, binding);
+        const cursor = checkpoint && JSON.parse(checkpoint.records.get("cursor")!);
+        return cursor && runner.ackedSourceSeq >= cursor.ackedSourceSeq + 64;
+      });
+      const beforeRestart = (await loadNativeRunnerCheckpoint(fixture.db, binding))!;
+      expect([...beforeRestart.records.entries()].filter(([key]) => key.startsWith("event:"))
+        .some(([, value]) => JSON.parse(value).eventType === "item.delta")).toBe(false);
       await fixture.db.update(heartbeatRuns).set({ processPid: runnerPid, processStartedAt: new Date(startedAt),
         runnerProfileJson: { ...fixture.preparedProfile,
           ...(!preparedTask ? { nativeWorkspaceSync: { schema: "paperclip.native-workspace-sync/v1", state: "prepared",

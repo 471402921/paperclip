@@ -21,13 +21,42 @@ and legacy server-owned stdio adapters are outside this first contract.
 | --- | --- | --- |
 | Active Daytona run, graceful server replacement | Same run, sandbox, runner PID/start identity, provider session and turn | Before/after identity and independently read receipts |
 | Controller crash and empty replacement controller disk | Recover authenticated authority from Postgres; no duplicate provider start | Separate controller generations and unavailable original files |
-| Five-minute outage during computation | Runner and provider stay alive; output retained and replayed | Real-process outage test plus persisted ordered events |
+| Five-minute outage during computation | Runner and provider stay alive; unacknowledged output retained and replayed | Real-process outage test plus persisted ordered events |
 | Server-dependent tool pending across disconnect | Wait/reconcile without replaying an uncertain external effect | Tool receipt and invocation count |
 | Completion during outage | Final result and workspace commit once after reconnect | Postgres result/finalization records and saved output |
 | New work before/after replacement | Accepted queued work resumes automatically; no global pause required | Second run reaches useful completion |
 | Concurrent old/new controllers | Only the current fenced owner may issue commands/ACK events | Postgres lease race and stale-writer tests |
 | Existing runs and differing server/runner artifacts | Preserve admitted execution and runner identity; unsupported historical state remains explicit | Compatibility and artifact-identity tests |
 | Explicit Stop and changed authority | Recovery cannot undo cancellation or bypass company/budget controls | Stop/reconnect and cross-company negative cases |
+
+## Lean recovery revision (in progress)
+
+The per-output Postgres journal and its 20 ms batching timer are superseded.
+Persist authentication, commands/results, pending requests, and lifecycle/result
+events before exposing their effects. Streaming `item.delta` events do not enter
+the recovery checkpoint. Usage updates are coalesced into the next control
+checkpoint. The existing run-log/accounting paths remain their owners.
+
+The runner already persists its acknowledged source sequence. Bind that value
+into the authenticated reconnect challenge so a replacement controller can skip
+previously acknowledged streaming output without pretending it retained those
+bytes. Unacknowledged events still replay from the runner's existing disk outbox.
+This is recovery of the same running agent, not a second durable transcript.
+The runner must explicitly support this authenticated cursor contract; never
+trust the unauthenticated hello or silently downgrade a sparse checkpoint.
+
+| Outcome | Evidence required | Remaining work |
+| --- | --- | --- |
+| No recovery DB transactions during ordinary output streaming | Writer call count across streamed events | Implement and measure |
+| Empty-controller recovery across an output-only cursor gap | Same runner/provider/turn plus authenticated reconnect | Protocol and real-process test |
+| Tool/result safety remains durable | Commit failure, replay, stale-owner and completion tests | Re-run affected coverage |
+| Recovery state stays bounded and preserves current session/turn anchors | Long stream and eviction tests | Implement retention selection |
+| Five-minute outage still meets the original contract | Existing 300-second real-process proof on revised code | Re-run after targeted proof |
+
+The tradeoff is explicit: the checkpoint no longer supplies a duplicate copy of
+every displayed output chunk. Recovery-critical state remains durable; a crash
+can leave a tail gap in display output not yet projected to the existing run log.
+No provider turn or uncertain business operation may be restarted to fill it.
 
 ## Findings at kickoff
 
@@ -51,7 +80,8 @@ branch `codex/daytona-hot-upgrades`.
 
 1. Retain the native execution lifecycle and PRP protocol. Add durable controller
    persistence at the transport's effect boundary: authentication, commands and
-   event acknowledgements must be recoverable before becoming visible to the peer.
+   control-event acknowledgements must be recoverable before becoming visible to the peer.
+   Streaming output uses the authenticated cursor contract described above.
    Use a company/run-bound, versioned Postgres record with controller fencing;
    keep connection credentials encrypted with the instance secret provider.
    Local files become a materialized cache for existing parsers and diagnostics.
@@ -370,3 +400,19 @@ original causes remain unknown, and the full invocation is not a clean pass.
 Original evidence: `/tmp/hot-upgrade-cost-merged-full-tests.log`. Rerun evidence:
 `/tmp/checkpoint-unrelated-chat-recheck.log` and
 `/tmp/checkpoint-workspace-gateway-recheck.log`.
+
+
+Lean revision verification so far: 64 ordinary text events produced zero external
+checkpoint callbacks, and a fresh controller directory recovered the authenticated
+cursor before accepting event 65. Both real Postgres empty-disk variants passed
+with 64 acknowledged chunks absent from the DB checkpoint, unchanged runner and
+provider identities, one turn/start, and one post-restart steer. All 95 Rust
+durability tests passed. Workspace typecheck and production build passed.
+The first focused invocations selected the previous staged release binary; they
+were interrupted (exit 130), then the current binary was built and staged before
+rerunning. The first controller invocation also found an obsolete batch-close
+hook after timer removal; that hook was removed before the 132-test passing run.
+Logs: `/tmp/lean-controller-tests.log`, `/tmp/lean-rust-durable-tests.log`,
+`/tmp/lean-postgres-empty-disk-fresh.log`, `/tmp/lean-workspace-typecheck.log`,
+and `/tmp/lean-workspace-build.log`. The five-minute proof and broader revised
+suites are tracked separately; prior-head CI is not evidence for this revision.
