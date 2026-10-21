@@ -92,6 +92,8 @@ type FixtureOptions = {
   dcrClientSecret?: string;
   dropFirstRefreshResponse?: boolean;
   dropFirstRefreshResponseBody?: boolean;
+  beforeCodeExchange?: () => Promise<void>;
+  beforeRevocation?: () => Promise<void>;
   scopes?: string[];
 
   /** How the MCP endpoint authenticates. */
@@ -246,7 +248,10 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
       if (headers.authorization !== `Bearer ${accessToken}`) return jsonResponse({}, 401);
       return jsonResponse({ id: "provider-owner", email: "owner@example.test" });
     }
-    if (href === options.revocationEndpoint && method === "POST") return jsonResponse({}, options.revocationStatus?.() ?? 200);
+    if (href === options.revocationEndpoint && method === "POST") {
+      await options.beforeRevocation?.();
+      return jsonResponse({}, options.revocationStatus?.() ?? 200);
+    }
 
     if (href === `${ISSUER}/register` && method === "POST") {
       if (options.registrationFailure) {
@@ -277,6 +282,7 @@ function installMcpOAuthFixture(options: FixtureOptions = {}) {
       if (grantType === "authorization_code") {
         const issued = issuedCodes.get(body.get("code") ?? "");
         if (!issued) return jsonResponse({ error: "invalid_grant" }, 400);
+        await options.beforeCodeExchange?.();
       }
       const receiptKey = grantType === "refresh_token" ? headers["idempotency-key"] : null;
       if (receiptKey && refreshReceipts.has(receiptKey)) return jsonResponse(refreshReceipts.get(receiptKey));
@@ -542,6 +548,50 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     expect(connection).toMatchObject({ status: "active", enabled: true });
     expect(grant).toMatchObject({ status: "active" });
     expect(grant!.credentialSecretRefs).toHaveLength(2);
+  });
+
+  it("serializes the initial OAuth removal with cleanup sweeps and a new authorization", async () => {
+    installLifecycleAdapter();
+    let entered!: () => void, release!: () => void, requests = 0;
+    const revoking = new Promise<void>(resolve => { entered = resolve; });
+    const continueRevocation = new Promise<void>(resolve => { release = resolve; });
+    const fixture = installMcpOAuthFixture({ auth: "oauth", revocationEndpoint: `${ISSUER}/vendor/disconnect`,
+      beforeRevocation: async () => { if (++requests === 1) { entered(); await continueRevocation; } },
+    });
+    const company = await createCompany(db), actor = { actorType: "user" as const, actorId: "board-user" };
+    const service = toolAccessService(db), other = toolAccessService(db);
+    const connected = await service.connectGalleryApp(company.id, { galleryKey: "fireflies", grantKind: "user" }, actor);
+    const authorize = async () => {
+      const start = await other.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+      return other.completeOAuthCallback({ state: new URL(start.authorizationUrl).searchParams.get("state")!,
+        code: fixture.issueAuthorizationCode(start.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor });
+    };
+    const reconnect = async () => {
+      await other.connectGalleryApp(company.id, { galleryKey: "fireflies", applicationId: connected.application.id, grantKind: "user" }, actor);
+      await authorize();
+      const current = await other.getConnection(connected.connectionId, company.id);
+      await other.updateConnection(connected.connectionId, { config: { ...current.config, retainedSetting: "new authorization" } });
+    };
+    await authorize();
+    const first = service.archiveConnection(connected.connectionId, company.id, actor);
+    try {
+      await revoking;
+      const closed = await other.getConnection(connected.connectionId, company.id);
+      expect(closed).toMatchObject({ status: "archived", enabled: false, config: { oauthRevocationPending: true } });
+      const sweep = await other.sweepOAuthRevocations();
+      if (sweep.pending) {
+        await expect(other.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor })).rejects.toMatchObject({ details: { code: "oauth_revocation_pending" } });
+      } else await reconnect();
+      release();
+      await first;
+      if (sweep.pending) await reconnect();
+      const [grant] = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
+      expect(grant).toMatchObject({ status: "active" });
+      expect(grant!.credentialSecretRefs).toHaveLength(2);
+      expect(await other.getConnection(connected.connectionId, company.id)).toMatchObject({ status: "active", config: { retainedSetting: "new authorization" } });
+      await expect(other.refreshCatalog(connected.connectionId, actor)).resolves.toMatchObject({ connection: { status: "active" } });
+      expect(sweep).toEqual({ checked: 1, pending: 1 });
+    } finally { release(); await first; }
   });
 
   it("retains a confidential client used by another active grant while generic revocation fences stale callbacks", async () => {
@@ -1572,6 +1622,57 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
         mcpServer.closeAllConnections();
       });
     }
+  });
+
+  it.each(["archive", "pending revocation", "completed revocation"] as const)("rejects organization OAuth credentials exchanged during %s", async change => {
+    let pause = false;
+    let entered!: () => void, release!: () => void;
+    const exchanging = new Promise<void>(resolve => { entered = resolve; });
+    const continueExchange = new Promise<void>(resolve => { release = resolve; });
+    const fixture = installMcpOAuthFixture({ auth: "oauth", revocationEndpoint: `${ISSUER}/vendor/disconnect`,
+      revocationStatus: () => change === "completed revocation" ? 200 : 503,
+      beforeCodeExchange: async () => { if (pause) { entered(); await continueExchange; } },
+    });
+    const company = await createCompany(db);
+    const service = toolAccessService(db), actor = { actorType: "user" as const, actorId: "board-user" };
+    const connected = await service.connectGalleryApp(company.id, { link: MCP_URL, grantKind: "organization" }, actor);
+    const start = () => service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+    const complete = (authorizationUrl: string) => service.completeOAuthCallback({
+      state: new URL(authorizationUrl).searchParams.get("state")!, code: fixture.issueAuthorizationCode(authorizationUrl),
+      iss: ISSUER, redirectUri: REDIRECT_URI, actor,
+    });
+    await complete((await start()).authorizationUrl);
+    const reconnect = await start();
+    pause = true;
+    const completion = complete(reconnect.authorizationUrl).then(value => ({ value, error: null }), (error: unknown) => ({ value: null, error }));
+    try {
+      await exchanging;
+      const [organization] = await db.select().from(connectionGrants).where(and(
+        eq(connectionGrants.connectionId, connected.connectionId), eq(connectionGrants.kind, "organization"), eq(connectionGrants.isDefault, true),
+      ));
+      if (change === "archive") await service.archiveConnection(connected.connectionId, company.id, actor);
+      else await service.revokeConnectionGrant(connected.connectionId, organization!.id, actor);
+      const beforeConnection = await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId));
+      const beforeGrants = await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId));
+      const beforeSecrets = await db.select().from(companySecrets).where(eq(companySecrets.companyId, company.id));
+      const beforeVersions = await db.select().from(companySecretVersions);
+      release();
+      const outcome = await completion;
+      expect(outcome.value).toBeNull();
+      expect(outcome.error).toMatchObject({ status: 409, details: { code: change === "completed revocation" ? "oauth_authorization_revoked" : "oauth_revocation_pending" } });
+      expect(await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId))).toEqual(beforeConnection);
+      expect(await db.select().from(connectionGrants).where(eq(connectionGrants.connectionId, connected.connectionId))).toEqual(beforeGrants);
+      expect(await db.select().from(companySecrets).where(eq(companySecrets.companyId, company.id))).toEqual(beforeSecrets);
+      expect(await db.select().from(companySecretVersions)).toEqual(beforeVersions);
+      if (change === "completed revocation") {
+        pause = false;
+        await expect(complete((await start()).authorizationUrl)).resolves.toMatchObject({ connection: { status: "active", enabled: true } });
+        const [restored] = await db.select().from(connectionGrants).where(and(
+          eq(connectionGrants.connectionId, connected.connectionId), eq(connectionGrants.kind, "organization"), eq(connectionGrants.isDefault, true),
+        ));
+        expect(restored).toMatchObject({ status: "active", revokedAt: null });
+      }
+    } finally { release(); await completion; }
   });
 
   it("completes organization OAuth with a single database connection", async () => {
