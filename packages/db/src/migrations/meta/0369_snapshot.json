@@ -1,5 +1,5 @@
 {
-  "id": "fff40759-4194-4e63-b22d-bfbc18e31b7e",
+  "id": "9fa514b5-5cd1-4350-9b77-f60924655298",
   "prevId": "a9c12cbc-ed4b-4e5d-9d33-36f9a7fb746c",
   "version": "7",
   "dialect": "postgresql",
@@ -3656,6 +3656,28 @@
         }
       },
       "indexes": {
+        "agent_wakeup_requests_task_retry_idempotency_uq": {
+          "name": "agent_wakeup_requests_task_retry_idempotency_uq",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "idempotency_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"agent_wakeup_requests\".\"idempotency_key\" LIKE 'task-retry:%'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "agent_wakeup_requests_company_agent_status_idx": {
           "name": "agent_wakeup_requests_company_agent_status_idx",
           "columns": [
@@ -17114,12 +17136,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "owner_project_id": {
-          "name": "owner_project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "owner_plugin_id": {
           "name": "owner_plugin_id",
           "type": "uuid",
@@ -17354,40 +17370,6 @@
           "method": "btree",
           "with": {}
         },
-        "company_secrets_project_instance_owner_key_uq": {
-          "name": "company_secrets_project_instance_owner_key_uq",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "owner_project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "owner_plugin_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"company_secrets\".\"scope\" = 'instance' and \"company_secrets\".\"deleted_at\" is null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "company_secrets_instance_owner_key_uq": {
           "name": "company_secrets_instance_owner_key_uq",
           "columns": [
@@ -17590,21 +17572,6 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
-        },
-        "company_secrets_company_id_owner_project_id_projects_company_id_id_fk": {
-          "name": "company_secrets_company_id_owner_project_id_projects_company_id_id_fk",
-          "tableFrom": "company_secrets",
-          "tableTo": "projects",
-          "columnsFrom": [
-            "company_id",
-            "owner_project_id"
-          ],
-          "columnsTo": [
-            "company_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -17613,7 +17580,7 @@
       "checkConstraints": {
         "company_secrets_scope_shape_check": {
           "name": "company_secrets_scope_shape_check",
-          "value": "(\n        \"company_secrets\".\"scope\" = 'company'\n        and \"company_secrets\".\"owner_user_id\" is null\n        and \"company_secrets\".\"user_secret_definition_id\" is null\n        and \"company_secrets\".\"owner_agent_id\" is null and \"company_secrets\".\"owner_project_id\" is null and \"company_secrets\".\"owner_plugin_id\" is null\n      ) or (\n        \"company_secrets\".\"scope\" = 'user'\n        and \"company_secrets\".\"owner_user_id\" is not null\n        and \"company_secrets\".\"user_secret_definition_id\" is not null\n        and \"company_secrets\".\"owner_agent_id\" is null and \"company_secrets\".\"owner_project_id\" is null and \"company_secrets\".\"owner_plugin_id\" is null\n      ) or (\n        \"company_secrets\".\"scope\" = 'instance'\n        and \"company_secrets\".\"owner_user_id\" is null and \"company_secrets\".\"user_secret_definition_id\" is null\n        and (\"company_secrets\".\"owner_agent_id\" is not null) <> (\"company_secrets\".\"owner_project_id\" is not null)\n        and \"company_secrets\".\"owner_plugin_id\" is not null\n      )"
+          "value": "(\n        \"company_secrets\".\"scope\" = 'company'\n        and \"company_secrets\".\"owner_user_id\" is null\n        and \"company_secrets\".\"user_secret_definition_id\" is null\n        and \"company_secrets\".\"owner_agent_id\" is null and \"company_secrets\".\"owner_plugin_id\" is null\n      ) or (\n        \"company_secrets\".\"scope\" = 'user'\n        and \"company_secrets\".\"owner_user_id\" is not null\n        and \"company_secrets\".\"user_secret_definition_id\" is not null\n        and \"company_secrets\".\"owner_agent_id\" is null and \"company_secrets\".\"owner_plugin_id\" is null\n      ) or (\n        \"company_secrets\".\"scope\" = 'instance'\n        and \"company_secrets\".\"owner_user_id\" is null and \"company_secrets\".\"user_secret_definition_id\" is null\n        and \"company_secrets\".\"owner_agent_id\" is not null and \"company_secrets\".\"owner_plugin_id\" is not null\n      )"
         }
       },
       "isRLSEnabled": false
@@ -27591,6 +27558,22 @@
         }
       },
       "indexes": {
+        "environment_leases_retained_recovery_adoption_idx": {
+          "name": "environment_leases_retained_recovery_adoption_idx",
+          "columns": [
+            {
+              "expression": "heartbeat_run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"environment_leases\".\"lease_policy\" = 'retain_on_failure'\n        and \"environment_leases\".\"heartbeat_run_id\" is not null\n        and not (coalesce(\"environment_leases\".\"metadata\", '{}'::jsonb) ? 'systemRecoveryAdoption')",
+          "concurrently": true,
+          "method": "btree",
+          "with": {}
+        },
         "environment_leases_company_environment_status_idx": {
           "name": "environment_leases_company_environment_status_idx",
           "columns": [
@@ -32994,6 +32977,22 @@
         }
       },
       "indexes": {
+        "heartbeat_runs_retained_recovery_adoption_idx": {
+          "name": "heartbeat_runs_retained_recovery_adoption_idx",
+          "columns": [
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"heartbeat_runs\".\"result_json\"->'workspaceRestoreRecovery'->>'schema' = 'paperclip.workspace-restore-recovery.v1'\n        and not (coalesce(\"heartbeat_runs\".\"result_json\", '{}'::jsonb) ? 'systemRecoveryAdoption')\n        and \"heartbeat_runs\".\"status\" in ('failed', 'interrupted', 'timed_out', 'cancelled', 'succeeded')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "heartbeat_runs_cost_accounting_pending_idx": {
           "name": "heartbeat_runs_cost_accounting_pending_idx",
           "columns": [
@@ -37583,6 +37582,71 @@
         }
       },
       "indexes": {
+        "issue_recovery_actions_source_run_idx": {
+          "name": "issue_recovery_actions_source_run_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_issue_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "(\"evidence\"->>'runId')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "issue_recovery_actions_system_recovery_due_idx": {
+          "name": "issue_recovery_actions_system_recovery_due_idx",
+          "columns": [
+            {
+              "expression": "(\"evidence\"#>'{systemRecovery,nextAttemptAt}')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"issue_recovery_actions\".\"evidence\" ? 'systemRecovery'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "issue_recovery_actions_system_recovery_adoption_idx": {
+          "name": "issue_recovery_actions_system_recovery_adoption_idx",
+          "columns": [
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "not (\"issue_recovery_actions\".\"evidence\" ? 'systemRecovery') and (\n        \"issue_recovery_actions\".\"evidence\"->'workspaceRestoreRecovery'->>'schema' = 'paperclip.workspace-restore-recovery.v1'\n        or \"issue_recovery_actions\".\"cause\" in ('native_workspace_sync_out_unrecoverable', 'native_workspace_sync_out_retry_exhausted')\n      )",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "issue_recovery_actions_retained_workspace_recovery_idx": {
           "name": "issue_recovery_actions_retained_workspace_recovery_idx",
           "columns": [
@@ -47410,27 +47474,6 @@
         }
       },
       "indexes": {
-        "projects_company_id_uq": {
-          "name": "projects_company_id_uq",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "projects_company_idx": {
           "name": "projects_company_idx",
           "columns": [
