@@ -2634,7 +2634,9 @@ export function issueThreadInteractionService(
             },
           );
         }
-        return hydrateInteraction(existing) as ConnectionIntentInteraction;
+        const interaction = hydrateInteraction(existing) as ConnectionIntentInteraction;
+        await enqueueIssueInteractionChatPublications(db, interaction);
+        return interaction;
       }
 
       let inserted = false;
@@ -2662,7 +2664,10 @@ export function issueThreadInteractionService(
         ));
         const reusable = pending.find((candidate) =>
           connectionIntentPayloadSchema.parse(candidate.payload).serviceSlug === payload.serviceSlug && connectionIntentPayloadSchema.parse(candidate.payload).purpose === payload.purpose && isDeepStrictEqual(connectionIntentPayloadSchema.parse(candidate.payload).accessRequest, payload.accessRequest));
-        if (reusable) return reusable;
+        if (reusable) {
+          await enqueueIssueInteractionChatPublications(tx as unknown as Db, hydrateInteraction(reusable));
+          return reusable;
+        }
 
         const [sourceRun] = await tx.select({ context: heartbeatRuns.contextSnapshot }).from(heartbeatRuns)
           .where(and(eq(heartbeatRuns.id, input.sourceRunId), eq(heartbeatRuns.companyId, issue.companyId)));
@@ -2723,7 +2728,7 @@ export function issueThreadInteractionService(
           await tx
             .delete(toolOauthStates)
             .where(inArray(toolOauthStates.interactionId, supersededIds));
-          await tx
+          const superseded = await tx
             .update(issueThreadInteractions)
             .set({
               status: "expired",
@@ -2735,10 +2740,15 @@ export function issueThreadInteractionService(
               resolvedAt: now(),
               updatedAt: now(),
             })
-            .where(inArray(issueThreadInteractions.id, supersededIds));
+            .where(inArray(issueThreadInteractions.id, supersededIds))
+            .returning();
+          for (const previous of superseded) {
+            await enqueueTerminalIssueInteractionChatPublications(tx as unknown as Db, hydrateInteraction(previous));
+          }
         }
         await touchIssue(tx, issue.id);
         inserted = true;
+        await enqueueIssueInteractionChatPublications(tx as unknown as Db, hydrateInteraction(row));
         await notifyDeliveryWork(tx, DELIVERY_QUEUES.connection);
         return row;
       });
@@ -2835,6 +2845,7 @@ export function issueThreadInteractionService(
           await notifyDeliveryWork(tx, DELIVERY_QUEUES.connection);
           await tx.insert(connectionIntentDeliveries).values({ interactionId, companyId: issue.companyId }).onConflictDoNothing();
         }
+        await enqueueTerminalIssueInteractionChatPublications(tx as unknown as Db, hydrateInteraction(row));
         return row;
       });
       if (!updated) throw interactionAlreadyResolvedError();
@@ -4097,6 +4108,7 @@ export function issueThreadInteractionService(
           .returning();
 
         await touchIssue(tx, issue.id);
+        await enqueueTerminalIssueInteractionChatPublications(tx as unknown as Db, hydrateInteraction(updated));
         current.status = updated.status;
         current.result = updated.result;
         current.resolvedByAgentId = updated.resolvedByAgentId;
@@ -4268,6 +4280,7 @@ export function issueThreadInteractionService(
         }
 
         await touchIssue(tx, issue.id);
+        if (complete) await enqueueTerminalIssueInteractionChatPublications(tx as unknown as Db, hydrateInteraction(updated));
         return {
           interaction: hydrateInteraction(updated),
           newlyResolvedItemIds,
@@ -4305,7 +4318,7 @@ export function issueThreadInteractionService(
 
       const [updated] = await db.transaction(async (tx) => {
         await assertInteractionRunWriteAllowed(tx as unknown as Db, issue, actor);
-        return tx.update(issueThreadInteractions)
+        const rows = await tx.update(issueThreadInteractions)
         .set({
           status: "rejected",
           result: {
@@ -4325,6 +4338,8 @@ export function issueThreadInteractionService(
           ),
         )
         .returning();
+        if (rows[0]) await enqueueTerminalIssueInteractionChatPublications(tx as unknown as Db, hydrateInteraction(rows[0]));
+        return rows;
       });
 
       if (!updated) {

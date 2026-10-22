@@ -99,6 +99,37 @@ function interaction(
 }
 
 describe("chat question forms", () => {
+  it("preserves context, complete help and editable starting text in a native form", () => {
+    const current = interaction();
+    current.summary = "General checks passed; one detail is needed.";
+    current.payload.questionSet!.description = "The answer determines the migration test.";
+    current.payload.questionSet!.questions[1]!.initialText = "Editable draft";
+    current.payload.questions[1]!.helpText = "Explain the expected behavior. ".repeat(12);
+    const draft = createChatQuestionFormDraft(current)!;
+    const payload = parseChatQuestionFormSubmitTokenPayload(chatQuestionFormActionRecords(draft, {
+      companyId: current.companyId, endpointId: "endpoint", conversationId: "conversation", publicationId: "publication",
+    })[1]!.payload)!;
+    const modal = buildChatQuestionFormModal(current, draft.submitActionId, payload)!;
+    const shown = JSON.stringify(modal);
+    expect(shown).toContain(current.summary);
+    expect(shown).toContain(current.payload.questionSet!.description);
+    expect(shown).toContain(current.payload.questions[1]!.helpText!.trim());
+    expect(modal.children.find(child => child.type === "text_input")).toMatchObject({ initialValue: "Editable draft" });
+  });
+
+  it.each([13, 100])("opens a native select for all %i choices", count => {
+    const current = interaction();
+    current.payload.questions = [{ ...current.payload.questions[0]!, options: Array.from({ length: count }, (_, index) => ({ id: `choice-${index}`, label: `Choice ${index}` })) }];
+    current.payload.questionSet!.questions = [{ ...current.payload.questionSet!.questions[0]!, options: current.payload.questions[0]!.options.map(({ id, label }) => ({ id, label })) }];
+    expect(createChatQuestionFormDraft(current)?.fields[0]).toMatchObject({ kind: "single_select", options: expect.any(Array) });
+  });
+
+  it("keeps an oversized editable starting value in the complete Paperclip form", () => {
+    const current = interaction();
+    current.payload.questionSet!.questions[1]!.initialText = "a".repeat(3001);
+    expect(createChatQuestionFormDraft(current)).toBeNull();
+  });
+
   it("keeps Discord's 4000-character contract explicit without changing legacy provider limits", () => {
     const current = interaction();
     current.payload.questionSet!.questions[1]!.textValidation = {
@@ -157,7 +188,7 @@ describe("chat question forms", () => {
           ),
         },
       ];
-      expect(createChatQuestionFormDraft(current)).toBeNull();
+      expect(createChatQuestionFormDraft(current)?.fields).toHaveLength(1);
       const draft = createChatQuestionFormDraft(current, {
         nativeProvider: "discord",
       });
@@ -422,6 +453,7 @@ describe("chat question forms", () => {
             { label: "Production", value: expect.stringMatching(/^pcfo:/) },
           ],
         },
+        { type: "text", content: "Describe the user-facing change" },
         {
           type: "text_input",
           id: draft.fields[1]?.fieldId,
@@ -455,6 +487,7 @@ describe("chat question forms", () => {
             { title: "Production", value: expect.stringMatching(/^pcfo:/) },
           ],
         },
+        { type: "TextBlock", text: "Describe the user-facing change" },
         {
           type: "Input.Text",
           id: draft.fields[1]?.fieldId,

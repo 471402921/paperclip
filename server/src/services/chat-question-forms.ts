@@ -10,6 +10,7 @@ import type {
 } from "@paperclipai/shared";
 import {
   Modal,
+  CardText,
   Select,
   SelectOption,
   TextInput,
@@ -159,10 +160,9 @@ function opaqueToken(prefix: string): string {
 }
 
 function boundedLabel(value: string, maximum: number): string {
-  return value
-    .replace(/[\u0000-\u001f\u007f]/g, " ")
-    .trim()
-    .slice(0, maximum);
+  return Array.from(value.replace(/[\u0000-\u001f\u007f]/g, " ").trim())
+    .slice(0, maximum)
+    .join("");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -276,8 +276,7 @@ export function createChatQuestionFormDraft(
   if (
     classified.length === 1 &&
     classified[0]?.kind === "single_select" &&
-    (options.nativeProvider !== "discord" ||
-      classified[0].question.options.length <= 12)
+    classified[0].question.options.length <= 12
   ) {
     return null;
   }
@@ -311,7 +310,7 @@ export function createChatQuestionFormDraft(
     const validation = source?.textValidation;
     const canonicalMax = validation?.maxLength ?? 100_000;
     const canonicalMin = validation?.minLength ?? 0;
-    if (options.nativeProvider === "discord" && canonicalMax < 1) return null;
+    if (canonicalMax < 1 || (source?.initialText?.length ?? 0) > Math.min(canonicalMax, maxTextLength)) return null;
     if (canonicalMin > maxTextLength) return null;
     fields.push({
       fieldId,
@@ -331,7 +330,7 @@ export function createChatQuestionFormDraft(
   }
 
   const now = options.now ?? new Date();
-  return {
+  const draft: ChatQuestionFormDraft = {
     ...(options.nativeProvider
       ? { nativeProvider: options.nativeProvider }
       : {}),
@@ -343,6 +342,11 @@ export function createChatQuestionFormDraft(
     openActionId: opaqueToken(OPEN_ACTION_PREFIX),
     submitActionId: opaqueToken(SUBMIT_ACTION_PREFIX),
   };
+  return buildChatQuestionFormModal(interaction, draft.submitActionId, {
+    version: 1, interactionId: interaction.id, publicationId: "preview",
+    formActionId: draft.submitActionId, expiresAt: draft.expiresAt,
+    fields: draft.fields, ...(draft.nativeProvider ? { nativeProvider: draft.nativeProvider } : {}),
+  }) ? draft : null;
 }
 
 /** Values ready for one durable chat_actions insert. */
@@ -540,7 +544,15 @@ export function buildChatQuestionFormModal(
     return null;
   }
 
-  const children = [];
+  const children: ModalElement["children"] = [];
+  const appendContext = (text: string | null | undefined) => {
+    if (payload.nativeProvider === "discord" || !text?.trim()) return;
+    const points = Array.from(text);
+    for (let offset = 0; offset < points.length; offset += 2000) {
+      children.push(CardText(points.slice(offset, offset + 2000).join("")));
+    }
+  };
+  for (const text of new Set([interaction.summary, interaction.payload.questionSet?.description])) appendContext(text);
   for (const field of payload.fields) {
     const question = canonicalQuestion(interaction, field.questionId);
     if (!question || formKind(interaction, question) !== field.kind)
@@ -550,9 +562,14 @@ export function buildChatQuestionFormModal(
         question.prompt,
         payload.nativeProvider === "discord" ? 45 : 2_000,
       ) || "Response";
+    const source = questionSetQuestion(interaction, question.id);
+    if (question.prompt !== label) appendContext(question.prompt);
+    appendContext(question.helpText);
     if (field.kind === "text") {
+      if ((source?.initialText?.length ?? 0) > field.maxLength) return null;
       children.push(
         TextInput({
+          ...(source?.initialText !== undefined ? { initialValue: source.initialText } : {}),
           id: field.fieldId,
           label,
           maxLength: field.maxLength,
@@ -569,6 +586,12 @@ export function buildChatQuestionFormModal(
         }),
       );
       continue;
+    }
+    for (const option of question.options) {
+      const recommended = source?.options?.find(item => item.id === option.id)?.recommended;
+      if (option.label !== boundedLabel(option.label, 75) || (option.description?.length ?? 0) > 75 || recommended) {
+        appendContext(`${option.label}${recommended ? " (recommended)" : ""}${option.description ? `: ${option.description}` : ""}`);
+      }
     }
     const mappedOptions = field.options.map((mapping) => {
       const option = question.options.find(
@@ -597,6 +620,7 @@ export function buildChatQuestionFormModal(
     );
   }
 
+  if (payload.nativeProvider !== "discord" && children.length > 100) return null;
   return Modal({
     callbackId,
     title:

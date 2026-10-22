@@ -1,3 +1,5 @@
+import { slackInteractionRequiresBoard } from "./chat-channels/slack/cards.js";
+import { chatInteractionPresentation } from "./chat-interaction-presentation.js";
 import { notifyChatPublicationWork } from "./chat-work-notifications.js";
 import { nativePhotonInteraction } from "./photon/interactions.js";
 import { randomBytes } from "node:crypto";
@@ -68,7 +70,10 @@ function terminalNativeInteractionCopy(
     }
     return null;
   }
-  if (interaction.kind !== "ask_user_questions") return null;
+  if (interaction.kind !== "ask_user_questions") {
+    const body = ({ accepted: "Accepted", rejected: "Rejected", answered: "Answered", cancelled: "Cancelled in Paperclip", expired: "Expired in Paperclip" } as Record<string, string>)[interaction.status];
+    return body ? { body, text: `${body}.` } : null;
+  }
   if (interaction.status === "answered") {
     const question = nativeChatQuestion(interaction);
     const answer = question
@@ -185,40 +190,6 @@ export function nativeTelegramConfirmation(
   return interaction;
 }
 
-function textForQuestionInteraction(
-  interaction: AskUserQuestionsInteraction,
-  taskUrl: string | null,
-): string {
-  const lines = [
-    interaction.payload.title ?? interaction.title ?? "Input needed",
-    "",
-  ];
-  if (interaction.summary) lines.push(interaction.summary, "");
-  for (const question of interaction.payload.questions) {
-    lines.push(question.prompt);
-    if (question.helpText) lines.push(question.helpText);
-    for (const option of question.options) lines.push(`- ${option.label}`);
-    lines.push("");
-  }
-  lines.push(
-    taskUrl
-      ? `Open the task in Paperclip to respond: ${taskUrl}`
-      : "Open the task in Paperclip to respond.",
-  );
-  return lines.join("\n");
-}
-
-function genericInteractionText(taskUrl: string | null): string {
-  return [
-    "This task needs an authorized response in Paperclip.",
-    taskUrl
-      ? `Open the task in Paperclip to respond: ${taskUrl}`
-      : "Open the task in Paperclip to respond.",
-  ]
-    .filter((value): value is string => Boolean(value))
-    .join("\n\n");
-}
-
 /**
  * Enqueues one immutable outbox item per live external task binding. A lone
  * closed single-select question receives compact executable buttons. Slack and
@@ -230,17 +201,6 @@ export async function enqueueIssueInteractionChatPublications(
   interaction: IssueThreadInteraction,
 ) {
   if (interaction.status !== "pending") return [];
-  // The first native-chat wave intentionally externalizes only questions and
-  // confirmations. Other governance interactions have richer partial and
-  // terminal semantics that are authoritative in Paperclip; projecting a
-  // generic link card without complete settlement/recovery would leave stale
-  // provider prompts after a board decision.
-  if (
-    interaction.kind !== "ask_user_questions" &&
-    interaction.kind !== "request_confirmation"
-  ) {
-    return [];
-  }
   // An endpoint is one immutable provider bot identity. Never externalize a
   // user/system-authored interaction, or let one agent speak through another
   // agent's endpoint. If the interaction names a source run, verify that run's
@@ -292,8 +252,11 @@ export async function enqueueIssueInteractionChatPublications(
   const inserted: Array<typeof chatPublications.$inferSelect> = [];
   for (const { conversation, endpoint } of bindings) {
     if (endpoint.assignedAgentId !== interaction.createdByAgentId) continue;
+    if (endpoint.provider !== "slack" && interaction.kind !== "ask_user_questions" && interaction.kind !== "request_confirmation") continue;
+    const presentation = chatInteractionPresentation(interaction);
+    const requiresBoard = endpoint.provider === "slack" && slackInteractionRequiresBoard(presentation.body);
     const formDraft =
-      interaction.kind === "ask_user_questions" &&
+      !requiresBoard && interaction.kind === "ask_user_questions" &&
       (endpoint.provider === "slack" ||
         endpoint.provider === "discord" ||
         endpoint.provider === "microsoft-teams") &&
@@ -307,7 +270,7 @@ export async function enqueueIssueInteractionChatPublications(
           )
         : null;
     const supportsCallbacks =
-      endpoint.provider !== "imessage-photon" &&
+      !requiresBoard && endpoint.provider !== "imessage-photon" &&
       formDraft === null &&
       question !== null &&
       endpoint.capabilities.actions === true;
@@ -374,10 +337,7 @@ export async function enqueueIssueInteractionChatPublications(
                 },
               ]
             : [];
-    const text =
-      interaction.kind === "ask_user_questions"
-        ? textForQuestionInteraction(interaction, taskUrl)
-        : genericInteractionText(taskUrl);
+    const text = [presentation.title, presentation.body, taskUrl ? `Open the task in Paperclip to respond: ${taskUrl}` : "Open the task in Paperclip to respond."].join("\n\n");
     const payload = projectSafeChatPublication({
       classification: "external",
       source: "issue_interaction",
@@ -392,26 +352,8 @@ export async function enqueueIssueInteractionChatPublications(
               : interaction.kind === "request_confirmation"
                 ? "confirmation"
                 : "status",
-          title:
-            interaction.kind === "ask_user_questions"
-              ? (question?.prompt ??
-                interaction.payload.title ??
-                interaction.title ??
-                "Input needed")
-              : interaction.kind === "request_confirmation"
-                ? interaction.payload.prompt
-                : "Response needed in Paperclip",
-          body:
-            interaction.kind === "ask_user_questions"
-              ? [...new Set([
-                  interaction.summary,
-                  ...(question
-                    ? [question.helpText]
-                    : interaction.payload.questions.flatMap(item => [item.prompt, item.helpText])),
-                ].filter((value): value is string => Boolean(value?.trim())))].join("\n\n") || undefined
-              : interaction.kind === "request_confirmation"
-                ? (interaction.payload.detailsMarkdown ?? undefined)
-                : "Open the task in Paperclip to review and respond.",
+          title: interaction.kind === "ask_user_questions" && question ? question.prompt : presentation.title,
+          body: presentation.body,
           actions,
         },
       },
@@ -625,6 +567,7 @@ export async function enqueueTerminalIssueInteractionChatPublications(
   const resolutionOutcome = (interaction.result as { outcome?: unknown } | null)
     ?.outcome;
   const continuationWakeRequired =
+    (interaction.kind === "ask_user_questions" || interaction.kind === "request_confirmation") &&
     interaction.status !== "expired" &&
     resolutionOutcome !== "skipped" &&
     !(

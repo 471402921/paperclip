@@ -23,6 +23,7 @@ import type { ChatProvider } from "@paperclipai/shared";
 import { enqueueIssueInteractionChatPublications, enqueueTerminalIssueInteractionChatPublications } from "../services/chat-interaction-publications.js";
 import { issueThreadInteractionService } from "../services/issue-thread-interactions.js";
 import {
+  EMBEDDED_POSTGRES_TEST_TIMEOUT_MS,
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
@@ -47,7 +48,7 @@ describeEmbeddedPostgres(
         "paperclip-terminal-chat-interaction-",
       );
       db = createDb(tempDb.connectionString);
-    }, 20_000);
+    }, EMBEDDED_POSTGRES_TEST_TIMEOUT_MS);
 
     afterAll(async () => {
       if (previousPublicUrl === undefined)
@@ -259,6 +260,37 @@ describeEmbeddedPostgres(
       });
     });
 
+    it.each(["text", "single_select", "multi_select", "custom", "pattern", "oversized"] as const)("publishes the complete %s question with an actionable response path", async shape => {
+      const fixture = await seedBoundIssue(["slack"]);
+      const question = {
+        id: "agent", prompt: "Which agent failed?", helpText: "Send the link and error text.", required: true,
+        answerMode: shape === "multi_select" ? "multi_select" as const : shape === "text" || shape === "pattern" || shape === "oversized" ? "text" as const : "single_select" as const,
+        ...(shape === "single_select" || shape === "multi_select" || shape === "custom" ? { options: [{ id: "codie", label: "Codie", description: "Native runner", recommended: true }, { id: "claude", label: "Claude", description: "Legacy runner" }] } : {}),
+        ...(shape === "custom" ? { customAnswer: { enabled: true } } : {}),
+        ...(shape === "pattern" ? { textValidation: { pattern: "^[A-Z]+$" } } : {}),
+        ...(shape === "oversized" ? { initialText: "x".repeat(3001) } : {}),
+      };
+      const service = issueThreadInteractionService(db);
+      const interaction = await service.create({ id: fixture.issueId, companyId: fixture.companyId }, {
+        kind: "ask_user_questions", title: "Identify the failed change",
+        payload: { version: 1, questionSet: { schema: "paperclip.question_set.v1", description: "The answer determines the next test.", questions: [question] } },
+      } as Parameters<typeof service.create>[1], { agentId: fixture.agentId });
+      const [publication] = await publicationsForInteraction(fixture.companyId, interaction.id);
+      expect(publication.payload.card?.body).toContain(question.prompt);
+      expect(publication.payload.card?.body).toContain(question.helpText);
+      expect(publication.payload.card?.body).toContain("The answer determines the next test.");
+      expect(publication.payload.text).toContain(question.prompt);
+      if (question.options) {
+        expect(publication.payload.card?.body).toContain("Codie (recommended): Native runner");
+        expect(publication.payload.card?.body).toContain("Claude: Legacy runner");
+      }
+      if (["multi_select", "custom", "pattern", "oversized"].includes(shape)) {
+        expect(publication.payload.card?.actions).toEqual([{ type: "link", label: "Open in Paperclip", url: expect.stringContaining(fixture.issueId) }]);
+      } else {
+        expect(publication.payload.card?.actions?.every(action => action.type === "callback")).toBe(true);
+      }
+    });
+
     it("publishes prompts only for the endpoint's verified immutable agent", async () => {
       const fixture = await seedBoundIssue();
       const service = issueThreadInteractionService(db);
@@ -371,7 +403,7 @@ describeEmbeddedPostgres(
       expect(await publicationsForInteraction(fixture.companyId, interaction.id)).toEqual([]);
     });
 
-    it("keeps unsupported governance interactions authoritative in Paperclip", async () => {
+    it("delivers checkbox reviews in Slack while keeping the decision in Paperclip", async () => {
       const fixture = await seedBoundIssue();
       const interaction = await issueThreadInteractionService(db).create(
         { id: fixture.issueId, companyId: fixture.companyId },
@@ -386,9 +418,68 @@ describeEmbeddedPostgres(
         { agentId: fixture.agentId },
       );
 
-      await expect(
-        publicationsForInteraction(fixture.companyId, interaction.id),
-      ).resolves.toEqual([]);
+      const publications = await publicationsForInteraction(fixture.companyId, interaction.id);
+      expect(publications).toHaveLength(1);
+      expect(publications[0].endpointId).toBe(fixture.endpointIds.slack);
+      expect(publications[0].payload.card).toMatchObject({
+        body: expect.stringContaining("US"),
+        actions: [{ type: "link", label: "Open in Paperclip", url: expect.stringContaining(fixture.issueId) }],
+      });
+      await markInteractionCardsPublished(fixture.companyId, interaction.id);
+      await issueThreadInteractionService(db).rejectInteraction(
+        { id: fixture.issueId, companyId: fixture.companyId }, interaction.id, {}, { userId: "board-user" },
+      );
+      const settled = await publicationsForInteraction(fixture.companyId, interaction.id);
+      expect(settled).toHaveLength(2);
+      expect(settled.find(row => row.id !== publications[0].id)?.payload.card?.body).toBe("Rejected");
+      expect(settled.find(row => row.id !== publications[0].id)?.payload.card?.actions).toBeUndefined();
+    });
+
+    it.each([
+      { kind: "suggest_tasks", payload: { version: 1, tasks: [{ clientKey: "docs", title: "Review the migration", description: "Verify preserved configuration" }] }, expected: "Review the migration" },
+      { kind: "request_item_verdicts", payload: { version: 1, prompt: "Review each change", items: [{ id: "docs", label: "Migration notes", description: "Verify preserved configuration" }] }, expected: "Migration notes" },
+    ] as const)("delivers and settles $kind reviews in Slack", async ({ kind, payload, expected }) => {
+      const fixture = await seedBoundIssue();
+      const service = issueThreadInteractionService(db);
+      const issue = { id: fixture.issueId, companyId: fixture.companyId };
+      const interaction = await service.create(issue, { kind, payload } as Parameters<typeof service.create>[1], { agentId: fixture.agentId });
+      const [original] = await publicationsForInteraction(fixture.companyId, interaction.id);
+      expect(original?.endpointId).toBe(fixture.endpointIds.slack);
+      expect(original?.payload.card?.body).toContain(expected);
+      expect(original?.payload.card?.body).toContain("Verify preserved configuration");
+      expect(original?.payload.card?.actions).toEqual([{ type: "link", label: "Open in Paperclip", url: expect.stringContaining(fixture.issueId) }]);
+      await markInteractionCardsPublished(fixture.companyId, interaction.id);
+      if (kind === "request_item_verdicts") {
+        await service.submitItemVerdicts(issue, interaction.id, { verdicts: [{ id: "docs", verdict: "approve" }] }, { userId: "board-user" });
+      } else {
+        await service.rejectInteraction(issue, interaction.id, {}, { userId: "board-user" });
+      }
+      const settled = await publicationsForInteraction(fixture.companyId, interaction.id);
+      expect(settled).toHaveLength(2);
+      expect(settled.find(row => row.id !== original.id)?.payload.card?.body).toBe(kind === "request_item_verdicts" ? "Answered" : "Rejected");
+      expect(settled.find(row => row.id !== original.id)?.payload.card?.actions).toBeUndefined();
+    });
+
+    it("delivers, deduplicates and settles an addressed connection request without a second wake owner", async () => {
+      const fixture = await seedBoundIssue();
+      const sourceRunId = randomUUID();
+      await db.insert(heartbeatRuns).values({ id: sourceRunId, companyId: fixture.companyId, agentId: fixture.agentId, status: "running", responsibleUserId: "board-user", contextSnapshot: { issueId: fixture.issueId } });
+      const service = issueThreadInteractionService(db);
+      const issue = { id: fixture.issueId, companyId: fixture.companyId };
+      const input = { sourceRunId, addresseeUserId: "board-user", idempotencyKey: "connection-slack", payload: { version: 1 as const, serviceSlug: "notion", serviceName: "Notion", requestingAgentId: fixture.agentId, requestingAgentName: "Codie", phase: "requested" as const } };
+      const interaction = await service.createConnectionIntent(issue, input);
+      await service.createConnectionIntent(issue, input);
+      const [original] = await publicationsForInteraction(fixture.companyId, interaction.id);
+      expect(original?.payload.card?.body).toContain("Codie needs Notion");
+      expect(original?.payload.card?.actions).toEqual([{ type: "link", label: "Open in Paperclip", url: expect.stringContaining(fixture.issueId) }]);
+      expect(await publicationsForInteraction(fixture.companyId, interaction.id)).toHaveLength(1);
+      await markInteractionCardsPublished(fixture.companyId, interaction.id);
+      await expect(service.resolveConnectionIntent(issue, interaction.id, { version: 1, outcome: "declined" }, { userId: "different-user" })).rejects.toMatchObject({ status: 403 });
+      await service.resolveConnectionIntent(issue, interaction.id, { version: 1, outcome: "declined" }, { userId: "board-user" });
+      const settled = await publicationsForInteraction(fixture.companyId, interaction.id);
+      expect(settled).toHaveLength(2);
+      expect(settled.find(row => row.id !== original.id)?.payload.card?.body).toBe("Rejected");
+      expect(await db.select().from(chatActions).where(eq(chatActions.companyId, fixture.companyId))).toEqual([]);
     });
 
     it("settles a card when the dispatcher claims it between the read and cancellation CAS", async () => {

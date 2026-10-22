@@ -188,8 +188,15 @@ and [interaction publications](../../server/src/__tests__/chat-interaction-publi
 cover serialization and delivery logic with fixtures.
 
 Free-text and multi-question cards must show their title, question prompts, help
-text, and relevant context beside Respond. Settled cards must not expose saved
-free-text answers. The interaction publication database suite covers both states.
+text, and relevant context beside Respond. Slack modals retain question-set
+instructions, full help text, and editable starting text. A closed single-choice
+question uses buttons for up to 12 options and a modal for 13–100 options.
+Multiple-choice, custom-choice, pattern-validated, and oversized forms show the
+complete question with an explicit Paperclip response link. Checkbox reviews,
+item verdicts, suggested tasks, and connection requests also publish Slack review
+cards; their governed decisions remain in Paperclip. Long cards show an explicit
+size notice and the task link. Every terminal decision settles the provider card.
+Settled cards must not expose saved free-text answers. The interaction publication database suite covers both states.
 
 Manual: use a disposable provider conversation, answer as the linked sender,
 and check the task's persisted result and one continuation. Repeat from an

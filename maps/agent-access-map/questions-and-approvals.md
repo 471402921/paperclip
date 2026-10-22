@@ -620,4 +620,13 @@ Evidence: `source-only` — [answer delivery](../../server/src/services/question
 
 Verification: `not-run` — Answer in actual configured channel -> one persisted result/useful originating reply; wrong/unlinked/expired sender denied. Overlap two conversations and verify no cross-delivery/replay.
 
+Slack presentation: text and closed single-choice questions use opaque native
+response tokens. Multiple-choice, custom-choice, pattern-validated and oversized
+forms link to the complete Paperclip response UI. Checkbox reviews, item verdicts,
+suggested tasks and addressed connection requests publish informative Slack cards
+with Paperclip review links. These links grant no resolution authority. Current
+company, audience, connection and governed-action checks still apply. Terminal
+cards contain no saved free-text response. Local SDK and database tests cover
+publication and settlement; they do not establish a live-provider pass.
+
 Gaps: Slack/Discord/Telegram/email/iMessage and runtime paths independently not-run until driven.
