@@ -899,10 +899,12 @@ describeEmbeddedPostgres("native runner restart recovery with real processes", (
 
   realProcessIt("keeps checkpoint SQL independent of streamed output volume with a real Postgres writer", async () => {
     const samples: Array<{ chunks: number; checkpointWrites: number; transactions: number;
-      changedRows: number; checkpointBytes: number; walBytes: number; elapsedMs: number; idleSql: number }> = [];
+      changedRows: number; checkpointBytes: number; walBytes: number; elapsedMs: number; idleSql: number;
+      streamSql: number; streamTransactions: number; streamChangedRows: number }> = [];
     for (const chunks of [8, 512]) {
       const fixture = await seedRun(`CHECKPOINT-COST-${chunks}`);
       const root = resolve(runtimeRoot, fixture.runId);
+      const releaseOutput = resolve(root, "release-output");
       const binding = { companyId, issueId: fixture.issueId, runId: fixture.runId };
       const owner = { ...binding, authorityRunId: fixture.runId, bootId: successor.bootId,
         generation: 1, leaseOwner: "cost-controller" };
@@ -919,7 +921,7 @@ describeEmbeddedPostgres("native runner restart recovery with real processes", (
       const write = nativeRunnerCheckpointWriter(fixture.db, owner);
       const transport = createRunnerdCodexTransport({ ...transportOptions(fixture, root),
         codexArgs: ["--state-file", resolve(root, "provider.json"), "--linger-after-turn-start",
-          "--held-output", "--held-output-count", String(chunks)],
+          "--held-output", "--held-output-count", String(chunks), "--held-output-release-file", releaseOutput],
         controlPlaneRegistration: async core => {
           authority = core;
           core.setCheckpointPersistence(async checkpoint => {
@@ -941,6 +943,12 @@ describeEmbeddedPostgres("native runner restart recovery with real processes", (
         const started = performance.now();
         measuring = true;
         await transport.transport.request("turn/start", { input: [{ type: "text", text: "Produce the scripted stream." }] });
+        await waitForCondition("settled control setup before releasing text", () =>
+          authority.store.state.commands.every(command => command.status === "completed")
+          && authority.store.state.committedEvents.some(event => event.eventType === "turn.started"));
+        await authority.flushCheckpoint();
+        const beforeStream = { sql: statements.length, transactions, changedRows };
+        await writeFile(releaseOutput, "release\n", { flag: "wx" });
         await waitForCondition(`the final scripted text chunk of ${chunks}`, () => authority.store.state.committedEvents
           .some(event => event.eventType === "item.delta" && JSON.stringify(event.envelope).includes(`still computing ${chunks - 1} `)), 60_000)
           .catch(error => { console.info("checkpoint-cost-stream-diagnostic", JSON.stringify({ chunks,
@@ -954,7 +962,13 @@ describeEmbeddedPostgres("native runner restart recovery with real processes", (
           && query.includes("native_runner_checkpoints")).length;
         expect(checkpointWrites).toBeGreaterThan(0); // The collector must see real control writes.
         const snapshot = { chunks, checkpointWrites, transactions, changedRows, checkpointBytes,
-          walBytes: Number(walEnd.bytes), elapsedMs, idleSql: 0 };
+          walBytes: Number(walEnd.bytes), elapsedMs, idleSql: 0,
+          streamSql: statements.length - beforeStream.sql,
+          streamTransactions: transactions - beforeStream.transactions,
+          streamChangedRows: changedRows - beforeStream.changedRows };
+        // Setup control messages may coalesce differently. The released text-only
+        // interval must add exactly zero work, independent of that scheduling.
+        expect(snapshot).toMatchObject({ streamSql: 0, streamTransactions: 0, streamChangedRows: 0 });
         statements.length = 0;
         measuring = true;
         await new Promise(done => setTimeout(done, 100));
@@ -977,10 +991,8 @@ describeEmbeddedPostgres("native runner restart recovery with real processes", (
       scope: "isolated Postgres; control operations included; WAL is diagnostic; no production capacity claim" };
     if (process.env.PAPERCLIP_TEST_CHECKPOINT_COST_REPORT) await writeFile(process.env.PAPERCLIP_TEST_CHECKPOINT_COST_REPORT,
       `${JSON.stringify(report, null, 2)}\n`, { flag: "wx", mode: 0o600 });
-    // Increasing text by 64x must not add a checkpoint transaction or changed row.
-    expect(samples[1]!.checkpointWrites).toBe(samples[0]!.checkpointWrites);
-    expect(samples[1]!.transactions).toBe(samples[0]!.transactions);
-    expect(samples[1]!.changedRows).toBe(samples[0]!.changedRows);
+    // Both stream sizes were checked independently; total setup counts remain
+    // diagnostic because control-message batching is scheduling-dependent.
     console.info("native-checkpoint-cost", JSON.stringify(report));
   }, 120_000);
 

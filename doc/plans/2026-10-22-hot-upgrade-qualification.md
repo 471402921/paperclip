@@ -153,8 +153,10 @@ Implementation results and exact commands belong below, with their limitations.
 - The native restart integration suite now measures actual checkpoint SQL through
   postgres.js, checkpoint transactions/changed rows/bytes, diagnostic cluster WAL,
   and elapsed time for identical control operations with 8 versus 512 text chunks.
-  Equal write/transaction/row counts are the gate; a subsequent real control write
-  calibrates the observer. A settled-stream interval must issue zero SQL. Broader
+  The fixture holds text until control setup settles, then each released stream
+  must add zero SQL statements, transactions or changed rows. Total control setup
+  counts remain diagnostic because batching can vary. A subsequent real control
+  write calibrates the observer. A settled-stream interval must issue zero SQL. Broader
   idle cleanup remains covered by the existing retention tests. These timings and
   WAL values are not a paired capacity benchmark or production cost estimate.
 
@@ -247,3 +249,16 @@ Master advanced during final verification. The merge preserves its released
 and header index as 0373_powerful_mentor from the complete master snapshot. The
 checkpoint SQL retains its idempotent guards; the latest five snapshots remain.
 This supersedes the earlier 0372/0373 checkpoint numbering in the historical plan.
+
+The merged CI run caught a timing assumption in the initial cost comparison:
+control messages coalesced into seven SQL writes in one sample and eight in the
+other. That is a failed attempt, not a zero-write proof. The fixture now holds
+text behind an explicit release file until turn-start events and command results
+are durably settled. Each text-only interval must independently cause zero SQL,
+transactions and changed rows; total control counts are measurements, not equality
+assertions. The existing positive control still verifies the SQL observer.
+The first gated local attempt passed: both 8 and 512 chunks added zero SQL,
+transactions and changed rows, with zero idle SQL and a successful positive
+control. The full merged restart suite passed 36 tests (five Docker-only skips),
+and all 29 tool-authority tests passed on a serial rerun after an initial database
+setup timeout. Workspace typecheck also passed after the migration merge.

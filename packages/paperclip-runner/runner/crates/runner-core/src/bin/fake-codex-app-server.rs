@@ -3,7 +3,7 @@ use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -1773,6 +1773,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 } else if emit_split_event_burst {
                     send_split_event_burst(&state, split_event_prefix_count)?;
                 } else if hold_turn && args.iter().any(|arg| arg == "--held-output") {
+                    if let Some(release_file) = argument(&args, "--held-output-release-file") {
+                        let deadline = Instant::now() + Duration::from_secs(60);
+                        while !Path::new(&release_file).exists() {
+                            if Instant::now() >= deadline {
+                                return Err("held output was not released within 60 seconds".into());
+                            }
+                            thread::sleep(Duration::from_millis(10));
+                        }
+                    }
                     for index in 0..held_output_count {
                         send(json!({"method": "item/agentMessage/delta", "params": {
                             "threadId": state.thread_id, "turnId": provider_turn_id,
