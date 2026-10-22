@@ -13,7 +13,9 @@ import { resolve } from "node:path";
 import { and, eq, sql } from "drizzle-orm";
 import {
   agents,
+  authUsers,
   companies,
+  companyMemberships,
   completionContracts,
   environmentLeases,
   environments,
@@ -62,6 +64,7 @@ import { closeIdleWarmNativeSessionsForRestart, detachNativeSessionsForRestart, 
 import { loadNativeRunnerCheckpoint, nativeRunnerCheckpointWriter, registerNativeRunnerCheckpoint, restoreNativeRunnerCheckpoint } from "./native-runner-checkpoint.js";
 import { REMOTE_RUNNER_RECONNECT_GRACE_MS } from "./native-runner-recovery-contract.js";
 import { PaperclipRunnerToolAuthority } from "./paperclip-runner-tool-authority.js";
+import { RUNNER_BRIDGE_READ_OPERATIONS, RUNNER_BRIDGE_SCHEMAS } from "./runner-bridge-tools.js";
 import { HttpError } from "../../errors.js";
 
 const mockCaptureRunFailure = vi.hoisted(() => vi.fn());
@@ -688,6 +691,69 @@ describeEmbeddedPostgres("native runner restart recovery with real processes", (
     await expect(recover(call)).rejects.toThrow("paperclip_runner_tool_binding_not_authorized");
     await expect(recover(apiRead)).rejects.toThrow("paperclip_runner_tool_binding_not_authorized");
     expect(executeRead).toHaveBeenCalledTimes(2);
+  });
+
+  it("recovers bridge reads through current permissions and never replays an uncertain bridge mutation", async () => {
+    const fixture = await seedRun("BRIDGE-READ-RECOVERY");
+    const binding = { companyId, issueId: fixture.issueId, agentId, runId: fixture.runId };
+    const workspaceRoot = resolve(runtimeRoot, fixture.runId, "workspace");
+    await mkdir(workspaceRoot, { recursive: true });
+    await writeFile(resolve(workspaceRoot, "note.txt"), "surviving workspace");
+    const [originalAgent] = await fixture.db.select().from(agents).where(eq(agents.id, agentId));
+    await fixture.db.update(agents).set({ adapterConfig: { ...originalAgent.adapterConfig, dotWorkspaceAccess: true } }).where(eq(agents.id, agentId));
+    const personId = randomUUID(), foreignPersonId = randomUUID(), foreignCompanyId = randomUUID();
+    await fixture.db.insert(companies).values({ id: foreignCompanyId, name: "Other recovery scope", issuePrefix: `F${foreignCompanyId.slice(0, 6)}` });
+    await fixture.db.insert(authUsers).values([personId, foreignPersonId].map(id => ({
+      id, name: id === personId ? "Visible person" : "Foreign person", email: `${id}@fixture.invalid`,
+      emailVerified: true, createdAt: new Date(), updatedAt: new Date(),
+    })));
+    await fixture.db.insert(companyMemberships).values([
+      { companyId, principalType: "user", principalId: personId, status: "active", membershipRole: "member" },
+      { companyId: foreignCompanyId, principalType: "user", principalId: foreignPersonId, status: "active", membershipRole: "member" },
+    ]);
+    const assertBridgeAuthority = vi.fn(async () => {});
+    const authority = new PaperclipRunnerToolAuthority(fixture.db, { ...binding,
+      workspaceRoot, workspaceBridge: true, runtimeContext: nativeRuntimeContextFixture(), assertBridgeAuthority });
+    const read = (tool: string, args: unknown = {}) => authority.recover({ tool, callId: `saved-${tool}`, arguments: args });
+    try {
+      await expect(read("get_identity")).resolves.toMatchObject({ result: { agent: { id: agentId } } });
+      await expect(read("list_people")).resolves.toMatchObject({ result: [{ id: personId, name: "Visible person" }] });
+      await expect(read("list_assigned_skills")).resolves.toEqual({ result: [] });
+      await expect(read("read_assigned_skill", { skill: "no-longer-assigned" })).resolves.toMatchObject({ result: { outcome: "failed", code: "runner_skill_not_assigned" } });
+      await expect(read("workspace_list")).resolves.toMatchObject({ result: { entries: [{ name: "note.txt", kind: "file" }] } });
+      await expect(read("workspace_read", { path: "note.txt" })).resolves.toMatchObject({ result: { text: "surviving workspace" } });
+      await expect(read("workspace_read", { path: "deleted.txt" })).resolves.toMatchObject({ result: { outcome: "failed", code: "runner_bridge_file_not_found" } });
+      for (const tool of ["workspace_write", "workspace_run", "connection_request", "unknown_external_write"])
+        await expect(read(tool)).resolves.toBeNull();
+      await fixture.db.update(agents).set({ adapterConfig: originalAgent.adapterConfig }).where(eq(agents.id, agentId));
+      await expect(read("workspace_read", { path: "note.txt" })).rejects.toThrow("Dot workspace access was disabled");
+      const unavailable = new PaperclipRunnerToolAuthority(fixture.db, binding);
+      await expect(unavailable.recover({ tool: "read_assigned_skill", callId: "unadvertised", arguments: { skill: "missing" } }))
+        .rejects.toThrow("Tool is not available to this run");
+      assertBridgeAuthority.mockRejectedValueOnce(new Error("controller lease lost"));
+      await expect(read("get_identity")).rejects.toThrow("controller lease lost");
+      await fixture.db.update(heartbeatRuns).set({ status: "cancelled" }).where(eq(heartbeatRuns.id, fixture.runId));
+      await expect(read("list_people")).rejects.toThrow("paperclip_runner_tool_binding_not_authorized");
+    } finally {
+      await fixture.db.update(agents).set({ adapterConfig: originalAgent.adapterConfig }).where(eq(agents.id, agentId));
+    }
+  });
+
+  it("classifies every bridge tool and routes declared first-party reads through the normal executor", async () => {
+    expect([...RUNNER_BRIDGE_SCHEMAS.keys()].filter(name => !RUNNER_BRIDGE_READ_OPERATIONS.has(name)).sort())
+      .toEqual(["comment_on_task", "workspace_run", "workspace_write", "write_task_document"]);
+    const fixture = await seedRun("READ-CLASSIFICATION");
+    const authority = new PaperclipRunnerToolAuthority(fixture.db, { companyId, issueId: fixture.issueId, agentId, runId: fixture.runId });
+    const execute = vi.spyOn(authority, "execute").mockResolvedValue("current authorized result");
+    try {
+      for (const tool of [...RUNNER_BRIDGE_READ_OPERATIONS, "search_api", "get_workspace", "list_workspaces",
+        "list_project_repositories", "connections_search", "list_task_attachments", "read_task_attachment",
+        "read_current_wake_comments", "list_chat_attachments", "read_chat_attachment", "read_tool_result"]) {
+        const call = { tool, callId: `saved-${tool}`, arguments: {} };
+        await expect(authority.recover(call), tool).resolves.toEqual({ result: "current authorized result" });
+        expect(execute).toHaveBeenLastCalledWith(call);
+      }
+    } finally { execute.mockRestore(); }
   });
 
   it("recovers missing-document reads as tool errors while fencing lost authority and unknown failures", async () => {

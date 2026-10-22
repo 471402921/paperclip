@@ -228,3 +228,16 @@ outage), version A/B artifacts and migration/rollback, deterministic mixed
 work/effect ledger, natural-lease race matrix, and paired peak/overload measurements.
 The hosted blocker was confirmed in the retained build log: BuildKit exhausted
 disk while exporting the image, before the workflow could launch any sandbox.
+
+Review found a read-recovery gap: the copied retry list omitted identity, people,
+skill and workspace reads. Their saved inputs could remain pending after a lost
+response. Recovery now consumes the Runner's existing canonical side-effect
+classification, plus read/mutation metadata on server bridge definitions. The
+server shim exposes that existing Runner metadata; it adds no alternate authority.
+Read replay calls the normal executor and therefore rechecks advertisement,
+company/run scope, current grants and file confinement. External tool annotations
+never authorize uncertain-effect replay. Four focused Postgres regressions passed,
+including actual file reads, company isolation, missing-file settlement, revoked
+workspace grants, stale leases and cancellation. Initial attempts used the wrong
+catalog projection and lacked the shim export; existing read tests and typecheck
+caught both before the corrected run passed.
