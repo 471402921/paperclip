@@ -104,8 +104,13 @@ try {
   failure = error;
   Object.assign(report, { passed: false, error: error instanceof Error ? error.message : String(error) });
 } finally {
-  try { await stopper.stopAll(); await db.$client.end(); await database.cleanup(); report.cleanupConfirmed = true; }
-  catch (error) { failure ??= error; report.cleanupError = error instanceof Error ? error.message : String(error); report.passed = false; }
+  const cleanupErrors: string[] = [];
+  for (const cleanup of [() => stopper.stopAll(), () => db.$client.end(), () => database.cleanup()]) {
+    try { await cleanup(); }
+    catch (error) { failure ??= error; cleanupErrors.push(error instanceof Error ? error.message : String(error)); }
+  }
+  report.cleanupConfirmed = cleanupErrors.length === 0;
+  if (cleanupErrors.length) { report.cleanupErrors = cleanupErrors; report.passed = false; }
   await new Promise<void>(resolve => log.end(resolve));
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
   console.info(JSON.stringify({ passed: report.passed, evidence: reportPath, cleanupConfirmed: report.cleanupConfirmed }));

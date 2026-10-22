@@ -704,7 +704,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .any(|value| value == "--linger-after-turn-start");
     let hold_turn = args.iter().any(|value| value == "--hold-turn") || linger_after_turn_start;
     let held_output_count = argument(&args, "--held-output-count")
-        .map(|value| value.parse::<usize>()).transpose()?.unwrap_or(64);
+        .map(|value| value.parse::<usize>())
+        .transpose()?
+        .unwrap_or(64);
     if !(1..=4096).contains(&held_output_count) {
         return Err("--held-output-count must be between 1 and 4096".into());
     }
