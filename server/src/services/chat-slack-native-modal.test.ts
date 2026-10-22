@@ -392,6 +392,9 @@ describe("Slack native multi-question modal adapter-to-runtime boundary", () => 
     const test = await harness({ configureForm(current) {
       current.summary = "The migration checks passed; one detail remains.";
       current.payload.questionSet!.description = "Tell us which agent failed.";
+      current.payload.questionSet!.questions[1]!.header = "Reproduction details";
+      current.payload.questions[0]!.options[0]!.description = "Complete option explanation. ".repeat(8);
+      current.payload.questionSet!.questions[0]!.options![0]!.recommended = true;
       current.payload.questions[1]!.helpText = "Send the agent link and error text, if available. ".repeat(8);
       current.payload.questionSet!.questions[1]!.initialText = "Editable starting answer";
     } });
@@ -399,7 +402,10 @@ describe("Slack native multi-question modal adapter-to-runtime boundary", () => 
     const wire = JSON.stringify(view);
     expect(wire).toContain(test.form.interaction.summary);
     expect(wire).toContain(test.form.interaction.payload.questionSet!.description);
-    expect(wire).toContain(test.form.interaction.payload.questions[1]!.helpText);
+    expect(wire).toContain(test.form.interaction.payload.questions[1]!.helpText!.trim());
+    expect(wire).toContain("Reproduction details");
+    expect(wire).toContain(test.form.interaction.payload.questions[0]!.options[0]!.description!.trim());
+    expect(wire).toContain("recommended");
     const text = view.blocks.find(block => block.element?.type === "plain_text_input");
     expect(text?.element).toMatchObject({ initial_value: "Editable starting answer" });
     const response = await test.runtime.handleWebhook(signedRequest(submission(view)));

@@ -1,3 +1,4 @@
+import { projectSafeChatPublicationText } from "./chat-publication-projection.js";
 import { randomBytes } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
@@ -311,6 +312,7 @@ export function createChatQuestionFormDraft(
     const canonicalMax = validation?.maxLength ?? 100_000;
     const canonicalMin = validation?.minLength ?? 0;
     if (canonicalMax < 1 || (source?.initialText?.length ?? 0) > Math.min(canonicalMax, maxTextLength)) return null;
+    if (source?.initialText?.trim() && projectSafeChatPublicationText(source.initialText) !== source.initialText.trim()) return null;
     if (canonicalMin > maxTextLength) return null;
     fields.push({
       fieldId,
@@ -547,7 +549,7 @@ export function buildChatQuestionFormModal(
   const children: ModalElement["children"] = [];
   const appendContext = (text: string | null | undefined) => {
     if (payload.nativeProvider === "discord" || !text?.trim()) return;
-    const points = Array.from(text);
+    const points = Array.from(projectSafeChatPublicationText(text));
     for (let offset = 0; offset < points.length; offset += 2000) {
       children.push(CardText(points.slice(offset, offset + 2000).join("")));
     }
@@ -563,10 +565,12 @@ export function buildChatQuestionFormModal(
         payload.nativeProvider === "discord" ? 45 : 2_000,
       ) || "Response";
     const source = questionSetQuestion(interaction, question.id);
+    if (source?.header && source.header !== question.helpText) appendContext(source.header);
     if (question.prompt !== label) appendContext(question.prompt);
     appendContext(question.helpText);
     if (field.kind === "text") {
       if ((source?.initialText?.length ?? 0) > field.maxLength) return null;
+      if (source?.initialText?.trim() && projectSafeChatPublicationText(source.initialText) !== source.initialText.trim()) return null;
       children.push(
         TextInput({
           ...(source?.initialText !== undefined ? { initialValue: source.initialText } : {}),

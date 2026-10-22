@@ -8,9 +8,10 @@ export function chatInteractionPresentation(interaction: IssueThreadInteraction)
       if (payload.questionSet?.description) context.push(payload.questionSet.description);
       for (const question of payload.questions) {
         const source = payload.questionSet?.questions.find(item => item.id === question.id);
+        if (source?.header) context.push(source.header);
         context.push(question.prompt);
         if (question.helpText) context.push(question.helpText);
-        for (const option of question.options.filter(item => !item.freeText)) {
+        for (const option of question.options.filter(item => !item.freeText || question.options.length > 1)) {
           const recommended = source?.options?.find(item => item.id === option.id)?.recommended;
           context.push(`- ${option.label}${recommended ? " (recommended)" : ""}${option.description ? `: ${option.description}` : ""}`);
         }

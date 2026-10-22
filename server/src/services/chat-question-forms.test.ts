@@ -381,6 +381,12 @@ describe("chat question forms", () => {
     },
   );
 
+  it("keeps a credential-bearing starting draft in Paperclip instead of exposing it to a chat modal", () => {
+    const current = interaction();
+    current.payload.questionSet!.questions[1]!.initialText = "xoxb-123456789012345678901234567890";
+    expect(createChatQuestionFormDraft(current)).toBeNull();
+  });
+
   it("issues opaque open, submit, field, and option tokens as durable action rows", () => {
     const now = new Date("2026-09-05T12:00:00.000Z");
     const draft = createChatQuestionFormDraft(interaction(), { now });

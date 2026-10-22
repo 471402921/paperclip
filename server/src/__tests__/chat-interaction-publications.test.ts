@@ -266,7 +266,7 @@ describeEmbeddedPostgres(
         id: "agent", prompt: "Which agent failed?", helpText: "Send the link and error text.", required: true,
         answerMode: shape === "multi_select" ? "multi_select" as const : shape === "text" || shape === "pattern" || shape === "oversized" ? "text" as const : "single_select" as const,
         ...(shape === "single_select" || shape === "multi_select" || shape === "custom" ? { options: [{ id: "codie", label: "Codie", description: "Native runner", recommended: true }, { id: "claude", label: "Claude", description: "Legacy runner" }] } : {}),
-        ...(shape === "custom" ? { customAnswer: { enabled: true } } : {}),
+        ...(shape === "custom" ? { customAnswer: { enabled: true, label: "Another agent", placeholder: "Paste the agent link" } } : {}),
         ...(shape === "pattern" ? { textValidation: { pattern: "^[A-Z]+$" } } : {}),
         ...(shape === "oversized" ? { initialText: "x".repeat(3001) } : {}),
       };
@@ -284,6 +284,7 @@ describeEmbeddedPostgres(
         expect(publication.payload.card?.body).toContain("Codie (recommended): Native runner");
         expect(publication.payload.card?.body).toContain("Claude: Legacy runner");
       }
+      if (shape === "custom") expect(publication.payload.card?.body).toContain("Another agent: Paste the agent link");
       if (["multi_select", "custom", "pattern", "oversized"].includes(shape)) {
         expect(publication.payload.card?.actions).toEqual([{ type: "link", label: "Open in Paperclip", url: expect.stringContaining(fixture.issueId) }]);
       } else {
