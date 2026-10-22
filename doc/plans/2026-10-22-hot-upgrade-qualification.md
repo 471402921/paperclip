@@ -241,3 +241,9 @@ including actual file reads, company isolation, missing-file settlement, revoked
 workspace grants, stale leases and cancellation. Initial attempts used the wrong
 catalog projection and lacked the shim export; existing read tests and typecheck
 caught both before the corrected run passed.
+
+Master advanced during final verification. The merge preserves its released
+0372 workspace-restore migration and regenerates the combined checkpoint table
+and header index as 0373_powerful_mentor from the complete master snapshot. The
+checkpoint SQL retains its idempotent guards; the latest five snapshots remain.
+This supersedes the earlier 0372/0373 checkpoint numbering in the historical plan.
