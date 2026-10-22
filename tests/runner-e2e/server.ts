@@ -1,4 +1,5 @@
 import { parseFinalizationCrashBinding, readFinalizationCrashBoundary, type FinalizationCrashBinding } from "./finalization-crash-boundary.js";
+import { parseControllerOutage, replaceController, type ControllerOutage, type ControllerOutageReceipt } from "./controller-outage.js";
 import { parseRestartRunnerIdentity, type RestartRunnerIdentity } from "./process-tree-owner.js";
 import { usesInstalledCli, verifyInstalledCli } from "./installed-cli.js";
 import { runnerMatrix } from "./catalog.js";
@@ -255,6 +256,7 @@ interface RestartRequest {
   preserveRunner?: RestartRunnerIdentity;
   discardControllerCache?: boolean;
   crashAfterResult?: FinalizationCrashBinding;
+  controllerOutage?: ControllerOutage;
 }
 
 async function readRestartRequest(): Promise<RestartRequest | null> {
@@ -288,10 +290,15 @@ async function readRestartRequest(): Promise<RestartRequest | null> {
       && execution.environment.id === "daytona" && execution.profile.generation === "native" && execution.profile.provider === "codex";
   })) throw new Error("Controller cache replacement requires the explicit remote Codex restart cell");
   const crashAfterResult = (value as { crashAfterResult?: unknown }).crashAfterResult;
+  const controllerOutage = (value as { controllerOutage?: unknown }).controllerOutage;
+  if (controllerOutage !== undefined && (!discardControllerCache || preserveRunner !== undefined || crashAfterResult !== undefined)) {
+    throw new Error("Controller outage requires the explicit remote cache-replacement cell without another crash boundary");
+  }
   if (crashAfterResult !== undefined && (preserveRunner !== undefined || discardControllerCache)) {
     throw new Error("A finalization crash cannot preserve a running provider or discard its controller cache");
   }
   return { requestId, discardControllerCache,
+    ...(controllerOutage === undefined ? {} : { controllerOutage: parseControllerOutage(controllerOutage) }),
     ...(preserveRunner === undefined ? {} : { preserveRunner: parseRestartRunnerIdentity(preserveRunner) }),
     ...(crashAfterResult === undefined ? {} : { crashAfterResult: parseFinalizationCrashBinding(crashAfterResult) }) };
 
@@ -303,6 +310,7 @@ async function writeRestartAck(
   message?: string,
   controllerCacheDiscarded = false,
   crashBoundary?: Awaited<ReturnType<typeof readFinalizationCrashBoundary>>,
+  controllerOutage?: ControllerOutageReceipt,
 ) {
   const temporaryAckPath = `${restartAckPath}.${process.pid}.tmp`;
   await writeFile(
@@ -314,17 +322,43 @@ async function writeRestartAck(
       completedAt: new Date().toISOString(),
       ...(message ? { message } : {}),
       ...(crashBoundary ? { crashBoundary } : {}),
+      ...(controllerOutage ? { controllerOutage } : {}),
     })}\n`,
     { encoding: "utf8", mode: 0o600 },
   );
   await rename(temporaryAckPath, restartAckPath);
 }
 
-async function restartServer({ requestId, preserveRunner, discardControllerCache, crashAfterResult }: RestartRequest) {
+async function restartServer({ requestId, preserveRunner, discardControllerCache, crashAfterResult, controllerOutage }: RestartRequest) {
   activeRestartRequestId = requestId;
   appendLog(`\nRestart request ${requestId}: stopping Paperclip\n`);
   const previous = child;
   if (!previous) throw new Error("No Paperclip server is available to restart");
+  const discardCache = async () => {
+    const cache = path.join(paperclipHome, "instances", required("PAPERCLIP_INSTANCE_ID"), "runtime", "paperclip-runner");
+    await rename(cache, path.join(controlDirectory, `retired-controller-cache-${requestId}`));
+    appendLog(`Restart request ${requestId}: old controller cache made unavailable\n`);
+  };
+  if (controllerOutage) {
+    const receipt = await replaceController({ requestId, previousPid: previous.pid!, outage: controllerOutage,
+      stop: async signal => {
+        if (signal === "SIGKILL") await stopServer.crashForRestart(previous);
+        else await stopServer(previous);
+        if (child === previous) child = null;
+      },
+      waitForUnhealthy: waitForHealthToStop, discardCache, start: startServer, waitForReady: waitForHealth,
+      cancelled: shutdownRequested,
+      record: async receipt => {
+        const target = path.join(controlDirectory, `controller-outage-${requestId}.json`);
+        await writeFile(`${target}.tmp`, `${JSON.stringify(receipt)}\n`, { mode: 0o600 });
+        await rename(`${target}.tmp`, target);
+      },
+    });
+    await writeRestartAck(requestId, "ready", undefined, true, undefined, receipt);
+    appendLog(`Restart request ${requestId}: Paperclip is healthy after ${Math.round(receipt.readyAfterMs!)}ms\n`);
+    activeRestartRequestId = null;
+    return;
+  }
   const crashBoundary = crashAfterResult ? await readFinalizationCrashBoundary(async route => {
     const response = await fetch(`http://127.0.0.1:${port}${route}`, { signal: AbortSignal.timeout(5_000), cache: "no-store" });
     if (!response.ok) throw new Error("Finalization crash boundary could not be read");
@@ -338,9 +372,7 @@ async function restartServer({ requestId, preserveRunner, discardControllerCache
   // must stop answering before the next launcher is allowed to start.
   await waitForHealthToStop();
   if (discardControllerCache) {
-    const cache = path.join(paperclipHome, "instances", required("PAPERCLIP_INSTANCE_ID"), "runtime", "paperclip-runner");
-    await rename(cache, path.join(controlDirectory, `retired-controller-cache-${requestId}`));
-    appendLog(`Restart request ${requestId}: old controller cache made unavailable\n`);
+    await discardCache();
   }
   if (shutdownRequested()) {
     throw new Error("Wrapper shutdown interrupted the Paperclip restart");

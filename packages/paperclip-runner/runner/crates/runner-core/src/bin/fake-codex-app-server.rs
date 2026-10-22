@@ -703,6 +703,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .any(|value| value == "--linger-after-turn-start");
     let hold_turn = args.iter().any(|value| value == "--hold-turn") || linger_after_turn_start;
+    let held_output_count = argument(&args, "--held-output-count")
+        .map(|value| value.parse::<usize>()).transpose()?.unwrap_or(64);
+    if !(1..=4096).contains(&held_output_count) {
+        return Err("--held-output-count must be between 1 and 4096".into());
+    }
     let exit_after_turn_start = args.iter().any(|value| value == "--exit-after-turn-start");
     let exit_after_turn_completion = args
         .iter()
@@ -1766,7 +1771,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 } else if emit_split_event_burst {
                     send_split_event_burst(&state, split_event_prefix_count)?;
                 } else if hold_turn && args.iter().any(|arg| arg == "--held-output") {
-                    for index in 0..64 {
+                    for index in 0..held_output_count {
                         send(json!({"method": "item/agentMessage/delta", "params": {
                             "threadId": state.thread_id, "turnId": provider_turn_id,
                             "itemId": "held-output", "delta": format!("still computing {index} ")

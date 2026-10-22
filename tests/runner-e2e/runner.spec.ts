@@ -1,4 +1,5 @@
 import { captureFollowupStopFailureApiState } from "./followup-stop-evidence.js";
+import { configuredControllerOutage, validControllerOutageReceipt, type ControllerOutage, type ControllerOutageReceipt } from "./controller-outage.js";
 import { runFollowupStopResumeFlow } from "./followup-stop-resume-flow.js";
 import { runFinalizationRecoveryFlow } from "./finalization-recovery-flow.js";
 import type { FinalizationCrashBinding } from "./finalization-crash-boundary.js";
@@ -260,6 +261,8 @@ async function restartIsolatedPaperclipServer(input: {
   preserveRunner?: RestartRunnerIdentity;
   discardControllerCache?: boolean;
   crashAfterResult?: FinalizationCrashBinding;
+  controllerOutage?: ControllerOutage;
+  onControllerOutage?: (receipt: ControllerOutageReceipt) => Promise<void>;
 }): Promise<void> {
   const {
     controlDirectory,
@@ -271,13 +274,14 @@ async function restartIsolatedPaperclipServer(input: {
   await writeFile(
     temporaryRequestPath,
     JSON.stringify({ requestId: input.requestId, discardControllerCache: input.discardControllerCache === true,
+      ...(input.controllerOutage ? { controllerOutage: input.controllerOutage } : {}),
       ...(input.preserveRunner ? { preserveRunner: input.preserveRunner } : {}),
       ...(input.crashAfterResult ? { crashAfterResult: input.crashAfterResult } : {}) }),
     { encoding: "utf8", mode: 0o600 },
   );
   await rename(temporaryRequestPath, requestPath);
 
-  await pollUntil({
+  const acknowledgement = await pollUntil({
     label: `isolated server restart ${input.requestId}`,
     timeoutFailureClass: "transient_infrastructure",
     deadlineAt: input.deadlineAt,
@@ -294,7 +298,8 @@ async function restartIsolatedPaperclipServer(input: {
     accept: (acknowledgement) =>
       acknowledgement.requestId === input.requestId &&
       acknowledgement.status === "ready" &&
-      (!input.discardControllerCache || acknowledgement.controllerCacheDiscarded === true),
+      (!input.discardControllerCache || acknowledgement.controllerCacheDiscarded === true) &&
+      (!input.controllerOutage || validControllerOutageReceipt(acknowledgement.controllerOutage, input.controllerOutage)),
     reject: (acknowledgement) =>
       acknowledgement.requestId === input.requestId &&
       acknowledgement.status === "failed"
@@ -309,6 +314,7 @@ async function restartIsolatedPaperclipServer(input: {
     load: () => input.api.get<Record<string, unknown>>("/api/health"),
     accept: (health) => Boolean(health),
   });
+  if (input.controllerOutage) await input.onControllerOutage?.(acknowledgement.controllerOutage as ControllerOutageReceipt);
 }
 
 const executionIds = (() => {
@@ -573,6 +579,9 @@ async function expectPlanStageVisible(
 }
 
 for (const execution of executions) {
+  const controllerOutage = execution.suite.id === "everyday-workflows" && execution.task.id === "recover-controller"
+    && execution.environment.id === "daytona" && execution.profile.generation === "native" && execution.profile.provider === "codex"
+    ? configuredControllerOutage(process.env) : undefined;
   const privateDir = path.join(privateRoot, "cases", execution.task.id);
   const resultPath = path.join(privateDir, "result.json");
   const snapshotsDir = path.join(privateDir, "snapshots");
@@ -1212,9 +1221,16 @@ for (const execution of executions) {
         const story = await runEverydayFlow({
           page, api, fixtures, execution, nonce, workspacePath, privateDir,
           deadlineAt: startedAtMs + deadlineMs,
-          restart: () => restartIsolatedPaperclipServer({ api, requestId: `story-${nonce}`, deadlineAt: startedAtMs + deadlineMs,
-            discardControllerCache: execution.task.id === "recover-controller" && execution.environment.id === "daytona"
-              && execution.profile.generation === "native" && execution.profile.provider === "codex" }),
+          restart: async () => {
+            let receipt: ControllerOutageReceipt | undefined;
+            await restartIsolatedPaperclipServer({ api, requestId: `story-${nonce}`, deadlineAt: startedAtMs + deadlineMs,
+              discardControllerCache: controllerOutage !== undefined, controllerOutage,
+              onControllerOutage: async value => {
+                receipt = value;
+                await writeSanitizedJson(snapshotsDir, "controller-outage.json", value, secrets);
+              } });
+            return receipt;
+          },
           observe: (storyIssue, storyRuns) => { issue = storyIssue; selectedRuns = storyRuns; },
           capture: captureScreenshot,
           evidence: (name, data) => writeSanitizedJson(snapshotsDir, name, data, secrets),

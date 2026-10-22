@@ -10,7 +10,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   agents,
   companies,
@@ -830,6 +830,93 @@ describeEmbeddedPostgres("native runner restart recovery with real processes", (
     expect(run?.status).toBe("running");
     expect(run?.processPid).toBe(remotePid);
   });
+
+  realProcessIt("keeps checkpoint SQL independent of streamed output volume with a real Postgres writer", async () => {
+    const samples: Array<{ chunks: number; checkpointWrites: number; transactions: number;
+      changedRows: number; checkpointBytes: number; walBytes: number; elapsedMs: number; idleSql: number }> = [];
+    for (const chunks of [8, 512]) {
+      const fixture = await seedRun(`CHECKPOINT-COST-${chunks}`);
+      const root = resolve(runtimeRoot, fixture.runId);
+      const binding = { companyId, issueId: fixture.issueId, runId: fixture.runId };
+      const owner = { ...binding, authorityRunId: fixture.runId, bootId: successor.bootId,
+        generation: 1, leaseOwner: "cost-controller" };
+      await fixture.db.update(nativeRunFinalizations).set({ controllerBootId: owner.bootId,
+        controllerGeneration: 1, leaseOwner: owner.leaseOwner, leaseExpiresAt: new Date(Date.now() + 120_000),
+      }).where(eq(nativeRunFinalizations.runId, fixture.runId));
+      let authority!: DurablePrpControlPlane;
+      let measuring = false;
+      let transactions = 0, changedRows = 0, checkpointBytes = 0;
+      const statements: string[] = [];
+      const priorDebug = fixture.db.$client.options.debug;
+      // Capture statements only, never SQL parameters (encrypted state or secrets).
+      fixture.db.$client.options.debug = (_connection, query) => { if (measuring) statements.push(query); };
+      const write = nativeRunnerCheckpointWriter(fixture.db, owner);
+      const transport = createRunnerdCodexTransport({ ...transportOptions(fixture, root),
+        codexArgs: ["--state-file", resolve(root, "provider.json"), "--linger-after-turn-start",
+          "--held-output", "--held-output-count", String(chunks)],
+        controlPlaneRegistration: async core => {
+          authority = core;
+          core.setCheckpointPersistence(async checkpoint => {
+            if (measuring) {
+              transactions++;
+              changedRows += checkpoint.changedRecords.size;
+              checkpointBytes += [...checkpoint.changedRecords.values()].reduce((sum, value) => sum + Buffer.byteLength(value), 0);
+              expect([...checkpoint.changedRecords.values()].join("\n")).not.toContain("still computing");
+            }
+            await write(checkpoint);
+          });
+          return registerRunnerPrpAuthority({ ...binding, authority: core });
+        },
+      });
+      try {
+        await transport.transport.request("thread/start", { cwd: root, dynamicTools: [] });
+        await authority.flushCheckpoint();
+        const [walStart] = await fixture.db.execute(sql`select pg_current_wal_insert_lsn()::text as lsn`);
+        const started = performance.now();
+        measuring = true;
+        await transport.transport.request("turn/start", { input: [{ type: "text", text: "Produce the scripted stream." }] });
+        await waitForCondition(`the final scripted text chunk of ${chunks}`, () => authority.store.state.committedEvents
+          .some(event => event.eventType === "item.delta" && JSON.stringify(event.envelope).includes(`still computing ${chunks - 1} `)), 60_000)
+          .catch(error => { console.info("checkpoint-cost-stream-diagnostic", JSON.stringify({ chunks,
+            cursor: authority.store.state.ackedSourceSeq,
+            receivedTextEvents: authority.store.state.committedEvents.filter(event => event.eventType === "item.delta").length })); throw error; });
+        await authority.flushCheckpoint();
+        measuring = false;
+        const elapsedMs = performance.now() - started;
+        const [walEnd] = await fixture.db.execute(sql`select pg_wal_lsn_diff(pg_current_wal_insert_lsn(), ${String(walStart.lsn)}::pg_lsn)::text as bytes`);
+        const checkpointWrites = statements.filter(query => /^\s*(insert|update|delete)\b/i.test(query)
+          && query.includes("native_runner_checkpoints")).length;
+        expect(checkpointWrites).toBeGreaterThan(0); // The collector must see real control writes.
+        const snapshot = { chunks, checkpointWrites, transactions, changedRows, checkpointBytes,
+          walBytes: Number(walEnd.bytes), elapsedMs, idleSql: 0 };
+        statements.length = 0;
+        measuring = true;
+        await new Promise(done => setTimeout(done, 100));
+        await authority.flushCheckpoint();
+        snapshot.idleSql = statements.length;
+        expect(statements).toEqual([]);
+        // Positive calibration: an actual new control operation must trip the zero-write oracle.
+        authority.queueCommand("session.snapshot", {}, `cost-positive-control-${chunks}`);
+        await authority.flushCheckpoint();
+        expect(statements.some(query => /insert into "native_runner_checkpoints"/i.test(query))).toBe(true);
+        measuring = false;
+        samples.push(snapshot);
+      } finally {
+        measuring = false;
+        fixture.db.$client.options.debug = priorDebug;
+        await transport.transport.close();
+      }
+    }
+    const report = { schema: "paperclip.checkpoint-cost/v1", samples,
+      scope: "isolated Postgres; control operations included; WAL is diagnostic; no production capacity claim" };
+    if (process.env.PAPERCLIP_TEST_CHECKPOINT_COST_REPORT) await writeFile(process.env.PAPERCLIP_TEST_CHECKPOINT_COST_REPORT,
+      `${JSON.stringify(report, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+    // Increasing text by 64x must not add a checkpoint transaction or changed row.
+    expect(samples[1]!.checkpointWrites).toBe(samples[0]!.checkpointWrites);
+    expect(samples[1]!.transactions).toBe(samples[0]!.transactions);
+    expect(samples[1]!.changedRows).toBe(samples[0]!.changedRows);
+    console.info("native-checkpoint-cost", JSON.stringify(report));
+  }, 120_000);
 
   realProcessIt.each([false, true])("adopts the same runner from Postgres after losing the controller filesystem (prepared task: %s)", async preparedTask => {
     const fixture = await seedRun(`EMPTY-CONTROLLER-DISK-${preparedTask}`);
