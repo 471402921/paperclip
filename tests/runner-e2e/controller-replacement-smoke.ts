@@ -91,7 +91,7 @@ try {
     if (value?.requestId === requestId && value.status === "failed") throw new Error(String(value.message));
     return value;
   }, value => value?.requestId === requestId && value.status === "ready", outage.holdMs + 180_000);
-  assert(validControllerOutageReceipt(ack!.controllerOutage, outage));
+  assert(validControllerOutageReceipt(ack!.controllerOutage, outage, requestId));
   assert.equal((await api(`/companies/${company.id}`)).id, company.id);
   const [after] = await db.$client`select pg_postmaster_start_time()::text as started`;
   assert.equal(after.started, before.started, "Postgres must remain alive across the web-server replacement");

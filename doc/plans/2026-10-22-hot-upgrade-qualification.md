@@ -191,6 +191,40 @@ Initial evidence on 2026-10-22:
   and five failures in existing catalog version/count and Daytona image-input
   assertions. These must be reconciled before calling this slice PR-ready.
 
-Still outstanding: hosted active-agent proof, full 300-second actual-server
-qualification, version A/B artifacts and migration/rollback, deterministic mixed
+Follow-up validation on the merged branch (`d0a0b830e7`, plus the request-receipt
+correlation check):
+
+- The full **300000 ms** actual-main-server SIGKILL smoke passed with Postgres
+  continuously alive, old controller cache unavailable, existing data readable,
+  a new HTTP mutation accepted and cleanup confirmed. This remains a zero-provider
+  startup/DB proof; it does not upgrade the hosted agent result to a pass.
+- The complete native restart integration file passed **34 tests**, with five
+  Docker-dependent cases skipped. The focused protocol and Copilot identity
+  suites passed **191 tests**. Fault/oracle tests passed **50 tests**.
+- Workspace `pnpm -r typecheck` and `pnpm build` passed. Earlier typecheck attempts
+  found a sandbox IPC restriction and Rust fixture formatting; the permitted,
+  formatted rerun passed. The merged source preserves master's Copilot v58 and
+  declares the combined recovery transport as v59, including Docker image inputs.
+- The reconciled Product E2E support run passed 3573 tests and skipped two, but one
+  file's worker failed to start. Its separate rerun passed all three tests, and
+  the follow-on Node suite passed 128 tests. The full invocation remains recorded
+  as incomplete; it is not relabeled a clean full-suite run.
+
+Measured control-checkpoint cost for one scripted turn:
+
+| Text chunks | Transactions | SQL writes | Changed rows | Plaintext checkpoint bytes | Cluster WAL bytes | Settled-stream idle SQL |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 8 | 7 | 8 | 14 | 13618 | 37224 | 0 |
+| 512 | 7 | 8 | 14 | 13636 | 37632 | 0 |
+
+Control operations are included; the output stream adds no checkpoint writes.
+WAL is a diagnostic cluster-level observation, including possible background
+work, not an exact attribution or threshold. This is not the promised paired
+peak-capacity campaign. A new control command after each sample produced a real
+SQL write, establishing that the observer was active.
+
+Still outstanding: hosted active-agent proof (including the full 300-second
+outage), version A/B artifacts and migration/rollback, deterministic mixed
 work/effect ledger, natural-lease race matrix, and paired peak/overload measurements.
+The hosted blocker was confirmed in the retained build log: BuildKit exhausted
+disk while exporting the image, before the workflow could launch any sandbox.

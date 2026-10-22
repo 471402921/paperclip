@@ -299,7 +299,7 @@ async function restartIsolatedPaperclipServer(input: {
       acknowledgement.requestId === input.requestId &&
       acknowledgement.status === "ready" &&
       (!input.discardControllerCache || acknowledgement.controllerCacheDiscarded === true) &&
-      (!input.controllerOutage || validControllerOutageReceipt(acknowledgement.controllerOutage, input.controllerOutage)),
+      (!input.controllerOutage || validControllerOutageReceipt(acknowledgement.controllerOutage, input.controllerOutage, input.requestId)),
     reject: (acknowledgement) =>
       acknowledgement.requestId === input.requestId &&
       acknowledgement.status === "failed"

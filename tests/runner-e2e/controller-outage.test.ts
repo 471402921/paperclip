@@ -24,6 +24,7 @@ describe("controller outage qualification", () => {
     expect(validControllerOutageReceipt(receipt, f.input.outage)).toBe(true);
     expect(validControllerOutageReceipt(receipt, { signal: "SIGTERM", holdMs: 20 })).toBe(false);
     expect(validControllerOutageReceipt(receipt, { signal: "SIGKILL", holdMs: 300_000 })).toBe(false);
+    expect(validControllerOutageReceipt(receipt, f.input.outage, "another-attempt")).toBe(false);
     expect(f.receipts[0]).not.toHaveProperty("readyAfterMs");
     expect(f.receipts.at(-1)).toEqual(receipt);
   });

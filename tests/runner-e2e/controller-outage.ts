@@ -32,7 +32,7 @@ export function configuredControllerOutage(env: NodeJS.ProcessEnv): ControllerOu
 }
 
 /** A fault receipt is required in addition to the runner's continuity receipts. */
-export function validControllerOutageReceipt(value: unknown, expected?: ControllerOutage): value is ControllerOutageReceipt {
+export function validControllerOutageReceipt(value: unknown, expected?: ControllerOutage, requestId?: string): value is ControllerOutageReceipt {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const r = value as ControllerOutageReceipt;
   try { parseControllerOutage(r); } catch { return false; }
@@ -47,6 +47,7 @@ export function validControllerOutageReceipt(value: unknown, expected?: Controll
     && r.replacementStartedAfterMs! - r.stoppedAfterMs! >= r.holdMs
     && r.readyAfterMs! >= r.replacementStartedAfterMs!
     && r.readyAfterMs! < 420_000
+    && (requestId === undefined || r.requestId === requestId)
     && (!expected || (r.signal === expected.signal && r.holdMs === expected.holdMs));
 }
 
@@ -92,6 +93,6 @@ export async function replaceController<T extends { pid?: number }>(input: {
   check();
   receipt.readyAfterMs = performance.now() - started;
   await record();
-  if (!validControllerOutageReceipt(receipt, outage)) throw new Error("Controller outage did not produce a qualifying replacement receipt");
+  if (!validControllerOutageReceipt(receipt, outage, input.requestId)) throw new Error("Controller outage did not produce a qualifying replacement receipt");
   return receipt;
 }
