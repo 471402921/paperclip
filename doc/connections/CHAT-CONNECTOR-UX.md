@@ -259,6 +259,21 @@ assignment, delegation, and origin-thread completion use normal Paperclip
 workflows. Identify missing workflow capabilities separately rather than adding
 a connector-specific task lifecycle.
 
+## Questions and review cards through the channel
+
+A connected conversation must carry every user-question form, including requests
+shown above the Paperclip composer and questions from the runtime. Follow the
+[chat channel contract](./CONNECTOR-PLAYBOOK.md#chat-channel-connectors) for the
+complete inventory, native-response versus Paperclip-handoff decision, current
+authorization, and resolution/continuation behavior. Show the actual question
+and useful context in the channel; a title and **Respond** button alone do not
+satisfy that contract. Unsupported native controls need an explicit, usable
+handoff, not a missing request.
+
+The optional first-message test in onboarding does not replace engineering
+qualification of these conversation loops. Verify affected forms in the actual
+provider and record real-provider evidence separately from local simulations.
+
 ## Apply and verify
 
 For a requested redesign, identify the relevant principles and fix the concrete
