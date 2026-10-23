@@ -28,7 +28,13 @@ export function ArtifactFront({
         </div>
       );
     case "media":
-      return <ArtifactPrint subject={subject} size={print} onMediaLoad={onMediaLoad} style={style} />;
+      // The print sits in the same wrapper as the sheets: the hover lift in
+      // index.css targets data-artifact-front, and a bare print stood still.
+      return (
+        <div data-artifact-front className="shrink-0" style={style}>
+          <ArtifactPrint subject={subject} size={print} onMediaLoad={onMediaLoad} />
+        </div>
+      );
     case "media-fallback":
       return (
         <div data-artifact-front className="shrink-0" style={style}>
