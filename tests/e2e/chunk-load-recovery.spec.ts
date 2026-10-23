@@ -23,13 +23,6 @@ async function failFirstTaskCss(page: Page) {
   return counts;
 }
 
-// Task-page CSS loads through Vite's preload helper, and several route
-// chunks depend on it. Only the first import that requests it receives a
-// failure. On a task page that is the ignored task-page prefetch, which left
-// the page without its CSS; on the agents page it is the lazy route, which
-// showed "Unable to preload CSS" in the route error boundary. Both recover
-// with one reload that loads the CSS. Page routes cannot see service-worker
-// fetches, so keep requests on the page.
 test.use({ serviceWorkers: "block" });
 
 for (const entry of ["task", "agents"] as const) {
@@ -57,26 +50,32 @@ for (const entry of ["task", "agents"] as const) {
   });
 }
 
-test("a task-page CSS asset that stays broken reloads once, then shows the error", async ({ page, request }) => {
-  const company = await json(await request.post("/api/companies", {
-    data: { name: `Chunk recovery ${randomUUID()}` },
-  }));
-  let failed = 0;
-  let documents = 0;
-  await page.route(/\/assets\/issue-detail-[^/]+\.css$/, async (route) => {
-    failed += 1;
-    await route.abort("failed");
-  });
-  page.on("request", (request) => {
-    if (request.resourceType() === "document" && request.frame() === page.mainFrame()) documents += 1;
-  });
+for (const entry of ["task", "agents"] as const) {
+  test(`a task-page CSS asset that stays broken reloads once, then shows the error (${entry} page)`, async ({ page, request }) => {
+    const company = await json(await request.post("/api/companies", {
+      data: { name: `Chunk recovery ${randomUUID()}` },
+    }));
+    const issue = await json(await request.post(`/api/companies/${company.id}/issues`, {
+      data: { title: "Open with a broken stylesheet", status: "backlog" },
+    }));
+    let failed = 0;
+    let documents = 0;
+    await page.route(/\/assets\/issue-detail-[^/]+\.css$/, async (route) => {
+      failed += 1;
+      await route.abort("failed");
+    });
+    page.on("request", (request) => {
+      if (request.resourceType() === "document" && request.frame() === page.mainFrame()) documents += 1;
+    });
 
-  await page.goto(`/${company.issuePrefix}/agents`);
+    await page.goto(entry === "task"
+      ? `/${company.issuePrefix}/issues/${issue.identifier}`
+      : `/${company.issuePrefix}/agents`);
 
-  await expect(page.getByText("This page hit an error")).toBeVisible();
-  await expect(page.getByText(/Unable to preload CSS for .*issue-detail-/)).toBeVisible();
-  // Give a looping reload time to start before asserting there was none.
-  await page.waitForTimeout(1_000);
-  expect(documents).toBe(2);
-  expect(failed).toBe(2);
-});
+    await expect(page.getByText("This page hit an error")).toBeVisible();
+    await expect(page.getByText(/Unable to preload CSS for .*issue-detail-/)).toBeVisible();
+    await page.waitForTimeout(1_000);
+    expect(documents).toBe(2);
+    expect(failed).toBe(2);
+  });
+}

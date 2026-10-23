@@ -3,7 +3,7 @@
 import { act, lazy } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createChunkLoadRecovery } from "@/lib/chunk-load-recovery";
+import { createChunkLoadRecovery, RELOAD_ABANDONED_MS } from "@/lib/chunk-load-recovery";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 
 const navigateMock = vi.hoisted(() => vi.fn());
@@ -20,13 +20,16 @@ vi.mock("@/lib/sentry", () => ({
   captureBrowserException: (...args: unknown[]) => captureBrowserExceptionMock(...args),
 }));
 
-const chunkRecovery = vi.hoisted(() => ({ current: null as null | { reloadForChunkLoadError: (error: unknown) => boolean } }));
+const chunkRecovery = vi.hoisted(() => ({
+  current: null as null | ReturnType<typeof import("@/lib/chunk-load-recovery").createChunkLoadRecovery>,
+}));
 
 vi.mock("@/lib/chunk-load-recovery", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/chunk-load-recovery")>();
   return {
     ...actual,
     reloadForChunkLoadError: (error: unknown) => chunkRecovery.current!.reloadForChunkLoadError(error),
+    onChunkLoadReloadAbandoned: (listener: () => void) => chunkRecovery.current!.onChunkLoadReloadAbandoned(listener),
   };
 });
 
@@ -91,8 +94,38 @@ describe("RouteErrorBoundary", () => {
     act(() => root.unmount());
   });
 
+  it("shows and reports the error when the recovery reload is cancelled", async () => {
+    vi.useFakeTimers();
+    try {
+      const FailedPage = lazy(async () => {
+        throw new Error("Unable to preload CSS for https://paperclip.example/assets/issue-detail-CIbQo9zW.css");
+      });
+      const root = createRoot(container);
+      await act(async () => { root.render(<RouteErrorBoundary><FailedPage /></RouteErrorBoundary>); });
+      expect(reloadMock).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[role="status"]')?.textContent).toContain("Loading");
+
+      act(() => { vi.advanceTimersByTime(RELOAD_ABANDONED_MS); });
+      expect(container.textContent).toContain("This page hit an error");
+      expect(container.textContent).toContain("Unable to preload CSS");
+      expect(captureBrowserExceptionMock).toHaveBeenCalledTimes(1);
+      expect(captureBrowserExceptionMock).toHaveBeenCalledWith(expect.any(Error), {
+        boundary: "route", componentStack: expect.any(String),
+      });
+
+      const AnotherFailedPage = lazy(async () => { throw new Error("Failed to fetch dynamically imported module"); });
+      routerLocation.current = { pathname: "/co/issues/CO-1", search: "" };
+      await act(async () => { root.render(<RouteErrorBoundary><AnotherFailedPage /></RouteErrorBoundary>); });
+      expect(reloadMock).toHaveBeenCalledTimes(1);
+      expect(captureBrowserExceptionMock).toHaveBeenCalledTimes(2);
+      expect(container.textContent).toContain("Failed to fetch dynamically imported module");
+      act(() => root.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("contains a repeated chunk load failure and recovers when navigating back to a task", async () => {
-    // A recovery reload already ran; the chunk still fails on the fresh page.
     window.sessionStorage.setItem("paperclip:chunk-load-reload-at", String(Date.now()));
     const FailedPage = lazy(async () => { throw new Error("Failed to fetch dynamically imported module"); });
     const root = createRoot(container);

@@ -36,8 +36,6 @@ initPluginBridge(React, ReactDOM);
 // accumulate into millions of native objects (GBs). Reap them periodically.
 startPerfMeasureReaper();
 
-// A stale or briefly unavailable lazy chunk, or its CSS, recovers with one
-// guarded reload, whichever import first hit the failure.
 startChunkLoadRecovery();
 
 // Parked SPA tabs never navigate, so beyond registering the worker this also

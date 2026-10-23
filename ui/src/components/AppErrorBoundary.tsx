@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { reloadForChunkLoadError } from "@/lib/chunk-load-recovery";
+import { onChunkLoadReloadAbandoned, reloadForChunkLoadError } from "@/lib/chunk-load-recovery";
 import { captureBrowserException } from "@/lib/sentry";
 
 type AppErrorBoundaryState = {
@@ -20,17 +20,33 @@ type AppErrorBoundaryState = {
  */
 export class AppErrorBoundary extends Component<{ children: ReactNode }, AppErrorBoundaryState> {
   override state: AppErrorBoundaryState = { error: null, reloading: false };
+  private stopWaitingForReload: (() => void) | null = null;
 
   static getDerivedStateFromError(error: unknown): Partial<AppErrorBoundaryState> {
     return { error: error instanceof Error ? error : new Error(String(error)) };
   }
 
   override componentDidCatch(error: unknown, info: ErrorInfo): void {
-    // A stale or briefly unavailable lazy chunk recovers with a fresh page.
+    this.stopWaitingForReload?.();
+    this.stopWaitingForReload = null;
     if (reloadForChunkLoadError(error)) {
       this.setState({ reloading: true });
+      this.stopWaitingForReload = onChunkLoadReloadAbandoned(() => {
+        this.stopWaitingForReload = null;
+        this.setState({ reloading: false });
+        this.report(error, info);
+      });
       return;
     }
+    this.report(error, info);
+  }
+
+  override componentWillUnmount(): void {
+    this.stopWaitingForReload?.();
+    this.stopWaitingForReload = null;
+  }
+
+  private report(error: unknown, info: ErrorInfo): void {
     console.error("App shell crashed", { error, componentStack: info.componentStack });
     captureBrowserException(error, { boundary: "app", componentStack: info.componentStack });
   }

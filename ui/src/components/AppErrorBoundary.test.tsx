@@ -3,7 +3,7 @@
 import { act, lazy, Suspense, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createChunkLoadRecovery } from "@/lib/chunk-load-recovery";
+import { createChunkLoadRecovery, RELOAD_ABANDONED_MS } from "@/lib/chunk-load-recovery";
 import { AppErrorBoundary } from "./AppErrorBoundary";
 
 const captureBrowserExceptionMock = vi.hoisted(() => vi.fn());
@@ -13,13 +13,16 @@ vi.mock("@/lib/sentry", () => ({
   captureBrowserException: (...args: unknown[]) => captureBrowserExceptionMock(...args),
 }));
 
-const chunkRecovery = vi.hoisted(() => ({ current: null as null | { reloadForChunkLoadError: (error: unknown) => boolean } }));
+const chunkRecovery = vi.hoisted(() => ({
+  current: null as null | ReturnType<typeof import("@/lib/chunk-load-recovery").createChunkLoadRecovery>,
+}));
 
 vi.mock("@/lib/chunk-load-recovery", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/chunk-load-recovery")>();
   return {
     ...actual,
     reloadForChunkLoadError: (error: unknown) => chunkRecovery.current!.reloadForChunkLoadError(error),
+    onChunkLoadReloadAbandoned: (listener: () => void) => chunkRecovery.current!.onChunkLoadReloadAbandoned(listener),
   };
 });
 
@@ -95,7 +98,6 @@ describe("AppErrorBoundary", () => {
     expect(container.querySelector('[role="status"]')?.textContent).toContain("Reloading Paperclip");
     act(() => root.unmount());
 
-    // The fresh page hits the same failure inside the guard window.
     chunkRecovery.current = createChunkLoadRecovery({ reload: reloadMock });
     const nextRoot = createRoot(container);
     const StillFailedLayout = lazy(async () => { throw chunkError(); });
@@ -106,6 +108,28 @@ describe("AppErrorBoundary", () => {
     expect(captureBrowserExceptionMock).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain("Paperclip hit an error");
     act(() => nextRoot.unmount());
+  });
+
+  it("shows and reports the error when the recovery reload is cancelled", async () => {
+    vi.useFakeTimers();
+    try {
+      const root = createRoot(container);
+      const FailedLayout = lazy(async () => {
+        throw new Error("Failed to fetch dynamically imported module: https://paperclip.example/assets/layout.js");
+      });
+      await act(async () => {
+        root.render(<AppErrorBoundary><Suspense fallback={null}><FailedLayout /></Suspense></AppErrorBoundary>);
+      });
+      expect(reloadMock).toHaveBeenCalledTimes(1);
+      expect(captureBrowserExceptionMock).not.toHaveBeenCalled();
+
+      act(() => { vi.advanceTimersByTime(RELOAD_ABANDONED_MS); });
+      expect(container.textContent).toContain("Paperclip hit an error");
+      expect(captureBrowserExceptionMock).toHaveBeenCalledTimes(1);
+      act(() => root.unmount());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("catches errors thrown from effects, not just render", () => {

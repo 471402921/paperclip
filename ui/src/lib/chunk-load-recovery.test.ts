@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { createChunkLoadRecovery, isChunkLoadError } from "./chunk-load-recovery";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createChunkLoadRecovery, isChunkLoadError, RELOAD_ABANDONED_MS } from "./chunk-load-recovery";
 
 function memoryStorage(initial: Record<string, string> = {}) {
   const values = new Map(Object.entries(initial));
@@ -34,12 +34,15 @@ describe("isChunkLoadError", () => {
 });
 
 describe("reloadForChunkLoadError", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("reloads once and treats later failures in the same document as that reload", () => {
     const reload = vi.fn();
     const { reloadForChunkLoadError } = createChunkLoadRecovery({ storage: () => memoryStorage(), reload });
 
     expect(reloadForChunkLoadError(cssPreloadError)).toBe(true);
-    // The rejected import reaches an error boundary after the event handler.
     expect(reloadForChunkLoadError(cssPreloadError)).toBe(true);
     expect(reload).toHaveBeenCalledTimes(1);
   });
@@ -54,6 +57,35 @@ describe("reloadForChunkLoadError", () => {
     const freshPage = createChunkLoadRecovery({ storage: () => storage, reload, now: () => now });
     expect(freshPage.reloadForChunkLoadError(cssPreloadError)).toBe(false);
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("notifies waiting callers and stops claiming the failure when the reload is cancelled", () => {
+    vi.useFakeTimers();
+    const storage = memoryStorage();
+    const reload = vi.fn();
+    const { reloadForChunkLoadError, onChunkLoadReloadAbandoned } = createChunkLoadRecovery({
+      storage: () => storage,
+      reload,
+    });
+    expect(reloadForChunkLoadError(cssPreloadError)).toBe(true);
+    const abandoned = vi.fn();
+    const stopped = vi.fn();
+    onChunkLoadReloadAbandoned(abandoned);
+    onChunkLoadReloadAbandoned(stopped)();
+
+    vi.advanceTimersByTime(RELOAD_ABANDONED_MS - 1);
+    expect(abandoned).not.toHaveBeenCalled();
+    expect(reloadForChunkLoadError(cssPreloadError)).toBe(true);
+
+    vi.advanceTimersByTime(1);
+    expect(abandoned).toHaveBeenCalledTimes(1);
+    expect(stopped).not.toHaveBeenCalled();
+    expect(reloadForChunkLoadError(cssPreloadError)).toBe(false);
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    const late = vi.fn();
+    onChunkLoadReloadAbandoned(late);
+    expect(late).toHaveBeenCalledTimes(1);
   });
 
   it("recovers again after the guard window, such as after a later deploy", () => {
