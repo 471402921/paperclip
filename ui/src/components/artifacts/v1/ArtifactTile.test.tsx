@@ -64,7 +64,6 @@ describe("the Artifacts page tiles", () => {
     const print = container.querySelector<HTMLElement>("[data-artifact-print]");
     expect(print?.style.width).toBe("245px");
     expect(print?.style.height).toBe("163.33px");
-    // The print is placed through the lifted wrapper, so the hover rise in index.css reaches it.
     const front = container.querySelector<HTMLElement>("[data-artifact-front]");
     expect(front).not.toBeNull();
     expect(front?.contains(print)).toBe(true);
