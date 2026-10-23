@@ -123,8 +123,11 @@ configuration surfaces. Board browser verification does not qualify agent access
 
 The existing-agent upgrade notice uses this configuration PATCH. It does not
 grant configuration, account, or environment access. The server resolves the
-saved settings under normal company/configuration authorization and rejects
-unsupported settings before persistence. Operator browser evidence does not
+saved settings under normal company/configuration authorization. Obsolete Claude
+tuning fields are removed with `configurationWarnings`; security incompatibilities
+remain errors. Unqualified sandbox upgrades first use the existing
+`POST /api/environments/{id}/probe?companyId=...`, retaining its instance-admin
+authorization and company-scoped qualification. No probe runs merely on page load. Operator browser evidence does not
 qualify the agent permission paths for this operation.
 
 Evidence: `source-only` — [implementation](../../server/src/routes/agents.ts#L1395) at

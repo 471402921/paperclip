@@ -71,8 +71,10 @@ hard stops. The conversion journey creates a real legacy agent and selects
 Paperclip Runner through the public agent update API. It checks retained
 configuration, encrypted secret references, environment, instructions, and
 corresponding permission policy before submitting work through the browser.
-The disposable legacy profile starts without optional CLI-only extra arguments or turn limits;
-the journey does not remove settings from an existing user agent. For either
+The disposable legacy profile starts without optional CLI-only extra arguments.
+Claude retains its saved `maxTurnsPerRun: 1000` to verify that conversion ignores
+the obsolete option without blocking the task. The journey does not remove
+settings from an existing user agent. For either
 provider, Daytona's public environment probe must save platform qualification
 before the same agent selects Runner. Probe leases and uncertain probe accounting
 remain included in attempt evidence and cleanup.

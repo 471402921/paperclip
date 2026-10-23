@@ -1,7 +1,7 @@
 import { prepareRuntimeSettingsPatch } from "../services/agent-runtime-settings.js";
 import { completeSetupTokenAiConnection } from "../services/setup-token-ai-connection.js";
 import { cancellationRequestId } from "../services/native-runtime/native-cancellation-request.js";
-import { agentHarnessType, type AgentRunnerChoice } from "@paperclipai/shared";
+import { agentHarnessType, normalizeClaudeRunnerOptions, type AgentConfigurationWarning, type AgentRunnerChoice } from "@paperclipai/shared";
 import { resolveNewAgentRunnerForCompany } from "../services/agent-runner-selection.js";
 import { agentEnvironmentTestService } from "../services/agent-environment-test.js";
 import { createAgentLifecycle } from "../services/agent-lifecycle.js";
@@ -4398,7 +4398,9 @@ export function agentRoutes(
       hireInput.defaultEnvironmentId = caller.defaultEnvironmentId ?? null;
     }
     if (inheritRuntimeFrom === "caller" && hireRunner !== undefined) throw unprocessable("inheritRuntimeFrom=caller cannot be combined with runner");
-    Object.assign(hireInput, await resolveNewAgentRunnerForCompany(db, companyId, { ...hireInput, runner: hireRunner }));
+    let configurationWarnings: AgentConfigurationWarning[] = [];
+    Object.assign(hireInput, await resolveNewAgentRunnerForCompany(db, companyId, { ...hireInput, runner: hireRunner,
+      onConfigurationWarnings: warnings => { configurationWarnings = warnings; } }));
     hireInput.adapterType = await assertSelectableAdapterType(hireInput.adapterType, hireInput.adapterConfig);
     const rawHireAdapterConfig = (hireInput.adapterConfig ?? {}) as Record<string, unknown>;
     assertProviderTraceSettingTransition(req, hireInput.runtimeConfig);
@@ -4671,7 +4673,7 @@ export function agentRoutes(
         });
       }
 
-      return { status: 201, body: { agent, approval } };
+      return { status: 201, body: { agent: { ...agent, ...(configurationWarnings.length ? { configurationWarnings } : {}) }, approval } };
     };
 
     const outcome = runId
@@ -4733,7 +4735,9 @@ export function agentRoutes(
     assertNoAgentLocalAdapterHostCommandMutation(req, createInput.adapterType ?? "process", requestedCreateConfig, await callerUsesAiConnectionPool(req, companyId));
     assertNoAgentProcessAdapterMutation(req, createInput.adapterType ?? "process", Object.keys(requestedCreateConfig).length > 0);
     assertExternalInstructionsAdmin(req, { id: agentId, companyId, name: createInput.name, adapterConfig: requestedCreateConfig });
-    Object.assign(createInput, await resolveNewAgentRunnerForCompany(db, companyId, { ...createInput, runner: createRunner, setupOnly: Boolean(setupId) }));
+    let configurationWarnings: AgentConfigurationWarning[] = [];
+    Object.assign(createInput, await resolveNewAgentRunnerForCompany(db, companyId, { ...createInput, runner: createRunner, setupOnly: Boolean(setupId),
+      onConfigurationWarnings: warnings => { configurationWarnings = warnings; } }));
     createInput.adapterType = await assertSelectableAdapterType(createInput.adapterType, createInput.adapterConfig);
     const rawCreateAdapterConfig = (createInput.adapterConfig ?? {}) as Record<string, unknown>;
     assertProviderTraceSettingTransition(req, createInput.runtimeConfig);
@@ -4826,7 +4830,7 @@ export function agentRoutes(
         if (!(await assertAgentReadAllowed(req, res, createdAgent))) return;
         await assertCanReadConfigurations(req, companyId);
       }
-      res.status(201).json(redactAgentRowForResponse(createdAgent));
+      res.status(201).json({ ...redactAgentRowForResponse(createdAgent), ...(configurationWarnings.length ? { configurationWarnings } : {}) });
       return;
     }
     const onboardingFirstAgentBundle = await resolveOnboardingFirstAgentBundle({
@@ -4883,7 +4887,7 @@ export function agentRoutes(
       );
     }
 
-    res.status(201).json(redactAgentRowForResponse(agent));
+    res.status(201).json({ ...redactAgentRowForResponse(agent), ...(configurationWarnings.length ? { configurationWarnings } : {}) });
   });
 
   router.patch("/agents/:id/permissions", validate(updateAgentPermissionsSchema), async (req, res) => {
@@ -5394,6 +5398,7 @@ export function agentRoutes(
     // it gets the selectable check; keeping the agent's current adapter (even
     // one since disabled) stays allowed, so a disabled harness does not make an
     // existing agent uneditable.
+    let configurationWarnings: AgentConfigurationWarning[] = [];
     const requestedRunnerConfig = asRecord(patchData.adapterConfig) ?? {};
     const convertingPi = existing.adapterType === "pi_local" && patchData.adapterType === "paperclip_runner"
       && (requestedRunnerConfig.provider === undefined
@@ -5404,6 +5409,7 @@ export function agentRoutes(
       Object.assign(patchData, await resolveNewAgentRunnerForCompany(db, existing.companyId, {
         adapterType: convertingPi ? "pi_local" : typeof patchData.adapterType === "string" ? patchData.adapterType : existing.adapterType,
         adapterConfig: config, runner: runner ?? "paperclip", setupOnly: existing.lifecycleHolds?.includes("setup"),
+        onConfigurationWarnings: warnings => { configurationWarnings = warnings; },
         defaultEnvironmentId: hasOwn(patchData, "defaultEnvironmentId") ? patchData.defaultEnvironmentId as string | null : existing.defaultEnvironmentId,
       }));
     }
@@ -5480,6 +5486,11 @@ export function agentRoutes(
       }
       if (requestedAdapterType === "paperclip_runner") {
         rawEffectiveAdapterConfig = normalizePaperclipRunnerAdapterConfig(requestedAdapterType, rawEffectiveAdapterConfig);
+        if (agentHarnessType(requestedAdapterType, rawEffectiveAdapterConfig) === "claude_local") {
+          const normalized = normalizeClaudeRunnerOptions(rawEffectiveAdapterConfig);
+          configurationWarnings.push(...normalized.warnings.filter(warning => !configurationWarnings.some(existing => existing.field === warning.field)));
+          rawEffectiveAdapterConfig = normalized.config;
+        }
       }
       if (req.actor.type === "agent" && rawEffectiveAdapterConfig.homeMode !== existingAdapterConfig.homeMode)
         throw forbidden("Only an operator can configure Runner homeMode.");
@@ -5633,7 +5644,7 @@ export function agentRoutes(
       details: summarizeAgentUpdateDetails(patchData),
     });
 
-    res.json(redactAgentRowForResponse(agent));
+    res.json({ ...redactAgentRowForResponse(agent), ...(configurationWarnings.length ? { configurationWarnings } : {}) });
   });
 
   router.post("/agents/:id/lifecycle/retry", async (req, res) => {
