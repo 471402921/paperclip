@@ -885,14 +885,16 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     [environments, effectiveLoginEnvironmentId],
   );
   const nativeRunnerAvailability = runnerDiscovery.data?.find(item => item.type === "paperclip_runner");
-  const canQualifyRunnerUpgrade = effectiveLoginEnvironment?.status === "active"
-    && canQualifyRunnerEnvironment(effectiveLoginEnvironment)
+  const upgradeEnvironment = forcedKubernetes ? kubernetesEnvironment : effectiveLoginEnvironment;
+  const upgradeEnvironmentId = upgradeEnvironment?.id ?? null;
+  const canQualifyRunnerUpgrade = upgradeEnvironment?.status === "active"
+    && canQualifyRunnerEnvironment(upgradeEnvironment)
     && Boolean(runnerAvailability && !runnerAvailability.disabled && !runnerAvailability.overriddenBuiltin)
     && Boolean(nativeRunnerAvailability && !nativeRunnerAvailability.disabled && !nativeRunnerAvailability.overriddenBuiltin);
   const upgradeWarnings = harnessType === "claude_local" ? normalizeClaudeRunnerOptions(effectiveConfig).warnings : [];
   const upgradeTargetRef = useRef("");
   const upgradeTarget = JSON.stringify([!isCreate ? props.agent.id : null, selectedCompanyId, adapterType,
-    rawCurrentDefaultEnvironmentId, effectiveLoginEnvironmentId, effectiveConfig, overlay]);
+    rawCurrentDefaultEnvironmentId, upgradeEnvironmentId, upgradeEnvironment?.config, effectiveConfig, overlay]);
   upgradeTargetRef.current = upgradeTarget;
   useEffect(() => () => { upgradeTargetRef.current = ""; }, []);
   const showRunnerUpgrade = !isCreate
@@ -911,13 +913,13 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
         : overlay;
       const pendingTarget = upgradeTargetRef.current;
       if (runnerAvailability?.defaultRunner !== "paperclip") {
-        if (!canQualifyRunnerUpgrade || !effectiveLoginEnvironmentId || !selectedCompanyId) {
+        if (!canQualifyRunnerUpgrade || !upgradeEnvironmentId || !selectedCompanyId) {
           throw new Error("Could not determine which environment to verify. Retry the upgrade.");
         }
         const qualified = await qualifyRunnerEnvironment({
           adapterType: harnessType,
-          readAdapters: () => adaptersApi.list({ companyId: selectedCompanyId, environmentId: effectiveLoginEnvironmentId }),
-          probeEnvironment: () => environmentsApi.probe(effectiveLoginEnvironmentId, selectedCompanyId),
+          readAdapters: () => adaptersApi.list({ companyId: selectedCompanyId, environmentId: upgradeEnvironmentId }),
+          probeEnvironment: () => environmentsApi.probe(upgradeEnvironmentId, selectedCompanyId),
           isCurrent: () => upgradeTargetRef.current === pendingTarget,
         });
         if (!qualified) throw new Error("Agent settings changed during verification. Retry the upgrade with the current settings.");

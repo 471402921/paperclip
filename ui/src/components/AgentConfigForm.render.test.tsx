@@ -844,6 +844,34 @@ describe("AgentConfigForm environment selector", () => {
     expect(result.container.querySelector('[role="alert"]')).not.toBeNull();
   });
 
+  it.each([true, false])("respects forced Kubernetes instead of probing a saved Daytona default (target exists: %s)", async available => {
+    const daytona = makeEnvironment({ id: "old-daytona", driver: "sandbox", config: { provider: "daytona", snapshot: "old-snapshot" } });
+    const kubernetes = makeEnvironment({ id: "forced-kubernetes", driver: "sandbox", config: { provider: "kubernetes", image: `example.test/runner@sha256:${"a".repeat(64)}` } });
+    mockInstanceSettingsApi.getGeneral.mockResolvedValue({ executionMode: "kubernetes" });
+    const inventory = (qualified: boolean) => [
+      { type: "claude_local", supportedRunners: qualified ? ["paperclip", "legacy"] : ["legacy"], defaultRunner: qualified ? "paperclip" : "legacy" },
+      { type: "paperclip_runner", supportedRunners: ["legacy"], defaultRunner: "legacy" },
+    ];
+    mockAdaptersApi.list.mockResolvedValue(inventory(false));
+    mockEnvironmentsApi.probe.mockImplementation(async () => {
+      mockAdaptersApi.list.mockResolvedValue(inventory(true));
+      return { ok: true, details: { platformQualificationRecorded: true, leaseId: "kubernetes-probe" } };
+    });
+    const result = await renderForm(available ? [daytona, kubernetes] : [daytona], {
+      adapterType: "claude_local", defaultEnvironmentId: daytona.id,
+    });
+    roots.push(result.root);
+    if (available) {
+      await clickByText(result.container, "Upgrade runner");
+      expect(mockEnvironmentsApi.probe).toHaveBeenCalledWith(kubernetes.id, "company-1");
+      expect(mockAdaptersApi.list).toHaveBeenLastCalledWith({ companyId: "company-1", environmentId: kubernetes.id });
+      expect(result.onSave).toHaveBeenCalledWith({ runner: "paperclip" });
+    } else {
+      expect(findButton(result.container, "Upgrade runner")).toBeUndefined();
+      expect(mockEnvironmentsApi.probe).not.toHaveBeenCalled();
+    }
+  });
+
   it("does not offer an upgrade when the target only supports Legacy", async () => {
     mockAdaptersApi.list.mockResolvedValueOnce([{ type: "codex_local", supportedRunners: ["legacy"], defaultRunner: "legacy" }]);
     const result = await renderForm([]);
