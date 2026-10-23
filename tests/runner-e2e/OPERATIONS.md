@@ -364,8 +364,10 @@ rejects ambiguous singular fields and routing values.
 
 Each relay allows at most 2,048 admitted exports, 8 MiB per request before and
 after decompression, 64 MiB of forwarded payloads, and four simultaneous exports.
-It also limits each attempt to 16,384 records and 256 MiB of expanded source
-JSON. This measurement includes the full decoded source plus each record in
+The default allowance limits each attempt to 4,096 records and 16 MiB of
+expanded source JSON. Historical receipts with up to 16,384 records and 256 MiB
+remain readable; controller callers may still supply explicit limits up to
+those maxima. This measurement includes the full decoded source plus each record in
 its own envelope with the shared resource and scope fields repeated. It counts
 span names, IDs, times, events, links and log bodies, not only routing attributes.
 Protobuf fields use the pinned OTLP v1.9 schema; unknown fields fail admission
@@ -408,7 +410,7 @@ or an invoice. Vendor charges remain unreconciled. The current two-attempt daily
 maximum is 132.125 MiB and the four-attempt weekly maximum is 260.25 MiB,
 including finalization and the campaign's experiment payload allowance. These
 bounds do not include other projects, standalone imports or retained storage.
-The corresponding expanded-source ceilings are 514 MiB daily and 1,028 MiB
+The corresponding default expanded-source ceilings are 34 MiB daily and 68 MiB
 weekly before the separate 4-MiB experiment allowance. These source measurements
 support a priced forecast; they are not Braintrust's processed-data meter or a
 vendor-enforced dollar limit. Gateway auto-logging is a separate input to that
@@ -463,7 +465,12 @@ the existing AWS/GitHub runner choice.
 
 Daily selects native Claude's marker and feedback-persistence cases with a shared
 $20 allowance. Weekly adds native Codex's two corresponding cases with a
-shared $100 allowance. Model requests and declared operating overhead share
+shared $100 allowance. Daily campaigns admit at most 30 model requests; weekly
+campaigns admit at most 60. The October 23 qualification campaigns used 10 model
+requests each. The largest observed native attempt exported 6,531,801 expanded
+source bytes and 2,455 records. The defaults retain headroom for those measured
+cases; exhausting a limit remains visible and never silently drops required
+evidence. Model requests and declared operating overhead share
 this limit. Each campaign runs sequentially in one job with one
 journal, one attempt per execution, zero automatic retries, a 30-minute request
 deadline and a finite request count. Codex's worst-case request reservation exceeds
