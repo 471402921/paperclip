@@ -4612,7 +4612,8 @@ export function issueThreadInteractionService(
         }
 
         for (const row of itemVerdictRows) {
-          const [updated] = await db
+          const updated = await db.transaction(async tx => {
+            const [retired] = await tx
             .update(issueThreadInteractions)
             .set({
               status: "expired",
@@ -4629,6 +4630,9 @@ export function issueThreadInteractionService(
               ),
             )
             .returning();
+            if (retired) await enqueueTerminalIssueInteractionChatPublications(tx as unknown as Db, hydrateInteraction(retired));
+            return retired;
+          });
           if (updated) expired.push(hydrateInteraction(updated));
         }
 
@@ -4798,7 +4802,10 @@ export function issueThreadInteractionService(
             eq(issueThreadInteractions.status, "pending"),
           ))
           .returning();
-        if (updated) expired.push(updated);
+        if (updated) {
+          await enqueueTerminalIssueInteractionChatPublications(db, hydrateInteraction(updated));
+          expired.push(updated);
+        }
       }
       if (expired.length) await db.delete(toolOauthStates).where(inArray(toolOauthStates.interactionId, expired.map((item) => item.id)));
       return expired;

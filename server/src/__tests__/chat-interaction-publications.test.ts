@@ -292,6 +292,21 @@ describeEmbeddedPostgres(
       }
     });
 
+    it("keeps repeated choices and help under each question", async () => {
+      const fixture = await seedBoundIssue(["slack"]);
+      const interaction = await issueThreadInteractionService(db).create(
+        { id: fixture.issueId, companyId: fixture.companyId },
+        { kind: "ask_user_questions", payload: { version: 1, questions: ["Codie", "Claude"].map(agent => ({ id: agent, prompt: `Convert ${agent}?`, helpText: "Keep the existing configuration.", selectionMode: "single" as const, options: [{ id: "yes", label: "Yes" }, { id: "no", label: "No" }] })) } },
+        { agentId: fixture.agentId },
+      );
+      const [publication] = await publicationsForInteraction(fixture.companyId, interaction.id);
+      const body = publication.payload.card!.body!;
+      expect(body.match(/- Yes/g)).toHaveLength(2);
+      expect(body.match(/- No/g)).toHaveLength(2);
+      expect(body.match(/Keep the existing configuration/g)).toHaveLength(2);
+      expect(body.slice(body.indexOf("Convert Claude?"))).toContain("- Yes");
+    });
+
     it("publishes prompts only for the endpoint's verified immutable agent", async () => {
       const fixture = await seedBoundIssue();
       const service = issueThreadInteractionService(db);
@@ -461,7 +476,22 @@ describeEmbeddedPostgres(
       expect(settled.find(row => row.id !== original.id)?.payload.card?.actions).toBeUndefined();
     });
 
-    it("delivers, deduplicates and settles an addressed connection request without a second wake owner", async () => {
+    it("settles an item review superseded by a historical human comment", async () => {
+      const fixture = await seedBoundIssue(["slack"]);
+      const service = issueThreadInteractionService(db);
+      const issue = { id: fixture.issueId, companyId: fixture.companyId };
+      const interaction = await service.create(issue, { kind: "request_item_verdicts", payload: { version: 1, prompt: "Review these items", supersedeOnUserComment: true, items: [{ id: "docs", label: "Migration notes" }] } }, { agentId: fixture.agentId });
+      const [original] = await markInteractionCardsPublished(fixture.companyId, interaction.id);
+      await db.insert(issueComments).values({ companyId: fixture.companyId, issueId: fixture.issueId, authorUserId: "board-user", body: "Use the updated proposal instead.", createdAt: new Date(Date.now() + 1000) });
+      const expired = await service.expireRequestConfirmationsSupersededByHistoricalComments(issue);
+      expect(expired).toHaveLength(1);
+      expect(expired[0].status).toBe("expired");
+      const publications = await publicationsForInteraction(fixture.companyId, interaction.id);
+      expect(publications).toHaveLength(2);
+      expect(publications.find(row => row.id !== original.id)?.payload.card?.body).toBe("Expired in Paperclip");
+    });
+
+    it.each(["decline", "reassign"] as const)("delivers, deduplicates and settles an addressed connection request on %s without a second wake owner", async outcome => {
       const fixture = await seedBoundIssue();
       const sourceRunId = randomUUID();
       await db.insert(heartbeatRuns).values({ id: sourceRunId, companyId: fixture.companyId, agentId: fixture.agentId, status: "running", responsibleUserId: "board-user", contextSnapshot: { issueId: fixture.issueId } });
@@ -476,10 +506,11 @@ describeEmbeddedPostgres(
       expect(await publicationsForInteraction(fixture.companyId, interaction.id)).toHaveLength(1);
       await markInteractionCardsPublished(fixture.companyId, interaction.id);
       await expect(service.resolveConnectionIntent(issue, interaction.id, { version: 1, outcome: "declined" }, { userId: "different-user" })).rejects.toMatchObject({ status: 403 });
-      await service.resolveConnectionIntent(issue, interaction.id, { version: 1, outcome: "declined" }, { userId: "board-user" });
+      if (outcome === "decline") await service.resolveConnectionIntent(issue, interaction.id, { version: 1, outcome: "declined" }, { userId: "board-user" });
+      else await db.transaction(async tx => issueThreadInteractionService(tx as unknown as typeof db).expireConnectionIntentsForOwnershipChange(issue));
       const settled = await publicationsForInteraction(fixture.companyId, interaction.id);
       expect(settled).toHaveLength(2);
-      expect(settled.find(row => row.id !== original.id)?.payload.card?.body).toBe("Rejected");
+      expect(settled.find(row => row.id !== original.id)?.payload.card?.body).toBe(outcome === "decline" ? "Rejected" : "Expired in Paperclip");
       expect(await db.select().from(chatActions).where(eq(chatActions.companyId, fixture.companyId))).toEqual([]);
     });
 

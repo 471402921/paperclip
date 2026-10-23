@@ -8,7 +8,7 @@ export function chatInteractionPresentation(interaction: IssueThreadInteraction)
       if (payload.questionSet?.description) context.push(payload.questionSet.description);
       for (const question of payload.questions) {
         const source = payload.questionSet?.questions.find(item => item.id === question.id);
-        if (source?.header) context.push(source.header);
+        if (source?.header && source.header !== question.helpText && source.header !== question.prompt) context.push(source.header);
         context.push(question.prompt);
         if (question.helpText) context.push(question.helpText);
         for (const option of question.options.filter(item => !item.freeText || question.options.length > 1)) {
@@ -21,7 +21,7 @@ export function chatInteractionPresentation(interaction: IssueThreadInteraction)
       }
       return {
         title: payload.title ?? interaction.title ?? "Input needed",
-        body: [...new Set(context)].join("\n\n"),
+        body: context.join("\n\n"),
       };
     }
     case "request_confirmation":
@@ -40,7 +40,7 @@ export function chatInteractionPresentation(interaction: IssueThreadInteraction)
           context.push(`- ${item.label}${item.description ? `: ${item.description}` : ""}`);
         }
       }
-      return { title: payload.prompt, body: [...new Set(context)].join("\n\n") };
+      return { title: payload.prompt, body: context.join("\n\n") };
     }
     case "suggest_tasks": {
       for (const task of interaction.payload.tasks.filter(item => !item.hiddenInPreview)) {
