@@ -117,19 +117,24 @@ describe("the Artifacts page tiles", () => {
     expect(container.querySelector('button[data-testid="artifact-v1-single-tile"]')?.getAttribute("aria-label")).toBe("Open hero.png");
   });
 
-  it("stands a picture stack's front as the icon sheet, where audio stands, when the picture cannot be loaded", () => {
-    act(() =>
-      root.render(
-        <MemoryRouter>
-          <ArtifactTileGrid>
-            <ArtifactStackTile identifier="ACM-5" title="Shoot cap product photos" count={6} updatedAt="2026-09-27T15:12:00" front={testSubject({ kind: "image", filename: "cap.png", thumbnailUrl: "/api/attachments/gone/content" })} now={NOW} />
-            <ArtifactStackTile identifier="ACM-6" title="Record the jingle" count={2} updatedAt="2026-09-27T15:12:00" front={testSubject({ kind: "file", filename: "jingle.mp3" })} now={NOW} />
-          </ArtifactTileGrid>
-        </MemoryRouter>,
-      ),
-    );
-    const [pictures, audio] = Array.from(container.querySelectorAll<HTMLElement>('[data-testid="artifact-v1-stack-tile"]'));
-    expect(pictures.querySelector<HTMLElement>("[data-artifact-print]")?.style.width).toBe("245px");
+  it("stands a picture stack's front as the icon sheet, where audio stands, when the picture cannot be loaded, and prints a new picture back in its place", () => {
+    const render = (thumbnailUrl: string) =>
+      act(() =>
+        root.render(
+          <MemoryRouter>
+            <ArtifactTileGrid>
+              <ArtifactStackTile identifier="ACM-5" title="Shoot cap product photos" count={6} updatedAt="2026-09-27T15:12:00" front={testSubject({ kind: "image", filename: "cap.png", thumbnailUrl })} now={NOW} />
+              <ArtifactStackTile identifier="ACM-6" title="Record the jingle" count={2} updatedAt="2026-09-27T15:12:00" front={testSubject({ kind: "file", filename: "jingle.mp3" })} now={NOW} />
+            </ArtifactTileGrid>
+          </MemoryRouter>,
+        ),
+      );
+    const tiles = () => Array.from(container.querySelectorAll<HTMLElement>('[data-testid="artifact-v1-stack-tile"]'));
+    const placement = (el: HTMLElement | null) => el && [el.style.left, el.style.top, el.style.width, el.style.height];
+    render("/api/attachments/gone/content");
+    let [pictures, audio] = tiles();
+    const printed = placement(pictures.querySelector<HTMLElement>("[data-artifact-print]"));
+    expect(printed?.[2]).toBe("245px");
     act(() => { pictures.querySelector("[data-artifact-print] img")!.dispatchEvent(new Event("error")); });
     expect(pictures.querySelector("[data-artifact-print]")).toBeNull();
     expect(pictures.querySelector('[data-artifact-stack="media"]')).not.toBeNull();
@@ -138,6 +143,12 @@ describe("the Artifacts page tiles", () => {
     const audioFront = audio.querySelector<HTMLElement>("[data-artifact-front]")!;
     expect([front.style.left, front.style.top]).toEqual([audioFront.style.left, audioFront.style.top]);
     expect(audio.querySelector("[data-artifact-print]")).toBeNull();
+    // A newer artifact takes the front: the stack's geometry and the front's face both start over from the new source.
+    render("/api/attachments/fresh/content");
+    [pictures] = tiles();
+    expect(pictures.querySelector('[data-artifact-sheet="icon"]')).toBeNull();
+    expect(pictures.querySelector("[data-artifact-print] img")?.getAttribute("src")).toBe("/api/attachments/fresh/content");
+    expect(placement(pictures.querySelector<HTMLElement>("[data-artifact-print]"))).toEqual(printed);
   });
 
   it("shows the icon sheet without a play disc for a video whose stream cannot be loaded", () => {
