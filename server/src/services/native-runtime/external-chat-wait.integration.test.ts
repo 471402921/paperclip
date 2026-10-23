@@ -692,8 +692,12 @@ describe("native external-chat response wait", () => {
     };
   }
 
-  async function seedGitHubBoardAnsweredTurn(withLink = true) {
-    const fixture = await seedWaitTurn("github");
+  async function seedBoardAnsweredTurn(withLink = true, provider: "github" | "slack" = "github") {
+    const fixture = await seedWaitTurn(provider);
+    if (provider === "slack") {
+      await db.update(chatEndpointResources).set({ type: "channel" }).where(eq(chatEndpointResources.id, fixture.resourceId));
+      await db.update(chatConversations).set({ isDirectMessage: false }).where(eq(chatConversations.id, fixture.conversationId));
+    }
     const gate = await seedPriorCompletionReview(fixture);
     const [current] = await db
       .select()
@@ -748,7 +752,7 @@ describe("native external-chat response wait", () => {
               {
                 id: "color",
                 prompt: "Choose a color",
-                selectionMode: "single",
+                selectionMode: provider === "slack" ? "multi" : "single",
                 required: true,
                 allowOther: false,
                 options: [
@@ -771,7 +775,7 @@ describe("native external-chat response wait", () => {
       .update(chatPublications)
       .set({
         state: "published",
-        providerMessageId: "github-question",
+        providerMessageId: `${provider}-question`,
         publishedAt: new Date(),
       })
       .where(eq(chatPublications.idempotencyKey, publicationKey))
@@ -850,10 +854,10 @@ describe("native external-chat response wait", () => {
     };
   }
 
-  it.each([true, false])(
-    "attests a native GitHub question answered in Board without inventing a provider action (link: %s)",
-    async (withLink) => {
-      const fixture = await seedGitHubBoardAnsweredTurn(withLink);
+  it.each((["github", "slack"] as const).flatMap(provider => [true, false].map(withLink => ({ provider, withLink }))))(
+    "attests a native $provider question answered in Board without inventing a provider action (link: $withLink)",
+    async ({ provider, withLink }) => {
+      const fixture = await seedBoardAnsweredTurn(withLink, provider);
       await expect(
         db
           .select()
@@ -871,7 +875,7 @@ describe("native external-chat response wait", () => {
       ).not.toBeNull();
       await attestAnswer(fixture);
       expect(fixture.context.paperclipWake).toMatchObject({
-        externalChatProvider: "github",
+        externalChatProvider: provider,
       });
       await db
         .update(heartbeatRuns)
@@ -915,7 +919,7 @@ describe("native external-chat response wait", () => {
     },
   );
 
-  it.each([
+  it.each((["github", "slack"] as const).flatMap(provider => ([
     "different_user",
     "viewer",
     "membership_revoked",
@@ -930,10 +934,10 @@ describe("native external-chat response wait", () => {
     "endpoint_paused",
     "resource_revoked",
     "answer_hash",
-  ] as const)(
-    "rejects GitHub Board answer authority after %s",
-    async (change) => {
-      const fixture = await seedGitHubBoardAnsweredTurn();
+  ] as const).filter(change => provider === "github" || (change !== "generation" && change !== "missing_runtime")).map(change => ({ provider, change }))))(
+    "rejects $provider Board answer authority after $change",
+    async ({ provider, change }) => {
+      const fixture = await seedBoardAnsweredTurn(true, provider);
       if (change === "different_user") {
         const otherUser = `other-${randomUUID()}`;
         await db
@@ -1072,10 +1076,10 @@ describe("native external-chat response wait", () => {
     },
   );
 
-  it.each(["generation", "identity", "membership", "reach"] as const)(
-    "rechecks GitHub Board answer %s at publication after native completion",
-    async (change) => {
-      const fixture = await seedGitHubBoardAnsweredTurn();
+  it.each((["github", "slack"] as const).flatMap(provider => (["generation", "identity", "membership", "reach"] as const).filter(change => provider === "github" || change !== "generation").map(change => ({ provider, change }))))(
+    "rechecks $provider Board answer $change at publication after native completion",
+    async ({ provider, change }) => {
+      const fixture = await seedBoardAnsweredTurn(true, provider);
       await attestAnswer(fixture);
       const resultJson = await finishReviewResponse(fixture);
       expect(
@@ -1195,7 +1199,7 @@ describe("native external-chat response wait", () => {
   async function attestAnswer(
     fixture:
       | Awaited<ReturnType<typeof seedAnsweredChatTurn>>
-      | Awaited<ReturnType<typeof seedGitHubBoardAnsweredTurn>>,
+      | Awaited<ReturnType<typeof seedBoardAnsweredTurn>>,
   ) {
     expect(
       await attestReviewedExternalChatRun({
@@ -1232,13 +1236,13 @@ describe("native external-chat response wait", () => {
     check: (input: {
       fixture:
         | Awaited<ReturnType<typeof seedAnsweredChatTurn>>
-        | Awaited<ReturnType<typeof seedGitHubBoardAnsweredTurn>>;
+        | Awaited<ReturnType<typeof seedBoardAnsweredTurn>>;
       invoke: () => Promise<unknown>;
     }) => Promise<void>,
   ) {
     const fixture =
       provider === "github"
-        ? await seedGitHubBoardAnsweredTurn()
+        ? await seedBoardAnsweredTurn()
         : await seedAnsweredChatTurn(provider);
     await attestAnswer(fixture);
     const root = await mkdtemp(path.join(tmpdir(), "answered-chat-file-"));
@@ -1319,7 +1323,7 @@ describe("native external-chat response wait", () => {
       const fixture =
         source === "direct"
           ? await seedWaitTurn("github")
-          : await seedGitHubBoardAnsweredTurn();
+          : await seedBoardAnsweredTurn();
       if (source === "direct") await seedPriorCompletionReview(fixture);
       // A previous run's failure projects `error` onto the agent. The next
       // already-claimed turn attests before execution-start changes it to

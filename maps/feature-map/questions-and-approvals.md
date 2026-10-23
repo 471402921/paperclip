@@ -196,6 +196,10 @@ complete question with an explicit Paperclip response link. Checkbox reviews,
 item verdicts, suggested tasks, and connection requests also publish Slack review
 cards; their governed decisions remain in Paperclip. Long cards show an explicit
 size notice and the task link. Every terminal decision settles the provider card.
+After a Paperclip handoff, inspect the later useful reply in the originating
+conversation. Checkbox decisions, item verdicts, task suggestions, and connection
+outcomes use their existing durable continuation receipts. See the
+[continuation delivery regressions](../../server/src/services/chat-interaction-continuation.test.ts).
 Settled cards must not expose saved free-text answers. The interaction publication database suite covers both states.
 
 Manual: use a disposable provider conversation, answer as the linked sender,

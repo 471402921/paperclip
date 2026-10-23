@@ -291,6 +291,10 @@ silently omitting the request is a defect. Record which path each row uses.
 - Persist the answer once and use the existing continuation policy and delivery
   receipts. Duplicate clicks, provider retries, and recovery must not create
   duplicate decisions or continuations. Preserve task and conversation context.
+  A Paperclip fallback response must retain its authenticated Board receipt;
+  never fabricate a provider callback. Follow each review kind's existing wake
+  or delivery receipt when routing its later result back to the conversation.
+  A settled card alone does not prove that the resumed task delivered its result.
 - Reflect accepted, rejected, expired, and superseded outcomes in the original
   channel card or an explicit follow-up. Honor the canonical meaning of dismissal
   or deferral; it is not an answer or permission to resume. Include automatic

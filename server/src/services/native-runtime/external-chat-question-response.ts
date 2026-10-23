@@ -159,7 +159,7 @@ function completedQuestionFormMatchesInteraction(
 }
 
 /**
- * Resolve a durable provider answer or GitHub's authenticated Board fallback,
+ * Resolve a durable provider answer or an authenticated Board fallback,
  * never a caller-supplied wake marker. This
  * is routing/reading authority only: it never checks out a task or resolves a
  * review. Callers retain their issue/run/actor and current destination checks.
@@ -620,8 +620,8 @@ async function resolveQuestionResponseChain(
         sql`${chatActions.result}->>'interactionId' = ${interaction.id}`,
       ),
     );
-  // GitHub has no executable question callback. Its published link leads to
-  // the ordinary authenticated Board answer route, whose pending→answered CAS
+  // GitHub and Slack forms without native controls use the ordinary
+  // authenticated Board answer route, whose pending→answered CAS
   // creates the response delivery above atomically. Do not fabricate a provider
   // action: bind that distinct receipt to the original linked person instead.
   const boardQuery = tx
@@ -676,7 +676,7 @@ async function resolveQuestionResponseChain(
       and(
         eq(chatEndpoints.id, chatPublications.endpointId),
         eq(chatEndpoints.companyId, chatPublications.companyId),
-        eq(chatEndpoints.provider, "github"),
+        eq(chatEndpoints.provider, provider),
       ),
     )
     .innerJoin(
@@ -709,7 +709,12 @@ async function resolveQuestionResponseChain(
         ),
       ),
     );
-  const evidenceQuery = provider === "github" ? boardQuery : actionQuery;
+  // Slack native actions remain authoritative when present. The Board query
+  // excludes every native answer token, including unfinished ones; its result
+  // is re-read under the same identity and row locks below.
+  const boardAnswer = provider === "github" ||
+    (provider === "slack" && (await boardQuery).length === 1);
+  const evidenceQuery = boardAnswer ? boardQuery : actionQuery;
   let expectedPrincipalId: string | null = null;
   if (lockMode !== "read") {
     // Identity changes take this advisory lock before their row lock. Resolve
@@ -773,7 +778,7 @@ async function resolveQuestionResponseChain(
     const card = record(record(publication.payload).card);
     const links = Array.isArray(card.actions) ? card.actions.map(record) : [];
     if (
-      provider !== "github" ||
+      !boardAnswer ||
       interaction.resolvedByRunId !== null ||
       publication.payload.progressState !== "waiting_for_input" ||
       card.kind !== "question" ||
@@ -781,12 +786,14 @@ async function resolveQuestionResponseChain(
       links.some((link) => link.type !== "link") ||
       !publication.publishedAt ||
       publication.publishedAt > interaction.resolvedAt ||
-      typeof boardGeneration !== "number" ||
-      !Number.isSafeInteger(boardGeneration) ||
-      boardGeneration < 0 ||
-      boardRuntime.generation !== boardGeneration ||
-      typeof boardRuntime.credentialFingerprint !== "string" ||
-      !/^[a-f0-9]{64}$/.test(boardRuntime.credentialFingerprint)
+      (provider === "github" && (
+        typeof boardGeneration !== "number" ||
+        !Number.isSafeInteger(boardGeneration) ||
+        boardGeneration < 0 ||
+        boardRuntime.generation !== boardGeneration ||
+        typeof boardRuntime.credentialFingerprint !== "string" ||
+        !/^[a-f0-9]{64}$/.test(boardRuntime.credentialFingerprint)
+      ))
     )
       return null;
   } else if (action.kind === "question_answer") {
@@ -892,10 +899,12 @@ async function resolveQuestionResponseChain(
           }
         : {
             boardResponse: {
-              schema: "paperclip.github_board_question_response.v1",
+              schema: `paperclip.${provider}_board_question_response.v1`,
               principalId: inbound.principalId,
-              runtimeGeneration: boardGeneration,
-              credentialFingerprint: boardRuntime.credentialFingerprint,
+              ...(provider === "github" ? {
+                runtimeGeneration: boardGeneration,
+                credentialFingerprint: boardRuntime.credentialFingerprint,
+              } : {}),
             },
           }),
       publication: {
