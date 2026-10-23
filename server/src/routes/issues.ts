@@ -3204,11 +3204,6 @@ const ISSUE_LIST_UUID_QUERY_PARAMS = [
 
 type IssueListUuidQueryParam = (typeof ISSUE_LIST_UUID_QUERY_PARAMS)[number];
 
-/**
- * Validates UUID-typed issue list query params before they reach SQL. Postgres
- * rejects non-UUID values bound to uuid columns, which would otherwise surface
- * as a 500 instead of a client error.
- */
 function parseIssueListUuidQueryParams(
   query: Record<string, unknown>,
 ):
