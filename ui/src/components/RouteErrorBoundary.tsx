@@ -1,6 +1,7 @@
 import { Component, Suspense, type ErrorInfo, type ReactNode } from "react";
 import { useLocation, useNavigate } from "@/lib/router";
 import { Button } from "@/components/ui/button";
+import { reloadForChunkLoadError } from "@/lib/chunk-load-recovery";
 import { captureBrowserException } from "@/lib/sentry";
 import { PaperclipLoading } from "./AnimatedPaperclipIcon";
 
@@ -12,16 +13,22 @@ type RouteErrorBoundaryInnerProps = {
 
 type RouteErrorBoundaryState = {
   error: Error | null;
+  reloading: boolean;
 };
 
 class RouteErrorBoundaryInner extends Component<RouteErrorBoundaryInnerProps, RouteErrorBoundaryState> {
-  override state: RouteErrorBoundaryState = { error: null };
+  override state: RouteErrorBoundaryState = { error: null, reloading: false };
 
-  static getDerivedStateFromError(error: unknown): RouteErrorBoundaryState {
+  static getDerivedStateFromError(error: unknown): Partial<RouteErrorBoundaryState> {
     return { error: error instanceof Error ? error : new Error(String(error)) };
   }
 
   override componentDidCatch(error: unknown, info: ErrorInfo): void {
+    // A stale or briefly unavailable route chunk recovers with a fresh page.
+    if (reloadForChunkLoadError(error)) {
+      this.setState({ reloading: true });
+      return;
+    }
     console.error("Page render failed", { error, componentStack: info.componentStack });
     captureBrowserException(error, { boundary: "route", componentStack: info.componentStack });
   }
@@ -31,13 +38,14 @@ class RouteErrorBoundaryInner extends Component<RouteErrorBoundaryInnerProps, Ro
     // away (back button included) can't recover without a hard refresh. We sit
     // above the routed <Outlet />, so reset whenever the route changes.
     if (this.state.error && prevProps.resetKey !== this.props.resetKey) {
-      this.setState({ error: null });
+      this.setState({ error: null, reloading: false });
     }
   }
 
   override render() {
-    const { error } = this.state;
+    const { error, reloading } = this.state;
     if (!error) return this.props.children;
+    if (reloading) return <PaperclipLoading className="min-h-full" />;
 
     return (
       <div className="mx-auto max-w-2xl space-y-4 px-4 py-10">
