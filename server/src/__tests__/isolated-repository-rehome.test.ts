@@ -599,4 +599,36 @@ describeEmbeddedPostgres("isolated repository source re-home", () => {
     expect((await fs.readFile(path.join(f.target, "notes", "large.bin"))).equals(large)).toBe(true);
     expect((await fs.readFile(path.join(f.target, "large.tsbuildinfo"))).equals(large)).toBe(true);
   });
+
+  it("keeps an orphaned clone whose origin no longer matches the recorded repository", async () => {
+    const f = await fixture();
+    await makeWork(f.cwd);
+    await crashedRehome(f);
+    git(f.clone, "worktree", "remove", "--force", f.cwd);
+    const current = await f.row();
+    await db.update(executionWorkspaces).set({ metadata: { ...current.metadata, isolatedRepositoryRehome: {
+      ...current.metadata?.isolatedRepositoryRehome as Record<string, unknown>, cleanedAt: new Date().toISOString() } } }).where(eq(executionWorkspaces.id, f.workspaceId));
+    const decoy = path.join(path.dirname(f.remote), "decoy.git");
+    git(path.dirname(f.remote), "clone", "-q", "--bare", f.clone, decoy);
+    git(f.clone, "remote", "set-url", "origin", pathToFileURL(decoy).href);
+    const { results } = await sweepOrphanedIsolatedRepositorySources(db);
+    expect(results).toMatchObject([{ issueId: f.issueId, removed: false, reason: "source_identity_changed" }]);
+    expect(await exists(f.clone)).toBe(true);
+    await db.delete(executionWorkspaces).where(eq(executionWorkspaces.id, f.workspaceId));
+    expect((await sweepOrphanedIsolatedRepositorySources(db)).results).toMatchObject([{ issueId: f.issueId, removed: false, reason: "unproven_repository" }]);
+  });
+
+  it("keeps a clone with more ignored directories than the cleanup budget", async () => {
+    const f = await fixture();
+    await makeWork(f.cwd);
+    await crashedRehome(f);
+    await fs.appendFile(path.join(f.clone, ".git", "info", "exclude"), "\nscratch-*/\n");
+    for (let index = 0; index <= 1_000; index += 1) {
+      await fs.mkdir(path.join(f.clone, `scratch-${index}`, "node_modules"), { recursive: true });
+      await fs.writeFile(path.join(f.clone, `scratch-${index}`, "node_modules", "x.js"), "x\n");
+    }
+    expect(await rehomeIsolatedRepositoryWorkspace(db, await f.row())).toMatchObject({ cloneRemoved: false, cloneKeptReason: "clone_file_budget" });
+    for (let index = 1; index <= 1_000; index += 1) await fs.rm(path.join(f.clone, `scratch-${index}`), { recursive: true });
+    expect(await rehomeIsolatedRepositoryWorkspace(db, await f.row())).toMatchObject({ outcome: "cleaned", cloneRemoved: true });
+  });
 });

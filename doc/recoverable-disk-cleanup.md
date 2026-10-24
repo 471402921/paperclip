@@ -398,7 +398,8 @@ else needs it and everything in it is reproducible:
   not keep a clone.
 
 A clone with more than 5,000 refs, reflog entries or such commits is kept
-(`clone_history_budget`). The log entry names up to five paths, worktrees, refs or commits
+(`clone_history_budget`), and so is one with more than 1,000 ignored directories outside
+regenerable ones (`clone_file_budget`); those directories are read in one Git call. The log entry names up to five paths, worktrees, refs or commits
 that kept a clone (`cloneKeptPaths`). A clone another workspace still uses is kept
 (`cloneRetained`); that workspace's own move removes it later. If the server stops after
 the update, a later sweep finishes the removal and sets `cleanedAt`, also after the
@@ -407,7 +408,10 @@ workspace has been archived.
 The reaper also sweeps orphaned clones under `isolated-repository-sources/` once per server
 start: clones that no execution workspace refers to (no open workspace with matching
 `isolatedRemoteSource`, and no closed one that would need the clone to reopen) and that no
-pending move or cleanup still owns. It applies the same reproducibility check, using the
+pending move or cleanup still owns. The repository must be proven by the database: the
+workspaces of that issue must record exactly one repository URL, and the clone's `origin`
+must equal it (`unproven_repository` or `source_identity_changed` otherwise), so a rewritten
+`origin` is never fetched or trusted. It applies the same reproducibility check, using the
 shared clone of a workspace of the same issue and repository when one exists, and logs
 `event: "execution_workspace.isolated_source_orphan_cleanup"`. It inspects at most eight
 issue directories per reaper sweep and continues from that position in the next sweep, so a

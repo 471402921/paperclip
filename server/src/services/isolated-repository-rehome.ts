@@ -33,6 +33,7 @@ const CLOSED_STATUSES = ["archived", "cleanup_failed"];
 const ADMIN_ENTRIES = new Set(["HEAD", "ORIG_HEAD", "FETCH_HEAD", "index", "commondir", "gitdir", "logs", "refs", "COMMIT_EDITMSG"]);
 const MAX_BOUNDARY_COMMITS = 64;
 const CLONE_HISTORY_BUDGET = 5_000;
+const CLONE_DIRECTORY_BUDGET = 1_000;
 const UNSAFE_BASE_CONFIG = /^(filter\.|include\.|includeif\.|core\.(fsmonitor|hookspath|attributesfile|worktree|gitproxy|sshcommand|askpass|editor|pager|alternaterefscommand)$|extensions\.worktreeconfig$)/;
 const GIB = 1024 * 1024 * 1024;
 const COMPACTION_TRASH_PATH = `.paperclip/worktrees/${WORKSPACE_COMPACTION_TRASH_DIR}`;
@@ -530,12 +531,15 @@ async function cloneDisposable(clone: string, base: string | null, missingUpstre
     const untracked = nul(await git(clone, ["ls-files", "-z", "--others", "--exclude-standard", "--directory", "--no-empty-directory"], { signal }))
       .filter(file => file !== `${COMPACTION_TRASH_PATH}/` && !file.startsWith(`${COMPACTION_TRASH_PATH}/`));
     if (untracked.length) return kept("clone_checkout_has_files", untracked);
-    const unexplained: string[] = [];
-    for (const entry of nul(await git(clone, ["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory", "--no-empty-directory"], { signal }))) {
-      if (reproducibleCheckoutPath(entry)) continue;
-      if (!entry.endsWith("/")) unexplained.push(entry);
-      else unexplained.push(...nul(await git(clone, ["--literal-pathspecs", "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--", entry], { signal }))
-        .filter(file => !reproducibleCheckoutPath(file)));
+    const ignored = nul(await git(clone, ["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory", "--no-empty-directory"], { signal }))
+      .filter(entry => !reproducibleCheckoutPath(entry));
+    const ignoredFiles = ignored.filter(entry => !entry.endsWith("/"));
+    if (ignoredFiles.length) return kept("clone_checkout_has_files", ignoredFiles);
+    const ignoredDirectories = ignored.filter(entry => entry.endsWith("/"));
+    if (ignoredDirectories.length > CLONE_DIRECTORY_BUDGET) return kept("clone_file_budget");
+    if (ignoredDirectories.length) {
+      const unexplained = nul(await git(clone, ["--literal-pathspecs", "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--", ...ignoredDirectories], { signal }))
+        .filter(file => !reproducibleCheckoutPath(file));
       if (unexplained.length) return kept("clone_checkout_has_files", unexplained);
     }
     const refs = (await git(clone, ["for-each-ref", `--count=${CLONE_HISTORY_BUDGET + 1}`, "--format=%(objectname) %(refname)"], { signal })).split("\n").filter(Boolean);
@@ -727,8 +731,13 @@ export async function sweepOrphanedIsolatedRepositorySources(db: Db, options: { 
             sql`${executionWorkspaces.metadata}->'isolatedRemoteSource'->>'issueId' = ${issueId}`)));
           if (rows.some(row => row.metadata?.[ISOLATED_REPOSITORY_REHOME_PENDING_KEY] !== undefined)) throw new Error("rehome_pending");
           if (rows.some(row => hasPendingIsolatedRepositoryRehomeCleanup(row))) throw new Error("rehome_cleanup_pending");
-          const repoUrl = (await git(clone, ["config", "--local", "--get", "remote.origin.url"], { signal: options.signal }).catch(() => "")).trim();
-          if (!repoUrl) throw new Error("source_identity_changed");
+          const recorded = new Set(rows.map(row => (row.metadata?.isolatedRemoteSource as { repoUrl?: unknown } | undefined)?.repoUrl ?? row.repoUrl)
+            .filter((url): url is string => typeof url === "string" && url.length > 0));
+          if (recorded.size !== 1) throw new Error("unproven_repository");
+          const repoUrl = [...recorded][0]!;
+          if ((await git(clone, ["config", "--local", "--null", "--get-all", "remote.origin.url"], { signal: options.signal }).catch(() => "")) !== `${repoUrl}\0`) {
+            throw new Error("source_identity_changed");
+          }
           const anchor = rows.find(row => row.projectId && row.repoUrl === repoUrl);
           const base = anchor ? await sharedManagedBase(anchor).catch(() => null) : null;
           const check = await cloneDisposable(clone, base, upstreamCheck(db, companyId, issueId, clone, repoUrl, options.signal), options.signal);
