@@ -528,7 +528,7 @@ async function cloneDisposable(clone: string, base: string | null, missingUpstre
     const tracked = nul(await git(clone, ["status", "--porcelain=v1", "-z", "--untracked-files=no"], { signal }));
     if (tracked.length) return kept("clone_checkout_has_files", tracked.map(entry => entry.slice(3)));
     const untracked = nul(await git(clone, ["ls-files", "-z", "--others", "--exclude-standard", "--directory", "--no-empty-directory"], { signal }))
-      .filter(file => !reproducibleCheckoutPath(file));
+      .filter(file => file !== `${COMPACTION_TRASH_PATH}/` && !file.startsWith(`${COMPACTION_TRASH_PATH}/`));
     if (untracked.length) return kept("clone_checkout_has_files", untracked);
     const unexplained: string[] = [];
     for (const entry of nul(await git(clone, ["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory", "--no-empty-directory"], { signal }))) {
@@ -694,12 +694,20 @@ async function sourceDirectories(parent: string) {
   return entries.filter(entry => entry.isDirectory() && SOURCE_ID.test(entry.name)).map(entry => entry.name).sort();
 }
 
-export async function sweepOrphanedIsolatedRepositorySources(db: Db, options: { dryRun?: boolean; signal?: AbortSignal } = {}) {
+export async function sweepOrphanedIsolatedRepositorySources(db: Db, options: { dryRun?: boolean; signal?: AbortSignal; after?: string | null; limit?: number } = {}) {
   const root = path.join(resolvePaperclipInstanceRoot(), "isolated-repository-sources");
   const results: OrphanedIsolatedSourceResult[] = [];
+  const limit = options.limit ?? 8;
+  let inspected = 0;
+  let lastPosition: string | null = null;
+  const [afterCompany, afterIssue] = options.after?.split("/") ?? [];
   for (const companyId of await sourceDirectories(root)) {
     for (const issueId of await sourceDirectories(path.join(root, companyId))) {
       options.signal?.throwIfAborted();
+      if (afterCompany !== undefined && (companyId < afterCompany || (companyId === afterCompany && issueId <= afterIssue!))) continue;
+      if (inspected >= limit) return { results, next: lastPosition };
+      inspected += 1;
+      lastPosition = `${companyId}/${issueId}`;
       const result: OrphanedIsolatedSourceResult = { companyId, issueId, removed: false, reason: null, paths: [], candidateBytes: 0, reclaimedBytes: 0 };
       try {
         await withIsolatedRepositorySourceLock(db, companyId, issueId, async () => {
@@ -747,5 +755,5 @@ export async function sweepOrphanedIsolatedRepositorySources(db: Db, options: { 
       if (result.removed || result.reason || result.candidateBytes) results.push(result);
     }
   }
-  return results;
+  return { results, next: null };
 }

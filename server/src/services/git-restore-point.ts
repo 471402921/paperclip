@@ -133,7 +133,14 @@ async function gitPipe(cwd: string, from: string[], to: string[], signal?: Abort
     child.on("error", reject);
     child.on("close", (code) => code === 0 ? resolve() : reject(Object.assign(new Error(`git exited with ${code}`), { code, stderr })));
   });
-  await Promise.all([finished(source), finished(sink)]);
+  const done = [finished(source), finished(sink)];
+  try { await Promise.all(done); }
+  catch (error) {
+    source.kill("SIGKILL");
+    sink.kill("SIGKILL");
+    await Promise.allSettled(done);
+    throw error;
+  }
 }
 
 async function gitText(cwd: string, args: string[], options: GitOptions = {}) {

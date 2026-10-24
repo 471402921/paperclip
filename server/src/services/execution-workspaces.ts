@@ -1750,6 +1750,8 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
   const ISOLATED_REHOME_RETRY_MS = 60 * 60 * 1000;
   const ISOLATED_ORPHAN_RETRY_MS = 24 * 60 * 60 * 1000;
   let isolatedOrphanSweepDueAt = 0;
+  let isolatedOrphanCursor: string | null = null;
+  let isolatedOrphanKept = false;
   let terminalSweepRescanRequested = false;
   // The reaper freezes an upper bound on updatedAt at the start of each
   // rotation. The scan only reads candidates at or below the bound, so a steady
@@ -3276,15 +3278,21 @@ export function executionWorkspaceService(db: Db, opts: ExecutionWorkspaceServic
         terminalSweepRescanRequested = false;
         if (opts.gitCacheExpirationEnabled && opts.isolatedSourceRehomeEnabled && isolatedOrphanSweepDueAt <= now().getTime()) {
           const dryRun = opts.isolatedSourceRehomeDryRun ?? false;
-          const orphans = await sweepOrphanedIsolatedRepositorySources(db, { dryRun, signal }).catch((error: unknown) => {
+          const batch = await sweepOrphanedIsolatedRepositorySources(db, { dryRun, signal, after: isolatedOrphanCursor }).catch((error: unknown) => {
             signal?.throwIfAborted();
             logger.warn({ err: error }, "isolated repository source orphan sweep failed; it retries later");
             return null;
           });
-          for (const orphan of orphans ?? []) {
+          for (const orphan of batch?.results ?? []) {
             logger.info({ event: "execution_workspace.isolated_source_orphan_cleanup", dryRun, ...orphan }, "Orphaned isolated repository source inspected");
           }
-          isolatedOrphanSweepDueAt = !orphans || orphans.some(orphan => !orphan.removed) ? now().getTime() + ISOLATED_ORPHAN_RETRY_MS : Number.POSITIVE_INFINITY;
+          isolatedOrphanKept ||= !batch || batch.results.some(orphan => !orphan.removed);
+          isolatedOrphanCursor = batch?.next ?? null;
+          if (isolatedOrphanCursor) isolatedOrphanSweepDueAt = now().getTime();
+          else {
+            isolatedOrphanSweepDueAt = isolatedOrphanKept ? now().getTime() + ISOLATED_ORPHAN_RETRY_MS : Number.POSITIVE_INFINITY;
+            isolatedOrphanKept = false;
+          }
         }
         if (Number.isFinite(isolatedOrphanSweepDueAt) && isolatedOrphanSweepDueAt > 0) isolatedRehomeDeadlines.set("isolated-source-orphans", isolatedOrphanSweepDueAt);
       }

@@ -15,7 +15,7 @@ import { realizeExecutionWorkspace } from "../services/workspace-runtime.js";
 import { executionWorkspaceService } from "../services/execution-workspaces.js";
 import { expireReconstructableGitWorkspace } from "../services/git-workspace-expiration.js";
 import { captureRestorePoint, currentRestorePointSnapshot } from "../services/git-restore-point.js";
-import { rehomeIsolatedRepositoryWorkspace } from "../services/isolated-repository-rehome.js";
+import { rehomeIsolatedRepositoryWorkspace, sweepOrphanedIsolatedRepositorySources } from "../services/isolated-repository-rehome.js";
 import { addNestedRepositoryWorktree, nestedRepositoryBaseCandidates, nestedWorktreeBranchPrefix, readLinkedNestedCheckout } from "../services/nested-repository-worktrees.js";
 import { getStorageService } from "../storage/index.js";
 
@@ -528,6 +528,10 @@ describeEmbeddedPostgres("isolated repository source re-home", () => {
     await fs.writeFile(path.join(f.clone, "node_modules", "dep", "index.js"), "regenerable\n");
     expect(await rehomeIsolatedRepositoryWorkspace(db, await f.row())).toMatchObject({ cloneRemoved: false, cloneKeptReason: "clone_checkout_has_files", cloneKeptPaths: ["cache.tsbuildinfo"] });
     await fs.rm(path.join(f.clone, "cache.tsbuildinfo"));
+    await fs.mkdir(path.join(f.clone, "build"));
+    await fs.writeFile(path.join(f.clone, "build", "notes.txt"), "untracked, not ignored\n");
+    expect(await rehomeIsolatedRepositoryWorkspace(db, await f.row())).toMatchObject({ cloneRemoved: false, cloneKeptReason: "clone_checkout_has_files", cloneKeptPaths: ["build/"] });
+    await fs.rm(path.join(f.clone, "build"), { recursive: true });
     expect(await rehomeIsolatedRepositoryWorkspace(db, await f.row())).toMatchObject({ outcome: "cleaned", cloneRemoved: true });
   });
 
@@ -565,6 +569,12 @@ describeEmbeddedPostgres("isolated repository source re-home", () => {
     git(unknown.clone, "worktree", "remove", "--force", unknown.cwd);
     await db.delete(executionWorkspaces).where(eq(executionWorkspaces.id, unknown.workspaceId));
 
+    const first = await sweepOrphanedIsolatedRepositorySources(db, { dryRun: true, limit: 1 });
+    expect(first.results).toHaveLength(1);
+    expect(first.next).toEqual(expect.any(String));
+    const second = await sweepOrphanedIsolatedRepositorySources(db, { dryRun: true, limit: 1, after: first.next });
+    expect(second).toMatchObject({ results: [expect.anything()], next: null });
+    expect(new Set([...first.results, ...second.results].map(result => result.issueId))).toEqual(new Set([orphan.issueId, unknown.issueId]));
     const dryRun = executionWorkspaceService(db, { gitCacheExpirationEnabled: true, isolatedSourceRehomeEnabled: true, isolatedSourceRehomeDryRun: true });
     await dryRun.sweepTerminalWorkspaces();
     expect(await exists(orphan.clone)).toBe(true);

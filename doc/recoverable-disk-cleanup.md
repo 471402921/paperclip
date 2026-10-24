@@ -384,8 +384,9 @@ else needs it and everything in it is reproducible:
 - no other workspace or project workspace refers to it (a workspace already expired with its
   worktree removed does not count) and no runtime service runs in it;
 - after `git worktree prune`, it has no worktree besides its own checkout;
-- its own checkout has no tracked changes and no untracked files, and its ignored files are
-  only inside regenerable directories (such as `node_modules`) or Paperclip's compaction
+- its own checkout has no tracked changes and no untracked files (only Paperclip's
+  compaction trash is allowed, even inside a directory with a regenerable name), and its
+  ignored files are only inside regenerable directories (such as `node_modules`) or Paperclip's compaction
   trash. Empty directories, such as the `.paperclip/worktrees` parent left by the old
   worktree, do not count;
 - it has only branch, tag and remote-tracking refs (no stash, notes or replacement refs);
@@ -408,8 +409,10 @@ start: clones that no execution workspace refers to (no open workspace with matc
 `isolatedRemoteSource`, and no closed one that would need the clone to reopen) and that no
 pending move or cleanup still owns. It applies the same reproducibility check, using the
 shared clone of a workspace of the same issue and repository when one exists, and logs
-`event: "execution_workspace.isolated_source_orphan_cleanup"`. If it keeps any orphan, it
-looks again a day later; otherwise it registers no further work. It also deletes leftover
+`event: "execution_workspace.isolated_source_orphan_cleanup"`. It inspects at most eight
+issue directories per reaper sweep and continues from that position in the next sweep, so a
+slow remote cannot hold up other workspace cleanup. When the walk ends and it kept any
+orphan, it looks again a day later; otherwise it registers no further work. It also deletes leftover
 trash directories from interrupted removals.
 
 Each attempt logs `event: "execution_workspace.isolated_source_rehome"` with the outcome,
